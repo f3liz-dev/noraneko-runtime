@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,14 @@
 #ifndef mozilla_gfx_layers_d3d11_DeviceAttachmentsD3D11_h
 #define mozilla_gfx_layers_d3d11_DeviceAttachmentsD3D11_h
 
+#include <d3d11.h>
+#include <dxgi1_2.h>
+
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/SyncObject.h"
-#include <d3d11.h>
-#include <dxgi1_2.h>
 
 namespace mozilla {
 namespace layers {
@@ -68,7 +67,7 @@ class DeviceAttachmentsD3D11 final {
 
  private:
   explicit DeviceAttachmentsD3D11(ID3D11Device* device);
-  ~DeviceAttachmentsD3D11();
+  ~DeviceAttachmentsD3D11() = default;
 
   bool Initialize();
   bool CreateShaders();

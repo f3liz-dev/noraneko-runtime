@@ -1,29 +1,29 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CookieStorage.h"
+
 #include "Cookie.h"
 #include "CookieCommons.h"
 #include "CookieLogging.h"
-#include "CookieParser.h"
 #include "CookieNotification.h"
-#include "mozilla/net/MozURL_ffi.h"
+#include "CookieParser.h"
 #include "CookieService.h"
-#include "nsCOMPtr.h"
-#include "nsICookieNotification.h"
-#include "CookieStorage.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/net/MozURL_ffi.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsICookieNotification.h"
 #include "nsIMutableArray.h"
-#include "nsTPriorityQueue.h"
+#include "nsIPrefService.h"
 #include "nsIScriptError.h"
 #include "nsIUserIdleService.h"
 #include "nsServiceManagerUtils.h"
-#include "nsComponentManagerUtils.h"
+#include "nsTPriorityQueue.h"
 #include "prprf.h"
-#include "nsIPrefService.h"
 
 #undef ADD_TEN_PERCENT
 #define ADD_TEN_PERCENT(i) static_cast<uint32_t>((i) + (i) / 10)
@@ -207,11 +207,12 @@ bool CookieStorage::FindCookie(const nsACString& aBaseDomain,
   }
 
   const CookieEntry::ArrayType& cookies = entry->GetCookies();
+  uint32_t targetHash = Cookie::ComputeKeyHash(aName, aHost, aPath);
   for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
     Cookie* cookie = cookies[i];
 
-    if (aHost.Equals(cookie->Host()) && aPath.Equals(cookie->Path()) &&
-        aName.Equals(cookie->Name())) {
+    if (cookie->KeyHash() == targetHash && aHost.Equals(cookie->Host()) &&
+        aPath.Equals(cookie->Path()) && aName.Equals(cookie->Name())) {
       aIter = CookieListIter(entry, i);
       return true;
     }
@@ -262,6 +263,27 @@ uint32_t CookieStorage::CountCookiesFromHost(const nsACString& aBaseDomain,
   // Return a count of all cookies, including expired.
   CookieEntry* entry = mHostTable.GetEntry(CookieKey(aBaseDomain, attrs));
   return entry ? entry->GetCookies().Length() : 0;
+}
+
+bool CookieStorage::HasCookiesForSite(const nsACString& aBaseDomain,
+                                      const OriginAttributesPattern& aPattern) {
+  for (auto iter = mHostTable.Iter(); !iter.Done(); iter.Next()) {
+    CookieEntry* entry = iter.Get();
+
+    if (!aBaseDomain.Equals(entry->mBaseDomain)) {
+      continue;
+    }
+
+    if (!aPattern.Matches(entry->mOriginAttributes)) {
+      continue;
+    }
+
+    if (!entry->GetCookies().IsEmpty()) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 uint32_t CookieStorage::CountCookieBytesNotMatchingCookie(
@@ -345,7 +367,7 @@ void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
     cookie = matchIter.Cookie();
 
     // If the old cookie is httponly, make sure we're not coming from script.
-    if (cookie && !aFromHttp && cookie->IsHttpOnly()) {
+    if (!aFromHttp && cookie->IsHttpOnly()) {
       return;
     }
 
@@ -900,7 +922,9 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
         purgedList = PurgeCookies(aCurrentTimeInUsec, mMaxNumberOfCookies,
                                   mCookiePurgeAge);
         uint32_t purgedLength = 0;
-        purgedList->GetLength(&purgedLength);
+        if (purgedList) {
+          purgedList->GetLength(&purgedLength);
+        }
         mozilla::glean::networking::cookie_purge_max.AccumulateSingleSample(
             purgedLength);
       }

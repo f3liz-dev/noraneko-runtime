@@ -188,7 +188,7 @@ export function OnRefTestLoad(win) {
   // sometimes the window is occluded / hidden, which causes some crashtests
   // to time out. Bug 1864255 might be able to help here.
   g.browser.setAttribute("manualactiveness", "true");
-  g.browser.setAttribute("remote", g.browserIsRemote ? "true" : "false");
+  g.browser.toggleAttribute("remote", g.browserIsRemote);
   // Make sure the browser element is exactly 800x1000, no matter
   // what size our window is
   g.browser.style.setProperty("padding", "0px");
@@ -458,8 +458,16 @@ function ReadTests() {
       var manifestURLs = Object.keys(manifests);
 
       // Ensure we read manifests from higher up the directory tree first so that we
-      // process includes before reading the included manifest again
+      // process includes before reading the included manifest again.
+      // Manifests in "final" directories must always run last since they open
+      // popup windows that cannot be closed, which would occlude the reftest
+      // window and stall all subsequent tests.
       manifestURLs.sort(function (a, b) {
+        const aFinal = a.includes("/final/") ? 1 : 0;
+        const bFinal = b.includes("/final/") ? 1 : 0;
+        if (aFinal !== bFinal) {
+          return aFinal - bFinal;
+        }
         return a.length - b.length;
       });
       manifestURLs.forEach(function (manifestURL) {
@@ -744,15 +752,11 @@ async function StartCurrentTest() {
 
 // A simplified version of the function with the same name in tabbrowser.js.
 function updateBrowserRemotenessByURL(aBrowser, aURL) {
-  var oa = E10SUtils.predictOriginAttributes({ browser: aBrowser });
-  let remoteType = E10SUtils.getRemoteTypeForURI(
-    aURL,
-    aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteTabs,
-    aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes,
-    aBrowser.remoteType,
-    aBrowser.currentURI,
-    oa
-  );
+  let remoteType = ChromeUtils.predictRemoteTypeForURI(aURL, {
+    window: aBrowser.documentGlobal,
+    // NOTE: userContextId is always 0
+    preferredRemoteType: aBrowser.remoteType,
+  });
   // Things get confused if we switch to not-remote
   // for chrome:// URIs, so lets not for now.
   if (remoteType == E10SUtils.NOT_REMOTE && g.browserIsRemote) {
@@ -904,6 +908,28 @@ async function StartCurrentURI(aURLTargetType) {
     logger.warning(
       "g.windowUtils.isCompositorPaused " + g.windowUtils.isCompositorPaused
     );
+    // Give tests time to clean up opened windows before treating this as an error.
+    const startTime = Date.now();
+    while (
+      (g.windowUtils.isWindowFullyOccluded ||
+        g.windowUtils.isCompositorPaused) &&
+      Date.now() - startTime < g.loadTimeout
+    ) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    if (
+      g.windowUtils.isWindowFullyOccluded ||
+      g.windowUtils.isCompositorPaused
+    ) {
+      logger.error(
+        "persistent g.windowUtils.isWindowFullyOccluded " +
+          g.windowUtils.isWindowFullyOccluded
+      );
+      logger.error(
+        "persistent g.windowUtils.isCompositorPaused " +
+          g.windowUtils.isCompositorPaused
+      );
+    }
   }
 
   if (
@@ -1032,7 +1058,15 @@ function UpdateCanvasCache(url, canvas) {
 async function DoDrawWindow(ctx, x, y, w, h) {
   if (g.useDrawSnapshot) {
     try {
-      let image = await g.browser.drawSnapshot(x, y, w, h, 1.0, "#fff");
+      // drawView matches what the DRAWWINDOW_DRAW_VIEW path below draws: the
+      // rect is viewport relative, and the root scrollbars are included.
+      let image =
+        await g.browser.browsingContext.currentWindowGlobal.drawSnapshot(
+          new DOMRect(x, y, w, h),
+          1.0,
+          "#fff",
+          { drawView: true }
+        );
       ctx.drawImage(image, x, y);
     } catch (ex) {
       logger.error(g.currentURL + " | drawSnapshot failed: " + ex);
@@ -1961,6 +1995,7 @@ function RegisterMessageListenersAndLoadContentScript(aReload) {
     },
     allFrames: true,
     includeChrome: true,
+    safeForUntrustedWebProcess: true,
   });
 }
 

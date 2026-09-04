@@ -31,6 +31,7 @@ registerCleanupFunction(async () => {
   );
   Services.prefs.clearUserPref("network.dns.httpssvc.reset_exclustion_list");
   Services.prefs.clearUserPref("network.http.http3.enable");
+  Services.prefs.clearUserPref("network.http.happy_eyeballs_enabled");
   Services.prefs.clearUserPref(
     "network.dns.httpssvc.http3_fast_fallback_timeout"
   );

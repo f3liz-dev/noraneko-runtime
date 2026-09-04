@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +21,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "mozilla/RoundedMulDiv.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Uptime.h"
 
@@ -32,6 +31,10 @@ static const double kNsPerSecd = 1000000000.0;
 
 static bool gInitialized = false;
 static double sNsPerTickd;
+// Exact mach timebase ratio (nanoseconds = ticks * sNumer / sDenom), kept
+// alongside the precomputed double so ToTicksAtRate can avoid float rounding.
+static uint32_t sNumer = 0;
+static uint32_t sDenom = 0;
 
 static uint64_t ClockTime() {
   // mach_absolute_time is it when it comes to ticks on the Mac.  Other calls
@@ -66,6 +69,15 @@ int64_t BaseTimeDurationPlatformUtils::TicksFromMilliseconds(
   return result;
 }
 
+int64_t BaseTimeDurationPlatformUtils::ToTicksAtRate(int64_t aTicks,
+                                                     uint32_t aRate) {
+  MOZ_ASSERT(gInitialized, "calling TimeDuration too early");
+  // aRate ticks = aTicks mach-ticks * (sNumer/sDenom ns/tick) * (aRate / 1e9),
+  // rounded to nearest with integer arithmetic (no floating point).
+  return RoundedMulDiv(aTicks, static_cast<uint64_t>(sNumer) * aRate,
+                       static_cast<uint64_t>(sDenom) * 1000000000u);
+}
+
 void TimeStamp::Startup() {
   if (gInitialized) {
     return;
@@ -81,6 +93,8 @@ void TimeStamp::Startup() {
   }
 
   sNsPerTickd = double(timebaseInfo.numer) / timebaseInfo.denom;
+  sNumer = timebaseInfo.numer;
+  sDenom = timebaseInfo.denom;
 
   gInitialized = true;
 }

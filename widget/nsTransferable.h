@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,16 @@
 #ifndef nsTransferable_h_
 #define nsTransferable_h_
 
+#include "mozilla/Maybe.h"
+#include "nsCOMPtr.h"
 #include "nsICookieJarSettings.h"
 #include "nsIFormatConverter.h"
-#include "nsITransferable.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsTArray.h"
 #include "nsIPrincipal.h"
 #include "nsIReferrerInfo.h"
+#include "nsITransferable.h"
+#include "nsString.h"
+#include "nsTArray.h"
 #include "prio.h"
-#include "mozilla/Maybe.h"
 
 class nsIMutableArray;
 
@@ -29,6 +28,9 @@ struct DataStruct {
       : mCacheFD(nullptr), mFlavor(aFlavor) {}
   DataStruct(DataStruct&& aRHS);
   ~DataStruct();
+
+  DataStruct(const DataStruct&) = delete;
+  DataStruct& operator=(const DataStruct&) = delete;
 
   const nsCString& GetFlavor() const { return mFlavor; }
   void SetData(nsISupports* aData, bool aIsPrivateData);
@@ -50,10 +52,6 @@ struct DataStruct {
   nsCOMPtr<nsISupports> mData;  // OWNER - some varient of primitive wrapper
   PRFileDesc* mCacheFD;
   const nsCString mFlavor;
-
- private:
-  DataStruct(const DataStruct&) = delete;
-  DataStruct& operator=(const DataStruct&) = delete;
 };
 
 /**

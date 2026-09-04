@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -269,12 +267,13 @@
  * CacheIR opcodes, and new ones as they are added, is thus purely a
  * performance concern.
  *
- * PBL currently does not implement async resume into a suspended
- * generator. There is no particular reason that this cannot be
- * implemented; it just has not been done yet. Such an action will
- * currently call back into the C++ interpreter to run the resumed
- * generator body. Execution up to the first yield-point can still
- * occur in PBL, and PBL can successfully save the suspended state.
+ * PBL currently does not implement resuming a suspended generator or
+ * async function/module. There is no particular reason that this
+ * cannot be implemented (the Baseline Interpreter resumes in its
+ * prologue, based on a frame descriptor bit; see the Frame Descriptor
+ * Layout SMDOC); it just has not been done yet. Because of this,
+ * generator and async scripts don't run in PBL at all: they always
+ * execute in the C++ interpreter.
  */
 
 #include "jspubtd.h"

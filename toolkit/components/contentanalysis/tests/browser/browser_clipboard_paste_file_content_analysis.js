@@ -73,8 +73,7 @@ function assertContentAnalysisRequest(
     "request userActionId should match"
   );
   ok(request.userActionId.length, "request userActionId should not be empty");
-  is(request.printDataHandle, 0, "request printDataHandle should be 0");
-  is(request.printDataSize, 0, "request printDataSize should be 0");
+  is(request.getPrintData().length, 0, "request should have no print data");
   ok(!!request.requestToken.length, "request requestToken should not be empty");
 }
 function assertContentAnalysisRequestFile(
@@ -182,13 +181,9 @@ async function testClipboardPasteFileWithContentAnalysis(allowPaste) {
       "paste",
       function (event) {
         let dt = event.clipboardData;
-        is(dt.types.length, 3, "number of types");
+        is(dt.types.length, 2, "number of types");
         ok(dt.types.includes("text/plain"), "text/plain exists in types");
-        ok(
-          dt.types.includes("application/x-moz-file"),
-          "application/x-moz-file exists in types"
-        );
-        is(dt.types[2], "Files", "Last type should be 'Files'");
+        is(dt.types[1], "Files", "Last type should be 'Files'");
         ok(
           dt.mozTypesAt(0).contains("text/plain"),
           "text/plain exists in mozTypesAt"
@@ -347,13 +342,9 @@ async function testClipboardPasteDirectoryWithContentAnalysis(allowPaste) {
       "paste",
       function (event) {
         let dt = event.clipboardData;
-        is(dt.types.length, 3, "number of types");
+        is(dt.types.length, 2, "number of types");
         ok(dt.types.includes("text/plain"), "text/plain exists in types");
-        ok(
-          dt.types.includes("application/x-moz-file"),
-          "application/x-moz-file exists in types"
-        );
-        is(dt.types[2], "Files", "Last type should be 'Files'");
+        is(dt.types[1], "Files", "Last type should be 'Files'");
         ok(
           dt.mozTypesAt(0).contains("text/plain"),
           "text/plain exists in mozTypesAt"

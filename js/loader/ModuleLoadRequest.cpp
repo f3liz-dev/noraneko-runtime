@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #include "ModuleLoadRequest.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/ScriptLoadContext.h"
+#include "mozilla/HoldDropJSObjects.h"
 
-#include "LoadedScript.h"
 #include "LoadContextBase.h"
+#include "LoadedScript.h"
 #include "ModuleLoaderBase.h"
 
 namespace JS::loader {
@@ -97,6 +95,19 @@ void ModuleLoadRequest::ModuleLoaded() {
   MOZ_ASSERT(IsFetching());
 
   mModuleScript = mLoader->GetFetchedModule(ModuleMapKey(URI(), mModuleType));
+
+  if (FetchInfo()->IsForModulePreload() != mLoadContext->IsPreload()) {
+    FetchInfo()->SetForModulePreload(mLoadContext->IsPreload());
+  }
+
+  // A module script fetched during preload can be reused by a normal load whose
+  // top-level request never matched a preload entry, so the preload-promotion
+  // path never clears the module script's preload flag. Clear it here so the
+  // shared module script reflects that it is now part of a normal load.
+  MOZ_ASSERT(mModuleScript);
+  if (!mLoadContext->IsPreload() && mModuleScript->ForPreload()) {
+    mModuleScript->SetForPreload(false);
+  }
 }
 
 void ModuleLoadRequest::LoadFailed() {
@@ -156,6 +167,12 @@ void ModuleLoadRequest::LoadFinished() {
   }
 
   mLoader->OnModuleLoadComplete(request);
+}
+
+void ModuleLoadRequest::NotifyModuleWaitFinished() {
+  if (HasScriptLoadContext()) {
+    GetScriptLoadContext()->NotifyModuleWaitFinished();
+  }
 }
 
 void ModuleLoadRequest::SetImport(Handle<JSScript*> aReferrerScript,

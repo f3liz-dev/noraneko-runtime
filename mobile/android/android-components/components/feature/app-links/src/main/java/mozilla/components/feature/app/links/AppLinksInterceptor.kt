@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.app.links
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
@@ -90,18 +89,20 @@ class AppLinksInterceptor(
         val engineSupportsScheme = engineSupportedSchemes.contains(uriScheme)
         val isAllowedRedirect = (isRedirect && !isSubframeRequest)
         val tabSessionState = store?.state?.findTabOrCustomTab(engineSession)
+        val isIntentionalNavigation = hasUserGesture || isAllowedRedirect || isDirectNavigation
+        val isSameDomainNavigation = isSameDomain(lastUri, uri)
 
         val doNotIntercept = when {
             uriScheme == null -> true
             // A subframe request not triggered by the user and not in allow list should not go to
             // an external app.
             (!hasUserGesture && isSubframeRequest && !isSubframeAllowed(uriScheme)) -> true
-            // If request not from an user gesture, allowed redirect and direct navigation
-            // or if we're already on the site then let's not go to an external app.
-            (
-                (!hasUserGesture && !isAllowedRedirect && !isDirectNavigation) ||
-                    isSameDomain(lastUri, uri)
-                ) && engineSupportsScheme -> true
+            // Avoid external app interception when the navigation is unintentional
+            engineSupportsScheme && !isIntentionalNavigation -> true
+            // Avoid external app interception when on the same domain (outside authentication flows),
+            // as these should continue in the browser.
+            engineSupportsScheme && isSameDomainNavigation && !isPossibleAuthentication(tabSessionState) -> true
+
             // If scheme not in supported list then follow user preference
             !launchInApp() && !isPossibleAuthentication(tabSessionState) && engineSupportsScheme -> true
             // Never go to an external app when scheme is in blocklist
@@ -118,6 +119,12 @@ class AppLinksInterceptor(
         val result = handleRedirect(redirect, uri, tabId)
         val packageName = redirect.appIntent?.component?.packageName
         val isAuthenticationFlow = isAuthentication(tabSessionState, packageName)
+
+        // On the initial load, a link that resolves back to the app that launched us would just
+        // bounce in place (or no-op), leaving a blank tab. Load it in the browser instead.
+        if (lastUri == null && isRedirectToCaller(tabSessionState, packageName)) {
+            return null
+        }
 
         // Now that we have the package name,  check again if this is not authentication.
         if (!launchInApp() && !isAuthenticationFlow && engineSupportsScheme) {
@@ -139,8 +146,7 @@ class AppLinksInterceptor(
             if ((launchFromInterceptor || isAuthenticationFlow) &&
                 result is RequestInterceptor.InterceptionResponse.AppIntent
             ) {
-                result.appIntent.flags = result.appIntent.flags or Intent.FLAG_ACTIVITY_NEW_TASK
-                useCases.openAppLink(result.appIntent)
+                useCases.openAppLink(result.appIntent, clearTop = isAuthenticationFlow)
 
                 return RequestInterceptor.InterceptionResponse.Deny
             }
@@ -152,7 +158,6 @@ class AppLinksInterceptor(
     }
 
     @SuppressWarnings("ReturnCount")
-    @SuppressLint("MissingPermission")
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal fun handleRedirect(
         redirect: AppLinkRedirect,
@@ -297,16 +302,28 @@ class AppLinksInterceptor(
          */
         @VisibleForTesting
         fun isAuthentication(sessionState: SessionState?, packageName: String?): Boolean {
-            if (packageName != null && isPossibleAuthentication(sessionState)) {
-                val callerPackageId =
-                    (sessionState?.source as? SessionState.Source.External)?.caller?.packageId
+            return isPossibleAuthentication(sessionState) && isRedirectToCaller(sessionState, packageName)
+        }
 
-                if (callerPackageId == packageName) {
-                    return true
-                }
+        /**
+         * Determines whether the redirect target is the same app that launched the current
+         * external session.
+         *
+         * @param sessionState The current [SessionState], representing the tab session to inspect.
+         * @param packageName The target package name used to match with the caller's package name.
+         *
+         * @return `true` if the target package matches the caller's package, `false` otherwise.
+         */
+        @VisibleForTesting
+        internal fun isRedirectToCaller(sessionState: SessionState?, packageName: String?): Boolean {
+            if (packageName == null) {
+                return false
             }
 
-            return false
+            val callerPackageId =
+                (sessionState?.source as? SessionState.Source.External)?.caller?.packageId
+
+            return callerPackageId == packageName
         }
     }
 }

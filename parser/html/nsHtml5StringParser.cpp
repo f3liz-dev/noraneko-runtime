@@ -8,9 +8,11 @@
 #include "nsHtml5TreeBuilder.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsIContent.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
 
+using namespace mozilla;
 using mozilla::dom::Document;
 
 NS_IMPL_ISUPPORTS0(nsHtml5StringParser)
@@ -26,18 +28,29 @@ nsHtml5StringParser::nsHtml5StringParser()
 
 nsHtml5StringParser::~nsHtml5StringParser() { ClearCaches(); }
 
+/* https://html.spec.whatwg.org/#html-fragment-parsing-algorithm */
 nsresult nsHtml5StringParser::ParseFragment(
     const nsAString& aSourceBuffer, nsIContent* aTargetNode,
     nsAtom* aContextLocalName, int32_t aContextNamespace, bool aQuirks,
-    bool aPreventScriptExecution, bool aAllowDeclarativeShadowRoots) {
+    bool aPreventScriptExecution, bool aAllowDeclarativeShadowRoots,
+    mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+        aCustomElementRegistry) {
   NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX, NS_ERROR_OUT_OF_MEMORY);
 
   Document* doc = aTargetNode->OwnerDoc();
   nsIURI* uri = doc->GetDocumentURI();
   NS_ENSURE_TRUE(uri, NS_ERROR_NOT_AVAILABLE);
 
+  // Steps 1-3. Set up the document mode, and step 5, set the tokenizer state,
+  // based on the context element. Step 4 (create a new HTML parser) is this
+  // object itself.
   mTreeBuilder->setFragmentContext(aContextLocalName, aContextNamespace,
                                    aTargetNode, aQuirks);
+
+  // Step 12 of the spec asks to look up the registry from aTargetNode, but this
+  // is often a DocumentFragment which has no registry. So instead it's passed
+  // directly as an arg.
+  mTreeBuilder->SetCustomElementRegistry(std::move(aCustomElementRegistry));
 
 #ifdef DEBUG
   if (!aPreventScriptExecution) {
@@ -52,7 +65,19 @@ nsresult nsHtml5StringParser::ParseFragment(
 
   mTreeBuilder->SetPreventScriptExecution(aPreventScriptExecution);
 
-  return Tokenize(aSourceBuffer, doc, true, aAllowDeclarativeShadowRoots);
+  // Steps 10-12. "Place the input into the input stream... Start the HTML
+  // parser and let it run until it has consumed all the characters just
+  // inserted into the input stream."
+  // Step 13. "Return root's children, in tree order." (Nodes are appended
+  // directly into aTargetNode by the tree builder.)
+  nsresult rv =
+      Tokenize(aSourceBuffer, doc, true, aAllowDeclarativeShadowRoots);
+
+  // This parser is a process-wide singleton, so drop the strong reference to
+  // the context's custom element registry now that parsing is done; otherwise
+  // it (and the document it belongs to) would stay pinned until the next parse.
+  mTreeBuilder->SetCustomElementRegistry(mozilla::Nothing());
+  return rv;
 }
 
 nsresult nsHtml5StringParser::ParseDocument(
@@ -63,6 +88,7 @@ nsresult nsHtml5StringParser::ParseDocument(
   NS_ENSURE_TRUE(aSourceBuffer.Length() <= INT32_MAX, NS_ERROR_OUT_OF_MEMORY);
 
   mTreeBuilder->setFragmentContext(nullptr, kNameSpaceID_None, nullptr, false);
+  mTreeBuilder->SetCustomElementRegistry(mozilla::Nothing());
 
   mTreeBuilder->SetPreventScriptExecution(true);
 

@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "jxl_macros"
-version = "0.3.0"
+version = "0.5.1"
 authors = ["Luca Versari <veluca93@gmail.com>"]
 build = false
 autolib = false
@@ -38,9 +38,6 @@ test = []
 name = "jxl_macros"
 path = "src/lib.rs"
 proc-macro = true
-
-[dependencies.proc-macro-error2]
-version = "2.0.1"
 
 [dependencies.proc-macro2]
 version = "1.0"

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,8 @@
 #include "nsMathMLChar.h"
 
 #include <algorithm>
+#include <numbers>
+#include <numeric>
 
 #include "gfxContext.h"
 #include "gfxMathTable.h"
@@ -16,7 +16,6 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/UniquePtr.h"
@@ -47,7 +46,7 @@ using namespace mozilla::image;
 // are installed. "kMaxScaleFactor" is required to limit the scale for the
 // vertical and horizontal stretchy operators.
 static const float kMaxScaleFactor = 20.0;
-static const float kLargeOpFactor = float(M_SQRT2);
+static const float kLargeOpFactor = std::numbers::sqrt2_v<float>;
 static const float kIntegralFactor = 2.0;
 
 static void NormalizeDefaultFont(nsFont& aFont, float aFontSizeInflation) {
@@ -211,11 +210,11 @@ class nsUnicodeTable final : public nsGlyphTable {
       DrawTarget* aDrawTarget, int32_t aAppUnitsPerDevPixel,
       gfxFontGroup* aFontGroup, const nsGlyphCode& aGlyph) override;
 
- private:
   // Not available for the heap!
   void* operator new(size_t) = delete;
   void* operator new[](size_t) = delete;
 
+ private:
   struct UnicodeConstructionComparator {
     int operator()(const UnicodeConstruction& aValue) const {
       if (mTarget < aValue[0]) {
@@ -350,7 +349,7 @@ void nsOpenTypeTable::UpdateCache(DrawTarget* aDrawTarget,
     if (data.IsSimpleGlyph()) {
       mGlyphID = data.GetSimpleGlyph();
     } else if (data.GetGlyphCount() == 1) {
-      mGlyphID = textRun->GetDetailedGlyphs(0)->mGlyphID;
+      mGlyphID = textRun->GetDetailedGlyphs(0, 1)->mGlyphID;
     } else {
       mGlyphID = 0;
     }
@@ -783,8 +782,7 @@ bool nsMathMLChar::StretchEnumContext::TryVariants(
 
   // start at size = 1 (size = 0 is the char at its normal size), except for
   // rtlm fonts since they might have a character there.
-  int32_t size =
-      (StaticPrefs::mathml_rtl_operator_mirroring_enabled() && aRtl) ? 0 : 1;
+  int32_t size = aRtl ? 0 : 1;
   nsGlyphCode ch;
   nscoord displayOperatorMinHeight = 0;
   if (largeopOnly) {
@@ -935,17 +933,15 @@ bool nsMathMLChar::StretchEnumContext::TryParts(
   // come from the same font.
   if (aGlyphTable->IsUnicodeTable()) {
     gfxFont* unicodeFont = nullptr;
-    for (int32_t i = 0; i < 4; i++) {
-      if (!textRun[i]) {
+    for (const auto& i : textRun) {
+      if (!i) {
         continue;
       }
-      if (textRun[i]->GetLength() != 1 ||
-          textRun[i]->GetCharacterGlyphs()[0].IsMissing()) {
+      if (i->GetLength() != 1 || i->GetCharacterGlyphs()[0].IsMissing()) {
         return false;
       }
       uint32_t numGlyphRuns;
-      const gfxTextRun::GlyphRun* glyphRuns =
-          textRun[i]->GetGlyphRuns(&numGlyphRuns);
+      const gfxTextRun::GlyphRun* glyphRuns = i->GetGlyphRuns(&numGlyphRuns);
       if (numGlyphRuns != 1) {
         return false;
       }
@@ -1156,6 +1152,19 @@ static void InsertMathFallbacks(StyleFontFamilyList& aFamilyList,
   aFamilyList = StyleFontFamilyList::WithNames(std::move(mergedList));
 }
 
+// Characters that are mirrorable with RTLM but shouldn't be mirrored with a
+// scale fallback as that would change semantics.
+//
+// 0x2231: Clockwise Integral.
+// 0x2232: Clockwise Contour Integral.
+// 0x2233: Anticlockwise Contour Integral.
+// 0x2A11: Anticlockwise Integration.
+// 0x2A17: Integral with Leftwards Arrow with Hook.
+bool CanBeMirroredWithScaleFallback(uint32_t ch) {
+  return ch != 0x2231 && ch != 0x2232 && ch != 0x2233 && ch != 0x2A11 &&
+         ch != 0x2A17;
+}
+
 nsresult nsMathMLChar::StretchInternal(
     nsIFrame* aForFrame, DrawTarget* aDrawTarget, float aFontSizeInflation,
     StretchDirection& aStretchDirection,
@@ -1197,6 +1206,12 @@ nsresult nsMathMLChar::StretchInternal(
       mMirroringMethod = MirroringMethod::ScaleFallback;
     }
   }
+
+  if (mMirroringMethod == MirroringMethod::ScaleFallback &&
+      !CanBeMirroredWithScaleFallback(mData.First())) {
+    mMirroringMethod = MirroringMethod::None;
+  }
+
   if (mMirroringMethod == MirroringMethod::Glyph ||
       mMirroringMethod == MirroringMethod::Character) {
     flags |= gfx::ShapedTextFlags::TEXT_IS_RTL;
@@ -1362,7 +1377,7 @@ nsresult nsMathMLChar::StretchInternal(
   }
 
   // If the scale_stretchy_operators option is disabled, we are done.
-  if (!Preferences::GetBool("mathml.scale_stretchy_operators.enabled", true)) {
+  if (!StaticPrefs::mathml_scale_stretchy_operators_enabled()) {
     return NS_OK;
   }
 
@@ -1455,9 +1470,6 @@ nsresult nsMathMLChar::Stretch(nsIFrame* aForFrame, DrawTarget* aDrawTarget,
   mMirroringMethod = [&] {
     if (!aRTL || !nsMathMLOperators::IsMirrorableOperator(mData)) {
       return MirroringMethod::None;
-    }
-    if (!StaticPrefs::mathml_rtl_operator_mirroring_enabled()) {
-      return MirroringMethod::ScaleFallback;
     }
     // Character level mirroring (always supported)
     if (nsMathMLOperators::GetMirroredOperator(mData) != mData) {
@@ -1562,7 +1574,9 @@ class nsDisplayMathMLCharForeground final : public nsPaintedDisplayItem {
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      gfxContext* aCtx) override {
-    mChar->PaintForeground(mFrame, *aCtx, ToReferenceFrame(), mIsSelected);
+    imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
+    mChar->PaintForeground(mFrame, *aCtx, imgParams, ToReferenceFrame(),
+                           mIsSelected);
   }
 
   NS_DISPLAY_DECL_NAME("MathMLCharForeground", TYPE_MATHML_CHAR_FOREGROUND)
@@ -1662,7 +1676,8 @@ void nsMathMLChar::ApplyTransforms(gfxContext* aThebesContext,
 }
 
 void nsMathMLChar::PaintForeground(nsIFrame* aForFrame,
-                                   gfxContext& aRenderingContext, nsPoint aPt,
+                                   gfxContext& aRenderingContext,
+                                   imgDrawingParams& aImgParams, nsPoint aPt,
                                    bool aIsSelected) {
   ComputedStyle* computedStyle = mComputedStyle;
   nsPresContext* presContext = aForFrame->PresContext();
@@ -1697,15 +1712,18 @@ void nsMathMLChar::PaintForeground(nsIFrame* aForFrame,
                          gfx::Point(0.0, mUnscaledAscent),
                          gfxTextRun::DrawParams(
                              &aRenderingContext,
-                             aForFrame->PresContext()->FontPaletteCache()));
+                             aForFrame->PresContext()->FontPaletteCache()),
+                         aImgParams);
       }
       break;
     case DrawingMethod::Parts: {
       // paint by parts
       if (StretchDirection::Vertical == mDirection) {
-        PaintVertically(presContext, &aRenderingContext, r, fgColor);
+        PaintVertically(presContext, &aRenderingContext, aImgParams, r,
+                        fgColor);
       } else if (StretchDirection::Horizontal == mDirection) {
-        PaintHorizontally(presContext, &aRenderingContext, r, fgColor);
+        PaintHorizontally(presContext, &aRenderingContext, aImgParams, r,
+                          fgColor);
       }
       break;
     }
@@ -1757,6 +1775,7 @@ static void PaintRule(DrawTarget& aDrawTarget, int32_t aAppUnitsPerGfxUnit,
 // paint a stretchy char by assembling glyphs vertically
 nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
                                        gfxContext* aThebesContext,
+                                       imgDrawingParams& aImgParams,
                                        nsRect& aRect, nscolor aColor) {
   DrawTarget& aDrawTarget = *aThebesContext->GetDrawTarget();
 
@@ -1776,7 +1795,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
     } else if (2 == i) {  // bottom
       dy = aRect.y + aRect.height - bm.descent;
     } else {  // middle
-      dy = aRect.y + bm.ascent + (aRect.height - (bm.ascent + bm.descent)) / 2;
+      dy = aRect.y + std::midpoint(bm.ascent, aRect.height - bm.descent);
     }
     // _cairo_scaled_font_show_glyphs snaps origins to device pixels.
     // Do this now so that we can get the other dimensions right.
@@ -1801,7 +1820,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
   // If there are overlaps, then join at the mid point
   for (i = 0; i < 2; ++i) {
     if (end[i] > start[i + 1]) {
-      end[i] = (end[i] + start[i + 1]) / 2;
+      end[i] = std::midpoint(end[i], start[i + 1]);
       start[i + 1] = end[i];
     }
   }
@@ -1847,7 +1866,8 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
       }
       if (!clipRect.IsEmpty()) {
         AutoPushClipRect clip(aThebesContext, oneDevPixel, clipRect);
-        mGlyphs[i]->Draw(Range(mGlyphs[i].get()), gfx::Point(dx, dy), params);
+        mGlyphs[i]->Draw(Range(mGlyphs[i].get()), gfx::Point(dx, dy), params,
+                         aImgParams);
       }
     }
   }
@@ -1912,7 +1932,8 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
         clipRect.height = std::min(bm.ascent + bm.descent, fillEnd - dy);
         AutoPushClipRect clip(aThebesContext, oneDevPixel, clipRect);
         dy += bm.ascent;
-        mGlyphs[3]->Draw(Range(mGlyphs[3].get()), gfx::Point(dx, dy), params);
+        mGlyphs[3]->Draw(Range(mGlyphs[3].get()), gfx::Point(dx, dy), params,
+                         aImgParams);
         dy += bm.descent;
       }
     }
@@ -1931,6 +1952,7 @@ nsresult nsMathMLChar::PaintVertically(nsPresContext* aPresContext,
 // paint a stretchy char by assembling glyphs horizontally
 nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
                                          gfxContext* aThebesContext,
+                                         imgDrawingParams& aImgParams,
                                          nsRect& aRect, nscolor aColor) {
   DrawTarget& aDrawTarget = *aThebesContext->GetDrawTarget();
 
@@ -1975,7 +1997,7 @@ nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
   // If there are overlaps, then join at the mid point
   for (i = 0; i < 2; ++i) {
     if (end[i] > start[i + 1]) {
-      end[i] = (end[i] + start[i + 1]) / 2;
+      end[i] = std::midpoint(end[i], start[i + 1]);
       start[i + 1] = end[i];
     }
   }
@@ -2010,7 +2032,8 @@ nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
       }
       if (!clipRect.IsEmpty()) {
         AutoPushClipRect clip(aThebesContext, oneDevPixel, clipRect);
-        mGlyphs[i]->Draw(Range(mGlyphs[i].get()), gfx::Point(dx, dy), params);
+        mGlyphs[i]->Draw(Range(mGlyphs[i].get()), gfx::Point(dx, dy), params,
+                         aImgParams);
       }
     }
   }
@@ -2074,7 +2097,8 @@ nsresult nsMathMLChar::PaintHorizontally(nsPresContext* aPresContext,
             std::min(bm.rightBearing - bm.leftBearing, fillEnd - dx);
         AutoPushClipRect clip(aThebesContext, oneDevPixel, clipRect);
         dx -= bm.leftBearing;
-        mGlyphs[3]->Draw(Range(mGlyphs[3].get()), gfx::Point(dx, dy), params);
+        mGlyphs[3]->Draw(Range(mGlyphs[3].get()), gfx::Point(dx, dy), params,
+                         aImgParams);
         dx += bm.rightBearing;
       }
     }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
+#include "mozilla/dom/SpeculationRules.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsAttrValue.h"
@@ -42,8 +41,7 @@ JSObject* HTMLScriptElement::WrapNode(JSContext* aCx,
 }
 
 HTMLScriptElement::HTMLScriptElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    FromParser aFromParser)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo, FromParser aFromParser)
     : nsGenericHTMLElement(std::move(aNodeInfo)), ScriptElement(aFromParser) {
   AddMutationObserver(this);
 }
@@ -69,6 +67,17 @@ nsresult HTMLScriptElement::BindToTree(BindContext& aContext,
   }
 
   return NS_OK;
+}
+
+void HTMLScriptElement::UnbindFromTree(UnbindContext& aContext) {
+  // https://html.spec.whatwg.org/#script-processing-model:html-element-removing-steps
+  if (mFrozen && GetScriptIsSpeculationRules()) {
+    if (auto* doc = GetComposedDoc()) {
+      doc->SpeculationRules().Unregister(this);
+    }
+  }
+
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 }
 
 bool HTMLScriptElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -190,7 +199,7 @@ void HTMLScriptElement::GetInnerText(
   if (aError.Failed()) {
     return;
   }
-  aValue.SetAsNullIsEmptyString() = innerText.AsAString();
+  aValue.SetAsNullIsEmptyString() = std::move(innerText);
 }
 
 void HTMLScriptElement::SetInnerText(
@@ -292,18 +301,18 @@ void HTMLScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
                                                 OwnerDoc(), GetBaseURI());
 
       if (!mUri) {
-        AutoTArray<nsString, 2> params = {u"src"_ns, src};
+        AutoTArray<nsString, 2> params = {u"src"_ns, std::move(src)};
 
         nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "HTML"_ns,
                                         OwnerDoc(),
-                                        nsContentUtils::eDOM_PROPERTIES,
+                                        PropertiesFile::DOM_PROPERTIES,
                                         "ScriptSourceInvalidUri", params, loc);
       }
     } else {
       AutoTArray<nsString, 1> params = {u"src"_ns};
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
-          nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
+          PropertiesFile::DOM_PROPERTIES, "ScriptSourceEmpty", params, loc);
     }
 
     // At this point mUri will be null for invalid URLs.
@@ -342,7 +351,9 @@ bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
   nsAutoString type(aType);
   return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module") ||
 
-         aType.EqualsLiteral("importmap");
+         aType.EqualsLiteral("importmap") ||
+         (StaticPrefs::dom_speculation_rules_enabled() &&
+          aType.EqualsLiteral("speculationrules"));
 }
 
 nsDOMTokenList* HTMLScriptElement::Blocking() {

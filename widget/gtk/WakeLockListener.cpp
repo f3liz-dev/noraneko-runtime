@@ -1,30 +1,31 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WakeLockListener.h"
+
 #include <queue>
 
-#include "WakeLockListener.h"
 #include "WidgetUtilsGtk.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
+#include "nsContentUtils.h"
 #include "nsIStringBundle.h"
 #include "nsReadableUtils.h"
-#include "nsContentUtils.h"
+#include "prenv.h"
 
 #ifdef MOZ_ENABLE_DBUS
 #  include <gio/gio.h>
+
 #  include "AsyncDBus.h"
 #endif
 
 #if defined(MOZ_X11)
-#  include "prlink.h"
 #  include <gdk/gdk.h>
 #  include <gdk/gdkx.h>
+
 #  include "X11UndefineNone.h"
+#  include "prlink.h"
 #endif
 
 #if defined(MOZ_WAYLAND)
@@ -64,7 +65,7 @@ NS_IMPL_ISUPPORTS(WakeLockListener, nsIDOMMozWakeLockListener)
 static nsCString GetLocalizedWakeLockString(const char* aStringName) {
   nsAutoString localizedString;
   nsresult rv = nsContentUtils::GetLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, aStringName, localizedString);
+      PropertiesFile::DOM_PROPERTIES, aStringName, localizedString);
   if (NS_FAILED(rv)) {
     return nsCString();
   }
@@ -175,6 +176,7 @@ class WakeLockTopic {
         {"audio-playing", "WakeLockAudioPlaying", "Playing audio"},
         {"screen", "WakeLockScreenLock", "Screen lock"},
         {"autoscroll", "WakeLockAutoscroll", "Autoscroll"},
+        {"download-in-progress", "WakeLockDownload", "Download in progress"},
     };
 
     for (auto& topic : kNiceTopics) {
@@ -186,12 +188,12 @@ class WakeLockTopic {
           }
           return string;
         }();
-        mNiceTopic = niceTopic;
+        mNiceTopic = std::move(niceTopic);
         break;
       }
     }
 
-    if (GetWakeLockType() == Initial) {
+    if (GetGlobalWakeLockType() == Initial) {
       InitializeWakeLockType();
     }
   }
@@ -291,13 +293,17 @@ class WakeLockTopic {
   int mUninhibitAttempts = 5;
 #endif
 
+  // Track which wake lock type was used for the current inhibit,
+  // so we uninhibit with the same type even if the global type changed.
+  int mWakeLockType = Initial;
+
   std::queue<WakeLockState> mStateQueue;
 
-  int GetWakeLockType() {
+  int GetGlobalWakeLockType() {
     return mLockOnBackground ? sBackgroundWakeLockType
                              : sForegroundWakeLockType;
   }
-  void SetWakeLockType(int aWakeLockType) {
+  void SetGlobalWakeLockType(int aWakeLockType) {
     if (mLockOnBackground) {
       sBackgroundWakeLockType = aWakeLockType;
     } else {
@@ -358,7 +364,7 @@ void WakeLockTopic::DBusUninhibitFailed() {
   // We're in inhibited state and we can't switch back.
   // Let's try again but there isn't much to do.
   if (--mUninhibitAttempts == 0) {
-    SetWakeLockType(Unsupported);
+    SetGlobalWakeLockType(Unsupported);
   }
 }
 
@@ -595,9 +601,9 @@ void WakeLockTopic::InhibitFreeDesktopPower() {
 void WakeLockTopic::InhibitGNOME() {
   WAKE_LOCK_LOG("InhibitGNOME() background %d", mLockOnBackground);
   static const uint32_t xid = 0;
-  static const uint32_t flags = mLockOnBackground
-                                    ? SESSION_MANAGER_INHIBIT_SUSPEND_FLAG
-                                    : SESSION_MANAGER_INHIBIT_IDLE_FLAG;
+  const uint32_t flags = mLockOnBackground
+                             ? SESSION_MANAGER_INHIBIT_SUSPEND_FLAG
+                             : SESSION_MANAGER_INHIBIT_IDLE_FLAG;
   DBusInhibitScreensaver(
       SESSION_MANAGER_TARGET, SESSION_MANAGER_OBJECT, SESSION_MANAGER_INTERFACE,
       "Inhibit",
@@ -811,9 +817,11 @@ bool WakeLockTopic::UninhibitWaylandIdle() {
 
 bool WakeLockTopic::SendInhibit() {
   WAKE_LOCK_LOG("WakeLockTopic::SendInhibit() WakeLockType %s",
-                WakeLockTypeNames[GetWakeLockType()]);
-  MOZ_ASSERT(GetWakeLockType() != Initial);
-  switch (GetWakeLockType()) {
+                WakeLockTypeNames[GetGlobalWakeLockType()]);
+  MOZ_ASSERT(GetGlobalWakeLockType() != Initial);
+  mWakeLockType = GetGlobalWakeLockType();
+
+  switch (mWakeLockType) {
 #if defined(MOZ_ENABLE_DBUS)
     case FreeDesktopPortal:
       InhibitFreeDesktopPortal();
@@ -844,9 +852,9 @@ bool WakeLockTopic::SendInhibit() {
 
 bool WakeLockTopic::SendUninhibit() {
   WAKE_LOCK_LOG("WakeLockTopic::SendUninhibit() WakeLockType %s",
-                WakeLockTypeNames[GetWakeLockType()]);
-  MOZ_ASSERT(GetWakeLockType() != Initial);
-  switch (GetWakeLockType()) {
+                WakeLockTypeNames[mWakeLockType]);
+  MOZ_ASSERT(mWakeLockType != Initial);
+  switch (mWakeLockType) {
 #if defined(MOZ_ENABLE_DBUS)
     case FreeDesktopPortal:
       UninhibitFreeDesktopPortal();
@@ -879,7 +887,7 @@ nsresult WakeLockTopic::InhibitScreensaver() {
   WAKE_LOCK_LOG("WakeLockTopic::InhibitScreensaver() state %s",
                 GetInhibitStateName(mState));
   // We're broken, don't even try
-  if (GetWakeLockType() == Unsupported) {
+  if (mWakeLockType == Unsupported) {
     return NS_ERROR_FAILURE;
   }
   mStateQueue.push(Inhibited);
@@ -892,8 +900,7 @@ nsresult WakeLockTopic::InhibitScreensaver() {
 nsresult WakeLockTopic::UninhibitScreensaver() {
   WAKE_LOCK_LOG("WakeLockTopic::UnInhibitScreensaver() state %s",
                 GetInhibitStateName(mState));
-  // We're broken, don't even try
-  if (GetWakeLockType() == Unsupported) {
+  if (mWakeLockType == Unsupported) {
     return NS_ERROR_FAILURE;
   }
   mStateQueue.push(Uninhibited);
@@ -942,6 +949,10 @@ void WakeLockTopic::Shutdown() {
                 GetInhibitStateName(mState));
 #if defined(MOZ_ENABLE_DBUS)
   if (mCancellable) {
+    if (!g_cancellable_is_cancelled(mCancellable)) {
+      WAKE_LOCK_LOG(
+          "WakeLockTopic::Shutdown() terminating live DBus connection!");
+    }
     g_cancellable_cancel(mCancellable);
     mCancellable = nullptr;
   }
@@ -1013,7 +1024,7 @@ void WakeLockTopic::InitializeWakeLockType() {
     if (lock != Initial) {
       WAKE_LOCK_LOG("MOZ_WAKE_LOCK_TYPE set: %s", WakeLockTypeNames[lock]);
       if (IsWakeLockTypeAvailable(lock)) {
-        SetWakeLockType(lock);
+        SetGlobalWakeLockType(lock);
         return;
       }
       WAKE_LOCK_LOG(
@@ -1027,42 +1038,54 @@ void WakeLockTopic::InitializeWakeLockType() {
 }
 
 bool WakeLockTopic::SwitchToNextWakeLockType() {
-  WAKE_LOCK_LOG("WakeLockTopic::SwitchToNextWakeLockType() WakeLockType %s",
-                WakeLockTypeNames[GetWakeLockType()]);
+  WAKE_LOCK_LOG(
+      "WakeLockTopic::SwitchToNextWakeLockType() recent WakeLockType %s",
+      WakeLockTypeNames[mWakeLockType]);
 
-  if (GetWakeLockType() == Unsupported) {
+  if (GetGlobalWakeLockType() == Unsupported) {
     return false;
   }
 
 #ifdef MOZ_LOGGING
   auto printWakeLocktype = MakeScopeExit([&] {
     WAKE_LOCK_LOG("  switched to WakeLockType %s",
-                  WakeLockTypeNames[GetWakeLockType()]);
+                  WakeLockTypeNames[GetGlobalWakeLockType()]);
   });
 #endif
 
 #if defined(MOZ_ENABLE_DBUS)
-  if (IsDBusWakeLock(GetWakeLockType())) {
+  // Cancel recent wake lock somehow
+  if (IsDBusWakeLock(mWakeLockType)) {
     mState = Uninhibited;
     mCancellable = nullptr;
     ClearDBusInhibitToken();
   }
 #endif
 
-  while (GetWakeLockType() != Unsupported) {
-    SetWakeLockType(GetWakeLockType() + 1);
-    if (IsWakeLockTypeAvailable(GetWakeLockType())) {
+  // Global wake lock changed so try to use it right away.
+  if (mWakeLockType != GetGlobalWakeLockType() &&
+      IsWakeLockTypeAvailable(GetGlobalWakeLockType())) {
+    return true;
+  }
+
+  // Flip global wake lock type to a new one.
+  while (GetGlobalWakeLockType() != Unsupported) {
+    SetGlobalWakeLockType(GetGlobalWakeLockType() + 1);
+    if (IsWakeLockTypeAvailable(GetGlobalWakeLockType())) {
       return true;
     }
     WAKE_LOCK_LOG("  WakeLockType %s is not available",
-                  WakeLockTypeNames[GetWakeLockType()]);
+                  WakeLockTypeNames[GetGlobalWakeLockType()]);
   }
   return false;
 }
 
-WakeLockListener::WakeLockListener() = default;
+WakeLockListener::WakeLockListener() {
+  WAKE_LOCK_LOG("WakeLockListener::WakeLockListener()");
+}
 
 WakeLockListener::~WakeLockListener() {
+  WAKE_LOCK_LOG("WakeLockListener::~WakeLockListener()");
   for (const auto& topic : mForegroundTopics.Values()) {
     topic->Shutdown();
   }
@@ -1095,13 +1118,29 @@ nsresult WakeLockListener::Callback(const nsAString& topic,
                 NS_ConvertUTF16toUTF8(topic).get(),
                 NS_ConvertUTF16toUTF8(state).get());
   if (!topic.Equals(u"screen"_ns) && !topic.Equals(u"video-playing"_ns) &&
-      !topic.Equals(u"autoscroll"_ns) && !topic.Equals(u"audio-playing"_ns)) {
+      !topic.Equals(u"autoscroll"_ns) && !topic.Equals(u"audio-playing"_ns) &&
+      !topic.Equals(u"download-in-progress"_ns)) {
     return NS_OK;
   }
 
   bool backgroundLock = state.EqualsLiteral("locked-background");
   bool shouldLock = state.EqualsLiteral("locked-background") ||
                     state.EqualsLiteral("locked-foreground");
+
+  // A backgrounded video-playing lock must not hold a system suspend inhibitor
+  // (Bug 2057365).
+  //
+  // A muted autoplay video in a background tab/subframe still takes the
+  // "video-playing" wake lock, because that lock is gated on having an audio
+  // track, not on being audible. GTK then escalates a backgrounded video lock
+  // to a GNOME SUSPEND inhibitor, blocking system sleep with no user-visible
+  // signal (the tab shows no sound indicator). GTK is the only backend that
+  // does this -- macOS/Windows/Android all release the video lock once it is
+  // backgrounded. Genuinely audible background playback is covered by the
+  // separate "audio-playing" topic, so holding no inhibitor here is safe.
+  if (backgroundLock && topic.Equals(u"video-playing"_ns)) {
+    shouldLock = false;
+  }
 
   // If there's a switch between lock types (background / foreground) we need to
   // un-inhibit a complementary one.

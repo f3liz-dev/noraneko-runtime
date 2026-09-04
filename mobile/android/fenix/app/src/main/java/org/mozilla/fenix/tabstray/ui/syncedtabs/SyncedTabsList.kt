@@ -6,6 +6,7 @@ package org.mozilla.fenix.tabstray.ui.syncedtabs
 
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -21,11 +22,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,12 +48,14 @@ import org.mozilla.fenix.tabstray.TabsTrayTestTag
 import org.mozilla.fenix.tabstray.syncedtabs.OnSectionExpansionToggled
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
 import org.mozilla.fenix.tabstray.ui.tabitems.BasicTabListItem
+import org.mozilla.fenix.tabstray.ui.tabitems.TabListBorderMiddleItemShape
+import org.mozilla.fenix.tabstray.ui.tabitems.TabListFirstItemShape
+import org.mozilla.fenix.tabstray.ui.tabitems.TabListLastItemShape
+import org.mozilla.fenix.tabstray.ui.tabitems.TabListSingleItemShape
 import org.mozilla.fenix.theme.FirefoxTheme
 import mozilla.components.browser.storage.sync.Tab as SyncTab
 import mozilla.components.ui.icons.R as iconsR
 
-private val CardRoundedCornerShape = RoundedCornerShape(12.dp)
-private val SquareCorner = CornerSize(0.dp)
 private val SyncedTabVerticalPadding = 8.dp
 
 /**
@@ -96,6 +96,7 @@ fun SyncedTabsList(
                 .width(FirefoxTheme.layout.size.containerMaxWidth)
                 .testTag(TabsTrayTestTag.SYNCED_TABS_LIST),
             state = listState,
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.static25),
         ) {
             syncedTabs.forEachIndexed { index, syncedTabItem ->
                 when (syncedTabItem) {
@@ -178,16 +179,15 @@ private fun syncedTabsSectionContent(
             },
         ) { index, syncedTab ->
             val itemShape = when {
-                syncedTabSection.tabs.size == 1 -> CardRoundedCornerShape
-                index == 0 -> CardRoundedCornerShape.copy(bottomStart = SquareCorner, bottomEnd = SquareCorner)
-                index == syncedTabSection.tabs.lastIndex ->
-                    CardRoundedCornerShape.copy(topStart = SquareCorner, topEnd = SquareCorner)
-                else -> RoundedCornerShape(0.dp)
+                syncedTabSection.tabs.size == 1 -> TabListSingleItemShape
+                index == 0 -> TabListFirstItemShape
+                index == syncedTabSection.tabs.lastIndex -> TabListLastItemShape
+                else -> TabListBorderMiddleItemShape
             }
             val itemModifier = Modifier
                 .padding(horizontal = 16.dp)
                 .clip(shape = itemShape)
-                .background(color = MaterialTheme.colorScheme.surfaceContainerLowest)
+                .background(color = MaterialTheme.colorScheme.surfaceBright)
                 .fillMaxWidth()
 
             Column(modifier = itemModifier) {
@@ -196,10 +196,6 @@ private fun syncedTabsSectionContent(
                     onTabClick = onTabClick,
                     onTabCloseClick = onTabCloseClick,
                 )
-
-                if (index != syncedTabSection.tabs.lastIndex && syncedTabSection.tabs.size != 1) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                }
             }
         }
     } else {
@@ -265,7 +261,7 @@ private fun SyncedTabsSectionHeader(
         ExpandableListHeader(
             headerText = headerText,
             headerTextStyle = MaterialTheme.typography.bodyMedium,
-            headerTextColor = MaterialTheme.colorScheme.secondary,
+            headerTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
             expanded = expanded,
             expandActionContentDescription = stringResource(R.string.synced_tabs_expand_group),
             collapseActionContentDescription = stringResource(R.string.synced_tabs_collapse_group),
@@ -331,9 +327,9 @@ private fun SyncedTabsNoTabsItem() {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = CardRoundedCornerShape,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            containerColor = MaterialTheme.colorScheme.surfaceBright,
         ),
     ) {
         Text(

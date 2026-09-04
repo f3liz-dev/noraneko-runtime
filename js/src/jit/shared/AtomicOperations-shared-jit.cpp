@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=4 et sw=4 tw=99:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "jit/AtomicOperations.h"
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include <atomic>
+#include <bit>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <tuple>
 #include <utility>
 
-#include "jit/AtomicOperations.h"
 #include "js/GCAPI.h"
 
 #if defined(__arm__)
@@ -84,7 +83,7 @@ void AtomicCompilerFence() {
 template <size_t Alignment>
 static inline bool CanCopyAligned(const uint8_t* dest, const uint8_t* src,
                                   const uint8_t* lim) {
-  static_assert(mozilla::IsPowerOfTwo(Alignment));
+  static_assert(std::has_single_bit(Alignment));
   return ((uintptr_t(dest) | uintptr_t(src) | uintptr_t(lim)) &
           (Alignment - 1)) == 0;
 }
@@ -95,7 +94,7 @@ static inline bool CanCopyAligned(const uint8_t* dest, const uint8_t* src,
  */
 template <size_t Alignment>
 static inline bool CanAlignTo(const uint8_t* dest, const uint8_t* src) {
-  static_assert(mozilla::IsPowerOfTwo(Alignment));
+  static_assert(std::has_single_bit(Alignment));
   return ((uintptr_t(dest) ^ uintptr_t(src)) & (Alignment - 1)) == 0;
 }
 

@@ -22,7 +22,7 @@ function waitForOpenFilePicker() {
 }
 
 async function clickExportAllPasswords(megalist) {
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   MockFilePicker.useAnyFile();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
@@ -67,7 +67,7 @@ add_task(async function test_passwords_export_notification() {
   const megalist = await openPasswordsSidebar();
   await addMockPasswords();
   await checkAllLoginsRendered(megalist);
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => megalist.querySelector(".second-row"),
     "Second row failed to render"
   );

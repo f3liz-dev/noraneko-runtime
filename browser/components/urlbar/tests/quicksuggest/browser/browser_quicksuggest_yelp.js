@@ -318,10 +318,10 @@ async function doShowLessFrequently({
   UrlbarPrefs.clear("yelp.minKeywordLength");
 }
 
-// Tests the "Not relevant" result menu dismissal command.
-add_task(async function resultMenu_not_relevant() {
+// Tests the "Dismiss" result menu dismissal command.
+add_task(async function resultMenu_dismiss() {
   await doDismiss({
-    menu: "not_relevant",
+    menu: "dismiss",
     assert: result => {
       Assert.ok(
         QuickSuggest.isResultDismissed(result),
@@ -366,7 +366,7 @@ async function doDismiss({ menu, assert }) {
   details = await UrlbarTestUtils.getDetailsOfResultAt(window, resultIndex);
   Assert.equal(
     details.type,
-    UrlbarUtils.RESULT_TYPE.TIP,
+    UrlbarShared.RESULT_TYPE.TIP,
     "Row should be a tip after dismissal"
   );
   Assert.equal(
@@ -402,7 +402,7 @@ async function doDismiss({ menu, assert }) {
   for (let i = 0; i < UrlbarTestUtils.getResultCount(window); i++) {
     details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
     Assert.ok(
-      details.type != UrlbarUtils.RESULT_TYPE.TIP &&
+      details.type != UrlbarShared.RESULT_TYPE.TIP &&
         details.result.payload.provider !== "Yelp",
       "Tip result and Yelp result should not be present"
     );

@@ -1,27 +1,28 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et sw=2 ts=4: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef NSNOTIFYADDRLISTENER_H_
 #define NSNOTIFYADDRLISTENER_H_
 
+// clang-format off
 #include <windows.h>
 #include <winsock2.h>
 #include <iptypes.h>
-#include "nsINetworkLinkService.h"
-#include "nsIRunnable.h"
-#include "nsIObserver.h"
-#include "nsString.h"
-#include "nsTArray.h"
-#include "nsThreadUtils.h"
-#include "nsThreadPool.h"
-#include "nsCOMPtr.h"
+// clang-format on
+
 #include "mozilla/Atomics.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/SHA1.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/net/DNS.h"
+#include "nsCOMPtr.h"
+#include "nsINetworkLinkService.h"
+#include "nsIObserver.h"
+#include "nsIRunnable.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsThreadPool.h"
+#include "nsThreadUtils.h"
 
 class nsIThreadPool;
 
@@ -44,8 +45,8 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
                                    mozilla::SHA1Sum& sha1);
 
  protected:
-  bool mLinkUp{true};  // assume true by default
-  bool mStatusKnown{false};
+  mozilla::Atomic<bool, mozilla::Relaxed> mLinkUp{true};
+  mozilla::Atomic<bool, mozilla::Relaxed> mStatusKnown{false};
   bool mCheckAttempted{false};
 
   nsresult Shutdown(void);
@@ -68,10 +69,10 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
   void calculateNetworkId(void);
   bool findMac(char* gateway);
 
-  mozilla::Mutex mMutex MOZ_UNANNOTATED{"nsNotifyAddrListener::mMutex"};
-  nsCString mNetworkId;
-  nsTArray<nsCString> mDnsSuffixList;
-  nsTArray<mozilla::net::NetAddr> mDNSResolvers;
+  mozilla::Mutex mMutex{"nsNotifyAddrListener::mMutex"};
+  nsCString mNetworkId MOZ_GUARDED_BY(mMutex);
+  nsTArray<nsCString> mDnsSuffixList MOZ_GUARDED_BY(mMutex);
+  nsTArray<mozilla::net::NetAddr> mDNSResolvers MOZ_GUARDED_BY(mMutex);
 
   HANDLE mCheckEvent{nullptr};
 

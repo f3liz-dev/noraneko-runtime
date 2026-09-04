@@ -402,8 +402,21 @@ for (let a of testStrings) {
   assertSameBehavior(
     builtinExports['fromCharCodeArray'],
     polyfillExports['fromCharCodeArray'],
-    arrayMutI16, 0, length
+    // The `length % 3` thing provides a bit of variation of starting point.
+    arrayMutI16, (length > 3) ? (length % 3) : 0, length
   );
+  if (length > 3) {
+   assertSameBehavior(
+     builtinExports['fromCharCodeArray'],
+     polyfillExports['fromCharCodeArray'],
+     arrayMutI16, length % 3, length
+   );
+    assertSameBehavior(
+      builtinExports['fromCharCodeArray'],
+      polyfillExports['fromCharCodeArray'],
+      arrayMutI16, 0, length % 3
+    );
+  }
 
   for (let i = 0; i < length; i++) {
     // The end parameter is interpreted as unsigned and is always clamped to
@@ -441,6 +454,25 @@ for (let a of testStringsAndNull) {
       polyfillExports['equals'],
       a, b
     );
+  }
+}
+
+// equals must trap on non-string non-null inputs
+for (let a of WasmExternrefValues) {
+  if (a === null || typeof a === "string") {
+    continue;
+  }
+  for (let b of testStringsAndNull) {
+    assertErrorMessage(() => assertSameBehavior(
+      builtinExports['equals'],
+      polyfillExports['equals'],
+      a, b
+    ), WebAssembly.RuntimeError, /./);
+    assertErrorMessage(() => assertSameBehavior(
+      builtinExports['equals'],
+      polyfillExports['equals'],
+      b, a
+    ), WebAssembly.RuntimeError, /./);
   }
 }
 

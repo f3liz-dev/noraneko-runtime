@@ -2,30 +2,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
-#include "Common.h"
-#include "mozilla/Monitor.h"
 #include "AnimationSurfaceProvider.h"
+#include "Common.h"
 #include "DecodePool.h"
 #include "Decoder.h"
 #include "DecoderFactory.h"
 #include "decoders/nsBMPDecoder.h"
+#include "gtest/gtest.h"
+#include "mozilla/Monitor.h"
+#ifdef MOZ_JXL
+#  include "decoders/nsJXLDecoder.h"
+#endif
 #include "IDecodingTask.h"
-#include "ImageOps.h"
-#include "imgIContainer.h"
 #include "ImageFactory.h"
+#include "ImageOps.h"
+#include "ProgressTracker.h"
+#include "SourceBuffer.h"
+#include "imgIContainer.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/gfx/2D.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIInputStream.h"
-#include "mozilla/RefPtr.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-#include "ProgressTracker.h"
-#include "SourceBuffer.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -107,8 +109,8 @@ void WithBadBufferDecode(const ImageTestCase& aTestCase,
       decoderType, sourceBuffer, aOutputSize, DecoderFlags::FIRST_FRAME_ONLY,
       aTestCase.mSurfaceFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ false);
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ false);
 
   // Run the full decoder synchronously on the main thread.
   task->Run();
@@ -211,8 +213,8 @@ void WithSingleChunkDecode(const ImageTestCase& aTestCase,
       decoderType, sourceBuffer, aOutputSize, decoderFlags,
       aTestCase.mSurfaceFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<MonitorAnonymousDecodingTask> task = new MonitorAnonymousDecodingTask(
-      WrapNotNull(decoder), /* aResumable */ false);
+  auto task = MakeRefPtr<MonitorAnonymousDecodingTask>(WrapNotNull(decoder),
+                                                       /* aResumable */ false);
 
   if (aUseDecodePool) {
     DecodePool::Singleton()->AsyncRun(task.get());
@@ -255,8 +257,8 @@ void WithDelayedChunkDecode(const ImageTestCase& aTestCase,
       decoderType, sourceBuffer, aOutputSize, DecoderFlags::FIRST_FRAME_ONLY,
       aTestCase.mSurfaceFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ true);
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ true);
 
   // Run the full decoder synchronously. It should now be waiting on
   // the iterator to yield some data since we haven't written anything yet.
@@ -281,8 +283,9 @@ static void CheckDecoderDelayedChunk(const ImageTestCase& aTestCase) {
   });
 }
 
-static void CheckDecoderMultiChunk(const ImageTestCase& aTestCase,
-                                   uint64_t aChunkSize = 1) {
+template <typename Func>
+static void WithMultiChunkDecode(const ImageTestCase& aTestCase,
+                                 uint64_t aChunkSize, Func aResultChecker) {
   nsCOMPtr<nsIInputStream> inputStream = LoadFile(aTestCase.mPath);
   ASSERT_TRUE(inputStream != nullptr);
 
@@ -301,8 +304,8 @@ static void CheckDecoderMultiChunk(const ImageTestCase& aTestCase,
       decoderType, sourceBuffer, Nothing(), decoderFlags,
       aTestCase.mSurfaceFlags);
   ASSERT_TRUE(decoder != nullptr);
-  RefPtr<IDecodingTask> task =
-      new AnonymousDecodingTask(WrapNotNull(decoder), /* aResumable */ true);
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ true);
 
   // Run the full decoder synchronously. It should now be waiting on
   // the iterator to yield some data since we haven't written anything yet.
@@ -328,7 +331,65 @@ static void CheckDecoderMultiChunk(const ImageTestCase& aTestCase,
   sourceBuffer->Complete(NS_OK);
   SpinPendingEvents();
 
-  CheckDecoderResults(aTestCase, decoder);
+  aResultChecker(decoder);
+}
+
+static void CheckDecoderMultiChunk(const ImageTestCase& aTestCase,
+                                   uint64_t aChunkSize = 1) {
+  WithMultiChunkDecode(aTestCase, aChunkSize, [&](image::Decoder* aDecoder) {
+    CheckDecoderResults(aTestCase, aDecoder);
+  });
+}
+
+static uint32_t HashDecoderOutput(image::Decoder* aDecoder) {
+  RawAccessFrameRef frame = aDecoder->GetCurrentFrameRef();
+  if (!frame) {
+    return 0;
+  }
+  RefPtr<SourceSurface> surface = frame->GetSourceSurface();
+  if (!surface) {
+    return 0;
+  }
+  RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface();
+  if (!dataSurface) {
+    return 0;
+  }
+  DataSourceSurface::MappedSurface map;
+  if (!dataSurface->Map(DataSourceSurface::READ, &map)) {
+    return 0;
+  }
+  IntSize size = dataSurface->GetSize();
+  uint32_t hash = 5381;
+  for (int32_t y = 0; y < size.height; y++) {
+    // Use stride to calculate start of row location, but only include pixels
+    // up to the width in the hash in case there are unused pixels at the end
+    // of the row due to alignment.
+    const uint8_t* row = map.mData + y * map.mStride;
+    for (int32_t x = 0; x < size.width * 4; x++) {
+      hash = hash * 33 ^ row[x];
+    }
+  }
+  dataSurface->Unmap();
+  return hash;
+}
+
+static void CheckIncrementalDecodeMatchesOneShot(
+    const ImageTestCase& aTestCase) {
+  uint32_t singleChunkHash = 0;
+  WithSingleChunkDecode(aTestCase, Nothing(), false,
+                        [&](image::Decoder* aDecoder) {
+                          ASSERT_FALSE(aDecoder->HasError());
+                          singleChunkHash = HashDecoderOutput(aDecoder);
+                          ASSERT_NE(0u, singleChunkHash);
+                        });
+
+  uint32_t multiChunkHash = 0;
+  WithMultiChunkDecode(aTestCase, 1, [&](image::Decoder* aDecoder) {
+    ASSERT_FALSE(aDecoder->HasError());
+    multiChunkHash = HashDecoderOutput(aDecoder);
+  });
+
+  EXPECT_EQ(singleChunkHash, multiChunkHash);
 }
 
 static void CheckDownscaleDuringDecode(const ImageTestCase& aTestCase) {
@@ -463,9 +524,9 @@ static void WithSingleChunkAnimationDecode(const ImageTestCase& aTestCase,
   // and make this decoder's output available in the surface cache.
   SurfaceKey surfaceKey = RasterSurfaceKey(aTestCase.mOutputSize, surfaceFlags,
                                            PlaybackType::eAnimated);
-  RefPtr<AnimationSurfaceProvider> provider = new AnimationSurfaceProvider(
-      rasterImage, surfaceKey, WrapNotNull(decoder),
-      /* aCurrentFrame */ 0);
+  auto provider = MakeRefPtr<AnimationSurfaceProvider>(rasterImage, surfaceKey,
+                                                       WrapNotNull(decoder),
+                                                       /* aCurrentFrame */ 0);
 
   // Run the full decoder synchronously.
   provider->Run();
@@ -777,6 +838,24 @@ TEST_F(ImageDecoders, WebPTransparentNoAlphaHeaderSingleChunk) {
   CheckDecoderSingleChunk(TransparentNoAlphaHeaderWebPTestCase());
 }
 
+TEST_F(ImageDecoders, AVIFTransparentSingleChunk) {
+  CheckDecoderSingleChunk(TransparentAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, PNGTransparentSingleChunk) {
+  CheckDecoderSingleChunk(TransparentPNGTestCase());
+}
+
+TEST_F(ImageDecoders, GIFTransparentSingleChunk) {
+  CheckDecoderSingleChunk(TransparentGIFTestCase());
+}
+
+#ifdef MOZ_JXL
+TEST_F(ImageDecoders, JXLTransparentSingleChunk) {
+  CheckDecoderSingleChunk(TransparentJXLTestCase());
+}
+#endif
+
 TEST_F(ImageDecoders, AVIFSingleChunkNonzeroReserved) {
   CheckDecoderSingleChunk(NonzeroReservedAVIFTestCase());
 }
@@ -936,7 +1015,35 @@ TEST_F(ImageDecoders, AVIFLargeMultiChunk) {
 TEST_F(ImageDecoders, JXLLargeMultiChunk) {
   CheckDecoderMultiChunk(LargeJXLTestCase(), /* aChunkSize */ 64);
 }
-#endif
+
+#  ifdef DEBUG
+// Feeding a large JXL in tiny chunks must not cause WritePixelRowsToPipe to run
+// once per chunk or too much. The decoder should only do that work when
+// flush_pixels reports new pixels.
+TEST_F(ImageDecoders, JXLLargeMultiChunkPipeWriteCount) {
+  ImageTestCase testCase = LargeJXLTestCase();
+  WithMultiChunkDecode(testCase, /* aChunkSize */ 64,
+                       [&](image::Decoder* aDecoder) {
+                         ASSERT_FALSE(aDecoder->HasError());
+                         ASSERT_EQ(aDecoder->GetType(), DecoderType::JXL);
+                         auto* jxl = static_cast<nsJXLDecoder*>(aDecoder);
+                         EXPECT_LE(jxl->GetWritePixelRowsCount(), 16u);
+                       });
+}
+#  endif /* DEBUG */
+
+// Regression test for bug 2054317: feeding a progressive (multi-pass) lossy
+// RGBA JXL that spans more than one coded group in small chunks must not
+// panic. FlushPartialFrame's re-render pass could re-flush a group's modular
+// alpha buffer that a previous flush had already fully consumed. The exact
+// chunk boundaries that trigger this depend on decoder-internal timing, so
+// this sweeps several chunk sizes rather than relying on a single guess.
+TEST_F(ImageDecoders, JXLProgressiveAlphaMultiGroupMultiChunk) {
+  for (uint64_t chunkSize : {8, 16, 32, 64, 128, 256}) {
+    CheckDecoderMultiChunk(ProgressiveAlphaMultiGroupJXLTestCase(), chunkSize);
+  }
+}
+#endif /* MOZ_JXL */
 
 TEST_F(ImageDecoders, AnimatedGIFSingleChunk) {
   CheckDecoderSingleChunk(GreenFirstFrameAnimatedGIFTestCase());
@@ -997,6 +1104,10 @@ TEST_F(ImageDecoders, AnimatedJXLMultiChunk) {
 
 TEST_F(ImageDecoders, AnimatedJXLWithBlendedFrames) {
   CheckAnimationDecoderSingleChunk(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoders, CorruptJXLSingleChunk) {
+  CheckDecoderSingleChunk(CorruptJXLTestCase());
 }
 #endif
 
@@ -1086,7 +1197,136 @@ TEST_F(ImageDecoders, AnimatedJXLWithFRAME_FIRST) {
 TEST_F(ImageDecoders, AnimatedJXLWithFRAME_CURRENT) {
   CheckDecoderFrameCurrent(GreenFirstFrameAnimatedJXLTestCase());
 }
+
+TEST_F(ImageDecoders, JXL_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenJXLTestCase());
+}
+
+TEST_F(ImageDecoders, JXLProgressive_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(ProgressiveJXLTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedJXL_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoders, LongAnimatedJXL_IncrementalFrameCountUpdates) {
+  ImageTestCase testCase = LongAnimatedJXLTestCase();
+
+  nsCOMPtr<nsIInputStream> inputStream = LoadFile(testCase.mPath);
+  ASSERT_TRUE(inputStream != nullptr);
+
+  uint64_t length;
+  nsresult rv = inputStream->Available(&length);
+  ASSERT_NS_SUCCEEDED(rv);
+
+  auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
+  sourceBuffer->ExpectLength(length);
+
+  DecoderType decoderType = DecoderFactory::GetDecoderType(testCase.mMimeType);
+  DecoderFlags decoderFlags =
+      DefaultDecoderFlags() | DecoderFlags::COUNT_FRAMES;
+  RefPtr<image::Decoder> decoder =
+      DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, sourceBuffer,
+                                                     decoderFlags);
+  ASSERT_TRUE(decoder != nullptr);
+
+  auto task = MakeRefPtr<AnonymousDecodingTask>(WrapNotNull(decoder),
+                                                /* aResumable */ true);
+  task->Run();
+
+  // Feed only the first half of the data in fixed-size chunks, tracking how
+  // many times the scanned frame count (reported via PostFrameCount) increases.
+  const uint64_t kChunkSize = 4096;
+  uint64_t halfLength = length / 2;
+  uint64_t remaining = halfLength;
+  uint32_t lastFrameCount = 0;
+  uint32_t frameCountIncreases = 0;
+
+  while (remaining > 0) {
+    uint64_t read = std::min(remaining, kChunkSize);
+    remaining -= read;
+
+    rv = sourceBuffer->AppendFromInputStream(inputStream, read);
+    ASSERT_NS_SUCCEEDED(rv);
+
+    SpinPendingEvents();
+
+    const ImageMetadata& metadata = decoder->GetImageMetadata();
+    if (metadata.HasFrameCount()) {
+      uint32_t currentFrameCount = metadata.GetFrameCount();
+      if (currentFrameCount > lastFrameCount) {
+        frameCountIncreases++;
+        lastFrameCount = currentFrameCount;
+      }
+    }
+  }
+
+  EXPECT_GE(frameCountIncreases, 4u);
+  EXPECT_GE(lastFrameCount, 300u);
+}
+
 #endif
+
+TEST_F(ImageDecoders, BMP_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenBMPTestCase());
+}
+
+TEST_F(ImageDecoders, GIF_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenGIFTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedGIF_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenFirstFrameAnimatedGIFTestCase());
+}
+
+TEST_F(ImageDecoders, ICO_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenICOTestCase());
+}
+
+TEST_F(ImageDecoders, LargeICOWithPNG_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(LargeICOWithPNGTestCase());
+}
+
+TEST_F(ImageDecoders, JPEG_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenJPGTestCase());
+}
+
+TEST_F(ImageDecoders, PNG_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenPNGTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedPNG_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenFirstFrameAnimatedPNGTestCase());
+}
+
+TEST_F(ImageDecoders, TransparentPNG_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(TransparentPNGTestCase());
+}
+
+TEST_F(ImageDecoders, WebP_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenWebPTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedWebP_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenFirstFrameAnimatedWebPTestCase());
+}
+
+TEST_F(ImageDecoders, TransparentWebP_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(TransparentWebPTestCase());
+}
+
+TEST_F(ImageDecoders, AVIF_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedAVIF_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(GreenFirstFrameAnimatedAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, TransparentAVIF_IncrementalDecodeMatchesOneShot) {
+  CheckIncrementalDecodeMatchesOneShot(TransparentAVIFTestCase());
+}
 
 TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   ImageTestCase testCase = ExtraImageSubBlocksAnimatedGIFTestCase();

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -113,9 +111,8 @@ class nsWindowWatcher : public nsIWindowWatcher,
   static bool ShouldOpenPopup(const mozilla::dom::WindowFeatures& aFeatures);
 
   static uint32_t CalculateChromeFlagsForContent(
-      const mozilla::dom::WindowFeatures& aFeatures,
-      const mozilla::dom::UserActivation::Modifiers& aModifiers,
-      bool aCalledFromJS, bool* aIsPopupRequested);
+      const mozilla::dom::WindowFeatures& aFeatures, bool aCalledFromJS,
+      bool* aIsPopupRequested);
 
   static uint32_t CalculateChromeFlagsForSystem(
       const mozilla::dom::WindowFeatures& aFeatures, bool aDialog,

@@ -7,7 +7,7 @@
 
 const TEST_HOST = "example.com";
 
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const TEST_URL = "http://" + TEST_HOST;
 
 const TEST_URL_FULL =
@@ -20,7 +20,7 @@ async function openTabMenuFor(tab) {
   EventUtils.synthesizeMouseAtCenter(
     tab,
     { type: "contextmenu" },
-    tab.ownerGlobal
+    tab.documentGlobal
   );
   await tabMenuShown;
 

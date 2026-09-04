@@ -100,11 +100,11 @@ class GeckoJobConfiguration:
     beta_candidate_trees = [
         "releases/mozilla-beta",
     ]
-    # The list below list should be updated when we have new ESRs.
+    # The list below should be updated when we have new ESRs.
     esr_candidate_trees = [
-        "releases/mozilla-esr115",
-        "releases/mozilla-esr128",
+        "releases/mozilla-esr153",
         "releases/mozilla-esr140",
+        "releases/mozilla-esr115",
     ]
     try_tree = "try"
 
@@ -125,10 +125,9 @@ class ThunderbirdJobConfiguration:
     beta_candidate_trees = [
         "releases/comm-beta",
     ]
-    # The list below list should be updated when we have new ESRs.
+    # The list below should be updated when we have new ESRs.
     esr_candidate_trees = [
-        "releases/comm-esr115",
-        "releases/comm-esr128",
+        "releases/comm-esr153",
         "releases/comm-esr140",
     ]
     try_tree = "try-comm-central"
@@ -158,6 +157,7 @@ class ArtifactJob:
         ("bin/GenerateOCSPResponse", ("bin", "bin")),
         ("bin/OCSPStaplingServer", ("bin", "bin")),
         ("bin/SanctionsTestServer", ("bin", "bin")),
+        ("bin/ZeroRttAcceptServer", ("bin", "bin")),
         ("bin/certutil", ("bin", "bin")),
         ("bin/geckodriver", ("bin", "bin")),
         ("bin/pk12util", ("bin", "bin")),
@@ -211,11 +211,12 @@ class ArtifactJob:
         log=None,
         download_tests=True,
         download_symbols=False,
-        download_maven_zip=False,
+        artifact_filters=None,
         override_job_configuration=None,
         substs=None,
         mozbuild=None,
     ):
+        artifact_filters = artifact_filters or []
         if override_job_configuration is not None:
             self.job_configuration = override_job_configuration
 
@@ -225,9 +226,7 @@ class ArtifactJob:
             self._tests_re = re.compile(
                 r"public/build/(en-US/)?target\.common\.tests\.(zip|tar\.zst)$"
             )
-        self._maven_zip_re = None
-        if download_maven_zip:
-            self._maven_zip_re = re.compile(r"public/build/target\.maven\.zip$")
+        self._artifact_filters = set(artifact_filters)
         self._log = log
         self._substs = substs
         self._symbols_archive_suffix = None
@@ -245,15 +244,14 @@ class ArtifactJob:
     def find_candidate_artifacts(self, artifacts):
         # TODO: Handle multiple artifacts, taking the latest one.
         tests_artifact = None
-        maven_zip_artifact = None
+        found_artifact_filters = set()
         for artifact in artifacts:
             name = artifact["name"]
-            if self._maven_zip_re:
-                if self._maven_zip_re.match(name):
-                    maven_zip_artifact = name
+            if self._artifact_filters:
+                if name in self._artifact_filters:
+                    found_artifact_filters.add(name)
                     yield name
-                else:
-                    continue
+                continue
             elif self._package_re and self._package_re.match(name):
                 yield name
             elif self._tests_re and self._tests_re.match(name):
@@ -276,11 +274,12 @@ class ArtifactJob:
             raise ValueError(
                 f'Expected tests archive matching "{self._tests_re}", but found none!'
             )
-        if self._maven_zip_re and not maven_zip_artifact:
-            raise ValueError(
-                f'Expected Maven zip archive matching "{self._maven_zip_re}", but '
-                "found none!"
-            )
+        if self._artifact_filters:
+            missing_artifacts = self._artifact_filters - found_artifact_filters
+            if missing_artifacts:
+                raise ValueError(
+                    f"Did not find expected artifacts {sorted(missing_artifacts)}. Did find artifacts: {sorted(found_artifact_filters)}"
+                )
 
     @contextmanager
     def get_writer(self, **kwargs):
@@ -558,33 +557,79 @@ class ArtifactJob:
 
 
 class AndroidArtifactJob(ArtifactJob):
-    package_re = r"public/build/geckoview_example\.apk$"
+    package_re = r"public/build/target\.maven\.zip$"
     job_configuration = AndroidJobConfiguration
 
-    package_artifact_patterns = {"**/*.so"}
+    @property
+    def _host_jna_arch(self):
+        """Map host platform to JNA's architecture directory name."""
+        os_arch = self._substs.get("HOST_OS_ARCH", "")
+        # JNA uses hyphenated arch names (e.g. `x86-64`) but `HOST_CPU_ARCH`
+        # is underscored (e.g. `x86_64`).
+        cpu = self._substs.get("HOST_CPU_ARCH", "x86_64").replace("_", "-")
+        if os_arch == "Darwin":
+            return f"darwin-{cpu}"
+        elif os_arch == "WINNT":
+            return f"win32-{cpu}"
+        return f"linux-{cpu}"
+
+    @property
+    def package_artifact_patterns(self):
+        return {
+            # Android target libraries.
+            f"**/{self._substs['ANDROID_CPU_ARCH']}/{self._substs['DLL_PREFIX']}*{self._substs['DLL_SUFFIX']}",
+            # Desktop host libraries for libsForTests.
+            f"{self._host_jna_arch}/{self._substs['HOST_DLL_PREFIX']}*{self._substs['HOST_DLL_SUFFIX']}",
+        }
 
     def process_package_artifact(self, filename, processed_filename):
-        # Extract all .so files into the root, which will get copied into dist/bin.
+        # Extract all libraries into the root, which will get copied into `dist/bin` and `dist/host/bin`.
         with self.get_writer(file=processed_filename, compress_level=5) as writer:
-            for p, f in UnpackFinder(JarFinder(filename, JarReader(filename))):
-                if not any(
-                    mozpath.match(p, pat) for pat in self.package_artifact_patterns
+            zip_path = filename
+
+            for pattern, prefix in (
+                (
+                    "**/full-megazord-libsForTests*.jar",
+                    f"host/bin/appservices/resources/{self._host_jna_arch}",
+                ),
+                ("**/geckoview-*.aar", "bin"),
+            ):
+                # New `JarReader` each time to avoid iteration ordering issues.
+                for aar_path, aar_file in JarFinder(zip_path, JarReader(zip_path)).find(
+                    pattern
                 ):
-                    continue
+                    # exoplayer2 is bundled in `target.maven.zip` but its
+                    # libs aren't needed for libsForTests.
+                    if "exoplayer2" in aar_path:
+                        continue
 
-                dirname, basename = os.path.split(p)
-                self.log(
-                    logging.DEBUG,
-                    "artifact",
-                    {"basename": basename},
-                    "Adding {basename} to processed archive",
-                )
+                    self.log(
+                        logging.DEBUG,
+                        "artifact",
+                        {"aar_path": aar_path},
+                        "Processing Maven artifact {aar_path}",
+                    )
 
-                basedir = "bin"
-                if not basename.endswith(".so"):
-                    basedir = mozpath.join("bin", dirname.lstrip("assets/"))
-                basename = mozpath.join(basedir, basename)
-                writer.add(basename.encode("utf-8"), f.open())
+                    jar_finder = JarFinder(
+                        aar_file.file.filename, JarReader(fileobj=aar_file.open())
+                    )
+                    for p, f in jar_finder:
+                        if not any(
+                            mozpath.match(p, pat)
+                            for pat in self.package_artifact_patterns
+                        ):
+                            continue
+
+                        dirname, basename = os.path.split(p)
+                        procname = mozpath.join(prefix, basename)
+                        self.log(
+                            logging.DEBUG,
+                            "artifact",
+                            {"basename": basename, "procname": procname},
+                            "Adding {procname} to processed archive",
+                        )
+
+                        writer.add(procname.encode("utf-8"), f.open())
 
     def process_symbols_archive(self, filename, processed_filename):
         ArtifactJob.process_symbols_archive(
@@ -635,9 +680,7 @@ class LinuxArtifactJob(ArtifactJob):
         "{product}/pingsender",
         "{product}/plugin-container",
         "{product}/updater",
-        "{product}/glxtest",
-        "{product}/v4l2test",
-        "{product}/vaapitest",
+        "{product}/gfxtest",
         "{product}/**/*.so",
         # Preserve signatures when present.
         "{product}/**/*.sig",
@@ -737,6 +780,7 @@ class MacArtifactJob(ArtifactJob):
                 "XUL",
             ],
         ),
+        ("Contents/Library/LaunchServices", ["org.mozilla.dmgInstallHelper"]),
     )
 
     @property
@@ -859,6 +903,7 @@ class WinArtifactJob(ArtifactJob):
         ("bin/GenerateOCSPResponse.exe", ("bin", "bin")),
         ("bin/OCSPStaplingServer.exe", ("bin", "bin")),
         ("bin/SanctionsTestServer.exe", ("bin", "bin")),
+        ("bin/ZeroRttAcceptServer.exe", ("bin", "bin")),
         ("bin/certutil.exe", ("bin", "bin")),
         ("bin/geckodriver.exe", ("bin", "bin")),
         ("bin/minidumpwriter.exe", ("bin", "bin")),
@@ -1209,11 +1254,12 @@ class Artifacts:
         topsrcdir=None,
         download_tests=True,
         download_symbols=False,
-        download_maven_zip=False,
+        artifact_filters=None,
         no_process=False,
         unfiltered_project_package=False,
         mozbuild=None,
     ):
+        artifact_filters = artifact_filters or []
         if (hg and git) or (not hg and not git):
             raise ValueError("Must provide path to exactly one of hg and git")
 
@@ -1252,7 +1298,7 @@ class Artifacts:
                     log=self._log,
                     download_tests=download_tests,
                     download_symbols=download_symbols,
-                    download_maven_zip=download_maven_zip,
+                    artifact_filters=artifact_filters,
                     override_job_configuration=job_configuration,
                     substs=self._substs,
                     mozbuild=mozbuild,
@@ -1267,7 +1313,7 @@ class Artifacts:
                 log=self._log,
                 download_tests=False,
                 download_symbols=False,
-                download_maven_zip=False,
+                artifact_filters=[],
                 override_job_configuration=job_configuration,
                 substs=self._substs,
                 mozbuild=mozbuild,
@@ -1384,12 +1430,7 @@ class Artifacts:
                 return "win64-aarch64" + target_suffix
             return ("win64" if target_64bit else "win32") + target_suffix
         if self._defines.get("XP_MACOSX", False):
-            if (
-                not self._substs.get("MOZ_DEBUG")
-                or self._substs["TARGET_CPU"] == "x86_64"
-            ):
-                # We only produce unified builds in automation, so the target_cpu
-                # check is not relevant.
+            if self._substs["TARGET_CPU"] == "x86_64":
                 return "macosx64" + target_suffix
             if self._substs["TARGET_CPU"] == "aarch64":
                 return "macosx64-aarch64" + target_suffix

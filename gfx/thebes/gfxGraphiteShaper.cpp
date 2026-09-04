@@ -1,23 +1,20 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxGraphiteShaper.h"
-#include "nsString.h"
+
+#include "ThebesRLBox.h"
 #include "gfxContext.h"
 #include "gfxFontConstants.h"
 #include "gfxTextRun.h"
-
 #include "graphite2/Font.h"
 #include "graphite2/GraphiteExtra.h"
 #include "graphite2/Segment.h"
-
 #include "harfbuzz/hb.h"
-
 #include "mozilla/ScopeExit.h"
-
-#include "ThebesRLBox.h"
+#include "mozilla/Utf16.h"
+#include "nsString.h"
 
 #define FloatToFixed(f) (65536 * (f))
 #define FixedToFloat(f) ((f) * (1.0 / 65536.0))
@@ -117,8 +114,8 @@ static inline size_t CountUnicodes(const char16_t* aText, uint32_t aLength) {
   size_t total = 0;
   const char16_t* end = aText + aLength;
   while (aText < end) {
-    if (NS_IS_HIGH_SURROGATE(*aText) && aText + 1 < end &&
-        NS_IS_LOW_SURROGATE(*(aText + 1))) {
+    if (mozilla::IsHighSurrogate(*aText) && aText + 1 < end &&
+        mozilla::IsLowSurrogate(*(aText + 1))) {
       aText += 2;
     } else {
       aText++;
@@ -128,8 +125,7 @@ static inline size_t CountUnicodes(const char16_t* aText, uint32_t aLength) {
   return total;
 }
 
-bool gfxGraphiteShaper::ShapeText(DrawTarget* aDrawTarget,
-                                  const char16_t* aText, uint32_t aOffset,
+bool gfxGraphiteShaper::ShapeText(const char16_t* aText, uint32_t aOffset,
                                   uint32_t aLength, Script aScript,
                                   nsAtom* aLanguage, bool aVertical,
                                   RoundingFlags aRounding,
@@ -251,6 +247,9 @@ bool gfxGraphiteShaper::ShapeText(DrawTarget* aDrawTarget,
   nsresult rv =
       SetGlyphsFromSegment(aShapedText, aOffset, aLength, aText,
                            t_aText.to_opaque(), seg.to_opaque(), aRounding);
+  if (NS_FAILED(rv)) {
+    aShapedText->ClearGlyphs();
+  }
 
   sandbox_invoke(*mSandbox, gr_seg_destroy, seg);
 
@@ -295,6 +294,9 @@ nsresult gfxGraphiteShaper::SetGlyphsFromSegment(
   if (failedVerify) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
+  // Minimum acceptable baseChar for the next cluster (to ensure monotonically
+  // increasing indexes).
+  uint32_t minBaseChar = 0;
   // now put glyphs into the textrun, one cluster at a time
   for (uint32_t i = 0; i <= cIndex; ++i) {
     // We makes a local copy of "clusters[i]" which is of type
@@ -332,11 +334,12 @@ nsresult gfxGraphiteShaper::SetGlyphsFromSegment(
         "nscoord values. But, these will not result in safety issues.");
 
     // check unexpected offset - offs used to index into aText
-    uint32_t offs =
-        CopyAndVerifyOrFail(c.baseChar, val < aLength, &failedVerify);
+    uint32_t offs = CopyAndVerifyOrFail(
+        c.baseChar, val < aLength && val >= minBaseChar, &failedVerify);
     if (failedVerify) {
       return NS_ERROR_ILLEGAL_VALUE;
     }
+    minBaseChar = offs + 1;
 
     // Check for default-ignorable char that didn't get filtered, combined,
     // etc by the shaping process, and skip it.
@@ -396,6 +399,15 @@ nsresult gfxGraphiteShaper::SetGlyphsFromSegment(
           CopyAndVerifyOrFail(c.baseGlyph, val <= glyph_end, &failedVerify);
       if (failedVerify) {
         return NS_ERROR_ILLEGAL_VALUE;
+      }
+
+      // The glyphCount field in a CompressedGlyph record is 16 bits;
+      // check that we will not exceed this.
+      if (glyph_end - glyph_start > 0xFFFF) {
+        return NS_ERROR_ILLEGAL_VALUE;
+      }
+      if (!details.SetCapacity(glyph_end - glyph_start, fallible)) {
+        return NS_ERROR_OUT_OF_MEMORY;
       }
 
       for (uint32_t j = glyph_start; j < glyph_end; ++j) {

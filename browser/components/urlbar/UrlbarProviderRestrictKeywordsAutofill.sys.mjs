@@ -7,16 +7,14 @@
  * search mode.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarTokenizer:
     "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
@@ -35,10 +33,10 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    return lazy.UrlbarShared.PROVIDER_TYPE.HEURISTIC;
   }
 
   getPriority() {
@@ -72,7 +70,7 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
     this.#autofillData = null;
 
     if (
-      queryContext.searchMode ||
+      queryContext.restrictInSearchMode() ||
       queryContext.tokens.length != 1 ||
       queryContext.searchString.length == 1 ||
       queryContext.restrictSource ||
@@ -145,8 +143,8 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
 
     if (restrictSymbol && typedKeyword == aliasKeyword) {
       let result = new lazy.UrlbarResult({
-        type: UrlbarUtils.RESULT_TYPE.RESTRICT,
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        type: lazy.UrlbarShared.RESULT_TYPE.RESTRICT,
+        source: lazy.UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
         hideRowLabel: true,
         payload: {
@@ -184,13 +182,13 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
           queryContext.searchString +
           autofillKeyword.substr(queryContext.searchString.length);
         let value = keywordPreservingUserCase + " ";
-        let icon = UrlbarUtils.LOCAL_SEARCH_MODES.find(
+        let icon = lazy.UrlbarShared.LOCAL_SEARCH_MODES.find(
           mode => mode.restrict == token
         )?.icon;
 
         return new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.RESTRICT,
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          type: lazy.UrlbarShared.RESULT_TYPE.RESTRICT,
+          source: lazy.UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           hideRowLabel: true,
           autofill: {
             value,
@@ -205,8 +203,8 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
             providesSearchMode: true,
           },
           highlights: {
-            l10nRestrictKeywords: UrlbarUtils.HIGHLIGHT.TYPED,
-            autofillKeyword: UrlbarUtils.HIGHLIGHT.TYPED,
+            l10nRestrictKeywords: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+            autofillKeyword: lazy.UrlbarShared.HIGHLIGHT.TYPED,
           },
         });
       }

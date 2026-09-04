@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,6 +50,12 @@ bool isConst(C*) { return false; }
 bool isConst(const C*) { return true; }
 
 int main() {
+  // A default-constructed WeakPtr is empty and allocates no WeakReference.
+  WeakPtr<C> empty;
+  MOZ_RELEASE_ASSERT(!empty);
+  MOZ_RELEASE_ASSERT(!empty.get());
+  MOZ_RELEASE_ASSERT(empty == nullptr);
+
   C* c1 = new C;
   MOZ_RELEASE_ASSERT(c1->mNum == 0);
 
@@ -142,4 +146,21 @@ int main() {
 
   MOZ_RELEASE_ASSERT(!db);
   MOZ_RELEASE_ASSERT(!weakd);
+
+  // Resetting a populated WeakPtr back to empty via assignment.
+  C* c3 = new C;
+  WeakPtr<C> w5 = c3;
+  MOZ_RELEASE_ASSERT(w5 == c3);
+  w5 = nullptr;
+  MOZ_RELEASE_ASSERT(!w5);
+  MOZ_RELEASE_ASSERT(!w5.get());
+
+  w5 = c3;
+  MOZ_RELEASE_ASSERT(w5 == c3);
+  C* nullc = nullptr;
+  w5 = nullc;
+  MOZ_RELEASE_ASSERT(!w5);
+  MOZ_RELEASE_ASSERT(!w5.get());
+
+  delete c3;
 }

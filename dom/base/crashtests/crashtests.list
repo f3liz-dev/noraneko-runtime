@@ -243,7 +243,11 @@ asserts(0-1) load 1517025.html # see bug 1666910 for assert
 load xhr-with-pagehide-1.html
 load 1555786.html
 load 1577191.html
-load eventSource_invalid_scheme_worker_shutdown.html
+# Pinned to the local WorkerDebugger: this test waits for the worker debugger to
+# unregister by matching its relative script URL, but the parent-process
+# RemoteWorkerDebugger reports the absolute URL and registers asynchronously
+# (bug 1944240).
+pref(dom.worker.remoteDebugger.enabled,false) load eventSource_invalid_scheme_worker_shutdown.html
 load 1291535.html
 skip-if(!isDebugBuild||!gtkWidget) load 1611853.html
 load 1619322.html
@@ -280,11 +284,16 @@ asserts(0-1) load 1907228.html # see bug 1908485 for assert
 load 1922153.html
 load 1965664.html
 load 1966485.html
-load 1966466.html
+asserts(0-2) load 1966466.html
 load 1969289.html
 load 1975990.html
 load 1991206.html
 load 2004132.html
+load 2014551.html
 load 2014583.html
 load 2014592.html
 load 2016511.html
+load 2024472.html
+load 2035756.html
+load 2042268.html
+load 2052570.html

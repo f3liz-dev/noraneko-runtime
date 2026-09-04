@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import url("chrome://global/skin/design-system/text-and-typography.css");
+@import url("chrome://global/content/elements/moz-promo.tokens.css");
 
 /*
  Bug 1972702: Remove the following TODOs
@@ -13,43 +14,23 @@
   TODO: need HCM styles
 */
 
-:host([type="vibrant"]) {
-  --promo-message-text-color: light-dark(var(--color-violet-80), var(--color-violet-0));
-  --promo-heading-text-color: var(--promo-message-text-color);
-  --promo-background-color: light-dark(var(--color-violet-0), var(--color-violet-90));
-  --promo-border-color: var(--color-violet-30);
-}
-
-:host([imagealignment="center"]) {
-  .container {
-    flex-direction: column;
-  }
-
-  .image-container {
-    /* TODO: The height of this container should _probably_ be configurable  */
-    /* Bug 1966430: We need this in order to show the image at all when the
-      alignment is set to center
-    */
-    min-height: var(--size-item-large);
-    margin: var(--space-large);
-    margin-block-start: 0;
-  }
+:host([hidden]) {
+  display: none !important;
 }
 
 :host {
-  --promo-message-text-color: var(--text-color);
-  --promo-heading-text-color: var(--promo-message-text-color);
-  --promo-border: var(--promo-border-width) solid var(--promo-border-color);
-  --promo-border-color: var(--border-color);
-  --promo-border-width: var(--border-width);
-  --promo-border-radius: var(--border-radius-medium);
-
-  @media (prefers-contrast) {
-    --promo-message-text-color: var(--text-color);
-  }
+  display: flex;
+  flex-direction: column;
 }
 
 /* MozPromo layout */
+
+:host([type="vibrant"]) {
+  --promo-message-text-color: var(--promo-message-text-color-vibrant);
+  --promo-heading-text-color: var(--promo-heading-text-color-vibrant);
+  --promo-background-color: var(--promo-background-color-vibrant);
+  --promo-border-color: var(--promo-border-color-vibrant);
+}
 
 .container {
   background-color: var(--promo-background-color);
@@ -58,27 +39,140 @@
   color: var(--promo-message-text-color);
   display: flex;
   flex-direction: row;
-  gap: var(--space-xsmall);
-  min-height: 56px;
+  gap: var(--space-medium);
   align-items: center;
   overflow: hidden;
+  flex-grow: 1;
+  position: relative;
 }
 
 .text-container {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-xsmall);
-  padding: var(--space-medium);
+  gap: var(--space-small);
 }
 
 .image-container {
-  background-image: var(--promo-image-url);
-  background-size: cover;
-  background-position: var(--promo-image-position, center);
-  background-repeat: no-repeat;
-  flex-basis: 25%;
+  width: var(--promo-image-size);
+  flex-shrink: 0;
   align-self: stretch;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+
+  img {
+    width: 100%;
+    height: auto;
+    -moz-context-properties: fill;
+    fill: var(--promo-image-fill, currentColor);
+  }
+}
+
+:host([imagedisplay="cover"]) {
+  .image-container {
+    align-items: stretch;
+  }
+
+  .text-container {
+    padding: var(--promo-padding);
+  }
+
+  img {
+    object-fit: cover;
+    object-position: var(--promo-image-position, bottom right);
+
+    :host([imagealignment="end"]) & {
+      object-position: var(--promo-image-position, bottom left);
+    }
+    :host([imagealignment="center"]) & {
+      object-position: var(--promo-image-position, top center);
+    }
+  }
+}
+
+:host([imagedisplay="padded"]) {
+  .text-container {
+    padding: 0;
+  }
+
+  .container {
+    padding: var(--promo-padding);
+  }
+}
+
+:host([dismissable][imagedisplay="cover"]:not([imagealignment="end"])) {
+  .text-container {
+    padding-inline-end: calc(var(--promo-padding) + var(--button-size-icon) + var(--space-small));
+  }
+}
+
+:host([dismissable][imagedisplay="padded"]:not([imagealignment="end"])) {
+  .text-container {
+    padding-inline-end: calc(var(--button-size-icon) + var(--space-small));
+  }
+}
+
+/* A padded image is inset rather than bleeding to the edge, make room for
+ * the close button instead of letting it sit on the illustration. */
+:host([dismissable][imagedisplay="padded"][imagealignment="end"]) {
+  .image-container {
+    margin-inline-end: calc(var(--space-small) + var(--button-size-icon) - var(--promo-padding));
+  }
+}
+
+:host([imagealignment="center"]) {
+  .container {
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .image-container {
+    align-self: center;
+  }
+}
+
+:host([imagealignment="center"][imagedisplay="cover"]) {
+  .image-container {
+    width: 100%;
+    height: var(--promo-image-size);
+  }
+}
+
+:host([imagewidth="large"]) {
+  --promo-image-size: var(--promo-image-size-large);
+}
+
+.close {
+  position: absolute;
+  /* Sit at the top, except on promos too short to fit the button there, where
+   * centering keeps it aligned with the single line of text. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inset-block-start: min(var(--space-small), calc(50% - var(--button-size-icon) / 2));
+  inset-inline-end: var(--space-small);
+  z-index: 1;
+}
+
+/* A cover image bleeds under the close button, so give it an opaque backplate to
+ * keep the icon legible. */
+@media not (forced-colors) {
+  :host([dismissable][imagealignment="end"][imagedisplay="cover"]) .close {
+    --button-background-color-ghost: var(--background-color-box);
+    --button-text-color-ghost: var(--text-color);
+  }
+}
+
+/* These tints only read as a state change against theme colors. In high contrast
+ * --text-color is a system color, so the mix lands within a few percent of the
+ * resting backplate and hover becomes indistinguishable; let the design system
+ * supply the hover and active colors there instead. */
+@media not ((prefers-contrast) or (forced-colors)) {
+  :host([dismissable][imagealignment="end"][imagedisplay="cover"]) .close {
+    --button-background-color-ghost-hover: color-mix(in srgb, var(--text-color) 10%, var(--background-color-box));
+    --button-background-color-ghost-active: color-mix(in srgb, var(--text-color) 20%, var(--background-color-box));
+    --button-text-color-ghost-hover: var(--text-color);
+    --button-text-color-ghost-active: var(--text-color);
+  }
 }
 
 /* MozPromo heading style */
@@ -97,6 +191,7 @@
   margin: 0;
   align-items: center;
 
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
   &:has(slot:has-slotted) {
     gap: var(--space-small);
   }

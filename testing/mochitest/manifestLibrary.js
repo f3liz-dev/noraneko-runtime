@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +30,7 @@ function parseTestManifest(testManifest, params, callback) {
           expected: obj.expected,
           https_first_disabled: obj.https_first_disabled,
           allow_xul_xbl: obj.allow_xul_xbl,
+          manifest: obj.manifest,
         },
       };
     } else {
@@ -45,6 +44,7 @@ function parseTestManifest(testManifest, params, callback) {
           expected: obj.expected,
           https_first_disabled: obj.https_first_disabled,
           allow_xul_xbl: obj.allow_xul_xbl,
+          manifest: obj.manifest,
         },
       });
     }

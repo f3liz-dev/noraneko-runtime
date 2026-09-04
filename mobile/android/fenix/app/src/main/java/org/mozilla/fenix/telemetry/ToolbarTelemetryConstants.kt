@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.telemetry
 
-const val SOURCE_CUSTOM_BAR = "custom_bar"
 const val SOURCE_NAVIGATION_BAR = "navigation_bar"
 const val SOURCE_ADDRESS_BAR = "url_bar"
 
@@ -12,6 +11,10 @@ const val SOURCE_BROWSER_START = "browser_start"
 const val SOURCE_PAGE_START = "page_start"
 const val SOURCE_PAGE_END = "page_end"
 const val SOURCE_BROWSER_END = "browser_end"
+
+const val SURFACE_HOME = "home"
+const val SURFACE_BROWSER = "browser"
+const val SURFACE_CUSTOM_TAB = "custom_tab"
 
 const val ACTION_ADD_BOOKMARK_CLICKED = "add_bookmark"
 const val ACTION_ADD_NEW_PRIVATE_TAB = "add_new_private_tab"
@@ -22,6 +25,7 @@ const val ACTION_CLOSE_CLICKED = "close"
 const val ACTION_EDIT_BOOKMARK_CLICKED = "edit_bookmark"
 const val ACTION_TRANSLATE_CLICKED = "translate"
 const val ACTION_HOME_CLICKED = "home"
+const val ACTION_LENS_CLICKED = "lens"
 const val ACTION_MENU_CLICKED = "menu"
 const val ACTION_MICROPHONE_CLICKED = "microphone"
 const val ACTION_NAVIGATE_BACK_CLICKED = "navigate_back"
@@ -40,3 +44,6 @@ const val ACTION_SITE_CUSTOM_CLICKED = "site_custom"
 const val ACTION_STOP_CLICKED = "stop"
 const val ACTION_TAB_COUNTER_CLICKED = "tab_counter"
 const val ACTION_TAB_COUNTER_LONG_CLICKED = "tab_counter_long_press"
+const val ACTION_SUMMARIZE_CLICKED = "summarize"
+const val ACTION_SHORTCUT_LONG_CLICKED = "shortcut_long_press"
+const val ACTION_EDIT_SHORTCUT_CLICKED = "shortcut_edit_clicked"

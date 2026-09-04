@@ -2,11 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://browser/skin/tabbrowser/tab.tokens.css");
+
 #fxview-tab-row-secondary-button {
-  display: none;
+  visibility: collapse;
 
   :host(:hover) & {
-    display: inline;
+    visibility: visible;
   }
 }
 
@@ -15,7 +17,10 @@
 }
 
 :host {
+  --favicon-badge-color: var(--color-accent-attention);
+
   display: flex;
+  contain: size layout;
 }
 
 :host([selected]) {
@@ -43,8 +48,12 @@
   --button-min-height: 24px;
 }
 
+.fxview-tab-row-button.dismiss-button {
+  --icon-size: var(--icon-size-xsmall);
+}
+
 .attention > #fxview-tab-row-favicon::after {
-  background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+  background-image: radial-gradient(circle, var(--favicon-badge-color), var(--favicon-badge-color) 2px, transparent 2px);
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   height: 4px;
   width: 100%;
@@ -65,7 +74,7 @@
   stroke: var(--background-color-box);
 
   .fxview-tab-row-main.attention > & {
-    background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+    background-image: radial-gradient(circle, var(--favicon-badge-color), var(--favicon-badge-color) 2px, transparent 2px);
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     height: 4px;
     width: 100%;
@@ -106,4 +115,91 @@
   background-size: cover;
   -moz-context-properties: fill;
   fill: var(--identity-icon-color);
+  margin-inline-end: 8px;
+
+  /* Match the container context-menu items: fill-color icon inside a round
+     15% tinted background. */
+  @media -moz-pref("browser.nova.enabled") {
+    box-sizing: content-box;
+    padding: var(--identity-icon-inset);
+    border-radius: var(--border-radius-circle);
+    background-color: var(--identity-fill-tint);
+    background-origin: content-box;
+    background-repeat: no-repeat;
+    background-position: center;
+    fill: var(--identity-fill-color);
+  }
+}
+
+:host([current]) {
+  @media -moz-pref("browser.nova.enabled") {
+    outline: 1px solid var(--tab-selected-outline-color);
+    outline-offset: -1px;
+
+    @media (not (prefers-contrast)) {
+      border: 1px solid transparent;
+      background:
+        var(--tab-border-color-accent) border-box border-area,
+        var(--tab-background-color-selected) padding-box;
+    }
+  }
+}
+
+:host([current][inactive-window]) {
+  @media -moz-pref("browser.nova.enabled") {
+    outline-color: color-mix(in srgb, var(--tab-selected-outline-color) 60%, transparent);
+    --tab-border-color-selected-leading: color-mix(in srgb, var(--color-violet-30) 60%, transparent);
+    --tab-border-color-selected-trailing: color-mix(in srgb, light-dark(var(--color-orange-30), var(--color-violet-50)) 60%, transparent);
+  }
+}
+
+:host([medium-view]) {
+  container-type: inline-size;
+}
+
+:host([medium-view]) .fxview-tab-row-main {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  align-items: center;
+  min-width: 0;
+}
+
+:host([medium-view]) .fxview-tab-row-title {
+  min-width: 0;
+}
+
+.sidebar-tab-row-domain,
+.fxview-tab-row-time {
+  display: none;
+  min-width: 0;
+  color: var(--text-color-deemphasized);
+  white-space: nowrap;
+}
+
+@container (min-width: 320px) {
+  :host([medium-view]) .fxview-tab-row-main {
+    grid-template-columns: min-content 3fr 2fr;
+  }
+
+  :host([medium-view]) .sidebar-tab-row-domain {
+    display: block;
+  }
+}
+
+@container (min-width: 400px) {
+  :host([medium-view]) .fxview-tab-row-main {
+    grid-template-columns: min-content 3fr 2fr 1fr;
+  }
+
+  :host([medium-view]) .fxview-tab-row-time {
+    display: block;
+  }
+}
+
+:host([medium-view]) #fxview-tab-row-secondary-button {
+  visibility: hidden;
+}
+
+:host([medium-view]:hover) #fxview-tab-row-secondary-button {
+  visibility: visible;
 }

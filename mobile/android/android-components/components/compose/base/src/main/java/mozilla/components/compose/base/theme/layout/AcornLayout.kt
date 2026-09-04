@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -32,26 +32,15 @@ data class AcornLayout(
 ) {
 
     val border: AcornBorder = AcornBorder
-    val corner: AcornCorner = AcornCorner
     val elevation: AcornElevation = AcornElevation
 
     /**
      * A palette of tokens defining the borders of visual elements styled by the Acorn Design System.
      */
     object AcornBorder {
-        val thin: Dp = 1.dp
-        val normal: Dp = 2.dp
-        val thick: Dp = 4.dp
-    }
-
-    /**
-     * A palette of tokens defining the corner radii of visual elements styled by the Acorn Design System.
-     */
-    object AcornCorner {
-        val small: Dp = 2.dp
-        val medium: Dp = 4.dp
-        val large: Dp = 8.dp
-        val xLarge: Dp = 16.dp
+        val default: Dp = 1.dp
+        val heavy: Dp = 2.dp
+        val heaviest: Dp = 4.dp
     }
 
     /**
@@ -96,16 +85,16 @@ private fun AcornLayoutPreview() {
                             .size(size = AcornTheme.layout.size.static800)
                             .background(
                                 color = color,
-                                shape = RoundedCornerShape(size = AcornTheme.layout.corner.small),
+                                shape = MaterialTheme.shapes.small,
                             )
                             .border(
-                                width = AcornTheme.layout.border.normal,
+                                width = AcornTheme.layout.border.heavy,
                                 color = Color(
                                     red = color.red * 0.8f,
                                     green = color.green * 0.8f,
                                     blue = color.blue * 0.8f,
                                 ),
-                                shape = RoundedCornerShape(size = AcornTheme.layout.corner.small),
+                                shape = MaterialTheme.shapes.small,
                             ),
                     )
                 }

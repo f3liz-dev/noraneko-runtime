@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RenderAndroidHardwareBufferTextureHost.h"
 
-#include "mozilla/layers/AndroidHardwareBuffer.h"
-#include "mozilla/layers/TextureHostOGL.h"
-#include "mozilla/webrender/RenderThread.h"
-#include "mozilla/gfx/2D.h"
 #include "GLContextEGL.h"
 #include "GLLibraryEGL.h"
 #include "GLReadTexImageHelper.h"
 #include "OGLShaderConfig.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/layers/AndroidHardwareBuffer.h"
+#include "mozilla/layers/TextureHostOGL.h"
+#include "mozilla/webrender/RenderThread.h"
 
 namespace mozilla {
 namespace wr {
@@ -57,7 +55,7 @@ bool RenderAndroidHardwareBufferTextureHost::EnsureLockable() {
                               fenceFd.get(), LOCAL_EGL_NONE};
 
     EGLSync sync =
-        egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, attribs);
+        egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, attribs);
     if (sync) {
       // Release fd here, since it is owned by EGLSync
       (void)fenceFd.release();

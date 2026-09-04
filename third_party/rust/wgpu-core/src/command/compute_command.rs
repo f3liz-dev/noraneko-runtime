@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 #[cfg(feature = "serde")]
 use crate::command::serde_object_reference_struct;
 use crate::command::{ArcReferences, ReferenceType};
@@ -23,20 +25,13 @@ pub enum ComputeCommand<R: ReferenceType> {
         /// must be a multiple of four.
         offset: u32,
 
-        /// The number of bytes to write. This must be a multiple of four.
-        size_bytes: u32,
-
-        /// Index in `immediates_data` of the start of the data
-        /// to be written.
-        ///
-        /// Note: this is not a byte offset like `offset`. Rather, it is the
-        /// index of the first `u32` element in `immediates_data` to read.
-        values_offset: u32,
+        /// The immediate data to be written.
+        data: Vec<u32>,
     },
 
-    Dispatch([u32; 3]),
+    DispatchWorkgroups([u32; 3]),
 
-    DispatchIndirect {
+    DispatchWorkgroupsIndirect {
         buffer: R::Buffer,
         offset: wgt::BufferAddress,
     },
@@ -64,6 +59,11 @@ pub enum ComputeCommand<R: ReferenceType> {
     },
 
     EndPipelineStatisticsQuery,
+
+    TransitionResources {
+        buffer_transitions: Vec<wgt::BufferTransition<R::Buffer>>,
+        texture_transitions: Vec<wgt::TextureTransition<R::TextureView>>,
+    },
 }
 
 /// cbindgen:ignore

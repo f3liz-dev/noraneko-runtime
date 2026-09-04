@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,9 @@
 #ifndef mozilla_CycleCollectedJSRuntime_h
 #define mozilla_CycleCollectedJSRuntime_h
 
+#include "js/TypeDecls.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DeferredFinalize.h"
 #include "mozilla/HashTable.h"
@@ -15,14 +16,10 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SegmentedVector.h"
 #include "mozilla/Variant.h"
-#include "jsapi.h"
-#include "jsfriendapi.h"
-#include "js/TypeDecls.h"
-
 #include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsStringFwd.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 
 class nsCycleCollectionNoteRootCallback;
@@ -93,7 +90,7 @@ class JSHolderMap {
  public:
   class Iter;
 
-  JSHolderMap();
+  JSHolderMap() = default;
   ~JSHolderMap() { MOZ_RELEASE_ASSERT(!mHasIterator); }
 
   bool Has(void* aHolder) const;
@@ -105,13 +102,13 @@ class JSHolderMap {
 
  private:
   struct Entry {
-    void* mHolder;
-    nsScriptObjectTracer* mTracer;
+    void* mHolder = nullptr;
+    nsScriptObjectTracer* mTracer = nullptr;
 #ifdef DEBUG
-    JS::Zone* mZone;
+    JS::Zone* mZone = nullptr;
 #endif
 
-    Entry();
+    Entry() = default;
     Entry(void* aHolder, nsScriptObjectTracer* aTracer, JS::Zone* aZone);
   };
 
@@ -129,7 +126,7 @@ class JSHolderMap {
   bool RemoveEntry(EntryVector& aJSHolders, Entry* aEntry);
 
   // A map from a holder pointer to a pointer to an entry in a vector.
-  EntryMap mJSHolderMap;
+  EntryMap mJSHolderMap{256};
 
   // A vector of holders not associated with a particular zone or that can
   // contain pointers to GC things in more than one zone.
@@ -349,7 +346,7 @@ class CycleCollectedJSRuntime {
                        nsCycleCollectionTraversalCallback& aCb) const;
 
   virtual bool DescribeCustomObjects(JSObject* aObject, const JSClass* aClasp,
-                                     char (&aName)[72]) const {
+                                     char (&aName)[512]) const {
     return false;  // We did nothing.
   }
 
@@ -529,6 +526,7 @@ class CycleCollectedJSRuntime {
   // storage), because we do not want to keep it alive.  nsWrapperCache handles
   // this for us via its "object moved" handling.
   void NurseryWrapperAdded(nsWrapperCache* aCache);
+  void NurseryWrapperRemovedSlow(nsWrapperCache* aCache);
   void JSObjectsTenured(JS::GCContext* aGCContext);
 
   void DeferredFinalize(DeferredFinalizeAppendFunction aAppendFunc,
@@ -586,12 +584,19 @@ class CycleCollectedJSRuntime {
   using DeferredFinalizerTable = nsTHashMap<DeferredFinalizeFunction, void*>;
   DeferredFinalizerTable mDeferredFinalizerTable;
 
+  // Memoizes the last mDeferredFinalizerTable lookup. Must be cleared when the
+  // table is drained, which only happens in FinalizeDeferredThings().
+  DeferredFinalizeFunction mLastDeferredFinalizeFunction = nullptr;
+  void* mLastDeferredFinalizeData = nullptr;
+
   RefPtr<IncrementalFinalizeRunnable> mFinalizeRunnable;
 
   OOMState mOutOfMemoryState;
   OOMState mLargeAllocationFailureState;
 
-  static const size_t kSegmentSize = 512;
+  // Keeps sizeof(Segment) within mozjemalloc's largest bin size class (3840);
+  // past that each segment gets its own page run.
+  static const size_t kSegmentSize = 3800;
   using NurseryObjectsVector =
       SegmentedVector<nsWrapperCache*, kSegmentSize, InfallibleAllocPolicy>;
   NurseryObjectsVector mNurseryObjects;

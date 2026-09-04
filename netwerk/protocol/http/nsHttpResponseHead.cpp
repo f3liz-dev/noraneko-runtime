@@ -1,23 +1,22 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "nsHttpResponseHead.h"
 
-#include "mozilla/dom/MimeType.h"
+#include <algorithm>
+
+#include "CacheControlParser.h"
+#include "HttpLog.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
-#include "nsHttpResponseHead.h"
+#include "mozilla/dom/MimeType.h"
+#include "nsCRT.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsPrintfCString.h"
-#include "prtime.h"
-#include "nsCRT.h"
 #include "nsURLHelper.h"
-#include "CacheControlParser.h"
-#include <algorithm>
+#include "prtime.h"
 
 namespace mozilla {
 namespace net {
@@ -106,7 +105,7 @@ nsHttpResponseHead::nsHttpResponseHead(nsHttpResponseHead&& aOther) {
   mCacheControlMaxAgeSet = std::move(other.mCacheControlMaxAgeSet);
   mCacheControlMaxAge = std::move(other.mCacheControlMaxAge);
   mPragmaNoCache = std::move(other.mPragmaNoCache);
-  mInVisitHeaders = false;
+  mInVisitHeaders = 0;
 }
 
 HttpVersion nsHttpResponseHead::Version() const {
@@ -290,8 +289,10 @@ void nsHttpResponseHead::Flatten(nsACString& buf, bool pruneTransients) {
     buf.AppendLiteral("1.0 ");
   }
 
-  buf.Append(nsPrintfCString("%u", unsigned(mStatus)) + " "_ns + mStatusText +
-             "\r\n"_ns);
+  buf.AppendInt(mStatus);
+  buf.Append(' ');
+  buf.Append(mStatusText);
+  buf.AppendLiteral("\r\n");
 
   mHeaders.Flatten(buf, false, pruneTransients);
 }
@@ -1200,9 +1201,9 @@ nsresult nsHttpResponseHead::ParseResponseContentLength(
 nsresult nsHttpResponseHead::VisitHeaders(
     nsIHttpHeaderVisitor* visitor, nsHttpHeaderArray::VisitorFilter filter) {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
-  mInVisitHeaders = true;
+  ++mInVisitHeaders;
   nsresult rv = mHeaders.VisitHeaders(visitor, filter);
-  mInVisitHeaders = false;
+  --mInVisitHeaders;
   return rv;
 }
 
@@ -1241,9 +1242,9 @@ NS_IMPL_ISUPPORTS(ContentTypeOptionsVisitor, nsIHttpHeaderVisitor)
 nsresult nsHttpResponseHead::GetOriginalHeader(const nsHttpAtom& aHeader,
                                                nsIHttpHeaderVisitor* aVisitor) {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
-  mInVisitHeaders = true;
+  ++mInVisitHeaders;
   nsresult rv = mHeaders.GetOriginalHeader(aHeader, aVisitor);
-  mInVisitHeaders = false;
+  --mInVisitHeaders;
   return rv;
 }
 

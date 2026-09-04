@@ -29,6 +29,8 @@ task-defaults:
     worker-type: b-linux
     worker:
         env:
+            # This not strictly needed by all tasks but doesn't hurt either
+            DEBUGINFOD_MAXTIME: "30"
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
 
 tasks:
@@ -51,6 +53,7 @@ tasks:
             docker-image: {in-tree: system-symbols-mac}
             max-run-time: 28800
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh
@@ -75,6 +78,7 @@ tasks:
             docker-image: {in-tree: system-symbols-win}
             max-run-time: 3600
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh
@@ -96,6 +100,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh arch
@@ -120,6 +125,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh debian
@@ -144,6 +150,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh firefox-snap
@@ -168,6 +175,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh firefox-flatpak
@@ -192,6 +200,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh gnome-sdk-snap
@@ -216,6 +225,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh fedora
@@ -240,6 +250,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh opensuse
@@ -264,6 +275,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 18000
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh ubuntu
@@ -288,6 +300,7 @@ tasks:
             docker-image: {in-tree: system-symbols-win-gfx}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh
@@ -314,6 +327,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh alpine
@@ -338,11 +352,37 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh thunderbird-snap
         treeherder:
             symbol: tbird-symbols-snap
+        fetches:
+            fetch:
+                - symbol-scrapers
+    nixos:
+        description: Extract NixOS system symbols found in crashreports
+        attributes:
+            build_platform: nixos
+        index:
+            product: system-symbols
+            job-name: nixos
+            type: generic
+        worker:
+            artifacts:
+                - name: public/build
+                  type: directory
+                  path: /builds/worker/artifacts/
+            docker-image: {in-tree: system-symbols-linux-scraper}
+            max-run-time: 14400
+        run:
+            clone-with: hg
+            using: run-task
+            command: >-
+                ./run.sh nixos
+        treeherder:
+            symbol: sys-symbols-nixos
         fetches:
             fetch:
                 - symbol-scrapers
@@ -362,6 +402,7 @@ tasks:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 14400
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 ./run.sh raspberry-pi-os

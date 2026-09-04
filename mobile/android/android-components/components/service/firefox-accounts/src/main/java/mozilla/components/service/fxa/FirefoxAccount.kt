@@ -4,7 +4,6 @@
 
 package mozilla.components.service.fxa
 
-import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,12 +13,10 @@ import mozilla.appservices.fxaclient.FxaClient
 import mozilla.appservices.fxaclient.FxaEvent
 import mozilla.appservices.fxaclient.FxaState
 import mozilla.components.concept.base.crash.CrashReporting
-import mozilla.components.concept.sync.AuthFlowUrl
 import mozilla.components.concept.sync.DeviceConstellation
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.StatePersistenceCallback
-import mozilla.components.concept.sync.UserData
 import mozilla.components.support.base.log.logger.Logger
 
 typealias PersistCallback = mozilla.appservices.fxaclient.FxaClient.PersistCallback
@@ -105,41 +102,15 @@ class FirefoxAccount internal constructor(
     internal fun simulateTemporaryAuthTokenIssue() = inner.simulateTemporaryAuthTokenIssue()
     internal fun simulatePermanentAuthTokenIssue() = inner.simulatePermanentAuthTokenIssue()
 
-    override suspend fun beginOAuthFlow(
-        scopes: Set<String>,
-        entryPoint: FxAEntryPoint,
-    ) = withContext(scope.coroutineContext) {
-        handleFxaExceptions(logger, "begin oauth flow", { null }) {
-            val url = inner.beginOAuthFlow(scopes.toTypedArray(), entryPoint.entryName)
-            val state = url.toUri().getQueryParameter("state")!!
-            AuthFlowUrl(state, url)
-        }
-    }
-
-    override suspend fun beginPairingFlow(
-        pairingUrl: String,
-        scopes: Set<String>,
-        entryPoint: FxAEntryPoint,
-    ) = withContext(scope.coroutineContext) {
-        // Eventually we should specify this as a param here, but for now, let's
-        // use a generic value (it's used only for server-side telemetry, so the
-        // actual value doesn't matter much)
-        handleFxaExceptions(logger, "begin oauth pairing flow", { null }) {
-            val url = inner.beginPairingFlow(pairingUrl, scopes.toTypedArray(), entryPoint.entryName)
-            val state = url.toUri().getQueryParameter("state")!!
-            AuthFlowUrl(state, url)
-        }
-    }
-
     override suspend fun getProfile(ignoreCache: Boolean) = withContext(scope.coroutineContext) {
         handleFxaExceptions(logger, "getProfile", { null }) {
             inner.getProfile(ignoreCache).into()
         }
     }
 
-    override suspend fun setUserData(userData: UserData) {
-        handleFxaExceptions(logger, "setUserData", { null }) {
-            inner.setUserData(userData.into())
+    override suspend fun handleWebChannelLogin(jsonPayload: String) {
+        handleFxaExceptions(logger, "handleWebChannelLogin", { null }) {
+            inner.handleWebChannelLogin(jsonPayload)
         }
     }
 
@@ -155,16 +126,8 @@ class FirefoxAccount internal constructor(
         }
     }
 
-    override fun getSessionToken(): String? {
-        return try {
-            // This is awkward, yes. Underlying method simply reads some data from in-memory state, and yet it throws
-            // in case that data isn't there. See https://github.com/mozilla/application-services/issues/2202.
-            inner.getSessionToken()
-        } catch (e: FxaPanicException) {
-            throw e
-        } catch (e: FxaException) {
-            null
-        }
+    override fun getSignedInUserForWebChannel(): String? {
+        return inner.getSignedInUserForWebChannel()
     }
 
     override suspend fun getTokenServerEndpointURL() = withContext(scope.coroutineContext) {
@@ -188,12 +151,6 @@ class FirefoxAccount internal constructor(
      */
     fun getConnectionSuccessURL(): String {
         return inner.getConnectionSuccessURL()
-    }
-
-    override suspend fun completeOAuthFlow(code: String, state: String) = withContext(scope.coroutineContext) {
-        handleFxaExceptions(logger, "complete oauth flow") {
-            inner.completeOAuthFlow(code, state)
-        }
     }
 
     override suspend fun getAccessToken(singleScope: String) = withContext(scope.coroutineContext) {

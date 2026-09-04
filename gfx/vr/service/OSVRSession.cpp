@@ -1,25 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OSVRSession.h"
-#include "prenv.h"
-#include "nsString.h"
+
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/SharedLibrary.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/gfx/Quaternion.h"
+#include "nsString.h"
+#include "prenv.h"
 
 #if defined(XP_WIN)
 #  include <d3d11.h>
+
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #endif  // defined(XP_WIN)
 
-#ifndef M_PI
-#  define M_PI 3.14159265358979323846
-#endif
+#include <numbers>
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -189,10 +187,10 @@ fail:
 mozilla::gfx::VRFieldOfView SetFromTanRadians(double left, double right,
                                               double bottom, double top) {
   mozilla::gfx::VRFieldOfView fovInfo;
-  fovInfo.leftDegrees = atan(left) * 180.0 / M_PI;
-  fovInfo.rightDegrees = atan(right) * 180.0 / M_PI;
-  fovInfo.upDegrees = atan(top) * 180.0 / M_PI;
-  fovInfo.downDegrees = atan(bottom) * 180.0 / M_PI;
+  fovInfo.leftDegrees = atan(left) * 180.0 / std::numbers::pi;
+  fovInfo.rightDegrees = atan(right) * 180.0 / std::numbers::pi;
+  fovInfo.upDegrees = atan(top) * 180.0 / std::numbers::pi;
+  fovInfo.downDegrees = atan(bottom) * 180.0 / std::numbers::pi;
   return fovInfo;
 }
 

@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GLImages.h"
+
+#include "GLBlitHelper.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
-#include "ScopedGLHelpers.h"
 #include "GLImages.h"
-#include "GLBlitHelper.h"
-#include "GLReadTexImageHelper.h"
 #include "GLLibraryEGL.h"
+#include "GLReadTexImageHelper.h"
+#include "ScopedGLHelpers.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/LayersSurfaces.h"
 

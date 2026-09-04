@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,20 +13,29 @@
 #include "MediaTrackGraph.h"
 #include "Tracing.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/AudioDestinationNodeBinding.h"
 #include "mozilla/dom/BaseAudioContextBinding.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/ContentMediaController.h"
+#include "mozilla/dom/MediaControlUtils.h"
 #include "mozilla/dom/OfflineAudioCompletionEvent.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/glean/DomMediaMetrics.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
+#include "nsPIDOMWindowInlines.h"
 
 extern mozilla::LazyLogModule gAudioChannelLog;
 
 #define AUDIO_CHANNEL_LOG(msg, ...) \
-  MOZ_LOG(gAudioChannelLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gAudioChannelLog, LogLevel::Debug, msg, ##__VA_ARGS__)
+
+#define MEDIA_CONTROL_LOG(msg, ...) \
+  MOZ_LOG_FMT(gMediaControlLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla::dom {
 
@@ -271,6 +278,159 @@ class DestinationNodeEngine final : public AudioNodeEngine {
   bool mIsAudible;
 };
 
+// Registers the owning AudioContext as an uncontrollable receiver with
+// ContentMediaAgent, forwards audibility transitions, and reacts to media
+// control keys. The owning AudioDestinationNode outlives this listener
+// (Shutdown() runs from Close() before destruction), so the back-reference
+// is always valid until Shutdown.
+class AudioDestinationNode::MediaSharedKeysListener final
+    : public ContentMediaControlKeyReceiver {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(MediaSharedKeysListener, override)
+
+  // AudioContext defaults to the "ambient" audio session type per
+  // https://w3c.github.io/audio-session/#audiocontext-sink
+  static constexpr AudioSessionType kSessionType = AudioSessionType::Ambient;
+
+  explicit MediaSharedKeysListener(AudioDestinationNode& aDestination)
+      : mDestination(aDestination) {
+    MOZ_ASSERT(NS_IsMainThread());
+  }
+
+  void Start() {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(!mAgent, "Start() must not be retried");
+    nsPIDOMWindowInner* window = mDestination.GetOwnerWindow();
+    BrowsingContext* bc = window ? window->GetBrowsingContext() : nullptr;
+    if (!bc) {
+      MEDIA_CONTROL_LOG(
+          "MediaSharedKeysListener {} Start: no browsing context, skip",
+          fmt::ptr(this));
+      return;
+    }
+    mAgent = ContentMediaAgent::Get(bc);
+    if (!mAgent) {
+      MEDIA_CONTROL_LOG(
+          "MediaSharedKeysListener {} Start: no ContentMediaAgent, skip",
+          fmt::ptr(this));
+      return;
+    }
+    mBrowsingContextId = bc->Id();
+    mAgent->AddReceiver(this, ControlType::eUncontrollable);
+    MEDIA_CONTROL_LOG(
+        "MediaSharedKeysListener {} Start: registered as uncontrollable "
+        "receiver in BC {}",
+        fmt::ptr(this), mBrowsingContextId);
+  }
+
+  void NotifyAudibleChanged(bool aAudible) {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (!mAgent || mIsAudible == aAudible) {
+      // mAgent can be null when Start() bailed out (no BC / no agent) — those
+      // contexts simply don't participate in audio focus.
+      return;
+    }
+    mIsAudible = aAudible;
+    mAgent->NotifyMediaAudibleChanged(
+        mBrowsingContextId,
+        aAudible ? MediaAudibleState::eAudible : MediaAudibleState::eInaudible,
+        ControlType::eUncontrollable, kSessionType);
+    MEDIA_CONTROL_LOG("MediaSharedKeysListener {} Reported {} in BC {}",
+                      fmt::ptr(this), aAudible ? "audible" : "inaudible",
+                      mBrowsingContextId);
+  }
+
+  void Shutdown() {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(!mShutdown, "Shutdown() must not be retried");
+    mShutdown = true;
+    if (!mAgent) {
+      // Start() bailed out (no BC or no agent at the time); nothing to undo.
+      MEDIA_CONTROL_LOG(
+          "MediaSharedKeysListener {} Shutdown: never registered, skip",
+          fmt::ptr(this));
+      return;
+    }
+    if (mIsAudible) {
+      mAgent->NotifyMediaAudibleChanged(
+          mBrowsingContextId, MediaAudibleState::eInaudible,
+          ControlType::eUncontrollable, kSessionType);
+      mIsAudible = false;
+    }
+    mAgent->RemoveReceiver(this, ControlType::eUncontrollable);
+    mAgent = nullptr;
+    MEDIA_CONTROL_LOG(
+        "MediaSharedKeysListener {} Shutdown: unregistered from BC {}",
+        fmt::ptr(this), mBrowsingContextId);
+  }
+
+  bool IsPlaying() const override {
+    AudioContext* ctx = mDestination.Context();
+    return ctx && ctx->State() == AudioContextState::Running;
+  }
+
+  void HandleMediaKey(MediaControlKey aKey,
+                      const MediaControlActionParams& aParams) override {
+    MOZ_ASSERT(NS_IsMainThread());
+    MOZ_ASSERT(!mShutdown, "HandleMediaKey must not be called after Shutdown");
+    MEDIA_CONTROL_LOG("MediaSharedKeysListener {} HandleMediaKey '{}'",
+                      fmt::ptr(this), GetEnumString(aKey).get());
+    AudioContext* ctx = mDestination.Context();
+    if (!ctx) {
+      return;
+    }
+    if (aKey == MediaControlKey::Stop &&
+        StaticPrefs::media_audioFocus_webaudio_enabled()) {
+      ctx->SuspendFromMediaControl();
+    }
+    // TODO (Bug 1962876): implement Setvolume/Mute/Unmute for Web Audio.
+  }
+
+  void SuspendForInterrupt() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    AudioContext* ctx = mDestination.Context();
+    const bool willSuspend = ctx &&
+                             ctx->State() == AudioContextState::Running &&
+                             StaticPrefs::media_audioFocus_webaudio_enabled();
+    MEDIA_CONTROL_LOG(
+        "MediaSharedKeysListener {} SuspendForInterrupt in BC {}, suspend={}",
+        fmt::ptr(this), mBrowsingContextId, willSuspend);
+    if (willSuspend) {
+      // TODO(bug 2039104): drive the spec "interrupted" AudioContextState here
+      // instead of reusing the page-facing "suspended" state.
+      ctx->SuspendFromMediaControl();
+      mSuspendedByInterrupt = true;
+    }
+  }
+
+  void ResumeFromInterrupt() override {
+    MOZ_ASSERT(NS_IsMainThread());
+    AudioContext* ctx = mDestination.Context();
+    const bool willResume = mSuspendedByInterrupt && ctx &&
+                            ctx->State() == AudioContextState::Suspended;
+    MEDIA_CONTROL_LOG(
+        "MediaSharedKeysListener {} ResumeFromInterrupt in BC {}, resume={}",
+        fmt::ptr(this), mBrowsingContextId, willResume);
+    if (willResume) {
+      ctx->ResumeFromMediaControl();
+      glean::media_audio_focus::resume_decision.Get("web_audio"_ns).Add(1);
+    }
+    mSuspendedByInterrupt = false;
+  }
+
+ private:
+  ~MediaSharedKeysListener() = default;
+
+  AudioDestinationNode& mDestination;
+  RefPtr<ContentMediaAgent> mAgent;
+  uint64_t mBrowsingContextId = 0;
+  bool mIsAudible = false;
+  bool mShutdown = false;
+  // True while this listener suspended its AudioContext for an audio-focus
+  // interruption, so ResumeFromInterrupt only resumes a context it suspended.
+  bool mSuspendedByInterrupt = false;
+};
+
 NS_IMPL_CYCLE_COLLECTION_INHERITED(AudioDestinationNode, AudioNode,
                                    mAudioChannelAgent, mOfflineRenderingPromise)
 
@@ -318,13 +478,20 @@ void AudioDestinationNode::Init() {
   // that, initializing the agent would cause an unexpected destroy of the
   // destination node when destroying the local weak reference inside
   // `InitWithWeakCallback()`.
-  if (!mIsOffline) {
-    CreateAndStartAudioChannelAgent();
+  if (mIsOffline) {
+    return;
   }
+  CreateAndStartAudioChannelAgent();
+  mSharedKeysListener = new MediaSharedKeysListener(*this);
+  mSharedKeysListener->Start();
 }
 
 void AudioDestinationNode::Close() {
   DestroyAudioChannelAgentIfExists();
+  if (mSharedKeysListener) {
+    mSharedKeysListener->Shutdown();
+    mSharedKeysListener = nullptr;
+  }
   ReleaseAudioWakeLockIfExists();
 }
 
@@ -519,9 +686,9 @@ AudioDestinationNode::WindowVolumeChanged(float aVolume, bool aMuted) {
   }
 
   AUDIO_CHANNEL_LOG(
-      "AudioDestinationNode %p WindowVolumeChanged, "
-      "aVolume = %f, aMuted = %s\n",
-      this, aVolume, aMuted ? "true" : "false");
+      "AudioDestinationNode {} WindowVolumeChanged, "
+      "aVolume = {}, aMuted = {}\n",
+      fmt::ptr(this), aVolume, aMuted ? "true" : "false");
 
   mAudioChannelVolume = aMuted ? 0.0f : aVolume;
   mTrack->SetAudioOutputVolume(nullptr, mAudioChannelVolume);
@@ -543,8 +710,8 @@ AudioDestinationNode::WindowSuspendChanged(nsSuspendedTypes aSuspend) {
   mAudioChannelDisabled = shouldDisable;
 
   AUDIO_CHANNEL_LOG(
-      "AudioDestinationNode %p WindowSuspendChanged, shouldDisable = %d\n",
-      this, mAudioChannelDisabled);
+      "AudioDestinationNode {} WindowSuspendChanged, shouldDisable = {}\n",
+      fmt::ptr(this), mAudioChannelDisabled);
 
   DisabledTrackMode disabledMode = mAudioChannelDisabled
                                        ? DisabledTrackMode::SILENCE_BLACK
@@ -619,8 +786,8 @@ void AudioDestinationNode::NotifyDataAudibleStateChanged(bool aAudible) {
   MOZ_ASSERT(!mIsOffline);
 
   AUDIO_CHANNEL_LOG(
-      "AudioDestinationNode %p NotifyDataAudibleStateChanged, audible=%d", this,
-      aAudible);
+      "AudioDestinationNode {} NotifyDataAudibleStateChanged, audible={}",
+      fmt::ptr(this), aAudible);
 
   mIsDataAudible = aAudible;
   UpdateFinalAudibleStateIfNeeded(AudibleChangedReasons::eDataAudibleChanged);
@@ -636,12 +803,15 @@ void AudioDestinationNode::UpdateFinalAudibleStateIfNeeded(
   if (mFinalAudibleState == newAudibleState) {
     return;
   }
-  AUDIO_CHANNEL_LOG("AudioDestinationNode %p Final audible state=%d", this,
-                    newAudibleState);
+  AUDIO_CHANNEL_LOG("AudioDestinationNode {} Final audible state={}",
+                    fmt::ptr(this), newAudibleState);
   mFinalAudibleState = newAudibleState;
   AudibleState state =
       mFinalAudibleState ? AudibleState::eAudible : AudibleState::eNotAudible;
   mAudioChannelAgent->NotifyStartedAudible(state, aReason);
+  if (mSharedKeysListener) {
+    mSharedKeysListener->NotifyAudibleChanged(mFinalAudibleState);
+  }
   if (mFinalAudibleState) {
     CreateAudioWakeLockIfNeeded();
   } else {
@@ -660,3 +830,6 @@ bool AudioDestinationNode::IsAudible() const {
 }
 
 }  // namespace mozilla::dom
+
+#undef MEDIA_CONTROL_LOG
+#undef AUDIO_CHANNEL_LOG

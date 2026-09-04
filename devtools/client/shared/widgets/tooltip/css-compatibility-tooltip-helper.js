@@ -15,6 +15,10 @@ loader.lazyRequireGetter(
   true
 );
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs"
+);
+
 class CssCompatibilityTooltipHelper {
   constructor() {
     this.addTab = this.addTab.bind(this);
@@ -122,19 +126,17 @@ class CssCompatibilityTooltipHelper {
    * This is the learn more message element linking to the MDN documentation
    * for the particular incompatible CSS declaration.
    * The element returned is:
-   *   <p data-l10n-id="css-compatibility-learn-more-message"
-   *       data-l10n-args="{&quot;property&quot;:&quot;user-select&quot;}">
-   *     <span data-l10n-name="link" class="link"></span>
+   *   <p>
+   *     <a data-l10n-id="devtools-tooltip-learn-more" class="link learn-more-link mdn-link" href="..."></a>
    *   </p>
    */
-  #getLearnMoreMessage(doc, { rootProperty }) {
-    const learnMoreMessage = this.#createElement(doc, "p", [], {
-      "data-l10n-id": "css-compatibility-learn-more-message",
-      "data-l10n-args": JSON.stringify({ rootProperty }),
-    });
+  #getLearnMoreMessage(doc, { url }) {
+    const learnMoreMessage = this.#createElement(doc, "p");
+    const classList = url ? ["link", "learn-more-link", "mdn-link"] : ["link"];
     learnMoreMessage.appendChild(
-      this.#createElement(doc, "span", ["link"], {
-        "data-l10n-name": "link",
+      this.#createElement(doc, "a", classList, {
+        "data-l10n-id": "devtools-tooltip-learn-more",
+        href: this.#currentUrl,
       })
     );
 
@@ -185,42 +187,42 @@ class CssCompatibilityTooltipHelper {
    *     <strong></strong>
    *   </p>
    *   <browser-list />
-   *   <p data-l10n-id="css-compatibility-learn-more-message"
-   *       data-l10n-args="{&quot;property&quot;:&quot;user-select&quot;}">
-   *     <span data-l10n-name="link" class="link"></span>
-   *     <strong></strong>
+   *   <p>
+   *     <a data-l10n-id="devtools-tooltip-learn-more" class="link learn-more-link mdn-link" href="..."></a>
    *   </p>
    * </div>
    *
    * @param {object} data
-   *        An object in the following format: {
-   *          // Type of compatibility issue
-   *          type: <string>,
-   *          // The CSS declaration that has compatibility issues
-   *          // The raw CSS declaration name that has compatibility issues
-   *          declaration: <string>,
-   *          property: <string>,
-   *          // Alias to the given CSS property
-   *          alias: <Array>,
-   *          // Link to MDN documentation for the particular CSS rule
-   *          url: <string>,
-   *          // Link to the spec for the particular CSS rule
-   *          specUrl: <string>,
-   *          deprecated: <boolean>,
-   *          experimental: <boolean>,
-   *          // An array of all the browsers that don't support the given CSS rule
-   *          unsupportedBrowsers: <Array>,
-   *        }
+   * @param {string} data.type
+   *        Type of compatibility issue
+   * @param {string} data.declaration
+   *        The CSS declaration that has compatibility issues
+   * @param {string} data.property
+   * @param {Array} data.alias
+   *        Alias to the given CSS property
+   * @param {string} data.url
+   *        Link to MDN documentation for the particular CSS rule
+   * @param {string|Array<string>} data.specUrl
+   *        Link to the spec(s) for the particular CSS rule
+   * @param {boolean} data.deprecated
+   * @param {boolean} data.experimental
+   * @param {Array} data.unsupportedBrowsers
+   *        An array of all the browsers that don't support the given CSS rule
    * @param {HTMLTooltip} tooltip
    *        The tooltip we are targetting.
    */
   getTemplate(data, tooltip) {
     const { doc } = tooltip;
-    const { specUrl, url, unsupportedBrowsers } = data;
+    let { specUrl, url, unsupportedBrowsers } = data;
 
     this.#currentTooltip = tooltip;
+    // Pick the first item in specUrl if it's an array.
+    // TODO: Eventually, we should redesign the tooltip to show all the spec URLs (Bug 2020974)
+    if (Array.isArray(specUrl)) {
+      specUrl = specUrl[0];
+    }
     this.#currentUrl = url
-      ? `${url}?utm_source=devtools&utm_medium=inspector-css-compatibility&utm_campaign=default`
+      ? `${url}?${getMdnLinkParams("inspector-css-compatibility")}`
       : specUrl;
     const templateNode = this.#createElement(doc, "template");
 
@@ -254,11 +256,12 @@ class CssCompatibilityTooltipHelper {
    */
   addTab(event) {
     // The XUL panel swallows click events so handlers can't be added directly
-    // to the link span. As a workaround we listen to all click events in the
-    // panel and if a link span is clicked we proceed.
-    if (event.target.className !== "link") {
+    // to the link. As a workaround we listen to all click events in the
+    // panel and if a link is clicked we proceed.
+    if (!event.target.classList.contains("link")) {
       return;
     }
+    event.preventDefault();
 
     const tooltip = this.#currentTooltip;
     tooltip.hide();

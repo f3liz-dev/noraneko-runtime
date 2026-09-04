@@ -6,9 +6,10 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 const BASE_URL = "https://example.com/";
 
 // Use a different origin so HTTP doesn't upgrade to HTTPS.
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const BASE_URL_HTTP = "http://mochi.test:8888/";
 const HIDDEN_URI = "about:about";
+const FILE_URI = "file:///";
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -92,7 +93,7 @@ async function taskbarTabsPageAction(win, destWin) {
   let tab = (await tabOpenPromise).target;
 
   is(
-    tab.ownerGlobal,
+    tab.documentGlobal,
     destWin,
     "Shoud've reverted back to secondWin, as it is most recently focused"
   );
@@ -231,7 +232,7 @@ add_task(async function revertToMostRecent() {
   ]);
 
   await BrowserTestUtils.closeWindow(firstWin);
-  secondWin.focus();
+  await SimpleTest.promiseFocus(secondWin);
 
   // Revert back to regular window
   await taskbarTabsPageAction(taskbarTabWindow, secondWin);
@@ -249,6 +250,8 @@ add_task(async function testVariousVisibilityChanges() {
     [BASE_URL, BASE_URL_HTTP, true, true],
     [HIDDEN_URI, BASE_URL, false, true],
     [HIDDEN_URI, BASE_URL_HTTP, false, true],
+    [FILE_URI, BASE_URL, false, true],
+    [BASE_URL, FILE_URI, true, false],
   ];
 
   for (const args of argsList) {
@@ -271,7 +274,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aFirstVisible,
-    `Page action is ${aFirstVisible ? "" : "not "}hidden on ${getURIScheme(aFrom)} new tab`
+    `Page action is ${aFirstVisible ? "not " : ""}hidden on ${getURIScheme(aFrom)} new tab`
   );
 
   locationChange = BrowserTestUtils.waitForLocationChange(gBrowser, aTo);
@@ -281,7 +284,7 @@ async function testVisibilityChange(aFrom, aTo, aFirstVisible, aSecondVisible) {
   is(
     element.hidden,
     !aSecondVisible,
-    `Page action is ${aSecondVisible ? "" : "not "}hidden on ${getURIScheme(aTo)} reused tab`
+    `Page action is ${aSecondVisible ? "not " : ""}hidden on ${getURIScheme(aTo)} reused tab`
   );
 
   BrowserTestUtils.removeTab(tab);

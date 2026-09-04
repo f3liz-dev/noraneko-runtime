@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/Report.h"
+#include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/dom/ReportingObserver.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
@@ -68,6 +67,20 @@ bool nsIGlobalObject::IsScriptForbidden(JSObject* aCallback,
   }
 
   return false;
+}
+
+bool nsIGlobalObject::CanRunJSMicroTask(JSObject* aCallbackGlobal) const {
+  auto* principal = PrincipalOrNull();
+  if (principal && principal->IsSystemPrincipal()) {
+    return !IsScriptForbidden(aCallbackGlobal, false);
+  }
+
+  if (NS_IsMainThread()) {
+    return xpc::Scriptability::AllowedIfExists(aCallbackGlobal);
+  }
+
+  // For Workers continue skipping tasks when the worker is dying.
+  return !mIsDying;
 }
 
 nsIGlobalObject::~nsIGlobalObject() {
@@ -134,6 +147,10 @@ void nsIGlobalObject::UnlinkObjectsInGlobal() {
     }
   }
 
+  // Will queue a task if not on main thread, as should be the case for workers.
+  mozilla::dom::ReportDeliver::RemoveGlobalEndpoints(
+      reinterpret_cast<uintptr_t>(this));
+
   ClearReports();
   mReportingObservers.Clear();
   mCountQueuingStrategySizeFunction = nullptr;
@@ -142,14 +159,6 @@ void nsIGlobalObject::UnlinkObjectsInGlobal() {
 
 void nsIGlobalObject::TraverseObjectsInGlobal(
     nsCycleCollectionTraversalCallback& cb) {
-  // Currently we only store BlobImpl objects off the the main-thread and they
-  // are not CCed.
-  if (!mHostObjectURIs.IsEmpty() && NS_IsMainThread()) {
-    for (uint32_t index = 0; index < mHostObjectURIs.Length(); ++index) {
-      BlobURLProtocolHandler::Traverse(mHostObjectURIs[index], cb);
-    }
-  }
-
   nsIGlobalObject* tmp = this;
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportBuffer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportingObservers)
@@ -168,7 +177,7 @@ void nsIGlobalObject::RemoveGlobalTeardownObserver(
     GlobalTeardownObserver* aObject) {
   MOZ_DIAGNOSTIC_ASSERT(aObject);
   MOZ_ASSERT(aObject->isInList());
-  MOZ_ASSERT(aObject->GetOwnerGlobal() == this);
+  MOZ_ASSERT(aObject->GetRelevantGlobal() == this);
   aObject->remove();
 }
 
@@ -201,7 +210,7 @@ void nsIGlobalObject::ForEachGlobalTeardownObserver(
   for (auto& target : targetList) {
     // Check to see if a previous iteration's callback triggered the removal
     // of this target as a side-effect.  If it did, then just ignore it.
-    if (target->GetOwnerGlobal() != this) {
+    if (target->GetRelevantGlobal() != this) {
       continue;
     }
     aFunc(target, &done);
@@ -218,7 +227,7 @@ void nsIGlobalObject::DisconnectGlobalTeardownObservers() {
 
         // Calling DisconnectFromOwner() should result in
         // RemoveGlobalTeardownObserver() being called.
-        MOZ_DIAGNOSTIC_ASSERT(aTarget->GetOwnerGlobal() != this);
+        MOZ_DIAGNOSTIC_ASSERT(aTarget->GetRelevantGlobal() != this);
       });
 }
 
@@ -517,9 +526,8 @@ bool nsIGlobalObject::IsRFPTargetActive(const nsAString& aTargetName,
 }
 
 void nsIGlobalObject::ReportToConsole(
-    uint32_t aErrorFlags, const nsCString& aCategory,
-    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
-    const nsTArray<nsString>& aParams,
+    uint32_t aErrorFlags, const nsCString& aCategory, PropertiesFile aFile,
+    const nsCString& aMessageName, const nsTArray<nsString>& aParams,
     const mozilla::SourceLocation& aLocation) {
   // We pass nullptr for the document because nsGlobalWindowInner handles the
   // case where it should be non-null.  We also expect the worker impl to

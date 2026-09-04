@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,10 +42,16 @@ class MockMediaTrackDemuxer : public MediaTrackDemuxer {
       return CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
           extended.Type().AsString(), extended);
     });
+    // Mirror the base MediaTrackDemuxer default so tests that don't opt in are
+    // unaffected.
+    ON_CALL(*this, GetNextRandomAccessPoint)
+        .WillByDefault(testing::Return(NS_ERROR_NOT_IMPLEMENTED));
   }
 
   MOCK_METHOD(UniquePtr<TrackInfo>, GetInfo, (), (const, override));
   MOCK_METHOD(RefPtr<SeekPromise>, Seek, (const media::TimeUnit& aTime),
+              (override));
+  MOCK_METHOD(nsresult, GetNextRandomAccessPoint, (media::TimeUnit * aTime),
               (override));
   RefPtr<SamplesPromise> GetSamples(int32_t aNumSamples = 1) override {
     EXPECT_EQ(aNumSamples, 1) << "Multiple samples not implemented";

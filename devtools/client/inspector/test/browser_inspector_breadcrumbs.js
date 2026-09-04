@@ -47,6 +47,8 @@ const NODES = [
 ];
 
 add_task(async function () {
+  await pushPref("dom.select.customizable_select.enabled", true);
+
   const { inspector } = await openInspectorForURL(TEST_URI);
   const breadcrumbs = inspector.panelDoc.getElementById(
     "inspector-breadcrumbs"
@@ -156,10 +158,43 @@ async function testPseudoElements(inspector, container) {
   await checkBreadcrumbContent(
     backdropElement,
     ["html", "body", "dialog", "::backdrop"],
-    ":backdrop shows up in breadcrumb"
+    "::backdrop shows up in breadcrumb"
   );
 
-  info("Check rules on ::view-transition");
+  const selectNodeFront = await getNodeFront("select", inspector);
+  const selectChildren = await inspector.walker.children(selectNodeFront);
+  is(
+    selectChildren.nodes.length,
+    4,
+    "Expected number of children for the <select> element"
+  );
+  const pickerIconElement = selectChildren.nodes[3];
+  await checkBreadcrumbContent(
+    pickerIconElement,
+    ["html", "body", "select", "::picker-icon"],
+    "::picker-icon shows up in breadcrumb"
+  );
+
+  info("Check breadcrumb items for ::checkmark");
+  // The ::checkmark pseudo element only exists when the select is opened, so show the
+  // picker so we can see them
+  await showCustomizableSelectPicker(inspector, "select");
+
+  const optionNodeFront = await getNodeFront("option", inspector);
+  const optionChildren = await inspector.walker.children(optionNodeFront);
+  is(
+    optionChildren.nodes.length,
+    2,
+    "Expected number of children for the <option> element"
+  );
+  const checkmarkNodeFront = optionChildren.nodes[0];
+  await checkBreadcrumbContent(
+    checkmarkNodeFront,
+    ["html", "body", "select", "option", "::checkmark"],
+    "::checkmark shows up in breadcrumb"
+  );
+
+  info("Check breadcrumb items for ::view-transition");
   const htmlNodeFront = await getNodeFront("html", inspector);
   const onMarkupMutation = inspector.once("markupmutation");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {

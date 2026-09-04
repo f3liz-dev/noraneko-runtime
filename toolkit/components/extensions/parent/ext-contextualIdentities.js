@@ -6,7 +6,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
 });
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -26,46 +26,21 @@ const CONTAINER_PREF_INSTALL_DEFAULTS = {
 
 const CONTAINERS_ENABLED_SETTING_NAME = "privacy.containers";
 
-const CONTAINER_COLORS = new Map([
-  ["blue", "#37adff"],
-  ["turquoise", "#00c79a"],
-  ["green", "#51cd00"],
-  ["yellow", "#ffcb00"],
-  ["orange", "#ff9f00"],
-  ["red", "#ff613d"],
-  ["pink", "#ff4bda"],
-  ["purple", "#af51f5"],
-  ["toolbar", "#7c7c7d"],
-]);
-
-const CONTAINER_ICONS = new Set([
-  "briefcase",
-  "cart",
-  "circle",
-  "dollar",
-  "fence",
-  "fingerprint",
-  "gift",
-  "vacation",
-  "food",
-  "fruit",
-  "pet",
-  "tree",
-  "chill",
-]);
-
 function getContainerIcon(iconName) {
-  if (!CONTAINER_ICONS.has(iconName)) {
+  const iconUrl = ContextualIdentityService.getContainerIconURL(iconName);
+  if (!iconUrl) {
     throw new ExtensionError(`Invalid icon ${iconName} for container`);
   }
-  return `resource://usercontext-content/${iconName}.svg`;
+  return iconUrl;
 }
 
 function getContainerColor(colorName) {
-  if (!CONTAINER_COLORS.has(colorName)) {
+  colorName = ContextualIdentityService.resolveContainerColor(colorName);
+  const colorCode = ContextualIdentityService.getContainerColorCode(colorName);
+  if (!colorCode) {
     throw new ExtensionError(`Invalid color name ${colorName} for container`);
   }
-  return CONTAINER_COLORS.get(colorName);
+  return colorCode;
 }
 
 const convertIdentity = identity => {
@@ -145,10 +120,36 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
     };
   }
 
+  siteAssociationEventRegistrar() {
+    return ({ fire }) => {
+      let topic = "contextual-identity-site-association-changed";
+      let observer = subject => {
+        let { site, userContextId } = subject.wrappedJSObject;
+        let changeInfo = { site };
+        if (userContextId) {
+          changeInfo.cookieStoreId =
+            getCookieStoreIdForContainer(userContextId);
+        }
+        fire.async(changeInfo);
+      };
+
+      Services.obs.addObserver(observer, topic);
+      return {
+        unregister() {
+          Services.obs.removeObserver(observer, topic);
+        },
+        convert(_fire) {
+          fire = _fire;
+        },
+      };
+    };
+  }
+
   PERSISTENT_EVENTS = {
     onCreated: this.eventRegistrar("contextual-identity-created"),
     onUpdated: this.eventRegistrar("contextual-identity-updated"),
     onRemoved: this.eventRegistrar("contextual-identity-deleted"),
+    onSiteAssociationChanged: this.siteAssociationEventRegistrar(),
   };
 
   onStartup() {
@@ -204,6 +205,22 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
           return identities;
         },
 
+        async getSupportedColors() {
+          checkAPIEnabled();
+          return ContextualIdentityService.containerColors.map(color => ({
+            color,
+            colorCode: getContainerColor(color),
+          }));
+        },
+
+        async getSupportedIcons() {
+          checkAPIEnabled();
+          return ContextualIdentityService.containerIcons.map(icon => ({
+            icon,
+            iconUrl: getContainerIcon(icon),
+          }));
+        },
+
         async create(details) {
           // Lets prevent making containers that are not valid
           getContainerIcon(details.icon);
@@ -212,7 +229,7 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
           let identity = ContextualIdentityService.create(
             details.name,
             details.icon,
-            details.color
+            ContextualIdentityService.resolveContainerColor(details.color)
           );
           return convertIdentity(identity);
         },
@@ -240,7 +257,9 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
 
           if (details.color !== null) {
             getContainerColor(details.color);
-            identity.color = details.color;
+            identity.color = ContextualIdentityService.resolveContainerColor(
+              details.color
+            );
           }
 
           if (details.icon !== null) {
@@ -334,6 +353,68 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
           return convertedIdentity;
         },
 
+        async setSiteAssociation(details) {
+          checkAPIEnabled();
+          let containerId = getContainerForCookieStoreId(details.cookieStoreId);
+          if (!containerId) {
+            throw new ExtensionError(
+              `Invalid contextual identity: ${details.cookieStoreId}`
+            );
+          }
+
+          let site = ContextualIdentityService.normalizeSite(details.site);
+          if (!site) {
+            throw new ExtensionError(`Invalid site: ${details.site}`);
+          }
+
+          ContextualIdentityService.setSiteAssociation(site, containerId);
+        },
+
+        async removeSiteAssociation(details) {
+          checkAPIEnabled();
+          ContextualIdentityService.removeSiteAssociation(details.site);
+        },
+
+        async getSiteAssociation(details) {
+          checkAPIEnabled();
+          let site = ContextualIdentityService.normalizeSite(details.site);
+          if (!site) {
+            throw new ExtensionError(`Invalid site: ${details.site}`);
+          }
+
+          let containerId = ContextualIdentityService.getSiteAssociation(site);
+          if (!containerId) {
+            return null;
+          }
+
+          return {
+            site,
+            cookieStoreId: getCookieStoreIdForContainer(containerId),
+          };
+        },
+
+        async querySiteAssociations(details) {
+          checkAPIEnabled();
+          let filterId = 0;
+          if (details.cookieStoreId) {
+            filterId = getContainerForCookieStoreId(details.cookieStoreId);
+            if (!filterId) {
+              throw new ExtensionError(
+                `Invalid contextual identity: ${details.cookieStoreId}`
+              );
+            }
+          }
+
+          return ContextualIdentityService.getSiteAssociations(filterId).map(
+            association => ({
+              site: association.site,
+              cookieStoreId: getCookieStoreIdForContainer(
+                association.userContextId
+              ),
+            })
+          );
+        },
+
         onCreated: new EventManager({
           context,
           module: "contextualIdentities",
@@ -352,6 +433,13 @@ this.contextualIdentities = class extends ExtensionAPIPersistent {
           context,
           module: "contextualIdentities",
           event: "onRemoved",
+          extensionApi: this,
+        }).api(),
+
+        onSiteAssociationChanged: new EventManager({
+          context,
+          module: "contextualIdentities",
+          event: "onSiteAssociationChanged",
           extensionApi: this,
         }).api(),
       },

@@ -1,6 +1,3 @@
-
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -91,7 +88,8 @@ mozilla::dom::ReferrerPolicy nsIScriptElement::GetReferrerPolicy() {
 void nsIScriptElement::DetermineKindFromType(
     const mozilla::dom::Document* aOwnerDoc) {
   MOZ_ASSERT((mKind != ScriptKind::eModule) &&
-             (mKind != ScriptKind::eImportMap) && !mAsync && !mDefer &&
+             (mKind != ScriptKind::eImportMap) &&
+             (mKind != ScriptKind::eSpeculationRules) && !mAsync && !mDefer &&
              !mExternal);
 
   nsAutoString type;
@@ -108,6 +106,14 @@ void nsIScriptElement::DetermineKindFromType(
     // "importmap".
     if (type.LowerCaseEqualsASCII("importmap")) {
       mKind = ScriptKind::eImportMap;
+    }
+
+    // Step 12. Otherwise, if the script block's type string is an ASCII
+    // case-insensitive match for the string "speculationrules", then set el's
+    // type to "speculationrules".
+    if (mozilla::StaticPrefs::dom_speculation_rules_enabled() &&
+        type.LowerCaseEqualsASCII("speculationrules")) {
+      mKind = ScriptKind::eSpeculationRules;
     }
   }
 }

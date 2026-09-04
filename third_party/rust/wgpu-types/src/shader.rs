@@ -1,4 +1,4 @@
-use alloc::{borrow::Cow, string::String};
+use alloc::borrow::Cow;
 
 /// Describes how shader bound checks should be performed.
 #[derive(Copy, Clone, Debug)]
@@ -40,9 +40,22 @@ pub struct ShaderRuntimeChecks {
     ///   `getCandidateHitVertexPositions` or `rayQueryGetCandidateIntersection` is called
     /// - `rayQueryProceed` must have been called and have returned false before `rayQueryGetCommittedIntersection`
     ///   or `getCommittedHitVertexPositions` are called
-    ///
-    /// It is the aim that these cases will not cause UB if this is set to true, but currently this will still happen on DX12 and Metal.
+    /// - when calling `rayQueryInitialize`, the ray desc argument must not contain NaNs in any floating point
+    ///   values and must not contain Infs in any component of `dir`, `origin`, `tmin`
     pub ray_query_initialization_tracking: bool,
+
+    /// If false, task shaders will not validate that the mesh shader grid they dispatch is within legal limits.
+    pub task_shader_dispatch_tracking: bool,
+
+    /// If false, mesh shaders won't clamp the output primitives' vertex indices, which can lead to
+    /// undefined behavior and arbitrary memory access.
+    pub mesh_shader_primitive_indices_clamp: bool,
+
+    /// If false, integer division and modulo operations will use raw instructions
+    /// without guards against division by zero or signed integer overflow
+    /// (`INT_MIN / -1`). The caller **MUST** ensure that all divisors are non-zero
+    /// and that no signed overflow occurs.
+    pub int_div_checks: bool,
 }
 
 impl ShaderRuntimeChecks {
@@ -76,6 +89,9 @@ impl ShaderRuntimeChecks {
             bounds_checks: all_checks,
             force_loop_bounding: all_checks,
             ray_query_initialization_tracking: all_checks,
+            task_shader_dispatch_tracking: all_checks,
+            mesh_shader_primitive_indices_clamp: all_checks,
+            int_div_checks: all_checks,
         }
     }
 }
@@ -86,29 +102,41 @@ impl Default for ShaderRuntimeChecks {
     }
 }
 
+/// Describes a single entry point in a passthrough shader descriptor.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PassthroughShaderEntryPoint<'a> {
+    /// The name of the entry point. Only used in validation and for GLSL or DXIL.
+    pub name: Cow<'a, str>,
+    /// Number of workgroups in each dimension x, y and z. Only used for metal with
+    /// compute-like shader stages.
+    pub workgroup_size: (u32, u32, u32),
+}
+
 /// Descriptor for a shader module given by any of several sources.
 /// These shaders are passed through directly to the underlying api.
 /// At least one shader type that may be used by the backend must be `Some` or a panic is raised.
+///
+/// Note that you shouldn't expect this to work with bindings except on SPIR-V, and even on SPIR-V
+/// there will be some caveats.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CreateShaderModuleDescriptorPassthrough<'a, L> {
-    /// Entrypoint. Unused for Spir-V.
-    pub entry_point: String,
     /// Debug label of the shader module. This will show up in graphics debuggers for easy identification.
     pub label: L,
-    /// Number of workgroups in each dimension x, y and z. Unused for Spir-V.
-    pub num_workgroups: (u32, u32, u32),
-    /// Runtime checks that should be enabled.
-    pub runtime_checks: ShaderRuntimeChecks,
+    /// The list of entry points and their corresponding workgroup sizes.
+    pub entry_points: Cow<'a, [PassthroughShaderEntryPoint<'a>]>,
 
     /// Binary SPIR-V data, in 4-byte words.
     pub spirv: Option<Cow<'a, [u32]>>,
     /// Shader DXIL source.
     pub dxil: Option<Cow<'a, [u8]>>,
-    /// Shader MSL source.
-    pub msl: Option<Cow<'a, str>>,
     /// Shader HLSL source.
     pub hlsl: Option<Cow<'a, str>>,
+    /// Shader MetalLib source.
+    pub metallib: Option<Cow<'a, [u8]>>,
+    /// Shader MSL source.
+    pub msl: Option<Cow<'a, str>>,
     /// Shader GLSL source (currently unused).
     pub glsl: Option<Cow<'a, str>>,
     /// Shader WGSL source.
@@ -120,12 +148,11 @@ pub struct CreateShaderModuleDescriptorPassthrough<'a, L> {
 impl<'a, L: Default> Default for CreateShaderModuleDescriptorPassthrough<'a, L> {
     fn default() -> Self {
         Self {
-            entry_point: "".into(),
             label: Default::default(),
-            num_workgroups: (0, 0, 0),
-            runtime_checks: ShaderRuntimeChecks::unchecked(),
+            entry_points: Cow::Borrowed(&[]),
             spirv: None,
             dxil: None,
+            metallib: None,
             msl: None,
             hlsl: None,
             glsl: None,
@@ -141,11 +168,10 @@ impl<'a, L> CreateShaderModuleDescriptorPassthrough<'a, L> {
         fun: impl FnOnce(&L) -> K,
     ) -> CreateShaderModuleDescriptorPassthrough<'a, K> {
         CreateShaderModuleDescriptorPassthrough {
-            entry_point: self.entry_point.clone(),
             label: fun(&self.label),
-            num_workgroups: self.num_workgroups,
-            runtime_checks: self.runtime_checks,
+            entry_points: self.entry_points.clone(),
             spirv: self.spirv.clone(),
+            metallib: self.metallib.clone(),
             dxil: self.dxil.clone(),
             msl: self.msl.clone(),
             hlsl: self.hlsl.clone(),
@@ -159,10 +185,18 @@ impl<'a, L> CreateShaderModuleDescriptorPassthrough<'a, L> {
     pub fn trace_data(&self) -> &[u8] {
         if let Some(spirv) = &self.spirv {
             bytemuck::cast_slice(spirv)
+        } else if let Some(metallib) = &self.metallib {
+            metallib
         } else if let Some(msl) = &self.msl {
             msl.as_bytes()
         } else if let Some(dxil) = &self.dxil {
             dxil
+        } else if let Some(hlsl) = &self.hlsl {
+            hlsl.as_bytes()
+        } else if let Some(glsl) = &self.glsl {
+            glsl.as_bytes()
+        } else if let Some(wgsl) = &self.wgsl {
+            wgsl.as_bytes()
         } else {
             panic!("No binary data provided to `ShaderModuleDescriptorGeneric`")
         }
@@ -173,10 +207,18 @@ impl<'a, L> CreateShaderModuleDescriptorPassthrough<'a, L> {
     pub fn trace_binary_ext(&self) -> &'static str {
         if self.spirv.is_some() {
             "spv"
+        } else if self.metallib.is_some() {
+            "metallib"
         } else if self.msl.is_some() {
             "metal"
         } else if self.dxil.is_some() {
             "dxil"
+        } else if self.hlsl.is_some() {
+            "hlsl"
+        } else if self.glsl.is_some() {
+            "glsl"
+        } else if self.wgsl.is_some() {
+            "wgsl"
         } else {
             panic!("No binary data provided to `ShaderModuleDescriptorGeneric`")
         }

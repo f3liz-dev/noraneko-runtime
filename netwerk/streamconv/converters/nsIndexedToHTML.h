@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +6,10 @@
 #define _nsindexedtohtml_h_
 
 #include "nsCOMPtr.h"
+#include "nsIDirIndexListener.h"
+#include "nsIStreamConverter.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsString.h"
-#include "nsIStreamConverter.h"
-#include "nsIDirIndexListener.h"
 
 #define NS_NSINDEXEDTOHTMLCONVERTER_CID \
   {0xcf0f71fd, 0xfafd, 0x4e2b, {0x9f, 0xdc, 0x13, 0x4d, 0x97, 0x2e, 0x16, 0xe2}}

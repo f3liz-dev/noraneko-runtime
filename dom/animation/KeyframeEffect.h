@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -104,6 +102,7 @@ struct AnimationProperty {
 namespace dom {
 
 class Animation;
+class CSSAnimationKeyframeEffect;
 class Document;
 
 class KeyframeEffect : public AnimationEffect {
@@ -122,6 +121,9 @@ class KeyframeEffect : public AnimationEffect {
                                JS::Handle<JSObject*> aGivenProto) override;
 
   KeyframeEffect* AsKeyframeEffect() override { return this; }
+  virtual CSSAnimationKeyframeEffect* AsCSSAnimationKeyframeEffect() {
+    return nullptr;
+  }
 
   bool IsValidTransition() const {
     return Properties().Length() == 1 &&
@@ -170,7 +172,10 @@ class KeyframeEffect : public AnimationEffect {
   void SetPseudoElement(const nsAString& aPseudoElement, ErrorResult& aRv);
 
   void GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
-                    ErrorResult& aRv) const;
+                    ErrorResult& aRv);
+  virtual bool GetComputedKeyframes(nsTArray<Keyframe>& aKeyframes) const {
+    return false;
+  }
   void GetProperties(nsTArray<AnimationPropertyDetails>& aProperties,
                      ErrorResult& aRv) const;
 
@@ -192,7 +197,8 @@ class KeyframeEffect : public AnimationEffect {
                             JS::Handle<JSObject*> aKeyframes, ErrorResult& aRv);
   void SetKeyframes(nsTArray<Keyframe>&& aKeyframes,
                     const ComputedStyle* aStyle,
-                    const AnimationTimeline* aTimeline);
+                    const AnimationTimeline* aTimeline,
+                    const AnimationRange* aRange);
 
   // Replace the start value of the transition. This is used for updating
   // transitions running on the compositor.
@@ -259,7 +265,8 @@ class KeyframeEffect : public AnimationEffect {
 
   // Update |mProperties| by recalculating from |mKeyframes| using
   // |aComputedStyle| to resolve specified values.
-  // Note: we use |aTimeline| to check if we need to ensure the base styles.
+  // Note: we use |aTimeline| to check if we need to ensure the base styles and
+  // used to check if we have to skip the generated keyframes.
   // If it is nullptr, we use the timeline from |mAnimation|.
   void UpdateProperties(const ComputedStyle* aStyle,
                         const AnimationTimeline* aTimeline = nullptr);
@@ -372,6 +379,9 @@ class KeyframeEffect : public AnimationEffect {
 
   double AnimationsPlayBackRateMultiplier() const;
 
+  void MaybeUpdateKeyframeComputedOffsets(const AnimationTimeline* aTimelne,
+                                          const AnimationRange& aRange);
+
  protected:
   ~KeyframeEffect() override = default;
 
@@ -384,7 +394,8 @@ class KeyframeEffect : public AnimationEffect {
   // Build properties by recalculating from |mKeyframes| using |aComputedStyle|
   // to resolve specified values. This function also applies paced spacing if
   // needed.
-  nsTArray<AnimationProperty> BuildProperties(const ComputedStyle* aStyle);
+  nsTArray<AnimationProperty> BuildProperties(
+      const ComputedStyle* aStyle, const AnimationTimeline* aTimeline);
 
   // Helper for SetTarget() and SetPseudoElement().
   void UpdateTarget(Element* aElement,
@@ -435,6 +446,10 @@ class KeyframeEffect : public AnimationEffect {
 
   // The specified keyframes.
   nsTArray<Keyframe> mKeyframes;
+  // The into about whether there are any range-based keyframes in |mKeyframes|,
+  // to avoid any unnecessary passes of |mKeyframes|.
+  KeyframeOffsetsHasRangeOffset mKeyframeOffsetsHasRangeOffset =
+      KeyframeOffsetsHasRangeOffset::No;
 
   // A set of per-property value arrays, derived from |mKeyframes|.
   nsTArray<AnimationProperty> mProperties;

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,14 @@
 #include "HTMLElementAccessibles.h"
 
 #include "CacheConstants.h"
+#include "Relation.h"
+#include "States.h"
+#include "mozilla/a11y/Role.h"
+#include "mozilla/dom/HTMLDetailsElement.h"
+#include "mozilla/dom/HTMLLabelElement.h"
+#include "mozilla/dom/HTMLSummaryElement.h"
 #include "nsCoreUtils.h"
 #include "nsTextEquivUtils.h"
-#include "Relation.h"
-#include "mozilla/a11y/Role.h"
-#include "States.h"
-
-#include "mozilla/dom/HTMLLabelElement.h"
-#include "mozilla/dom/HTMLDetailsElement.h"
-#include "mozilla/dom/HTMLSummaryElement.h"
 
 using namespace mozilla::a11y;
 

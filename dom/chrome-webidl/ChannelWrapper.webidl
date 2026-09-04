@@ -75,7 +75,10 @@ interface ChannelWrapper : EventTarget {
 
   /**
    * Returns the wrapper instance for the given channel. The same wrapper is
-   * always returned for a given channel.
+   * always returned for a given channel, provided that the extension was
+   * registered with the channel via registerTraceableChannel() first, and
+   * then called from the process that the extension runs in.
+   * Stops returning the channel after onStartRequest / onStopRequest.
    */
   static ChannelWrapper? getRegisteredChannel(unsigned long long aChannelId,
                                              WebExtensionPolicy extension,
@@ -196,10 +199,14 @@ interface ChannelWrapper : EventTarget {
 
 
   /**
-   * Register's this channel as traceable by the given add-on when accessed
-   * via the process of the given RemoteTab.
+   * Register's this channel as traceable by the given add-on. This is a
+   * prerequisite for enabling the use of ChannelWrapper.getRegisteredChannel
+   * and StreamFilter (webRequest.filterResponseData) later.
+   *
+   * Can only be called when the channel has been opened, not received a
+   * response yet, and has not failed. Ignored otherwise.
    */
-  undefined registerTraceableChannel(WebExtensionPolicy extension, RemoteTab? remoteTab);
+  undefined registerTraceableChannel(WebExtensionPolicy extension);
 
   /**
    * The current HTTP status code of the request. This will be 0 if a response
@@ -324,8 +331,8 @@ interface ChannelWrapper : EventTarget {
 
 
   /**
-   * The BrowsingContext ID of the frame that the request belongs to, or 0 if it
-   * is a top-level load or does not belong to a document.
+   * The BrowsingContext ID of the frame that the request belongs to, 0 if it
+   * is a top-level load, or -1 if the request does not belong to a frame.
    */
   [Cached, Constant]
   readonly attribute long long frameId;
@@ -337,6 +344,22 @@ interface ChannelWrapper : EventTarget {
    */
   [Cached, Constant]
   readonly attribute long long parentFrameId;
+
+  /**
+   * The innerWindowId of the document associated with this request, or 0 for
+   * navigation requests (where the document is not yet committed) or requests
+   * not associated with a document.
+   */
+  [Cached, Constant]
+  readonly attribute unsigned long long documentInnerWindowId;
+
+  /**
+   * The innerWindowId of the document embedding the frame this request belongs
+   * to, or 0 for top-level requests or requests not associated with a
+   * browsing context.
+   */
+  [Cached, Constant]
+  readonly attribute unsigned long long parentDocumentInnerWindowId;
 
   /**
    * For cross-process requests, the <browser> or <iframe> element to which the

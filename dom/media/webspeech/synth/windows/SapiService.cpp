@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,7 +46,7 @@ class SapiCallback final : public nsISpeechTaskCallback {
   void OnSpeechEvent(const SPEVENT& speechEvent);
 
  private:
-  ~SapiCallback() {}
+  ~SapiCallback() = default;
 
   float GetTimeDurationFromStart() const {
     TimeDuration duration = TimeStamp::Now() - mStartingTime;
@@ -191,7 +189,7 @@ NS_IMPL_RELEASE(SapiService)
 
 SapiService::SapiService() : mInitialized(false) {}
 
-SapiService::~SapiService() {}
+SapiService::~SapiService() = default;
 
 bool SapiService::Init() {
   AUTO_PROFILER_LABEL("SapiService::Init", OTHER);

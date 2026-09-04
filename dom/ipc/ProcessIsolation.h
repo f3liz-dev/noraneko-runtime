@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -29,6 +27,13 @@ constexpr nsLiteralCString kHighValueHasSavedLoginPermission =
     "highValueHasSavedLogin"_ns;
 constexpr nsLiteralCString kHighValueIsLoggedInPermission =
     "highValueIsLoggedIn"_ns;
+
+/**
+ * Given a specific set of BrowsingContext origin attributes, get a shared "web"
+ * process which should be used for loading shared content.
+ */
+nsCString SharedWebRemoteType(const OriginAttributes& aAttrs,
+                              bool aDisableJit = false);
 
 // NavigationIsolationOptions is passed through the methods to store the state
 // of the possible process and/or browsing context change.
@@ -78,6 +83,20 @@ Result<WorkerIsolationOptions, nsresult> IsolationOptionsForWorker(
     const nsACString& aCurrentRemoteType, bool aUseRemoteSubframes);
 
 /**
+ * Given a URI being loaded, and some relevant context, predict what remote type
+ * the load will complete in. The preferred remote type will be used in cases
+ * where the process to load in would otherwise be ambiguous, such as when
+ * loading documents like `about:blank`.
+ *
+ * This should generally only be used for opening new tabs as requested by
+ * frontend JS, and should not be used as part of navigation. The remote types
+ * selected by this method are not used to enforce security invariants.
+ */
+Result<nsCString, nsresult> PredictRemoteTypeForURI(
+    nsIURI* aURI, const OriginAttributes& aOriginAttributes,
+    const nsACString& aPreferredRemoteType, bool aUseRemoteSubframes);
+
+/**
  * Adds a `highValue` permission to the permissions database, and make loads of
  * that origin isolated.
  *
@@ -108,20 +127,51 @@ void AddHighValuePermission(const nsACString& aOrigin,
 bool IsIsolateHighValueSiteEnabled();
 
 /**
+ * Options for ValidatePrincipal methods. By default:
+ *
+ * 1. The principal must not be `nullptr`.
+ * 2. The principal must be a null or content principal
+ * 3. The principal must be in the target process' LoadedOriginSet.
+ *   - There are some exceptions to this (e.g. extension, null principals).
+ *   - Principals are added to the set by `ContentParent::AboutToLoadOrigin`.
+ * 4. The principal must be "generally loadable" by the target remote type.
+ *   - See the implementation of ValidatePrincipalCouldPotentiallyBeLoadedBy.
+ *
+ * These options allow disabling parts of these checks.
+ */
+enum class ValidatePrincipalOptions {
+  // Allow the principal to be `nullptr` (i.e. not present)
+  AllowNullPtr,
+
+  // Allow the principal to be an expanded principal.
+  // Sub-principals will each be validated.
+  AllowExpanded,
+
+  // Allow the system principal if it is in the process' LoadedOriginSet.
+  //
+  // This should only occur in the inference process, or when a legacy system
+  // principal chrome:// document has been forcibly loaded within this process.
+  AllowSystemIfLoaded,
+
+  // Don't check the LoadedOriginSet during this ValidatePrincipal call.
+  // This is used for checks before `ContentParent::AboutToLoadOrigin`.
+  AllowNotLoadedOrigin,
+
+  // Allow the system principal unconditionally, ignoring the LoadedOriginSet.
+  AlwaysAllowSystem,
+};
+
+/**
  * Perform a lax check that a process with the given RemoteType could
  * potentially load a Document or run script with the given principal.
  *
  * WARNING: This is intentionally a lax check, to avoid false positives in
  * assertions, and should NOT be used for process isolation decisions.
  */
-enum class ValidatePrincipalOptions {
-  AllowNullPtr,  // Not a NullPrincipal but a nullptr as Principal.
-  AllowSystem,
-  AllowExpanded,
-};
 bool ValidatePrincipalCouldPotentiallyBeLoadedBy(
     nsIPrincipal* aPrincipal, const nsACString& aRemoteType,
-    const EnumSet<ValidatePrincipalOptions>& aOptions);
+    const EnumSet<ValidatePrincipalOptions>& aOptions,
+    FunctionRef<bool(nsIPrincipal*)> aIsPrincipalLoaded = nullptr);
 
 }  // namespace mozilla::dom
 

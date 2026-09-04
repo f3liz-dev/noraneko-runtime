@@ -176,6 +176,9 @@ Content-Language: en-US
 header_plaintext="Content-Type: text/plain
 "
 
+header_html="Content-Type: text/html
+"
+
 CR=$(printf '\r')
 
 mime_init()
@@ -188,6 +191,23 @@ mime_init()
   OUT="tb/alice.textplain"
   echo "${header_plaintext}" >>${OUT}
   cat alice.txt >>${OUT}
+  sed -i"" "s/\$/${CR}/" ${OUT}
+
+  # We use a single line html payload, without trailing newline.
+  # That's allowed, and has sometimes caused trouble in the past
+  OUT="tb/alice.texthtml"
+  echo "${header_html}" >>${OUT}
+  echo -n "<html><body>" >>${OUT}
+  tr -d "\r\n" < alice.txt >>${OUT}
+  echo -n "</body></html>" >>${OUT}
+  sed -i"" "s/\$/${CR}/" ${OUT}
+
+  # HTML payload that wants to load a remote image
+  OUT="tb/alice.remoteimage"
+  echo "${header_html}" >>${OUT}
+  echo -n "<html><body>" >>${OUT}
+  tr -d "\r\n" < alice.txt >>${OUT}
+  echo -n '<img id="testelement" src="http://mochi.test:8888/browser/comm/mail/test/browser/content-policy/html/pass.png"></body></html>' >>${OUT}
   sed -i"" "s/\$/${CR}/" ${OUT}
 }
 
@@ -204,6 +224,16 @@ smime_enveloped()
   echo -n "${header_mime_from_to_subject}" >>${OUT}
   echo "enveloped ${SIG}" >>${OUT}
   cat "tb/alice.env" >>${OUT}
+  sed -i"" "s/\$/${CR}/" ${OUT}
+
+  ${PROFTOOL} ${BINDIR}/cmsutil -E -r bob@example.com -i tb/alice.remoteimage -d ${P_R_ALICEDIR} -p nss -o tb/alice.remoteimage.env
+
+  OUT="tb/alice.remoteimage.env.eml"
+  echo -n "${header_mime_from_to_subject}" >>${OUT}
+  echo "enveloped remote image" >>${OUT}
+  echo "${header_enveloped}" >>${OUT}
+  cat "tb/alice.remoteimage.env" | ${BINDIR}/btoa | sed 's/\r$//' >>${OUT}
+  echo >>${OUT}
   sed -i"" "s/\$/${CR}/" ${OUT}
 }
 
@@ -237,11 +267,15 @@ smime_signed_enveloped()
   sed -i"" "s/\$/$CR/" ${OUT}
 
   ${PROFTOOL} ${BINDIR}/cmsutil -S -G -N Alice ${HASH_CMD} -i tb/alice.textplain -d ${P_R_ALICEDIR} -p nss -o tb/alice.textplain.${SIG}
-
   OUT="tb/alice.${SIG}.opaque"
   echo "$header_opaque_signed" >>${OUT}
   cat tb/alice.textplain.${SIG} | ${BINDIR}/btoa | sed 's/\r$//' >>${OUT}
+  ${PROFTOOL} ${BINDIR}/cmsutil -E -r bob@example.com -i ${OUT} -d ${P_R_ALICEDIR} -p nss -o ${OUT}.env
 
+  ${PROFTOOL} ${BINDIR}/cmsutil -S -G -N Alice ${HASH_CMD} -i tb/alice.texthtml -d ${P_R_ALICEDIR} -p nss -o tb/alice.texthtml.${SIG}
+  OUT="tb/alice.html.${SIG}.opaque"
+  echo "$header_opaque_signed" >>${OUT}
+  cat tb/alice.texthtml.${SIG} | ${BINDIR}/btoa | sed 's/\r$//' >>${OUT}
   ${PROFTOOL} ${BINDIR}/cmsutil -E -r bob@example.com -i ${OUT} -d ${P_R_ALICEDIR} -p nss -o ${OUT}.env
 
   OUT="tb/alice.${SIG}.opaque.eml"
@@ -251,11 +285,26 @@ smime_signed_enveloped()
   echo >>${OUT}
   sed -i"" "s/\$/$CR/" ${OUT}
 
+  OUT="tb/alice.html.${SIG}.opaque.eml"
+  echo -n "${header_mime_from_to_subject}" >>${OUT}
+  echo "opaque-signed html $SIG" >>${OUT}
+  cat "tb/alice.html.${SIG}.opaque" >>${OUT}
+  echo >>${OUT}
+  sed -i"" "s/\$/$CR/" ${OUT}
+
   OUT="tb/alice.${SIG}.opaque.env.eml"
   echo -n "${header_mime_from_to_subject}" >>${OUT}
   echo "opaque-signed then enveloped $SIG" >>${OUT}
   echo "$header_enveloped" >>$OUT
   cat "tb/alice.${SIG}.opaque.env" | ${BINDIR}/btoa | sed 's/\r$//' >>${OUT}
+  echo >>${OUT}
+  sed -i"" "s/\$/$CR/" ${OUT}
+
+  OUT="tb/alice.html.${SIG}.opaque.env.eml"
+  echo -n "${header_mime_from_to_subject}" >>${OUT}
+  echo "opaque-signed html then enveloped $SIG" >>${OUT}
+  echo "$header_enveloped" >>$OUT
+  cat "tb/alice.html.${SIG}.opaque.env" | ${BINDIR}/btoa | sed 's/\r$//' >>${OUT}
   echo >>${OUT}
   sed -i"" "s/\$/$CR/" ${OUT}
 
@@ -612,6 +661,44 @@ smime_enveloped_openssl_interop() {
     html_msg $? 0 "Compare Decoded with OpenSSL enveloped" "."
 }
 
+smime_auth_enveloped_openssl_interop() {
+    echo "$SCRIPTNAME: AuthEnvelopedData (RFC 5083) OpenSSL interop --------"
+
+    printf "This is a test message to Fran.\r\n" > fran-gcm.txt
+
+    N=1
+    for gcm in aes-128-gcm aes-192-gcm aes-256-gcm; do
+      for wrap in pkcs1 oaep-sha1 oaep-sha256; do
+        ENVFILE="fran-authenv-${gcm}-${wrap}_ossl.env"
+        DESC="Decode AuthEnvelopedData (${gcm}, ${wrap})"
+        OUTFILE="fran-authenv.data${N}"
+
+        echo "cmsutil -D -i ${ENVFILE} -d ${P_R_ALICEDIR} -p nss -o ${OUTFILE}"
+        ${PROFTOOL} ${BINDIR}/cmsutil -D -i ${ENVFILE} -d ${P_R_ALICEDIR} -p nss -o ${OUTFILE}
+        html_msg $? 0 "${DESC}" "."
+
+        diff fran-gcm.txt ${OUTFILE}
+        html_msg $? 0 "Compare decrypted AuthEnvelopedData (${gcm}, ${wrap})" "."
+
+        N=$((N + 1))
+      done
+    done
+
+    echo "$SCRIPTNAME: AuthEnvelopedData with corrupt MAC (should fail) ----"
+    echo "cmsutil -D -i fran-authenv-aes-128-gcm-pkcs1-corrupt-mac_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-authenv-corrupt.data"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-authenv-aes-128-gcm-pkcs1-corrupt-mac_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-authenv-corrupt.data
+    html_msg $? 1 "Reject AuthEnvelopedData with corrupt MAC" "."
+
+    echo "$SCRIPTNAME: AuthEnvelopedData with empty plaintext ----"
+    : > fran-empty.txt
+    echo "cmsutil -D -i fran-authenv-aes-128-gcm-pkcs1-empty_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-authenv-empty.data"
+    ${PROFTOOL} ${BINDIR}/cmsutil -D -i fran-authenv-aes-128-gcm-pkcs1-empty_ossl.env -d ${P_R_ALICEDIR} -p nss -o fran-authenv-empty.data
+    html_msg $? 0 "Decode AuthEnvelopedData with empty plaintext" "."
+
+    diff fran-empty.txt fran-authenv-empty.data
+    html_msg $? 0 "Compare decrypted empty AuthEnvelopedData" "."
+}
+
 ############################## smime_main ##############################
 # local shell function to test basic signed and enveloped messages
 # from 1 --> 2"
@@ -715,6 +802,7 @@ smime_main()
   html_msg $? 0 "Compare Decoded with Multiple Email cert" "."
 
   smime_enveloped_openssl_interop
+  smime_auth_enveloped_openssl_interop
 
   echo "$SCRIPTNAME: Sending CERTS-ONLY Message ------------------------------"
   echo "cmsutil -O -r \"Alice,bob@example.com,dave@example.com\" \\"
@@ -855,6 +943,55 @@ smime_policy()
   done
 }
 
+############################## smime_gcm_capability_regression ##########
+# AES-GCM is advertised in SMIMECapabilities but no AuthEnvelopedData
+# encoder exists, so capability-driven cipher selection must fall back
+# to a CBC cipher when encrypting to a recipient whose stored profile
+# prefers GCM.
+########################################################################
+smime_gcm_capability_regression()
+{
+  echo "$SCRIPTNAME: AES-GCM Capability Exchange Regression =========="
+
+  local rdir="${SMIMEDIR}/gcm_caps"
+  local dba="${rdir}/dba"
+  local dbb="${rdir}/dbb"
+  local source="${SMIMEDIR}/alice.txt"
+  local from_alice="${rdir}/from_alice.der"
+  local from_bob="${rdir}/from_bob.der"
+  local to_bob="${rdir}/to_bob.der"
+
+  mkdir -p "${rdir}"
+  smime_setup_policy_directory "${dba}" Alice ""
+  smime_setup_policy_directory "${dbb}" Bob ""
+
+  # Exchange signed messages so each database stores the peer's
+  # SMIMECapabilities profile and certificate.
+  echo "cmsutil -S -G -P -N Alice -H SHA256 -i ${source} -d ${dba} -p nss -o ${from_alice}"
+  ${PROFTOOL} ${BINDIR}/cmsutil -S -G -P -N Alice -H SHA256 \
+      -i "${source}" -d "${dba}" -p nss -o "${from_alice}"
+  html_msg $? 0 "Alice signs with SMIMECapabilities" "."
+
+  echo "cmsutil -D -k -i ${from_alice} -d ${dbb} -p nss"
+  ${PROFTOOL} ${BINDIR}/cmsutil -D -k -i "${from_alice}" -d "${dbb}" -p nss
+  html_msg $? 0 "Bob saves Alice's profile" "."
+
+  echo "cmsutil -S -G -P -N Bob -H SHA256 -i ${source} -d ${dbb} -p nss -o ${from_bob}"
+  ${PROFTOOL} ${BINDIR}/cmsutil -S -G -P -N Bob -H SHA256 \
+      -i "${source}" -d "${dbb}" -p nss -o "${from_bob}"
+  html_msg $? 0 "Bob signs with SMIMECapabilities" "."
+
+  echo "cmsutil -D -k -i ${from_bob} -d ${dba} -p nss"
+  ${PROFTOOL} ${BINDIR}/cmsutil -D -k -i "${from_bob}" -d "${dba}" -p nss
+  html_msg $? 0 "Alice saves Bob's profile" "."
+
+  # Encrypt to Bob: cipher selection must avoid GCM and fall back to CBC.
+  echo "cmsutil -E -r bob@example.com -i ${source} -d ${dba} -p nss -o ${to_bob}"
+  ${PROFTOOL} ${BINDIR}/cmsutil -E -r bob@example.com \
+      -i "${source}" -d "${dba}" -p nss -o "${to_bob}"
+  html_msg $? 0 "Encrypt to Bob after capability exchange" "."
+}
+
 ############################## smime_cleanup ###########################
 # local shell function to finish this script (no exit since it might be
 # sourced)
@@ -874,6 +1011,7 @@ smime_data_tb
 smime_p7
 if using_sql ; then
   smime_policy
+  smime_gcm_capability_regression
 fi
 smime_cleanup
 

@@ -108,15 +108,15 @@ class VideoCodecTester {
       SamplesStatsCounter frame_size_bytes;
       SamplesStatsCounter keyframe;
       SamplesStatsCounter qp;
-      SamplesStatsCounter encode_time_ms;
-      SamplesStatsCounter decode_time_ms;
+      SamplesStatsCounter encode_time_us;
+      SamplesStatsCounter decode_time_us;
       SamplesStatsCounter target_bitrate_kbps;
       SamplesStatsCounter target_framerate_fps;
       SamplesStatsCounter encoded_bitrate_kbps;
       SamplesStatsCounter encoded_framerate_fps;
       SamplesStatsCounter bitrate_mismatch_pct;
       SamplesStatsCounter framerate_mismatch_pct;
-      SamplesStatsCounter transmission_time_ms;
+      SamplesStatsCounter buffer_delay_ms;
 
       struct Psnr {
         SamplesStatsCounter y;
@@ -174,12 +174,14 @@ class VideoCodecTester {
     PacingSettings pacing_settings;
     std::optional<std::string> decoder_input_base_path;
     std::optional<std::string> decoder_output_base_path;
+    int num_cores = 1;
   };
 
   struct EncoderSettings {
     PacingSettings pacing_settings;
     std::optional<std::string> encoder_input_base_path;
     std::optional<std::string> encoder_output_base_path;
+    int num_cores = 1;
   };
 
   virtual ~VideoCodecTester() = default;

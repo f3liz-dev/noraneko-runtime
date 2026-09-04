@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,11 @@
 #ifndef mozilla_MemoryPressureLevelMac_h
 #define mozilla_MemoryPressureLevelMac_h
 
+#ifdef XP_DARWIN
+#  include "mozilla/Attributes.h"
+
 namespace mozilla {
 
-#if defined(XP_DARWIN)
 // An internal representation of the Mac memory-pressure level constants.
 class MacMemoryPressureLevel {
  public:
@@ -70,8 +70,8 @@ class MacMemoryPressureLevel {
  private:
   Value mValue;
 };
-#endif
 
 }  // namespace mozilla
 
+#endif
 #endif  // mozilla_MemoryPressureLevelMac_h

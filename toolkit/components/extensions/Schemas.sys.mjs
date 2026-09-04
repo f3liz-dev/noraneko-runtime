@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -226,6 +224,25 @@ function exportLazyProperty(object, prop, getter) {
 }
 
 const POSTPROCESSORS = {
+  validCSSGradient(obj, context) {
+    // A ThemeCSSGradient is an object with a single property whose name is the
+    // gradient function and whose value holds the gradient arguments, e.g.
+    // { "linear-gradient": "to bottom, #FF6BBA, #FFC999" }.
+    const [gradient, args] = Object.entries(obj)[0];
+    if (!InspectorUtils.isValidCSSImage(`${gradient}(${args})`)) {
+      const errorMessage = `Invalid value for theme gradient: ${gradient}(${args})`;
+      if (context.cloneScope) {
+        // Report the error back to the caller when the theme API is being used
+        // programmatically.
+        throw new context.cloneScope.Error(errorMessage);
+      }
+      // Report a validation error and drop the gradient value when it originates
+      // from a static theme manifest, return an image(transparent) instead.
+      context.logError(context.makeError(errorMessage));
+      return { image: "transparent" };
+    }
+    return obj;
+  },
   convertImageDataToURL(imageData, context) {
     let document = context.cloneScope.document;
     let canvas = document.createElementNS(
@@ -1012,7 +1029,7 @@ class InjectionContext extends Context {
    * @param {string} _namespace The full path to the namespace of the API, minus
    *     the name of the method or property. E.g. "storage.local".
    * @param {string} _name The name of the method, property or event.
-   * @returns {import("ExtensionCommon.sys.mjs").SchemaAPIInterface}
+   * @returns {import("./ExtensionCommon.sys.mjs").SchemaAPIInterface}
    *          The implementation of the API.
    */
   getImplementation(_namespace, _name) {
@@ -1182,6 +1199,9 @@ const FORMATS = {
     if (!/^https?:/.test(url.protocol)) {
       throw new Error(`Invalid origin must be http or https for URL ${string}`);
     }
+    if (url.hostname.includes("*")) {
+      throw new Error(`Invalid origin must not contain a wildcard: ${string}`);
+    }
     // url.origin is punycode so a direct check against string wont work.
     // url.href appends a slash even if not in the original string, we we
     // additionally check that string does not end in slash.
@@ -1258,8 +1278,8 @@ const FORMATS = {
   },
 
   contentSecurityPolicy(string, context) {
-    // Manifest V3 extension_pages allows WASM.  When sandbox is
-    // implemented, or any other V3 or later directive, the flags
+    // Manifest V3 extension_pages allows WASM. When any other V3
+    // or later directive is implemented, the flags
     // logic will need to be updated.
 
     let flags =
@@ -1298,6 +1318,14 @@ const FORMATS = {
       // to see and fix the extension CSP.
       context.logError(`Error processing ${context.currentTarget}: ${error}`);
       return null;
+    }
+    return string;
+  },
+
+  contentSecurityPolicySandbox(string) {
+    const error = lazy.contentPolicyService.validateAddonSandboxCSP(string);
+    if (error != null) {
+      throw new Error(error);
     }
     return string;
   },

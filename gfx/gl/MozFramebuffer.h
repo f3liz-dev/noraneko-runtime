@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,9 +5,9 @@
 #ifndef MOZ_FRAMEBUFFER_H_
 #define MOZ_FRAMEBUFFER_H_
 
-#include "gfx2DGlue.h"
 #include "GLConsts.h"
 #include "GLContextTypes.h"
+#include "gfx2DGlue.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 
@@ -27,7 +26,8 @@ class DepthAndStencilBuffer final : public SupportsWeakPtr {
 
   static RefPtr<DepthAndStencilBuffer> Create(GLContext* const gl,
                                               const gfx::IntSize& size,
-                                              const uint32_t samples);
+                                              const uint32_t samples,
+                                              bool depth, bool stencil);
 
   RefPtr<GLContext> gl() const { return mWeakGL.get(); }
 
@@ -59,13 +59,14 @@ class MozFramebuffer final {
   // Create a new framebuffer with the specified properties.
   static UniquePtr<MozFramebuffer> Create(GLContext* gl,
                                           const gfx::IntSize& size,
-                                          uint32_t samples, bool depthStencil);
+                                          uint32_t samples, bool depth,
+                                          bool stencil);
 
   // Create a new framebuffer backed by an existing texture or buffer.
   // Assumes that gl is the current context.
   static UniquePtr<MozFramebuffer> CreateForBacking(
-      GLContext* gl, const gfx::IntSize& size, uint32_t samples,
-      bool depthStencil, GLenum colorTarget, GLuint colorName);
+      GLContext* gl, const gfx::IntSize& size, uint32_t samples, bool depth,
+      bool stencil, GLenum colorTarget, GLuint colorName);
 
   // Create a new framebuffer backed by an existing texture or buffer.
   // Use the same GLContext, size, and samples as framebufferToShareWith.

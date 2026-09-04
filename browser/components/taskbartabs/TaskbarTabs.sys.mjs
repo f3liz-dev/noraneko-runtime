@@ -1,5 +1,4 @@
-/* vim: se cin sw=2 ts=2 et filetype=javascript :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,11 +8,7 @@
  * the Taskbar Tabs systems should interact with it through this interface.
  */
 
-import {
-  TaskbarTabsRegistry,
-  TaskbarTabsRegistryStorage,
-  kTaskbarTabsRegistryEvents,
-} from "resource:///modules/taskbartabs/TaskbarTabsRegistry.sys.mjs";
+import { TaskbarTabsRegistryStorage } from "resource:///modules/taskbartabs/TaskbarTabsRegistry.sys.mjs";
 import { TaskbarTabsWindowManager } from "resource:///modules/taskbartabs/TaskbarTabsWindowManager.sys.mjs";
 import { TaskbarTabsPin } from "resource:///modules/taskbartabs/TaskbarTabsPin.sys.mjs";
 import { TaskbarTabsUtils } from "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs";
@@ -21,7 +16,10 @@ import { TaskbarTabsUtils } from "resource:///modules/taskbartabs/TaskbarTabsUti
 let lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  ManifestObtainer: "resource://gre/modules/ManifestObtainer.sys.mjs",
+  ManifestIcons: "moz-src:///dom/manifest/ManifestIcons.sys.mjs",
+  ManifestObtainer: "moz-src:///dom/manifest/ManifestObtainer.sys.mjs",
+  ManifestProcessor: "moz-src:///dom/manifest/ManifestProcessor.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
@@ -67,19 +65,35 @@ export const TaskbarTabs = new (class {
    * Finds an existing Taskbar Tab that matches aUrl within aUserContextId. If
    * one does not exist, it is created.
    *
-   * Additionally, this will register the Taskbar Tab with the system and (on
-   * Windows) request to pin the shortcut.
+   * Additionally, this will register the Taskbar Tab with the system and
+   * request to create/pin the shortcut as applicable.
    *
    * @param {nsIURL} aUrl - The URL to create a Taskbar Tab for.
    * @param {number} aUserContextId - The container to create the Taskbar Tab
    * in.
    * @param {object} aDetails - Additional parameters for the Taskbar Tab. See
    * TaskbarTabsRegistry.findOrCreateTaskbarTab for other members.
-   * @param {nsIURL} [aDetails.createdForUrl] - The page that the Taskbar Tab
+   * @param {nsIURL} [aDetails.creatingForUrl] - The page that the Taskbar Tab
    * was created on. This allows getting the favicon of that page if there
    * isn't a better option.
+   * @param {boolean} [aDetails.ensurePinned] - Whether pinning should be
+   * attempted even if the Taskbar Tab already exists.
+   * @param {DOMWindow?} [aDetails.window] - The window to associate any UI
+   * with, if applicable.
    */
   async findOrCreateTaskbarTab(aUrl, aUserContextId, aDetails = {}) {
+    if (aDetails.manifest) {
+      // The manifest internally needs to be processed, so do that now.
+      aDetails = {
+        ...aDetails,
+        manifest: lazy.ManifestProcessor.process({
+          jsonText: JSON.stringify(aDetails.manifest),
+          manifestURL: aUrl.prePath,
+          docURL: aUrl.prePath,
+        }),
+      };
+    }
+
     // The result of #findOrCreateTaskbarTab sometimes contains additional
     // properties for internal use, often for moveTabIntoTaskbarTab. Only a few
     // values should actually be given to outside callers.
@@ -88,10 +102,17 @@ export const TaskbarTabs = new (class {
       aUserContextId,
       aDetails
     );
+
+    if (result.created || aDetails.ensurePinned) {
+      // Don't wait for the pinning to complete.
+      this.#pinTaskbarTab(result.taskbarTab, result.icon, {
+        window: aDetails.window ?? null,
+      });
+    }
+
     return {
       created: result.created,
       taskbarTab: result.taskbarTab,
-      window: result.window,
     };
   }
 
@@ -107,14 +128,8 @@ export const TaskbarTabs = new (class {
     if (result.created) {
       this.#updateMetrics();
 
-      let icon = await fetchIconForTaskbarTab(
-        result.taskbarTab,
-        aDetails.creatingForUrl
-      );
+      let icon = await fetchIconForTaskbarTab(result.taskbarTab, aDetails);
       result.icon = icon;
-
-      // Don't wait for the pinning to complete.
-      TaskbarTabsPin.pinTaskbarTab(result.taskbarTab, this.#registry, icon);
     } else {
       result.icon = await loadSavedTaskbarTabIcon(result.taskbarTab.id);
     }
@@ -122,9 +137,26 @@ export const TaskbarTabs = new (class {
     return result;
   }
 
+  async #pinTaskbarTab(aTaskbarTab, aIcon, aDetails) {
+    let result = await TaskbarTabsPin.pinTaskbarTab(
+      aTaskbarTab,
+      aIcon,
+      aDetails
+    );
+    this.#registry.patchTaskbarTab(aTaskbarTab, {
+      shortcutRelativePath: result,
+    });
+    return result;
+  }
+
   async findTaskbarTab(...args) {
     await this.#ready;
     return this.#registry.findTaskbarTab(...args);
+  }
+
+  async countTaskbarTabs() {
+    await this.#ready;
+    return this.#registry.countTaskbarTabs();
   }
 
   /**
@@ -150,13 +182,14 @@ export const TaskbarTabs = new (class {
       }),
     ]);
 
-    let { taskbarTab, icon } = await this.#findOrCreateTaskbarTab(
+    let { taskbarTab, icon, created } = await this.#findOrCreateTaskbarTab(
       url,
       userContextId,
       {
         // 'manifest' can be null if the site doesn't have a manifest.
         ...(manifest ? { manifest } : {}),
         creatingForUrl: url,
+        browser,
       }
     );
 
@@ -165,6 +198,13 @@ export const TaskbarTabs = new (class {
       aTab,
       icon
     );
+
+    if (created) {
+      // Don't wait for pinning to complete. (This is separate so we can call
+      // it with the newly-created window.)
+      this.#pinTaskbarTab(taskbarTab, icon, win);
+    }
+
     return {
       window: win,
       taskbarTab,
@@ -183,7 +223,7 @@ export const TaskbarTabs = new (class {
     this.#updateMetrics();
 
     // Don't wait for unpinning to finish.
-    TaskbarTabsPin.unpinTaskbarTab(taskbarTab, this.#registry);
+    TaskbarTabsPin.unpinTaskbarTab(taskbarTab);
   }
 
   async openWindow(aTaskbarTab) {
@@ -222,26 +262,7 @@ async function initRegistry() {
   let registryFile = TaskbarTabsUtils.getTaskbarTabsFolder();
   registryFile.append(kRegistryFilename);
 
-  let init = {};
-  if (registryFile.exists()) {
-    init.loadFile = registryFile;
-  }
-
-  let registry = await TaskbarTabsRegistry.create(init);
-
-  // Initialize persistent storage.
-  let storage = new TaskbarTabsRegistryStorage(registry, registryFile);
-  registry.on(kTaskbarTabsRegistryEvents.created, () => {
-    storage.save();
-  });
-  registry.on(kTaskbarTabsRegistryEvents.patched, () => {
-    storage.save();
-  });
-  registry.on(kTaskbarTabsRegistryEvents.removed, () => {
-    storage.save();
-  });
-
-  return registry;
+  return await new TaskbarTabsRegistryStorage(registryFile).load();
 }
 
 /**
@@ -255,20 +276,41 @@ function initWindowManager() {
   return wm;
 }
 
-async function fetchIconForTaskbarTab(aTaskbarTab, aCreatedForUrl) {
+async function fetchIconForTaskbarTab(aTaskbarTab, aDetails) {
   let startUri = Services.io.newURI(aTaskbarTab.startUrl);
   const choices = [
+    async () => {
+      if (!aDetails.manifest) {
+        return null;
+      }
+
+      if (aDetails.browser) {
+        let uri = await lazy.ManifestIcons.browserFetchIcon(
+          aDetails.browser,
+          aDetails.manifest,
+          256,
+          ["any"]
+        );
+        return Services.io.newURI(uri);
+      }
+
+      return Services.io.newURI(findBestManifestIcon(aDetails.manifest));
+    },
     async () => await TaskbarTabsUtils.getFaviconUri(startUri),
-    async () => await TaskbarTabsUtils.getFaviconUri(aCreatedForUrl),
+    async () => await TaskbarTabsUtils.getFaviconUri(aDetails.createdForUrl),
   ];
 
   for (const choice of choices) {
     try {
-      let dataURI = await choice();
-      if (!dataURI) {
+      let uri = await choice();
+      if (!uri) {
         continue;
       }
-      let candidate = await TaskbarTabsUtils._imageFromLocalURI(dataURI);
+      let candidate = await TaskbarTabsUtils._remoteDecodeImageFromURI(
+        uri,
+        256,
+        aDetails.browser
+      );
       if (candidate) {
         return candidate;
       }
@@ -290,12 +332,68 @@ async function fetchIconForTaskbarTab(aTaskbarTab, aCreatedForUrl) {
 async function loadSavedTaskbarTabIcon(aTaskbarTabId) {
   let iconPath = TaskbarTabsUtils.getTaskbarTabsFolder();
   iconPath.append("icons");
-  iconPath.append(aTaskbarTabId + ".ico");
+  iconPath.append(
+    aTaskbarTabId + "." + lazy.ShellService.shortcutIconType.extension
+  );
+
   try {
-    return await TaskbarTabsUtils._imageFromLocalURI(
-      Services.io.newFileURI(iconPath)
+    return await TaskbarTabsUtils._remoteDecodeImageFromFile(
+      iconPath,
+      256,
+      null,
+      lazy.ShellService.shortcutIconType.mimeType
     );
   } catch (e) {
+    lazy.logConsole.warn("Couldn't load saved Taskbar Tab icon: ", e);
     return await TaskbarTabsUtils.getDefaultIcon();
   }
+}
+
+/**
+ * This is a lightweight version of ManifestIcons.sys.mjs that runs in the
+ * parent process. Selects the icon that is closest to 256x256 from the
+ * processed manifest, and returns its URL.
+ *
+ * Note that this currently doesn't try to fall back if it fails---it'll use
+ * the site's favicon, if any, or the default icon.
+ *
+ * @param {object} aManifest - The manifest, as returned by ManifestObtainer or
+ * ManifestProcessor.
+ * @returns {string?} The URL of the best icon, or null if no icons were found.
+ */
+function findBestManifestIcon(aManifest) {
+  // Transform the icons from
+  //   [{sizes: ["WIDTH1xHEIGHT1", "WIDTH2xHEIGHT2"], src: "...", ...}, ...]
+  // to
+  //   [{size: WIDTH1, src: "..."}, {size: WIDTH2, src: "..."}]
+  let collectedIcons =
+    aManifest.icons?.flatMap(icon => {
+      // Discard any that have non-"any" purpose. (Mainly for symmetry within
+      // the tests, this case shouldn't really happen.)
+      if (!icon.purpose.includes("any")) {
+        return [];
+      }
+
+      let sizes = icon.sizes ?? [""];
+      return sizes.map(size => ({
+        src: icon.src,
+        // Use 'Infinity' so it always compares as larger to any other size.
+        // Also note that parseInt("500x500") === 500, which is why parseInt is
+        // used here.
+        size: ["", "any"].includes(size) ? Infinity : parseInt(size),
+      }));
+    }) ?? [];
+
+  collectedIcons.sort((a, b) => a.size - b.size);
+  if (!collectedIcons.length) {
+    return null;
+  }
+
+  let index = collectedIcons.findIndex(icon => icon.size >= 256);
+  if (index >= 0) {
+    return collectedIcons[index].src;
+  }
+
+  // Get the largest we can if that didn't work.
+  return collectedIcons[collectedIcons.length - 1].src;
 }

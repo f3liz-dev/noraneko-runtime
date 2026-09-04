@@ -222,9 +222,9 @@ async function assertMessageInMenuSource(source, message, win = window) {
   } else if (source === MenuMessage.SOURCES.PXI_MENU) {
     Assert.ok(
       BrowserTestUtils.isHidden(
-        win.document.querySelector("#fxa-manage-account-button")
+        win.document.querySelector("#PanelUI-fxa-menu-sign-in-promo")
       ),
-      "Default FxA sign-in button in the PXI panel is hidden."
+      "Default FxA sign-in promo in the PXI panel is hidden."
     );
   }
 
@@ -258,25 +258,40 @@ function assertNoMessageInMenuSource(source, win = window) {
   Assert.ok(!messageEl, "Should not have found an menu-message");
 
   if (source === MenuMessage.SOURCES.APP_MENU) {
-    // The zap gradient and the default sign-in button should be visible.
+    // The zap gradient should be visible.
     Assert.ok(
       BrowserTestUtils.isVisible(
         win.PanelUI.mainView.querySelector("#appMenu-fxa-separator")
       ),
       "Zap gradient separator is visible."
     );
-    Assert.ok(
-      BrowserTestUtils.isVisible(
-        win.PanelUI.mainView.querySelector("#appMenu-fxa-status2")
-      ),
-      "Default FxA sign-in button is visible."
+    // When signed out, the default sign-in affordance is shown: the richer
+    // promo when nothing else occupies the top of the menu, or the compact
+    // sign-in row when an update banner is present.
+    const updateBanner = win.PanelUI.mainView.querySelector(
+      "#appMenu-update-banner"
     );
+    if (updateBanner && BrowserTestUtils.isVisible(updateBanner)) {
+      Assert.ok(
+        BrowserTestUtils.isVisible(
+          win.PanelUI.mainView.querySelector("#appMenu-fxa-status2")
+        ),
+        "Compact FxA sign-in row is visible when an update banner is present."
+      );
+    } else {
+      Assert.ok(
+        BrowserTestUtils.isVisible(
+          win.PanelUI.mainView.querySelector("#appMenu-fxa-sign-in-promo")
+        ),
+        "Default FxA sign-in promo is visible."
+      );
+    }
   } else if (source === MenuMessage.SOURCES.PXI_MENU) {
     Assert.ok(
       BrowserTestUtils.isVisible(
-        win.document.querySelector("#fxa-manage-account-button")
+        win.document.querySelector("#PanelUI-fxa-menu-sign-in-promo")
       ),
-      "Default FxA sign-in button in the PXI panel is visible."
+      "Default FxA sign-in promo in the PXI panel is visible."
     );
   }
 }
@@ -347,41 +362,6 @@ async function reopenMenuSource(source, expectedMessage, win = window, taskFn) {
     !win.document.querySelector("menu-message"),
     "Should not find any menu-message elements"
   );
-}
-
-/**
- * Sets up stubs for ASRouter methods to simulate a scenario where a specific
- * menu message is made available via the ASRouter system.
- *
- * This function stubs:
- *  - `ASRouter.handleMessageRequest` to resolve the provided message.
- *  - `ASRouter.messagesEnabledInAutomation` to consider the message enabled for automation.
- *  - `ASRouter.getMessageById` to return the provided message when queried by its ID.
- *
- * After the provided task function `taskFn` is executed, it restores all the stubs.
- *
- * @param {SinonSandbox} sandbox - The Sinon sandbox used to create the stubs and ensure cleanup.
- * @param {object} message - The message object to be used in the stubs and passed for testing.
- * @param {function} taskFn - The function to be executed with the stubs in place.
- */
-async function withTestMessage(sandbox, message, taskFn) {
-  let handleMessageRequestStub = sandbox.stub(ASRouter, "handleMessageRequest");
-  handleMessageRequestStub.resolves([message]);
-
-  let messagesEnabledInAutomationStub = sandbox.stub(
-    ASRouter,
-    "messagesEnabledInAutomation"
-  );
-  messagesEnabledInAutomationStub.value([message.id]);
-
-  let getMessageByIdStub = sandbox.stub(ASRouter, "getMessageById");
-  getMessageByIdStub.withArgs(message.id).returns(message);
-
-  await taskFn(handleMessageRequestStub);
-
-  handleMessageRequestStub.restore();
-  messagesEnabledInAutomationStub.restore();
-  getMessageByIdStub.restore();
 }
 
 /**
@@ -487,6 +467,7 @@ add_task(async function test_trigger() {
         source: MenuMessage.SOURCES.APP_MENU,
         browserIsSelected: true,
         isAIWindow: false,
+        onThirdPartyPage: false,
       },
     }),
     "sendTriggerMessage was called when opening the AppMenu panel."
@@ -503,6 +484,7 @@ add_task(async function test_trigger() {
         source: MenuMessage.SOURCES.PXI_MENU,
         browserIsSelected: true,
         isAIWindow: false,
+        onThirdPartyPage: false,
       },
     }),
     "sendTriggerMessage was called when opening the PXI panel."
@@ -836,7 +818,7 @@ add_task(async function test_default_cta_does_not_replace_fxa_row() {
       defaultMsg,
       window,
       async (_msgEl, panel) => {
-        const view = panel.ownerGlobal.PanelUI.mainView;
+        const view = panel.documentGlobal.PanelUI.mainView;
         const separator = view.querySelector("#appMenu-fxa-separator");
         const fxaRow = view.querySelector("#appMenu-fxa-status2");
 

@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ProcInfo.h"
+
+#include "mozilla/CpuInfo.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/SSE.h"
 #include "gfxWindowsPlatform.h"
@@ -48,44 +48,18 @@ nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
   return NS_OK;
 }
 
-int GetCpuFrequencyMHz() {
-  static const int frequency = []() {
-    // Get the nominal CPU frequency.
-    HKEY key;
-    static const WCHAR keyName[] =
-        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0";
-
-    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyName, 0, KEY_QUERY_VALUE, &key) ==
-        ERROR_SUCCESS) {
-      DWORD data, len;
-      len = sizeof(data);
-
-      if (RegQueryValueEx(key, L"~Mhz", 0, 0, reinterpret_cast<LPBYTE>(&data),
-                          &len) == ERROR_SUCCESS) {
-        return static_cast<int>(data);
-      }
-    }
-
-    return 0;
-  }();
-
-  return frequency;
-}
-
 int GetCycleTimeFrequencyMHz() {
-  static const int frequency = []() {
-    // Having a constant TSC is required to convert cycle time to actual time.
-    // In automation, having short CPU times reported as 0 is more of a problem
-    // than having an imprecise value. The fallback method can't report CPU
-    // times < 1/64s.
-    if (!mozilla::has_constant_tsc() && !xpc::IsInAutomation()) {
-      return 0;
-    }
+  // Having a constant TSC is required to convert cycle time to actual time.
+  // In automation, having short CPU times reported as 0 is more of a problem
+  // than having an imprecise value. The fallback method can't report CPU
+  // times < 1/64s.
+  // Not cached: a process profiled from startup queries this before
+  // IsInAutomation() becomes true, which would pin it to the fallback for life.
+  if (!mozilla::has_constant_tsc() && !xpc::IsInAutomation()) {
+    return 0;
+  }
 
-    return GetCpuFrequencyMHz();
-  }();
-
-  return frequency;
+  return GetCpuFrequencyMHz();
 }
 
 nsresult GetCpuTimeSinceProcessStartInMs(uint64_t* aResult) {

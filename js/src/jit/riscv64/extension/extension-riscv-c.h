@@ -6,8 +6,9 @@
 
 #include <stdint.h>
 
-#include "jit/riscv64/extension/base-assembler-riscv.h"
+#include "jit/riscv64/base/base-assembler-riscv.h"
 #include "jit/riscv64/Register-riscv64.h"
+
 namespace js {
 namespace jit {
 class AssemblerRISCVC : public AssemblerRiscvBase {
@@ -45,7 +46,6 @@ class AssemblerRISCVC : public AssemblerRiscvBase {
   void c_fsd(FPURegister rs2, Register rs1, uint16_t uimm8);
   void c_fldsp(FPURegister rd, uint16_t uimm9);
   void c_fsdsp(FPURegister rs2, uint16_t uimm9);
-#ifdef JS_CODEGEN_RISCV64
   void c_ld(Register rd, Register rs1, uint16_t uimm8);
   void c_sd(Register rs2, Register rs1, uint16_t uimm8);
   void c_subw(Register rd, Register rs2);
@@ -53,23 +53,6 @@ class AssemblerRISCVC : public AssemblerRiscvBase {
   void c_addiw(Register rd, int8_t imm6);
   void c_ldsp(Register rd, uint16_t uimm9);
   void c_sdsp(Register rs2, uint16_t uimm9);
-#endif
-
-  int CJumpOffset(Instr instr);
-
-  static bool IsCBranch(Instr instr);
-  static bool IsCJal(Instr instr);
-
-  inline int16_t cjumpOffset(Label* L) {
-    return (int16_t)branchOffsetHelper(L, OffsetSize::kOffset11);
-  }
-  inline int32_t cbranchOffset(Label* L) {
-    return branchOffsetHelper(L, OffsetSize::kOffset9);
-  }
-
-  void c_j(Label* L) { c_j(cjumpOffset(L)); }
-  void c_bnez(Register rs1, Label* L) { c_bnez(rs1, cbranchOffset(L)); }
-  void c_beqz(Register rs1, Label* L) { c_beqz(rs1, cbranchOffset(L)); }
 };
 }  // namespace jit
 }  // namespace js

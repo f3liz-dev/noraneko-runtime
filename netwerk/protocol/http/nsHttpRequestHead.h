@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef nsHttpRequestHead_h_
 #define nsHttpRequestHead_h_
 
+#include "mozilla/RecursiveMutex.h"
 #include "nsHttp.h"
 #include "nsHttpHeaderArray.h"
 #include "nsString.h"
-#include "mozilla/RecursiveMutex.h"
 
 class nsIHttpHeaderVisitor;
 
@@ -65,41 +64,44 @@ class nsHttpRequestHead {
   [[nodiscard]] nsresult VisitHeaders(
       nsIHttpHeaderVisitor* visitor,
       nsHttpHeaderArray::VisitorFilter filter = nsHttpHeaderArray::eFilterAll);
-  void Method(nsACString& aMethod);
-  HttpVersion Version();
-  void RequestURI(nsACString& RequestURI);
-  void Path(nsACString& aPath);
+  void Method(nsACString& aMethod) const;
+  HttpVersion Version() const;
+  void RequestURI(nsACString& RequestURI) const;
+  void Path(nsACString& aPath) const;
   void SetHTTPS(bool val);
-  bool IsHTTPS();
+  bool IsHTTPS() const;
 
   void SetOrigin(const nsACString& scheme, const nsACString& host,
                  int32_t port);
-  void Origin(nsACString& aOrigin);
+  void Origin(nsACString& aOrigin) const;
 
   [[nodiscard]] nsresult SetHeader(const nsACString& h, const nsACString& v,
                                    bool m = false);
+  [[nodiscard]] nsresult SetHeader(const nsACString& h, const nsACString& v,
+                                   bool m,
+                                   nsHttpHeaderArray::HeaderVariety variety);
   [[nodiscard]] nsresult SetHeader(const nsHttpAtom& h, const nsACString& v,
                                    bool m = false);
   [[nodiscard]] nsresult SetHeader(const nsHttpAtom& h, const nsACString& v,
                                    bool m,
                                    nsHttpHeaderArray::HeaderVariety variety);
   [[nodiscard]] nsresult SetEmptyHeader(const nsACString& h);
-  [[nodiscard]] nsresult GetHeader(const nsHttpAtom& h, nsACString& v);
+  [[nodiscard]] nsresult GetHeader(const nsHttpAtom& h, nsACString& v) const;
 
   [[nodiscard]] nsresult ClearHeader(const nsHttpAtom& h);
   void ClearHeaders();
 
-  bool HasHeaderValue(const nsHttpAtom& h, const char* v);
+  bool HasHeaderValue(const nsHttpAtom& h, const char* v) const;
   // This function returns true if header is set even if it is an empty
   // header.
-  bool HasHeader(const nsHttpAtom& h);
-  void Flatten(nsACString&, bool pruneProxyHeaders = false);
+  bool HasHeader(const nsHttpAtom& h) const;
+  void Flatten(nsACString&, bool pruneProxyHeaders = false) const;
 
   // Don't allow duplicate values
   [[nodiscard]] nsresult SetHeaderOnce(const nsHttpAtom& h, const char* v,
                                        bool merge = false);
 
-  bool IsSafeMethod();
+  bool IsSafeMethod() const;
 
   enum ParsedMethodType {
     kMethod_Custom,
@@ -116,16 +118,16 @@ class nsHttpRequestHead {
   static void ParseMethod(const nsCString& aRawMethod,
                           ParsedMethodType& aParsedMethod);
 
-  ParsedMethodType ParsedMethod();
-  bool EqualsMethod(ParsedMethodType aType);
-  bool IsGet() { return EqualsMethod(kMethod_Get); }
-  bool IsPost() { return EqualsMethod(kMethod_Post); }
-  bool IsPatch() { return EqualsMethod(kMethod_Patch); }
-  bool IsOptions() { return EqualsMethod(kMethod_Options); }
-  bool IsConnect() { return EqualsMethod(kMethod_Connect); }
-  bool IsHead() { return EqualsMethod(kMethod_Head); }
-  bool IsPut() { return EqualsMethod(kMethod_Put); }
-  bool IsTrace() { return EqualsMethod(kMethod_Trace); }
+  ParsedMethodType ParsedMethod() const;
+  bool EqualsMethod(ParsedMethodType aType) const;
+  bool IsGet() const { return EqualsMethod(kMethod_Get); }
+  bool IsPost() const { return EqualsMethod(kMethod_Post); }
+  bool IsPatch() const { return EqualsMethod(kMethod_Patch); }
+  bool IsOptions() const { return EqualsMethod(kMethod_Options); }
+  bool IsConnect() const { return EqualsMethod(kMethod_Connect); }
+  bool IsHead() const { return EqualsMethod(kMethod_Head); }
+  bool IsPut() const { return EqualsMethod(kMethod_Put); }
+  bool IsTrace() const { return EqualsMethod(kMethod_Trace); }
   void ParseHeaderSet(const char* buffer);
 
  private:
@@ -148,11 +150,11 @@ class nsHttpRequestHead {
 
   // We are using RecursiveMutex instead of a Mutex because VisitHeader
   // function calls nsIHttpHeaderVisitor::VisitHeader while under lock.
-  mutable RecursiveMutex mRecursiveMutex MOZ_UNANNOTATED{
-      "nsHttpRequestHead.mRecursiveMutex"};
+  mutable RecursiveMutex mRecursiveMutex{"nsHttpRequestHead.mRecursiveMutex"};
 
   // During VisitHeader we sould not allow call to SetHeader.
-  bool mInVisitHeaders MOZ_GUARDED_BY(mRecursiveMutex){false};
+  // Depth counter so nested visits cannot disarm the outer guard.
+  uint32_t mInVisitHeaders MOZ_GUARDED_BY(mRecursiveMutex){0};
 
   friend struct IPC::ParamTraits<nsHttpRequestHead>;
 };

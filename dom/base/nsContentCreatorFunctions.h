@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,8 @@
 #ifndef nsContentCreatorFunctions_h_
 #define nsContentCreatorFunctions_h_
 
+#include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/FromParser.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
@@ -25,51 +25,83 @@ class nsGenericHTMLElement;
 namespace mozilla::dom {
 class Element;
 class NodeInfo;
+class CustomElementRegistry;
 struct CustomElementDefinition;
 }  // namespace mozilla::dom
 
 nsresult NS_NewElement(mozilla::dom::Element** aResult,
-                       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                       already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                        mozilla::dom::FromParser aFromParser,
                        const nsAString* aIs);
 
 nsresult NS_NewElement(
     mozilla::dom::Element** aResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+    mozilla::dom::FromParser aFromParser, const nsAString* aIs,
+    mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+        aCustomElementRegistry);
+
+nsresult NS_NewElement(
+    mozilla::dom::Element** aResult,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom = nullptr,
     mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
 
+nsresult NS_NewElement(
+    mozilla::dom::Element** aResult,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+    mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom,
+    mozilla::dom::CustomElementDefinition* aDefinition,
+    mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+        aCustomElementRegistry);
+
 nsresult NS_NewXMLElement(mozilla::dom::Element** aResult,
-                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+                          already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 nsresult NS_NewHTMLElement(
     mozilla::dom::Element** aResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom = nullptr,
     mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
+
+nsresult NS_NewHTMLElement(
+    mozilla::dom::Element** aResult,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+    mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom,
+    mozilla::dom::CustomElementDefinition* aDefinition,
+    mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+        aCustomElementRegistry);
 
 // First argument should be nsHTMLTag, but that adds dependency to parser
 // for a bunch of files.
 already_AddRefed<nsGenericHTMLElement> CreateHTMLElement(
-    uint32_t aNodeType, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    uint32_t aNodeType, already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser);
 
 nsresult NS_NewMathMLElement(
     mozilla::dom::Element** aResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 nsresult NS_NewXULElement(
     mozilla::dom::Element** aResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
     mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom = nullptr,
     mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
 
+nsresult NS_NewXULElement(
+    mozilla::dom::Element** aResult,
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
+    mozilla::dom::FromParser aFromParser, nsAtom* aIsAtom,
+    mozilla::dom::CustomElementDefinition* aDefinition,
+    mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+        aCustomElementRegistry);
+
 void NS_TrustedNewXULElement(
     mozilla::dom::Element** aResult,
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
 
 nsresult NS_NewSVGElement(mozilla::dom::Element** aResult,
-                          already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
+                          already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo,
                           mozilla::dom::FromParser aFromParser);
 
 #endif  // nsContentCreatorFunctions_h_

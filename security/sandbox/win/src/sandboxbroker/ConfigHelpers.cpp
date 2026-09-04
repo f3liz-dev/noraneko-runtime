@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include <windows.h>
 
 #include "mozilla/Logging.h"
+#include "mozilla/UniquePtrExtensions.h"  // For getter_Transfers()
 #include "mozilla/Vector.h"
 #include "nsExceptionHandler.h"
 #include "nsStringFwd.h"
@@ -24,6 +23,19 @@ extern LazyLogModule sSandboxBrokerLog;
 #define LOG_W(...) MOZ_LOG(sSandboxBrokerLog, LogLevel::Warning, (__VA_ARGS__))
 
 namespace sandboxing {
+
+namespace {
+
+bool ContainsSandboxWildcard(const nsAString& aPath) {
+  // '?' is no longer a valid character wildcard, but if used with the old '/'
+  // escape character it can still cause a crash. We forbid '/' to prevent this
+  // because it is also not a valid path char and the NT prefix contains '?'s.
+  static constexpr std::u16string_view kForbidden = u"*/";
+
+  return aPath.FindCharInSet(kForbidden) != kNotFound;
+}
+
+}  // namespace
 
 SizeTrackingConfig::SizeTrackingConfig(sandbox::TargetConfig* aConfig,
                                        int32_t aStoragePages)
@@ -155,6 +167,11 @@ static auto AddRulesForKey(HKEY aFontKey, const nsAString& aWindowsUserFontDir,
 
     // Should be path to font file so reject directories.
     if (data[dataSizeInWChars - 1] == L'\\') {
+      continue;
+    }
+
+    // Shouldn't contain any wildcard chars.
+    if (ContainsSandboxWildcard(nsDependentSubstring(data, dataSizeInWChars))) {
       continue;
     }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"  // CompositeOperationOrAuto
-#include "nsCSSValue.h"
 #include "nsTArray.h"
 
 namespace mozilla {
@@ -27,13 +24,14 @@ struct PropertyValuePair {
 
   PropertyValuePair(const CSSPropertyId& aProperty,
                     RefPtr<StyleLockedDeclarationBlock>&& aValue)
-      : mProperty(aProperty), mServoDeclarationBlock(std::move(aValue)) {
-    MOZ_ASSERT(mServoDeclarationBlock, "Should be valid property value");
-  }
+      : mProperty(aProperty), mServoDeclarationBlock(std::move(aValue)) {}
 
   CSSPropertyId mProperty;
 
   // The specified value when using the Servo backend.
+  // If it is nullptr, we use the base values, i.e. the value generated for that
+  // property by finding the computed value for that property in the absence of
+  // animations, when composing the animations and getkeyframes().
   RefPtr<StyleLockedDeclarationBlock> mServoDeclarationBlock;
 
 #ifdef DEBUG
@@ -43,6 +41,13 @@ struct PropertyValuePair {
 #endif
 
   bool operator==(const PropertyValuePair&) const;
+};
+
+// Yes if there are any Keyframes in nsTArray<Keyframe> that use
+// <timeline-range-offset>.
+enum class KeyframeOffsetsHasRangeOffset {
+  No,
+  Yes,
 };
 
 /**
@@ -69,9 +74,48 @@ struct Keyframe {
   Keyframe& operator=(const Keyframe& aOther) = default;
   Keyframe& operator=(Keyframe&& aOther) = default;
 
-  Maybe<double> mOffset;
-  static constexpr double kComputedOffsetNotSet = -1.0;
-  double mComputedOffset = kComputedOffsetNotSet;
+  static bool ComputedOffsetsAreDifferent(const double aFirst,
+                                          const double aSecond) {
+    // `aFirst != aSecond` is always true if one of them is NaN, so we have to
+    // filter out the case if both are NaN,
+    return aFirst != aSecond && !(std::isnan(aFirst) && std::isnan(aSecond));
+  }
+
+  bool IsRangedKeyframe() const {
+    return mOffset && mOffset->IsTimelineRangeOffset();
+  }
+
+  struct OffsetType {
+    // If mRangeName is StyleTimelineRangeName::None, this is a percentage
+    // offset. Otherwise, this is a TimelineRangeOffset (i.e. the offset with
+    // <timeline-range-name> component).
+    StyleTimelineRangeName mRangeName = StyleTimelineRangeName::None;
+    double mPercentage = 0.0;
+
+    static OffsetType PercentageOffset(const double aPercentage) {
+      return {StyleTimelineRangeName::None, aPercentage};
+    }
+
+    bool IsPercentageOffset() const {
+      MOZ_ASSERT(mRangeName != StyleTimelineRangeName::Normal);
+      return mRangeName == StyleTimelineRangeName::None;
+    }
+    bool IsTimelineRangeOffset() const {
+      MOZ_ASSERT(mRangeName != StyleTimelineRangeName::Normal);
+      return mRangeName != StyleTimelineRangeName::None;
+    }
+
+    bool operator==(const OffsetType& aOther) const {
+      return mRangeName == aOther.mRangeName &&
+             mPercentage == aOther.mPercentage;
+    }
+  };
+  // |mOffset| could be a null, a percentage, or a |range name, percentage|
+  // pair.
+  Maybe<OffsetType> mOffset;
+  // The computed offset could be any real number (as percentage), so we use NaN
+  // to represent the unresolved computed offset.
+  double mComputedOffset = std::numeric_limits<double>::quiet_NaN();
   Maybe<StyleComputedTimingFunction> mTimingFunction;  // Nothing() here means
                                                        // "linear"
   dom::CompositeOperationOrAuto mComposite =

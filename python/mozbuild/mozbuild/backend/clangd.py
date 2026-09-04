@@ -22,10 +22,12 @@ def find_vscode_or_vscodium_cmd(ide):
     import shutil
     import sys
 
-    # Try to look up the `code` binary on $PATH, and use it if present. This
-    # should catch cases like being run from within a vscode-remote shell,
-    # even if vscode itself is also installed on the remote host.
-    path = shutil.which("code")
+    # Try to look up the requested editor's launcher on $PATH, and use it if
+    # present. This should catch cases like being run from within a
+    # vscode-remote shell, even if the editor itself is also installed on the
+    # remote host. Only the launcher matching `ide` is looked up, so that having
+    # both editors installed doesn't start the wrong one.
+    path = shutil.which("code" if ide == "vscode" else "codium")
     if path is not None:
         return [path]
 
@@ -106,6 +108,7 @@ def find_vscode_or_vscodium_cmd(ide):
         else:
             cmd_and_path = [
                 {"path": "/usr/local/bin/codium", "cmd": ["/usr/local/bin/codium"]},
+                {"path": "/snap/bin/codium", "cmd": ["/snap/bin/codium"]},
                 {"path": "/usr/bin/codium", "cmd": ["/usr/bin/codium"]},
             ]
 
@@ -132,8 +135,13 @@ class ClangdBackend(CompileDBBackend):
         if compiler_args is None:
             return None
 
-        if len(compiler_args) and compiler_args[0].endswith("ccache"):
-            compiler_args.pop(0)
+        # A compiler wrapper (ccache and/or --with-compiler-wrapper) is
+        # prepended to the compiler invocation, but clangd treats the leading
+        # token as the driver and misparses the rest of the command, so strip
+        # the whole wrapper prefix.
+        wrapper = list(self.environment.substs.get("COMPILER_WRAPPER", []))
+        if wrapper and compiler_args[: len(wrapper)] == wrapper:
+            del compiler_args[: len(wrapper)]
         return compiler_args
 
     def _build_cmd(self, cmd, filename, unified):

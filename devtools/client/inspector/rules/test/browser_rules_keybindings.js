@@ -17,7 +17,7 @@ add_task(async function () {
   const brace = view.styleDocument.querySelectorAll(".ruleview-ruleclose")[1];
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   await focusNewRuleViewProperty(ruleEditor);
   EventUtils.sendString("color");
 
@@ -145,7 +145,7 @@ add_task(async function testKeyboardNavigationInElementRule() {
   const brace = view.styleDocument.querySelector(".ruleview-ruleclose");
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 0);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 0);
   let editor = await focusNewRuleViewProperty(ruleEditor);
   editor.input.value = "color";
 
@@ -204,14 +204,10 @@ add_task(async function testKeyboardNavigationInElementRule() {
   EventUtils.sendString("tomato", view.styleWindow);
 
   info("Typing Enter should close the input and focus the value span");
-  const onValueDone = view.once("ruleview-changed");
-  // The element rule is reset when a property is added, which impacts how we deal
-  // with the focused element.
-  const onRuleEditorFocusReset = view.once("rule-editor-focus-reset");
+  const onValueDone = view.inspector.once("rule-view-refreshed");
   EventUtils.sendKey("Return");
 
   await onValueDone;
-  await onRuleEditorFocusReset;
   await onStyleAttributeMutation;
 
   is(
@@ -241,7 +237,7 @@ add_task(async function () {
   const brace = view.styleDocument.querySelectorAll(".ruleview-ruleclose")[1];
 
   info("Focus the new property editable field to create a color property");
-  const ruleEditor = getRuleViewRuleEditor(view, 1);
+  const ruleEditor = getRuleViewRuleEditorAt(view, 1);
   await focusNewRuleViewProperty(ruleEditor);
   EventUtils.sendString("color");
 

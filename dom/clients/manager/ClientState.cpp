@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,8 +37,6 @@ ClientWindowState& ClientWindowState::operator=(ClientWindowState&& aRight) {
   mData = std::move(aRight.mData);
   return *this;
 }
-
-ClientWindowState::~ClientWindowState() = default;
 
 mozilla::dom::VisibilityState ClientWindowState::VisibilityState() const {
   return mData->visibilityState();
@@ -83,8 +79,6 @@ ClientWorkerState& ClientWorkerState::operator=(ClientWorkerState&& aRight) {
   mData = std::move(aRight.mData);
   return *this;
 }
-
-ClientWorkerState::~ClientWorkerState() = default;
 
 StorageAccess ClientWorkerState::GetStorageAccess() const {
   return mData->storageAccess();

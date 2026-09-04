@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,8 +13,8 @@ namespace js {
 class Shape;
 
 class StringObject : public NativeObject {
-  static const unsigned PRIMITIVE_VALUE_SLOT = 0;
-  static const unsigned LENGTH_SLOT = 1;
+  JS_DEFINE_TYPED_SLOT(0, PRIMITIVE_VALUE_SLOT, String);
+  JS_DEFINE_TYPED_SLOT(1, LENGTH_SLOT, Int32);
 
   static const ClassSpec classSpec_;
 
@@ -42,17 +40,19 @@ class StringObject : public NativeObject {
                                          Handle<StringObject*> obj);
 
   JSString* unbox() const {
-    return getFixedSlot(PRIMITIVE_VALUE_SLOT).toString();
+    return getFixedSlotTyped(PRIMITIVE_VALUE_SLOT).toString();
   }
 
   inline size_t length() const {
-    return size_t(getFixedSlot(LENGTH_SLOT).toInt32());
+    return size_t(getFixedSlotTyped(LENGTH_SLOT).toInt32());
   }
 
   static size_t offsetOfPrimitiveValue() {
-    return getFixedSlotOffset(PRIMITIVE_VALUE_SLOT);
+    return getFixedSlotOffsetTyped(PRIMITIVE_VALUE_SLOT);
   }
-  static size_t offsetOfLength() { return getFixedSlotOffset(LENGTH_SLOT); }
+  static size_t offsetOfLength() {
+    return getFixedSlotOffsetTyped(LENGTH_SLOT);
+  }
 
  private:
   static inline bool init(JSContext* cx, Handle<StringObject*> obj,
@@ -61,9 +61,9 @@ class StringObject : public NativeObject {
   static JSObject* createPrototype(JSContext* cx, JSProtoKey key);
 
   void setStringThis(JSString* str) {
-    MOZ_ASSERT(getReservedSlot(PRIMITIVE_VALUE_SLOT).isUndefined());
-    setFixedSlot(PRIMITIVE_VALUE_SLOT, StringValue(str));
-    setFixedSlot(LENGTH_SLOT, Int32Value(int32_t(str->length())));
+    MOZ_ASSERT(getReservedSlot(PRIMITIVE_VALUE_SLOT.index()).isUndefined());
+    initFixedSlotTyped(PRIMITIVE_VALUE_SLOT, StringValue(str));
+    initFixedSlotTyped(LENGTH_SLOT, Int32Value(int32_t(str->length())));
   }
 };
 

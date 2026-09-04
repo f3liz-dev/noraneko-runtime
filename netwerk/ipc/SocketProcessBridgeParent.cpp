@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SocketProcessBridgeParent.h"
+
 #include "SocketProcessLogging.h"
 
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/MediaTransportParent.h"
 #endif
+#include "SocketProcessChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "SocketProcessChild.h"
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "nsThreadUtils.h"
 
@@ -47,8 +47,8 @@ mozilla::ipc::IPCResult SocketProcessBridgeParent::RecvInitBackgroundDataBridge(
   transportQueue->Dispatch(NS_NewRunnableFunction(
       "BackgroundDataBridgeParent::Bind",
       [endpoint = std::move(aEndpoint), aChannelID]() mutable {
-        RefPtr<net::BackgroundDataBridgeParent> actor =
-            new net::BackgroundDataBridgeParent(aChannelID);
+        RefPtr<BackgroundDataBridgeParent> actor =
+            BackgroundDataBridgeParent::Create(aChannelID);
         endpoint.Bind(actor);
       }));
   return IPC_OK();

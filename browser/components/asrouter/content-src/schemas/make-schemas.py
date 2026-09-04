@@ -63,6 +63,9 @@ SCHEMAS = [
         schema_id="chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json",
         schema_path=Path("MessagingExperiment.schema.json"),
         message_types={
+            "ActionOnlyMessage": (
+                SCHEMA_DIR / "OnboardingMessage" / "ActionOnlyMessage.schema.json"
+            ),
             "BookmarksBarButton": (
                 SCHEMA_DIR / "OnboardingMessage" / "BookmarksBarButton.schema.json"
             ),
@@ -81,6 +84,12 @@ SCHEMAS = [
             ),
             "NewtabMessage": (
                 SCHEMA_DIR / "OnboardingMessage" / "NewtabMessage.schema.json"
+            ),
+            "SidebarChatBotPromo": (
+                SCHEMA_DIR / "OnboardingMessage" / "SidebarChatBotPromo.schema.json"
+            ),
+            "SmartWindowNewtabPromo": (
+                SCHEMA_DIR / "OnboardingMessage" / "SmartWindowNewtabPromo.schema.json"
             ),
             "Spotlight": SCHEMA_DIR / "OnboardingMessage" / "Spotlight.schema.json",
             "ToastNotification": (
@@ -422,7 +431,7 @@ def validate_corpus(schema_def: SchemaDefinition, schema: dict[str, Any]):
         print(f"    Validating messages from {provider}:")
 
         try:
-            with provider_path.open("r") as f:
+            with provider_path.open("r", encoding="utf-8") as f:
                 messages = json.load(f)
         except FileNotFoundError as e:
             if not provider_path.parent.exists():

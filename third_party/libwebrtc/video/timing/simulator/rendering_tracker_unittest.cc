@@ -63,17 +63,15 @@ class RenderingTrackerTest : public SimulatedTimeTestFixture {
       RTC_DCHECK_RUN_ON(queue_ptr_);
       rendering_tracker_ = std::make_unique<RenderingTracker>(
           env_,
-          RenderingTracker::Config{
-              .ssrc = EncodedFrameBuilderGenerator::kSsrc,
-              .max_wait_for_keyframe = TimeDelta::Millis(200),
-              .max_wait_for_frame = TimeDelta::Millis(3000),
-              .render_delay = TimeDelta::Millis(10)},
-          std::make_unique<VCMTiming>(&env_.clock(), env_.field_trials()),
+          RenderingTracker::Config{.ssrc = EncodedFrameBuilderGenerator::kSsrc,
+                                   .render_delay = TimeDelta::Millis(10)},
+          std::make_unique<VCMTiming>(&env_.clock(), env_.field_trials(),
+                                      /*render_delay=*/TimeDelta::Millis(10)),
           &rendering_tracker_events_);
       rendering_tracker_->SetDecodedFrameIdCallback(&decoded_frame_id_cb_);
     });
   }
-  ~RenderingTrackerTest() {
+  ~RenderingTrackerTest() override {
     SendTask([this]() {
       RTC_DCHECK_RUN_ON(queue_ptr_);
       rendering_tracker_.reset();

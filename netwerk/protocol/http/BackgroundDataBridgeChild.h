@@ -5,8 +5,8 @@
 #ifndef mozilla_net_BackgroundDataBridgeChild_h
 #define mozilla_net_BackgroundDataBridgeChild_h
 
-#include "mozilla/net/PBackgroundDataBridgeChild.h"
 #include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/net/PBackgroundDataBridgeChild.h"
 
 namespace mozilla {
 namespace net {
@@ -26,7 +26,7 @@ class BackgroundDataBridgeChild final : public PBackgroundDataBridgeChild {
 
  public:
   mozilla::ipc::IPCResult RecvOnTransportAndData(
-      const uint64_t& offset, const uint32_t& count, const nsACString& data,
+      const uint64_t& offset, const nsACString& data,
       const TimeStamp& aOnDataAvailableStartTime);
   mozilla::ipc::IPCResult RecvOnStopRequest(
       nsresult aStatus, const ResourceTimingStructArgs& aTiming,

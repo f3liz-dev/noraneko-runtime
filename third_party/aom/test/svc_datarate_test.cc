@@ -112,6 +112,40 @@ class ResizingVideoSource : public ::libaom_test::DummyVideoSource {
   int top_height_;
 };
 
+class GrayscaleFlatVideoSource : public ::libaom_test::DummyVideoSource {
+ public:
+  GrayscaleFlatVideoSource() {
+    SetSize(1280, 720);
+    SetImageFormat(AOM_IMG_FMT_I420);
+    limit_ = 1;
+  }
+
+  ~GrayscaleFlatVideoSource() override = default;
+
+  void SetValue(uint8_t val) { val_ = val; }
+
+ protected:
+  void FillFrame() override {
+    if (img_) {
+      const unsigned int y_stride = img_->stride[0];
+      const unsigned int y_height = img_->h;
+      for (unsigned int r = 0; r < y_height; ++r) {
+        memset(img_->planes[0] + r * y_stride, val_, img_->d_w);
+      }
+      const unsigned int uv_stride = img_->stride[1];
+      const unsigned int uv_height = (img_->h + 1) >> 1;
+      const unsigned int uv_width = (img_->d_w + 1) >> 1;
+      for (unsigned int r = 0; r < uv_height; ++r) {
+        memset(img_->planes[1] + r * uv_stride, 128, uv_width);
+        memset(img_->planes[2] + r * uv_stride, 128, uv_width);
+      }
+    }
+  }
+
+ private:
+  uint8_t val_ = 0;
+};
+
 class DatarateTestSVC
     : public ::libaom_test::CodecTestWith4Params<libaom_test::TestMode, int,
                                                  unsigned int, int>,
@@ -199,6 +233,10 @@ class DatarateTestSVC
                              aom_codec_pts_t pts) override {
     frame_info_list_.push_back(FrameInfo(pts, img.d_w, img.d_h));
     ++decoded_nframes_;
+
+    if (check_reconstruction_) {
+      CheckReconstruction(img);
+    }
   }
 
   std::vector<FrameInfo> frame_info_list_;
@@ -207,6 +245,7 @@ class DatarateTestSVC
 
   void ResetModel() override {
     DatarateTest::ResetModel();
+    abort_ = false;
     layer_frame_cnt_ = 0;
     superframe_cnt_ = 0;
     number_temporal_layers_ = 1;
@@ -247,6 +286,10 @@ class DatarateTestSVC
     external_resize_pattern_ = 0;
     dynamic_tl_ = false;
     dynamic_scale_factors_ = false;
+    disable_last_ref_ = false;
+    check_reconstruction_ = false;
+    expected_val_ = 0;
+    max_allowed_error_ = 0;
   }
 
   void PreEncodeFrameHook(::libaom_test::VideoSource *video,
@@ -302,7 +345,7 @@ class DatarateTestSVC
         spatial_layer_id, multi_ref_, comp_pred_,
         (video->frame() % cfg_.kf_max_dist) == 0, dynamic_enable_disable_mode_,
         rps_mode_, rps_recovery_frame_, simulcast_mode_, use_last_as_scaled_,
-        use_last_as_scaled_single_ref_);
+        use_last_as_scaled_single_ref_, disable_last_ref_);
     if (intra_only_ == 1 && frame_sync_ > 0) {
       // Set an Intra-only frame on SL0 at frame_sync_.
       // In order to allow decoding to start on SL0 in mid-sequence we need to
@@ -964,7 +1007,7 @@ class DatarateTestSVC
       int multi_ref, int comp_pred, int is_key_frame,
       int dynamic_enable_disable_mode, int rps_mode, int rps_recovery_frame,
       int simulcast_mode, bool use_last_as_scaled,
-      bool use_last_as_scaled_single_ref) {
+      bool use_last_as_scaled_single_ref, bool disable_last_ref) {
     int lag_index = 0;
     int base_count = frame_cnt >> 2;
     layer_id->spatial_layer_id = spatial_layer;
@@ -1164,6 +1207,11 @@ class DatarateTestSVC
     if (dynamic_enable_disable_mode == 1 &&
         layer_id->spatial_layer_id == number_spatial_layers_ - 1)
       ref_frame_config->reference[0] = 0;
+    // Always disable LAST reference under this flag. use GOLDEN reference.
+    if (disable_last_ref) {
+      ref_frame_config->reference[0] = 0;
+      ref_frame_config->reference[3] = 1;
+    }
     return layer_flags;
   }
 
@@ -1225,6 +1273,46 @@ class DatarateTestSVC
 #endif
   }
 
+  virtual void BasicRateTargetingSVC3TL1SLQvgaLowFramerateTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+    cfg_.g_threads = 2;
+    cfg_.kf_max_dist = 30;
+    cfg_.kf_min_dist = 30;
+    cfg_.rc_dropframe_thresh = 0;
+    cfg_.rc_min_quantizer = 2;
+    cfg_.rc_max_quantizer = 50;
+
+    ::libaom_test::I420VideoSource video("desktop1.320_180.yuv", 320, 180, 10,
+                                         1, 0, 800);
+    const int bitrate_array[2] = { 50, 200 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    tile_columns_ = 1;
+    SetTargetBitratesFor1SL3TL();
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  }
+
+  virtual void BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+    cfg_.g_threads = 2;
+    cfg_.kf_max_dist = 30;
+    cfg_.kf_min_dist = 30;
+    cfg_.rc_dropframe_thresh = 0;
+    cfg_.rc_min_quantizer = 2;
+    cfg_.rc_max_quantizer = 50;
+
+    ::libaom_test::I420VideoSource video("desktop1.320_180.yuv", 320, 180, 10,
+                                         1, 0, 800);
+    const int bitrate_array[2] = { 500, 1000 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    tile_columns_ = 1;
+    SetTargetBitratesFor1SL3TL();
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+  }
+
   virtual void SetFrameQpSVC3TL1SLTest() {
     SetUpCbr();
     cfg_.g_error_resilient = 1;
@@ -1269,7 +1357,7 @@ class DatarateTestSVC
     screen_mode_ = 1;
     SetTargetBitratesFor1SL3TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    CheckDatarate(0.40, 2.0);
+    CheckDatarate(0.30, 2.0);
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exlcude them from
     // mismatch count, since loopfilter/cdef is not applied for these on
@@ -1301,7 +1389,7 @@ class DatarateTestSVC
     screen_mode_ = 1;
     SetTargetBitratesFor1SL2TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
-    CheckDatarate(0.75, 1.8);
+    CheckDatarate(0.75, 2.0);
 #if CONFIG_AV1_DECODER
     // Top temporal layers are non_reference, so exlcude them from
     // mismatch count, since loopfilter/cdef is not applied for these on
@@ -1466,6 +1554,23 @@ class DatarateTestSVC
     SetTargetBitratesFor2SL1TL();
     ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
     CheckDatarate(0.80, 1.60);
+  }
+
+  virtual void BasicRateTargetingSVC1TL2SLDisableLASTTest() {
+    SetUpCbr();
+    cfg_.g_error_resilient = 0;
+
+    ::libaom_test::I420VideoSource video("hantro_collage_w352h288.yuv", 352,
+                                         288, 30, 1, 0, 300);
+    const int bitrate_array[2] = { 300, 600 };
+    cfg_.rc_target_bitrate = bitrate_array[GET_PARAM(4)];
+    ResetModel();
+    disable_last_ref_ = true;
+    screen_mode_ = true;
+    ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+#if CONFIG_AV1_DECODER
+    EXPECT_EQ((int)GetMismatchFrames(), 0);
+#endif
   }
 
   virtual void BasicRateTargetingSVC3TL3SLIntraStartDecodeBaseMidSeq() {
@@ -2340,11 +2445,58 @@ class DatarateTestSVC
   int external_resize_pattern_;
   bool dynamic_tl_;
   bool dynamic_scale_factors_;
+  bool disable_last_ref_;
+
+  void CheckReconstruction(const aom_image_t &img) {
+    const unsigned int w = img.d_w;
+    const unsigned int h = img.d_h;
+    const unsigned int stride = img.stride[0];
+    const uint8_t *y_plane = img.planes[0];
+    const unsigned int border = 256;
+    const unsigned int sb_size = 128;
+    const int bl = 16;
+    const uint8_t base_val =
+        y_plane[(border + sb_size / 2) * stride + (border + sb_size / 2)];
+
+    const int diff =
+        abs(static_cast<int>(base_val) - static_cast<int>(expected_val_));
+    EXPECT_LE(diff, max_allowed_error_);
+
+    for (unsigned int r = border; r < h - border; r += bl) {
+      for (unsigned int c = border; c < w - border; c += bl) {
+        if (y_plane[r * stride + c] != base_val) {
+          EXPECT_EQ(y_plane[r * stride + c], base_val)
+              << "Chessboard pattern detected at (" << r << ", " << c << ") "
+              << "value " << (int)y_plane[r * stride + c] << " vs base "
+              << (int)base_val;
+          abort_ = true;
+          return;
+        }
+      }
+    }
+  }
+
+  bool check_reconstruction_;
+  uint8_t expected_val_;
+  int max_allowed_error_;
 };
 
 // Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial.
 TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SL) {
   BasicRateTargetingSVC3TL1SLTest();
+}
+
+// Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial,
+// QVGA, low framerate.
+TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SLQvgaLowFrameate) {
+  BasicRateTargetingSVC3TL1SLQvgaLowFramerateTest();
+}
+
+// Check basic rate targeting for CBR, for 3 temporal layers, 1 spatial,
+// QVGA, high bitrate and low framerate.
+TEST_P(DatarateTestSVC,
+       BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest) {
+  BasicRateTargetingSVC3TL1SLQvgaHighBitrateLowFramerateTest();
 }
 
 TEST_P(DatarateTestSVC, SetFrameQpSVC3TL1SL) { SetFrameQpSVC3TL1SLTest(); }
@@ -2403,6 +2555,12 @@ TEST_P(DatarateTestSVC, BasicRateTargetingSVC3TL1SLResize) {
 // Check basic rate targeting for CBR, for 2 spatial layers, 1 temporal.
 TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL2SL) {
   BasicRateTargetingSVC1TL2SLTest();
+}
+
+// Check basic rate targeting for CBR, for 2 spatial layers, 1 temporal.
+// Disable the usage of LAST referenc frame.
+TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL2SLDisableLAST) {
+  BasicRateTargetingSVC1TL2SLDisableLASTTest();
 }
 
 // Check basic rate targeting for CBR, for 3 spatial layers, 3 temporal,
@@ -2690,6 +2848,37 @@ TEST_P(DatarateTestSVC, BasicRateTargetingSVC1TL3SLIssue433046392) {
   BasicRateTargetingSVC1TL3SLIssue433046392();
 }
 
+TEST_P(DatarateTestSVC, ReconstructionGrayScaleInput) {
+  if (set_cpu_used_ != 9 || aq_mode_ != 0 || GET_PARAM(4) != 0) return;
+
+  SetUpCbr();
+
+  for (int qp = 48; qp <= 63; ++qp) {
+    for (int x = 0; x <= 255; x += 10) {
+      ResetModel();
+
+      expected_val_ = static_cast<uint8_t>(x);
+      max_allowed_error_ = (qp > 60) ? 3 : (qp > 50) ? 1 : 0;
+      check_reconstruction_ = true;
+      screen_mode_ = true;
+
+      GrayscaleFlatVideoSource video;
+      video.SetValue(expected_val_);
+
+      cfg_.g_w = 1280;
+      cfg_.g_h = 720;
+      cfg_.g_profile = 0;
+      cfg_.g_lag_in_frames = 0;
+      cfg_.rc_end_usage = AOM_CBR;
+      cfg_.rc_min_quantizer = qp;
+      cfg_.rc_max_quantizer = qp;
+
+      SetTargetBitratesFor1SL1TL();
+      ASSERT_NO_FATAL_FAILURE(RunLoop(&video));
+    }
+  }
+}
+
 TEST(SvcParams, BitrateOverflow) {
   uint8_t buf[6] = { 0 };
   aom_image_t img;
@@ -2723,10 +2912,18 @@ TEST(SvcParams, BitrateOverflow) {
   EXPECT_EQ(aom_codec_destroy(&enc), AOM_CODEC_OK);
 }
 
+// Speed 6 takes too long on valgrind, so do only 1 bitrate and one aq_mode.
+#ifdef AOM_VALGRIND_BUILD
 AV1_INSTANTIATE_TEST_SUITE(DatarateTestSVC,
                            ::testing::Values(::libaom_test::kRealTime),
-                           ::testing::Range(7, 12), ::testing::Values(0, 3),
+                           ::testing::Range(6, 12), ::testing::Values(3),
+                           ::testing::Values(1));
+#else  // AOM_VALGRIND_BUILD
+AV1_INSTANTIATE_TEST_SUITE(DatarateTestSVC,
+                           ::testing::Values(::libaom_test::kRealTime),
+                           ::testing::Range(6, 12), ::testing::Values(0, 3),
                            ::testing::Values(0, 1));
+#endif
 
 }  // namespace
 }  // namespace datarate_test

@@ -1,19 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FilteringWrapper.h"
+
+#include "mozilla/ErrorResult.h"
+
 #include "AccessCheck.h"
 #include "ChromeObjectWrapper.h"
-#include "XrayWrapper.h"
-#include "nsJSUtils.h"
-#include "mozilla/ErrorResult.h"
-#include "xpcpublic.h"
-#include "xpcprivate.h"
-
 #include "jsapi.h"
+#include "nsJSUtils.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
+#include "XrayWrapper.h"
+
 #include "js/Symbol.h"
 
 using namespace JS;
@@ -141,6 +141,14 @@ bool FilteringWrapper<Base, Policy>::getPrototype(
     JS::MutableHandleObject protop) const {
   // Filtering wrappers do not allow access to the prototype.
   protop.set(nullptr);
+  return true;
+}
+
+template <typename Base, typename Policy>
+bool FilteringWrapper<Base, Policy>::getPrototypeIfOrdinary(
+    JSContext* cx, JS::HandleObject wrapper, bool* isOrdinary,
+    JS::MutableHandleObject protop) const {
+  *isOrdinary = false;
   return true;
 }
 

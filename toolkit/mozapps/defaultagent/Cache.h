@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,7 +72,7 @@ class Cache {
   // key in so that our testing caches don't conflict with each other or with
   // a possible production cache on the test machine.
   explicit Cache(const wchar_t* cacheRegKey = nullptr);
-  ~Cache();
+  ~Cache() = default;
 
   // The version of the cache (not to be confused with the version of the cache
   // entries). This should only be incremented if we need to make breaking

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,7 +38,7 @@ auto OriginParser::ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
 
   OriginParser parser(originNoSuffix);
 
-  *aAttrs = originAttributes;
+  *aAttrs = std::move(originAttributes);
   return parser.Parse(aSpec);
 }
 
@@ -96,16 +94,15 @@ auto OriginParser::Parse(nsACString& aSpec) -> ResultType {
       }
     }
 
-    aSpec = spec;
+    aSpec = std::move(spec);
 
     return ValidOrigin;
   }
 
   if (mSchemeType == eAbout) {
-    if (mMaybeObsolete) {
-      // The "moz-safe-about+++home" was acciedntally created by a buggy nightly
-      // and can be safely removed.
-      return mHost.EqualsLiteral("home") ? ObsoleteOrigin : InvalidOrigin;
+    // "moz-safe-about+home" is retired, and can be safely removed.
+    if (mScheme.EqualsLiteral("moz-safe-about")) {
+      return ObsoleteOrigin;
     }
     spec.Append(':');
   } else if (mSchemeType != eChrome) {
@@ -119,7 +116,7 @@ auto OriginParser::Parse(nsACString& aSpec) -> ResultType {
     spec.AppendInt(mPort.Value());
   }
 
-  aSpec = spec;
+  aSpec = std::move(spec);
 
   return mScheme.EqualsLiteral("app") ? ObsoleteOrigin : ValidOrigin;
 }
@@ -266,9 +263,6 @@ void OriginParser::HandleToken(const nsDependentCSubstring& aToken) {
       if (mSchemeType == eFile) {
         mState = eExpectingEmptyTokenOrUniversalFileOrigin;
       } else {
-        if (mSchemeType == eAbout) {
-          mMaybeObsolete = true;
-        }
         mState = eExpectingHost;
       }
 

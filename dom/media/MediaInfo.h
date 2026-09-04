@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -330,6 +328,7 @@ enum class VideoRotation {
   kDegree_90 = 90,
   kDegree_180 = 180,
   kDegree_270 = 270,
+  // Keep in sync with VideoRotationValidator.
 };
 
 // Stores info relevant to presenting media frames.
@@ -370,6 +369,7 @@ class VideoInfo : public TrackInfo {
     mColorSpace = aOther.mColorSpace;
     mColorPrimaries = aOther.mColorPrimaries;
     mTransferFunction = aOther.mTransferFunction;
+    mHDRMetadata = aOther.mHDRMetadata;
     mColorRange = aOther.mColorRange;
     mImageRect = aOther.mImageRect;
     mAlphaPresent = aOther.mAlphaPresent;
@@ -403,6 +403,16 @@ class VideoInfo : public TrackInfo {
 
   void SetImageRect(const gfx::IntRect& aRect) { mImageRect = Some(aRect); }
   void ResetImageRect() { mImageRect.reset(); }
+
+  // Adopts an image size decoded from the bitstream. The picture rectangle is
+  // expressed relative to the image size, so a change in size invalidates it
+  // and it is discarded; an unchanged size keeps the existing rectangle.
+  void AdoptImageSize(const gfx::IntSize& aImage) {
+    if (mImage != aImage) {
+      ResetImageRect();
+    }
+    mImage = aImage;
+  }
 
   // Returned the crop rectangle scaled to aWidth/aHeight size relative to
   // mImage size.
@@ -476,6 +486,8 @@ class VideoInfo : public TrackInfo {
   // Transfer functions get their own member, which may not be strongly
   // correlated to the colorspace.
   Maybe<gfx::TransferFunction> mTransferFunction;
+
+  Maybe<gfx::HDRMetadata> mHDRMetadata;
 
   // True indicates no restriction on Y, U, V values (otherwise 16-235 for 8
   // bits etc)

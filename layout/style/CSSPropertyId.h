@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +9,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ServoBindings.h"
 #include "nsAtom.h"
 #include "nsCSSProps.h"
 #include "nsString.h"
@@ -32,11 +29,21 @@ struct CSSPropertyId {
   }
 
  public:
+  // Returns a CSSPropertyId for the given string. Note that the property
+  // might be invalid, so callers need to check it with IsValid().
+  static CSSPropertyId Parse(const nsACString& aName) {
+    NonCustomCSSPropertyId prop = nsCSSProps::LookupProperty(aName);
+    if (prop == eCSSPropertyExtra_variable) {
+      return FromCustomProperty(aName);
+    }
+    return CSSPropertyId(prop);
+  }
+
   // Callers are expected to pass a custom name atom with the leading "--"
   // already stripped. The remaining ident may legally start with "-"
   // (or even "--"), so we cannot assert anything about its prefix here.
   static CSSPropertyId FromCustomName(RefPtr<nsAtom> aCustomName) {
-    return CSSPropertyId(aCustomName);
+    return CSSPropertyId(std::move(aCustomName));
   }
 
   static CSSPropertyId FromCustomProperty(const nsACString& aCustomProperty) {
@@ -63,6 +70,7 @@ struct CSSPropertyId {
   RefPtr<nsAtom> mCustomName;
 
   bool IsCustom() const { return mId == eCSSPropertyExtra_variable; }
+  bool IsShorthand() const { return nsCSSProps::IsShorthand(mId); }
 
   bool operator==(const CSSPropertyId&) const = default;
   bool operator!=(const CSSPropertyId&) const = default;

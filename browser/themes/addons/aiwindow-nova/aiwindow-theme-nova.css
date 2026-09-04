@@ -1,0 +1,42 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Notes for manifest.in.json — do NOT set these theme keys:
+ * They are resolved by the design system and should not be set in the theme manifest.
+ *   tab_selected: --tab-background-color-selected
+ *   ntp_background:  --newtab-background-color
+ *   ntp_card_background:  --newtab-background-color-secondary
+ *   ntp_text:  --newtab-text-primary-color
+ *   sidebar_highlight: --lwt-sidebar-highlight
+ *   sidebar_highlight_text: --lwt-sidebar-highlight-text
+ */
+
+body {
+  --tabpanel-background-color: transparent;
+}
+
+#navigator-toolbox {
+  --smartwindow-box-shadow: light-dark(var(--color-violet-70), var(--color-violet-50));
+
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: color-mix(in srgb, var(--ai-background-color) 80%, transparent) !important;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: 0 0 80px 0 color-mix(in srgb, var(--smartwindow-box-shadow) 60%, transparent);
+}
+
+.tab-preview-thumbnail-container > canvas {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-color: var(--ai-background-color);
+}
+
+#tabbrowser-tabpanels > :not(.split-view-panel) .browserContainer {
+  --chrome-box-shadow: light-dark(color-mix(in srgb, var(--color-violet-60) 15%, transparent), color-mix(in srgb, var(--color-violet-40) 15%, transparent));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: 0 0 14px 0 var(--chrome-box-shadow);
+
+  :root[aiwindow-immersive-view] & {
+    --chrome-content-separator-color: transparent;
+    box-shadow: none;
+  }
+}

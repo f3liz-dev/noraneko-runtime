@@ -10,11 +10,14 @@
 #include "MFCDMExtra.h"
 #include "MFCDMSession.h"
 #include "MFPMPHostWrapper.h"
+#include "MFProtectedPathReadinessMonitor.h"
 #include "RemoteMediaManagerParent.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/EventTargetAndLockCapability.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/PMFCDMParent.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticMutex.h"
 
 namespace mozilla {
 
@@ -31,7 +34,7 @@ class MFCDMProxy;
  */
 class MFCDMParent final : public PMFCDMParent {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFCDMParent);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFCDMParent, final);
 
   MFCDMParent(const nsAString& aKeySystem, RemoteMediaManagerParent* aManager,
               nsISerialEventTarget* aManagerThread);
@@ -47,11 +50,24 @@ class MFCDMParent final : public PMFCDMParent {
       MozPromise<CopyableTArray<MFCDMCapabilitiesIPDL>, nsresult, true>;
   static RefPtr<CapabilitiesPromise> GetAllKeySystemsCapabilities();
 
-  static MFCDMParent* GetCDMById(uint64_t aId) {
-    MOZ_ASSERT(sRegisteredCDMs.Contains(aId));
-    return sRegisteredCDMs.Get(aId);
-  }
+  static already_AddRefed<MFCDMParent> GetCDMById(uint64_t aId);
   uint64_t Id() const { return mId; }
+  const nsString& GetKeySystem() const { return mKeySystem; }
+
+  // Per-session protected-playback readiness monitor. The engine actor reads
+  // and updates it via GetCDMById because this CDM actor outlives an engine
+  // recreate.
+  MFProtectedPathReadinessMonitor& ReadinessMonitor() {
+    return mReadinessMonitor;
+  }
+
+  bool IsHardwareDRM() const { return mIsHardwareDRM; }
+
+  // Whether this session is clearlead: its stream begins with clear samples
+  // before switching to encrypted, so its first produced frame is clear.
+  bool IsClearLead() const;
+
+  void ActorDestroy(ActorDestroyReason aWhy) override;
 
   mozilla::ipc::IPCResult RecvGetCapabilities(
       const MFCDMCapabilitiesRequest& aRequest,
@@ -86,13 +102,54 @@ class MFCDMParent final : public PMFCDMParent {
       const dom::HDCPVersion& aMinHdcpVersion,
       GetStatusForPolicyResolver&& aResolver);
 
+  // Checks whether the HDCP 2.2 link has settled after a hardware reset.
+  // The result is used as a timing signal only; playback proceeds regardless
+  // of whether the check succeeds or fails.
+  RefPtr<GenericPromise> WaitForHDCPSettleAfterReset();
+
+  // Resolves with the IsHDCPVersionSupported result (NS_OK iff supported) on
+  // the manager thread, after running the blocking query on a background queue;
+  // rejects only if that query could not be dispatched.
+  using HDCPSupportPromise =
+      MozPromise<nsresult, nsresult, /* IsExclusive */ false>;
+  static RefPtr<HDCPSupportPromise> QueryHDCPSupport(
+      const nsString& aKeySystem, dom::HDCPVersion aVersion,
+      nsISerialEventTarget* aManagerThread);
+
+  // Warms the HDCP support query off the playback path at CDM init and marks
+  // the readiness monitor's HDCP condition once it completes: Ready if HDCP is
+  // supported, Failed otherwise (the gate still proceeds on Failed, and Media
+  // Foundation rebuilds HDCP when it later builds the topology). Skipped for
+  // non-hardware-DRM playback, which has no HDCP gate. HDCP is a per-display
+  // property, so the query is issued at most once per process and concurrent
+  // actors wait on the same outstanding query.
+  void PrewarmHDCP(bool aIsHardwareDRM);
+
+  // Marks the readiness monitor's HDCP condition Ready if aSupported, else
+  // Failed.
+  void MarkHDCPCondition(bool aSupported);
+
+  // Process-wide HDCP pre-warm state, touched only on the manager thread (which
+  // every MFCDMParent shares). sHDCPSupported holds the queried per-display
+  // HDCP result once known (Nothing until then); sHDCPPrewarmQuery is the
+  // outstanding query that concurrent actors share. Reset on a hardware context
+  // change so HDCP is re-queried.
+  static inline Maybe<bool> sHDCPSupported;
+  static inline RefPtr<HDCPSupportPromise> sHDCPPrewarmQuery;
+  // Bumped on every hardware-context reset so an in-flight pre-warm query that
+  // resolves after the reset is ignored: its result predates the change.
+  static inline uint32_t sHDCPPrewarmGeneration = 0;
+
   // A thread-safe method to access the CDM proxy. Returns nullptr if the CDM
   // has been shut down.
   MFCDMProxy* GetMFCDMProxy();
 
   void ShutdownCDM();
 
-  void Destroy();
+  // Called when a hardware context reset (e.g. GPU/DRM device lost) invalidates
+  // all active CDM sessions. Closes every open session and resets the trusted
+  // input so the content process can re-establish keys.
+  void OnHardwareContextReset();
 
  private:
   ~MFCDMParent();
@@ -126,6 +183,12 @@ class MFCDMParent final : public PMFCDMParent {
 
   MFCDMSession* GetSession(const nsString& aSessionId);
 
+  // Called after a GPU/DRM hardware context reset to discard the invalid CDM
+  // and create a fresh one so new sessions can be established.
+  HRESULT RecreateCDM();
+  // Sets up the PMPHostApp on the CDM. Only required by PlayReady.
+  HRESULT SetupPMPHostApp() MOZ_REQUIRES(mCDMAccessLock);
+
   mozilla::Mutex& Mutex() MOZ_RETURN_CAPABILITY(mCDMAccessLock.Lock()) {
     return mCDMAccessLock.Lock();
   }
@@ -135,16 +198,23 @@ class MFCDMParent final : public PMFCDMParent {
   const RefPtr<RemoteMediaManagerParent> mManager;
   const RefPtr<nsISerialEventTarget> mManagerThread;
 
-  MOZ_RUNINIT static inline nsTHashMap<nsUint64HashKey, MFCDMParent*>
-      sRegisteredCDMs;
+  Maybe<MFCDMInitParamsIPDL> mInitParams;
+
+  // Guards sRegisteredCDMs and the strong reference handed out by GetCDMById.
+  static inline StaticMutex sRegistryMutex;
+
+  MFProtectedPathReadinessMonitor mReadinessMonitor;
+
+  constinit static inline nsTHashMap<nsUint64HashKey, MFCDMParent*>
+      sRegisteredCDMs MOZ_GUARDED_BY(sRegistryMutex);
 
   static inline uint64_t sNextId = 1;
   const uint64_t mId;
   bool mIsInited = false;
+  bool mIsHardwareDRM = false;
 
   static inline BSTR sWidevineL1Path;
 
-  RefPtr<MFCDMParent> mIPDLSelfRef;
   Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory> mFactory;
   Microsoft::WRL::ComPtr<MFPMPHostWrapper> mPMPHostWrapper;
 

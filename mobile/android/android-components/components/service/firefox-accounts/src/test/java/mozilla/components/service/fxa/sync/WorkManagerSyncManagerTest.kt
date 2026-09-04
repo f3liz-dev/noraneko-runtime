@@ -10,8 +10,8 @@ import androidx.work.WorkInfo
 import androidx.work.WorkerParameters
 import androidx.work.impl.utils.taskexecutor.TaskExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
-import mozilla.components.service.fxa.SyncConfig
-import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.concept.sync.SyncConfig
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.sync.FakeSyncStatusObserver.Event.OnIdle
 import mozilla.components.service.fxa.sync.FakeSyncStatusObserver.Event.OnStarted
 import mozilla.components.service.fxa.sync.WorkManagerSyncWorker.Companion.SYNC_STAGGER_BUFFER_MS
@@ -96,6 +96,13 @@ class WorkManagerSyncManagerTest {
         assert(workerManagerSyncWorker.isDebounced())
         assertFalse(workerManagerSyncWorker.lastSyncedWithinStaggerBuffer("test"))
         assert(workerManagerSyncWorker.lastSyncedWithinStaggerBuffer("test2"))
+    }
+
+    @Test
+    fun `isWithinStaggerBuffer is true just inside the buffer and false at or beyond it`() {
+        val now = 1_000_000L
+        assertTrue(isWithinStaggerBuffer(lastSyncedMs = now - (SYNC_STAGGER_BUFFER_MS - 1), now = now))
+        assertFalse(isWithinStaggerBuffer(lastSyncedMs = now - SYNC_STAGGER_BUFFER_MS, now = now))
     }
 
     @Test

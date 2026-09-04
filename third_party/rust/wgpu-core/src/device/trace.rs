@@ -3,9 +3,9 @@ mod record;
 #[cfg(feature = "replay")]
 mod replay;
 
-use core::{convert::Infallible, ops::Range};
+use core::convert::Infallible;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{borrow::Cow, string::String, vec::Vec};
 use macro_rules_attribute::apply;
 
 use crate::{
@@ -46,6 +46,7 @@ pub enum DataKind {
     Spv,
     Dxil,
     Hlsl,
+    MetalLib,
     Msl,
     Glsl,
 }
@@ -59,6 +60,7 @@ impl core::fmt::Display for DataKind {
             DataKind::Spv => "spv",
             DataKind::Dxil => "dxil",
             DataKind::Hlsl => "hlsl",
+            DataKind::MetalLib => "metallib",
             DataKind::Msl => "metal",
             DataKind::Glsl => "glsl",
         };
@@ -73,7 +75,7 @@ impl DataKind {
             DataKind::Wgsl | DataKind::Ron | DataKind::Hlsl | DataKind::Msl | DataKind::Glsl => {
                 true
             }
-            DataKind::Bin | DataKind::Spv | DataKind::Dxil => false,
+            DataKind::Bin | DataKind::Spv | DataKind::Dxil | DataKind::MetalLib => false,
         }
     }
 }
@@ -94,6 +96,8 @@ impl Data {
                     DataKind::Dxil
                 } else if file.ends_with(".hlsl") {
                     DataKind::Hlsl
+                } else if file.ends_with(".metallib") {
+                    DataKind::MetalLib
                 } else if file.ends_with(".metal") {
                     DataKind::Msl
                 } else if file.ends_with(".glsl") {
@@ -121,35 +125,37 @@ pub enum Action<'a, R: ReferenceType> {
         wgt::SurfaceConfiguration<Vec<wgt::TextureFormat>>,
     ),
     CreateBuffer(R::Buffer, crate::resource::BufferDescriptor<'a>),
-    FreeBuffer(R::Buffer),
     DestroyBuffer(R::Buffer),
+    DropBuffer(R::Buffer),
     CreateTexture(R::Texture, crate::resource::TextureDescriptor<'a>),
-    FreeTexture(R::Texture),
+    CreateTextureError(R::Texture, crate::resource::TextureDescriptor<'a>),
     DestroyTexture(R::Texture),
+    DropTexture(R::Texture),
     CreateTextureView {
         id: R::TextureView,
         parent: R::Texture,
         desc: crate::resource::TextureViewDescriptor<'a>,
     },
-    DestroyTextureView(R::TextureView),
+    DropTextureView(R::TextureView),
     CreateExternalTexture {
         id: R::ExternalTexture,
         desc: crate::resource::ExternalTextureDescriptor<'a>,
         planes: alloc::boxed::Box<[R::TextureView]>,
     },
-    FreeExternalTexture(R::ExternalTexture),
     DestroyExternalTexture(R::ExternalTexture),
+    DropExternalTexture(R::ExternalTexture),
     CreateSampler(
         PointerId<markers::Sampler>,
         crate::resource::SamplerDescriptor<'a>,
     ),
-    DestroySampler(PointerId<markers::Sampler>),
+    DropSampler(PointerId<markers::Sampler>),
     GetSurfaceTexture {
         id: R::Texture,
         parent: R::Surface,
     },
     Present(R::Surface),
     DiscardSurfaceTexture(R::Surface),
+    ReleaseSurfaceTexture(R::Surface),
     CreateBindGroupLayout(
         PointerId<markers::BindGroupLayout>,
         crate::binding_model::BindGroupLayoutDescriptor<'a>,
@@ -164,17 +170,14 @@ pub enum Action<'a, R: ReferenceType> {
         pipeline: PointerId<markers::ComputePipeline>,
         index: u32,
     },
-    DestroyBindGroupLayout(PointerId<markers::BindGroupLayout>),
+    DropBindGroupLayout(PointerId<markers::BindGroupLayout>),
     CreatePipelineLayout(
         PointerId<markers::PipelineLayout>,
-        crate::binding_model::ResolvedPipelineLayoutDescriptor<
-            'a,
-            PointerId<markers::BindGroupLayout>,
-        >,
+        crate::binding_model::PipelineLayoutDescriptor<'a, PointerId<markers::BindGroupLayout>>,
     ),
-    DestroyPipelineLayout(PointerId<markers::PipelineLayout>),
+    DropPipelineLayout(PointerId<markers::PipelineLayout>),
     CreateBindGroup(PointerId<markers::BindGroup>, TraceBindGroupDescriptor<'a>),
-    DestroyBindGroup(PointerId<markers::BindGroup>),
+    DropBindGroup(PointerId<markers::BindGroup>),
     CreateShaderModule {
         id: PointerId<markers::ShaderModule>,
         desc: crate::pipeline::ShaderModuleDescriptor<'a>,
@@ -184,42 +187,42 @@ pub enum Action<'a, R: ReferenceType> {
         id: PointerId<markers::ShaderModule>,
         data: Vec<Data>,
 
-        entry_point: String,
         label: crate::Label<'a>,
-        num_workgroups: (u32, u32, u32),
-        runtime_checks: wgt::ShaderRuntimeChecks,
+        entry_points: Cow<'a, [wgt::PassthroughShaderEntryPoint<'a>]>,
     },
-    DestroyShaderModule(PointerId<markers::ShaderModule>),
+    DropShaderModule(PointerId<markers::ShaderModule>),
     CreateComputePipeline {
         id: PointerId<markers::ComputePipeline>,
         desc: TraceComputePipelineDescriptor<'a>,
     },
-    DestroyComputePipeline(PointerId<markers::ComputePipeline>),
+    DropComputePipeline(PointerId<markers::ComputePipeline>),
     CreateGeneralRenderPipeline {
         id: PointerId<markers::RenderPipeline>,
         desc: TraceGeneralRenderPipelineDescriptor<'a>,
     },
-    DestroyRenderPipeline(PointerId<markers::RenderPipeline>),
+    DropRenderPipeline(PointerId<markers::RenderPipeline>),
     CreatePipelineCache {
         id: PointerId<markers::PipelineCache>,
         desc: crate::pipeline::PipelineCacheDescriptor<'a>,
     },
-    DestroyPipelineCache(PointerId<markers::PipelineCache>),
+    DropPipelineCache(PointerId<markers::PipelineCache>),
     CreateRenderBundle {
         id: R::RenderBundle,
         desc: crate::command::RenderBundleEncoderDescriptor<'a>,
         base: BasePass<RenderCommand<R>, Infallible>,
     },
-    DestroyRenderBundle(PointerId<markers::RenderBundle>),
+    DropRenderBundle(PointerId<markers::RenderBundle>),
     CreateQuerySet {
         id: PointerId<markers::QuerySet>,
         desc: crate::resource::QuerySetDescriptor<'a>,
     },
+    DropQuerySet(PointerId<markers::QuerySet>),
     DestroyQuerySet(PointerId<markers::QuerySet>),
     WriteBuffer {
         id: R::Buffer,
         data: Data,
-        range: Range<wgt::BufferAddress>,
+        offset: wgt::BufferAddress,
+        size: wgt::BufferAddress,
         queued: bool,
     },
     WriteTexture {
@@ -242,12 +245,12 @@ pub enum Action<'a, R: ReferenceType> {
         desc: crate::resource::BlasDescriptor<'a>,
         sizes: wgt::BlasGeometrySizeDescriptors,
     },
-    DestroyBlas(R::Blas),
+    DropBlas(R::Blas),
     CreateTlas {
         id: R::Tlas,
         desc: crate::resource::TlasDescriptor<'a>,
     },
-    DestroyTlas(R::Tlas),
+    DropTlas(R::Tlas),
 }
 
 /// cbindgen:ignore

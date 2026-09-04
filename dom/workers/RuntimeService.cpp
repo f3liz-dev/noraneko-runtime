@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,6 +56,7 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsIObserverService.h"
 #include "nsIScriptContext.h"
+#include "nsISerialEventTarget.h"
 #include "nsIStreamTransportService.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsPriority.h"
@@ -152,16 +151,41 @@ uint32_t gMaxWorkersPerDomain = MAX_WORKERS_PER_DOMAIN;
 // Does not hold an owning reference.
 Atomic<RuntimeService*> gRuntimeService(nullptr);
 
+// Retries queued-worker scheduling on the event target where the first queued
+// worker is allowed to be scheduled.
+class ScheduleQueuedWorkerRunnable final : public Runnable {
+ public:
+  explicit ScheduleQueuedWorkerRunnable(const nsACString& aDomain)
+      : Runnable("workerinternals::ScheduleQueuedWorkerRunnable"),
+        mDomain(aDomain) {}
+
+  NS_IMETHOD Run() override {
+    RuntimeService* runtime = RuntimeService::GetService();
+    if (!runtime) {
+      return NS_OK;
+    }
+
+    WorkerPrivate* parent = nullptr;
+    if (!NS_IsMainThread()) {
+      parent = GetCurrentThreadWorkerPrivate();
+      if (!parent) {
+        return NS_OK;
+      }
+      parent->AssertIsOnWorkerThread();
+    }
+
+    runtime->MaybeScheduleQueuedWorker(mDomain, parent);
+    return NS_OK;
+  }
+
+ private:
+  ~ScheduleQueuedWorkerRunnable() = default;
+
+  const nsCString mDomain;
+};
+
 // Only true during the call to Init.
 bool gRuntimeServiceDuringInit = false;
-
-class LiteralRebindingCString : public nsDependentCString {
- public:
-  template <int N>
-  void RebindLiteral(const char (&aStr)[N]) {
-    Rebind(aStr, N - 1);
-  }
-};
 
 template <typename T>
 struct PrefTraits;
@@ -555,12 +579,12 @@ MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION bool ContentSecurityPolicyAllows(
       return true;
     }
 
-    if (WorkerCSPContext* ctx = worker->GetCSPContext()) {
+    if (OffThreadCSPContext* ctx = worker->GetCSPContext()) {
       evalOK = ctx->IsEvalAllowed(reportViolation);
     }
     violationType = nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL;
   } else {
-    if (WorkerCSPContext* ctx = worker->GetCSPContext()) {
+    if (OffThreadCSPContext* ctx = worker->GetCSPContext()) {
       evalOK = ctx->IsWasmEvalAllowed(reportViolation);
     }
 
@@ -818,12 +842,12 @@ bool InitJSContextForWorker(WorkerPrivate* aWorkerPrivate,
   return true;
 }
 
-static bool PreserveWrapper(JSContext* cx, JS::Handle<JSObject*> obj) {
+static void PreserveWrapper(JSContext* cx, JS::Handle<JSObject*> obj) {
   MOZ_ASSERT(cx);
   MOZ_ASSERT(obj);
   MOZ_ASSERT(mozilla::dom::IsDOMObject(obj));
 
-  return mozilla::dom::TryPreserveWrapper(obj);
+  mozilla::dom::TryPreserveWrapper(obj);
 }
 
 static bool IsWorkerDebuggerGlobalOrSandbox(JS::Handle<JSObject*> aGlobal) {
@@ -1212,22 +1236,6 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
     AssertIsOnMainThread();
   }
 
-  nsCString sharedWorkerScriptSpec;
-  if (isSharedWorker) {
-    AssertIsOnMainThread();
-
-    nsCOMPtr<nsIURI> scriptURI = aWorkerPrivate.GetResolvedScriptURI();
-    NS_ASSERTION(scriptURI, "Null script URI!");
-
-    nsresult rv = scriptURI->GetSpec(sharedWorkerScriptSpec);
-    if (NS_FAILED(rv)) {
-      NS_WARNING("GetSpec failed?!");
-      return false;
-    }
-
-    NS_ASSERTION(!sharedWorkerScriptSpec.IsEmpty(), "Empty spec!");
-  }
-
   bool exemptFromPerDomainMax = false;
   if (isServiceWorker) {
     AssertIsOnMainThread();
@@ -1255,9 +1263,10 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
                 })
             .get();
 
-    queued = gMaxWorkersPerDomain &&
-             domainInfo->ActiveWorkerCount() >= gMaxWorkersPerDomain &&
-             !domain.IsEmpty() && !exemptFromPerDomainMax;
+    queued = gMaxWorkersPerDomain && !domain.IsEmpty() &&
+             !exemptFromPerDomainMax &&
+             (domainInfo->ActiveWorkerCount() >= gMaxWorkersPerDomain ||
+              !domainInfo->mQueuedWorkers.IsEmpty());
 
     if (queued) {
       domainInfo->mQueuedWorkers.AppendElement(&aWorkerPrivate);
@@ -1265,7 +1274,7 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
       // Worker spawn gets queued due to hitting max workers per domain
       // limit so let's log a warning.
       WorkerPrivate::ReportErrorToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                                          nsContentUtils::eDOM_PROPERTIES,
+                                          PropertiesFile::DOM_PROPERTIES,
                                           "HittingMaxWorkersPerDomain2"_ns);
 
       if (isServiceWorker) {
@@ -1294,6 +1303,8 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
     }
   } else {
     if (!mNavigatorPropertiesLoaded) {
+      MutexAutoLock lock(mMutex);
+
       if (NS_FAILED(Navigator::GetAppVersion(
               mNavigatorProperties.mAppVersion, aWorkerPrivate.GetDocument(),
               false /* aUsePrefOverriddenValue */)) ||
@@ -1342,9 +1353,9 @@ void RuntimeService::UnregisterWorker(WorkerPrivate& aWorkerPrivate) {
     AssertIsOnMainThread();
   }
 
-  const nsCString& domain = aWorkerPrivate.Domain();
+  nsCString domain = aWorkerPrivate.Domain();
 
-  WorkerPrivate* queuedWorker = nullptr;
+  bool shouldScheduleQueuedWorker = false;
   {
     MutexAutoLock lock(mMutex);
 
@@ -1371,23 +1382,13 @@ void RuntimeService::UnregisterWorker(WorkerPrivate& aWorkerPrivate) {
       domainInfo->mActiveWorkers.RemoveElement(&aWorkerPrivate);
     }
 
-    // See if there's a queued worker we can schedule.
-    if (domainInfo->ActiveWorkerCount() < gMaxWorkersPerDomain &&
-        !domainInfo->mQueuedWorkers.IsEmpty()) {
-      queuedWorker = domainInfo->mQueuedWorkers[0];
-      domainInfo->mQueuedWorkers.RemoveElementAt(0);
-
-      if (queuedWorker->GetParent()) {
-        domainInfo->mChildWorkerCount++;
-      } else if (queuedWorker->IsServiceWorker()) {
-        domainInfo->mActiveServiceWorkers.AppendElement(queuedWorker);
-      } else {
-        domainInfo->mActiveWorkers.AppendElement(queuedWorker);
-      }
-    }
+    // See if there is a queued worker to schedule after we release mMutex.
+    shouldScheduleQueuedWorker =
+        domainInfo->ActiveWorkerCount() < gMaxWorkersPerDomain &&
+        !domainInfo->mQueuedWorkers.IsEmpty();
 
     if (domainInfo->HasNoWorkers()) {
-      MOZ_ASSERT(domainInfo->mQueuedWorkers.IsEmpty());
+      MOZ_ASSERT(!shouldScheduleQueuedWorker);
       mDomainMap.Remove(domain);
     }
   }
@@ -1428,8 +1429,72 @@ void RuntimeService::UnregisterWorker(WorkerPrivate& aWorkerPrivate) {
     }
   }
 
-  if (queuedWorker && !ScheduleWorker(*queuedWorker)) {
-    UnregisterWorker(*queuedWorker);
+  if (shouldScheduleQueuedWorker) {
+    MaybeScheduleQueuedWorker(domain, parent);
+  }
+}
+
+void RuntimeService::MaybeScheduleQueuedWorker(const nsACString& aDomain,
+                                               WorkerPrivate* aParent) {
+  MOZ_ASSERT_DEBUG_OR_FUZZING(aParent ? aParent->IsOnCurrentThread()
+                                      : NS_IsMainThread());
+
+  WorkerPrivate* queuedWorker = nullptr;
+  nsCOMPtr<nsISerialEventTarget> schedulingTarget;
+
+  {
+    MutexAutoLock lock(mMutex);
+
+    WorkerDomainInfo* domainInfo;
+    if (!mDomainMap.Get(aDomain, &domainInfo)) {
+      return;
+    }
+
+    const bool shouldScheduleQueuedWorker =
+        domainInfo->ActiveWorkerCount() < gMaxWorkersPerDomain &&
+        !domainInfo->mQueuedWorkers.IsEmpty();
+
+    if (!shouldScheduleQueuedWorker) {
+      return;
+    }
+
+    WorkerPrivate* firstQueuedWorker = domainInfo->mQueuedWorkers[0];
+
+    // Preserve queue order. Schedule only if the first queued worker belongs
+    // to the current thread; otherwise retry on its scheduling target.
+    WorkerPrivate* queuedParent = firstQueuedWorker->GetParent();
+
+    if (queuedParent == aParent) {
+      queuedWorker = firstQueuedWorker;
+      domainInfo->mQueuedWorkers.RemoveElementAt(0);
+
+      if (aParent) {
+        domainInfo->mChildWorkerCount++;
+      } else if (queuedWorker->IsServiceWorker()) {
+        domainInfo->mActiveServiceWorkers.AppendElement(queuedWorker);
+      } else {
+        domainInfo->mActiveWorkers.AppendElement(queuedWorker);
+      }
+      MOZ_ASSERT(domainInfo->ActiveWorkerCount() <= +gMaxWorkersPerDomain);
+    } else {
+      schedulingTarget = firstQueuedWorker->GetSchedulingEventTarget();
+      MOZ_DIAGNOSTIC_ASSERT(schedulingTarget);
+    }
+  }
+
+  MOZ_ASSERT_DEBUG_OR_FUZZING(queuedWorker || schedulingTarget);
+
+  if (queuedWorker) {
+    (void)ScheduleWorker(*queuedWorker);
+  }
+
+  if (schedulingTarget) {
+    nsCOMPtr<nsIRunnable> runnable = new ScheduleQueuedWorkerRunnable(aDomain);
+    nsresult rv =
+        schedulingTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+    // Leave the worker queued if dispatch fails; normal cancellation or
+    // unregistration removes it.
+    (void)NS_WARN_IF(NS_FAILED(rv));
   }
 }
 
@@ -1720,13 +1785,18 @@ void RuntimeService::CrashIfHanging() {
   msg.Append(activeStats.mMessage);
 
   // This string will be leaked.
-  MOZ_CRASH_UNSAFE(strdup(msg.BeginReading()));
+  MOZ_CRASH_UNSAFE(strdup(msg.get()));
 }
 
 // This spins the event loop until all workers are finished and their threads
 // have been joined.
 void RuntimeService::Cleanup() {
   AssertIsOnMainThread();
+
+  if (mCleanedUp) {
+    return;
+  }
+  mCleanedUp = true;
 
   if (!mShuttingDown) {
     Shutdown();
@@ -1822,9 +1892,9 @@ void RuntimeService::Cleanup() {
       obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
       mObserved = false;
     }
-  }
 
-  nsLayoutStatics::Release();
+    nsLayoutStatics::Release();
+  }
 }
 
 void RuntimeService::AddAllTopLevelWorkersToArray(
@@ -1934,6 +2004,15 @@ void RuntimeService::PropagateStorageAccessPermissionGranted(
   }
 }
 
+void RuntimeService::UpdateTimezoneOverrideForWorkers(
+    const nsPIDOMWindowInner& aWindow, const nsAString& aTimezone) {
+  AssertIsOnMainThread();
+
+  for (WorkerPrivate* const worker : GetWorkersForWindow(aWindow)) {
+    worker->UpdateTimezoneOverride(aTimezone);
+  }
+}
+
 template <typename Func>
 void RuntimeService::BroadcastAllWorkers(const Func& aFunc) {
   AssertIsOnMainThread();
@@ -1959,11 +2038,13 @@ void RuntimeService::UpdateAllWorkerContextOptions() {
 void RuntimeService::UpdateAppVersionOverridePreference(
     const nsAString& aValue) {
   AssertIsOnMainThread();
+  MutexAutoLock lock(mMutex);
   mNavigatorProperties.mAppVersionOverridden = aValue;
 }
 
 void RuntimeService::UpdatePlatformOverridePreference(const nsAString& aValue) {
   AssertIsOnMainThread();
+  MutexAutoLock lock(mMutex);
   mNavigatorProperties.mPlatformOverridden = aValue;
 }
 
@@ -1971,7 +2052,10 @@ void RuntimeService::UpdateAllWorkerLanguages(
     const nsTArray<nsString>& aLanguages) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  mNavigatorProperties.mLanguages = aLanguages.Clone();
+  {
+    MutexAutoLock lock(mMutex);
+    mNavigatorProperties.mLanguages = aLanguages.Clone();
+  }
   BroadcastAllWorkers(
       [&aLanguages](auto& worker) { worker.UpdateLanguages(aLanguages); });
 }
@@ -2211,6 +2295,21 @@ void RuntimeService::UpdateWorkersPeerConnections(
   }
 }
 
+void RuntimeService::UpdateWorkersLanguageOverride(
+    const nsPIDOMWindowInner& aWindow, const nsCString& aLanguageOverride) {
+  AssertIsOnMainThread();
+
+  nsTArray<nsString> resolvedLanguages;
+  Navigator::GetAcceptLanguages(resolvedLanguages, aLanguageOverride.IsEmpty()
+                                                       ? nullptr
+                                                       : &aLanguageOverride);
+
+  for (WorkerPrivate* const worker : GetWorkersForWindow(aWindow)) {
+    MOZ_ASSERT(!worker->IsSharedWorker());
+    worker->UpdateLanguageOverride(aLanguageOverride, resolvedLanguages);
+  }
+}
+
 bool LogViolationDetailsRunnable::MainThreadRun() {
   AssertIsOnMainThread();
   MOZ_ASSERT(mWorkerRef);
@@ -2292,9 +2391,9 @@ WorkerThreadPrimaryRunnable::Run() {
 
       failureCleanup.release();
 
-      // Binding the RemoteWorkerDebugger child endpoint after initailzation
-      // successfully.
-      // mWorkerPrivate->BindRemoteWorkerDebuggerChild();
+      // Binding the RemoteWorkerDebugger child endpoint after initialization
+      // successfully. Self-gates on UseRemoteDebugger().
+      mWorkerPrivate->BindRemoteWorkerDebuggerChild();
 
       runLoopRan = true;
 
@@ -2492,6 +2591,15 @@ void PropagateStorageAccessPermissionGrantedToWorkers(
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {
     runtime->PropagateStorageAccessPermissionGranted(aWindow);
+  }
+}
+
+void UpdateTimezoneOverrideForWorkers(const nsPIDOMWindowInner& aWindow,
+                                      const nsAString& aTimezone) {
+  AssertIsOnMainThread();
+  RuntimeService* runtime = RuntimeService::GetService();
+  if (runtime) {
+    runtime->UpdateTimezoneOverrideForWorkers(aWindow, aTimezone);
   }
 }
 

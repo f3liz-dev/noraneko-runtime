@@ -11,7 +11,6 @@ use crate::{
     headers::frame_header::FrameHeader,
     image::Image,
 };
-use num_traits::abs;
 
 #[derive(Debug)]
 pub enum ModularStreamId {
@@ -47,6 +46,9 @@ pub(super) fn precompute_references(
     y: usize,
     references: &mut Image<i32>,
 ) {
+    if references.size().0 == 0 {
+        return;
+    }
     references.fill(0);
     let mut offset = 0;
     let num_extra_props = references.size().0;
@@ -65,7 +67,7 @@ pub(super) fn precompute_references(
         for x in 0..buffers[chan].data.size().0 {
             let ref_row = references.row_mut(x);
             let v = ref_chan_row[x];
-            ref_row[offset] = abs(v);
+            ref_row[offset] = v.wrapping_abs();
             ref_row[offset + 1] = v;
             let vleft = if x > 0 { ref_chan_row[x - 1] } else { 0 };
             let vtop = if y > 0 { ref_chan_prev[x] } else { vleft };
@@ -75,13 +77,14 @@ pub(super) fn precompute_references(
                 vleft
             };
             let vpredicted = clamped_gradient(vleft as i64, vtop as i64, vtopleft as i64);
-            ref_row[offset + 2] = abs(v as i64 - vpredicted) as i32;
+            ref_row[offset + 2] = (v as i64 - vpredicted).wrapping_abs() as i32;
             ref_row[offset + 3] = (v as i64 - vpredicted) as i32;
         }
         offset += 4;
     }
 }
 
+#[inline(always)]
 pub(super) fn make_pixel(dec: i32, mul: u32, guess: i64) -> i32 {
     (guess + (mul as i64) * (dec as i64)) as i32
 }

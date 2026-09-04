@@ -21,7 +21,7 @@ The sections below outline some of the high level expectations when reviewing co
 A code review and automation will check if this patch:
 
 * applies cleanly to mozilla-central and can be built.
-* has a [good commit message](/contributing/contribution_quickref.rst#commit-message) that describes the changes as well as the reason for them where that is not obvious.
+* has a [good commit message](/contributing/contribution_quickref.md#commit-message) that describes the changes as well as the reason for them where that is not obvious.
   * Adding a longer description in a commit message will be used as the summary in Phabricator.
 * fixes the issue at hand.
 * has automated test coverage where appropriate. [Exceptions to this are covered by using the test-exception-\* tags in Phabricator](https://firefox-source-docs.mozilla.org/testing/testing-policy/index.html#exceptions). Here are some common exceptions in frontend where \[new\] test coverage isn’t needed:
@@ -61,7 +61,6 @@ As noted above, the context for the patch should be provided by the author, howe
 * For things that aren’t [nits](#what-is-a-nit) or trivially understood to be improvements, explain *why* you are requesting a change. Understanding the reasoning behind requested changes helps make sure that you and the patch author share an understanding of what the patch is doing, and helps the patch author learn.
 * Minimize the number of passes required for review and addressing review comments. Where possible provide your review comments in a single pass rather than multiple iterations. This helps to reduce the number of cycles needed to get something through review and any associated context switching for both the reviewer and the patch author. In a case where you don't have time for a full review, mention that your review is currently incomplete and set expectations for when it will be so the author can plan accordingly.
 * When reviewing code on behalf of additional review groups added to a patch, your review should primarily focus on the areas that the review-group is responsible for or interfaces that your group is using. However, if you do spot a non-trivial issue that falls outside this during review, then it would be reasonable to flag it. .
-
 
 ### Turnaround time for reviews
 
@@ -126,10 +125,10 @@ This section covers some frontend-specific aspects of patches that reviewers are
 
 * Use existing components/classes to implement feature designs (see JS/DOM section).
 * Keep in mind all CSS needs to work in RTL languages. Use logical properties (`margin-inline-start` and friends) rather than physical ones (`margin-left`).
-  * See  [Firefox RTL (right-to-left) guidelines](/code-quality/coding-style/rtl_guidelines.rst) for more detailed information.
+  * See [Firefox RTL (right-to-left) guidelines](/code-quality/coding-style/rtl_guidelines.md) for more detailed information.
 * See the [Accessibility](#accessibility) section on use of colours, HCM, etc.
-* See detailed [CSS authoring guidelines](/code-quality/coding-style/css_guidelines.rst).
-* See the [Firefox SVG Guidelines](/code-quality/coding-style/svg_guidelines.rst).
+* See detailed [CSS authoring guidelines](/code-quality/coding-style/css_guidelines.md).
+* See the [Firefox SVG Guidelines](/code-quality/coding-style/svg_guidelines.md).
 
 ### Localization
 
@@ -137,7 +136,7 @@ This section covers some frontend-specific aspects of patches that reviewers are
 * For new code, use fluent. For modifying older code, use what the old code uses (but consider switching to fluent if it’s straightforward, as it provides better translation primitives in other languages).
 * When writing experimental features that need strings for en-US only that are not final yet, use fluent and put the ftl file in a `content` rather than `locale` directory and package it accordingly. When strings are final, move them to a regular `locale` directory and include them as normal but make sure to do so outside string freeze and while allowing reasonable time for our (largely volunteer) localisers to submit translations - don’t just dump dozens of strings into `locale` a day before string freeze.
 * If the meaning of a string changes, or \[in fluent\] you add/remove attributes, **you must update the message identifier**.
-* More detailed [fluent review guidelines](/l10n/fluent/review.rst#guidelines-for-fluent-reviewers) are available separately.
+* More detailed [fluent review guidelines](/l10n/fluent/review.md#guidelines-for-fluent-reviewers) are available separately.
 
 ### Accessibility {#accessibility}
 
@@ -174,10 +173,10 @@ This section covers some frontend-specific aspects of patches that reviewers are
   * Avoid inline event handlers wherever possible.
   * All `about:` pages must have a Content Security Policy (CSP). Use one that prevents inline styles and inline script.
   * Do not use `innerHTML`.
-  * Gecko has built in sanitizer APIs - if you have to deal with untrusted HTML, see [nsIParserUtils](https://searchfox.org/mozilla-central/source/parser/html/nsIParserUtils.idl). Do NOT hand-roll sanitizing inputs.
+  * Gecko has built in sanitizer APIs - if you have to deal with untrusted HTML, see [nsIParserUtils](https://searchfox.org/firefox-main/source/parser/html/nsIParserUtils.idl). Do NOT hand-roll sanitizing inputs.
 * Other vectors to take into account:
   * URLs are malleable and not a good way of identifying an origin. Use nsIPrincipal objects. You’ll need this to deal correctly with `blob` URIs, `about:blank`, and data URIs.
-  * We can’t assume that for `something.foo.sometld`, `something` is a subdomain of `foo`, or that `foo.sometld` is the “top” domain. Some TLDs (`.co.uk` and `.org.uk` and so on are an obvious example, but `github.io` and `s3.dualstack.ap-northeast-1.amazonaws.com`, too\!) have individually controlled subdomains. Use [nsIEffectiveTLDService](https://searchfox.org/mozilla-central/source/netwerk/dns/nsIEffectiveTLDService.idl) to work out what the “top” domain is. Do not use manual string manipulation.
+  * We can’t assume that for `something.foo.sometld`, `something` is a subdomain of `foo`, or that `foo.sometld` is the “top” domain. Some TLDs (`.co.uk` and `.org.uk` and so on are an obvious example, but `github.io` and `s3.dualstack.ap-northeast-1.amazonaws.com`, too\!) have individually controlled subdomains. Use [nsIEffectiveTLDService](https://searchfox.org/firefox-main/source/netwerk/dns/nsIEffectiveTLDService.idl) to work out what the “top” domain is. Do not use manual string manipulation.
   * Spoofing: where an attacker tries to pretend to the user they’re on a different website, usually by overlaying content or markup over the address bar or other trusted UI, or using full screen or similar tricks.
   * Clickjacking/keyjacking: where an attacker encourages users to click or hit keys repeatedly (“win $50 if you [hook a duck](https://en.wikipedia.org/wiki/Hook-a-duck) by clicking this button really fast”), and uses that to bypass security warnings. Typical defence: delay enabling buttons on security-critical dialogs - there’s even a [helper](https://searchfox.org/mozilla-central/rev/d00845a44a8d1bf3f472ff36fd3f22a03af30a76/toolkit/components/prompts/src/PromptUtils.sys.mjs#49-61) for this.
   * Crypto: do not make up your own cryptography, random number generator, password/key management or similar. Talk to experts (some of them work at Mozilla)\!
@@ -201,7 +200,7 @@ This section covers some frontend-specific aspects of patches that reviewers are
 
 Patches should only be commandeered by agreement with the original patch author or if the author cannot be expected to respond in a timely fashion (on vacation or sick leave or no longer active in the project).
 
-If you do need to commandeer a patch you can use the following to maintain the original author. Use `hg commit --amend --user "Other Person <person@mozilla.com>"` or `git commit --amend --author="Other Person <person@mozilla.com>"` when amending the original commit.
+If you do need to commandeer a patch you can preserve the original author with `git commit --amend --author="Other Person <person@mozilla.com>"` when amending the original commit.
 
 ## Community Participation Guidelines
 
@@ -217,7 +216,7 @@ A nit is a minor defect. This could be a typo or a small issue. These are usuall
 
 ### How do I file a bug for new lint rules?
 
-[If you have an idea for an eslint (JS) or stylelint (CSS)  rule you can file a bug here](https://bugzilla.mozilla.org/enter_bug.cgi?product=Developer%20Infrastructure&component=Lint%20and%20Formatting) if a more specific component isn’t a better fit.
+[If you have an idea for an eslint (JS) or stylelint (CSS) rule you can file a bug here](https://bugzilla.mozilla.org/enter_bug.cgi?product=Developer%20Infrastructure&component=Lint%20and%20Formatting) if a more specific component isn’t a better fit.
 
 ## Further Reading
 

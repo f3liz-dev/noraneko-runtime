@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,15 @@
 #ifndef mozilla_dom_workers_scriptloader_h_
 #define mozilla_dom_workers_scriptloader_h_
 
-#include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ScriptLoadRequest.h"
 #include "js/loader/ScriptLoadRequestList.h"
+#include "js/loader/ScriptLoaderInterface.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerLoadContext.h"
 #include "mozilla/dom/WorkerRef.h"
-#include "mozilla/dom/workerinternals/WorkerModuleLoader.h"
 #include "nsIContentPolicy.h"
 #include "nsStringFwd.h"
 #include "nsTArrayForwardDeclare.h"
@@ -28,8 +26,6 @@ class nsIReferrerInfo;
 class nsIURI;
 
 namespace mozilla {
-
-class ErrorResult;
 
 namespace dom {
 
@@ -154,7 +150,10 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   ScriptLoadRequestList mLoadedRequests;
   Maybe<ServiceWorkerDescriptor> mController;
   WorkerScriptType mWorkerScriptType;
-  ErrorResult& mRv;
+  // Stores error raised by the loader. Callers that care about
+  // the result pull it out via TakeErrorResult() on the worker thread;
+  // anything still pending at destruction is suppressed.
+  ErrorResult mRv;
   bool mExecutionAborted = false;
   bool mMutedErrorFlag = false;
 
@@ -191,8 +190,10 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   static already_AddRefed<WorkerScriptLoader> Create(
       WorkerPrivate* aWorkerPrivate,
       UniquePtr<SerializedStackHolder> aOriginStack,
-      nsISerialEventTarget* aSyncLoopTarget, WorkerScriptType aWorkerScriptType,
-      ErrorResult& aRv);
+      nsISerialEventTarget* aSyncLoopTarget,
+      WorkerScriptType aWorkerScriptType);
+
+  ErrorResult TakeErrorResult();
 
   bool CreateScriptRequests(const nsTArray<nsString>& aScriptURLs,
                             const mozilla::Encoding* aDocumentEncoding,
@@ -222,7 +223,7 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   void MaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
 
-  bool StoreCSP();
+  bool StorePolicyContainerArgs();
 
   bool ProcessPendingRequests(JSContext* aCx);
 
@@ -245,9 +246,9 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
  private:
   WorkerScriptLoader(UniquePtr<SerializedStackHolder> aOriginStack,
                      nsISerialEventTarget* aSyncLoopTarget,
-                     WorkerScriptType aWorkerScriptType, ErrorResult& aRv);
+                     WorkerScriptType aWorkerScriptType);
 
-  ~WorkerScriptLoader() = default;
+  ~WorkerScriptLoader();
 
   NS_IMETHOD
   GetName(nsACString& aName) override {

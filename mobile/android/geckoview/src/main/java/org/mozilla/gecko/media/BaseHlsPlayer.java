@@ -5,6 +5,9 @@
 package org.mozilla.gecko.media;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
+import org.mozilla.geckoview.GeckoResult;
+import org.mozilla.geckoview.WebRequest;
+import org.mozilla.geckoview.WebResponse;
 
 public interface BaseHlsPlayer {
 
@@ -56,11 +59,11 @@ public interface BaseHlsPlayer {
   }
 
   interface ResourceCallbacks {
-    void onLoad(String mediaUrl);
-
     void onDataArrived();
 
     void onError(int errorCode);
+
+    GeckoResult<WebResponse> onOpenChannel(WebRequest request);
   }
 
   // Used to identify player instance.

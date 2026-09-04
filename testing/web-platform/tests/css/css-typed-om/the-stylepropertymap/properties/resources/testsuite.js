@@ -60,10 +60,24 @@ const gCssWideKeywordsExamples = [
   },
 ];
 
+// Leading whitespace before var() is not consistently handled across engines.
+// See https://github.com/w3c/csswg-drafts/issues/13792
+// Allow either the original or normalized form for now.
 const gVarReferenceExamples = [
   {
     description: 'a var() reference',
-    input: new CSSUnparsedValue([' ', new CSSVariableReferenceValue('--A')])
+    input: new CSSUnparsedValue([' ', new CSSVariableReferenceValue('--A')]),
+    specifiedAlternateExpected: new CSSUnparsedValue([new CSSVariableReferenceValue('--A')]),
+    defaultSpecified: (input, result, alternateExpected) => {
+      try {
+        assert_style_value_equals(result, input);
+      } catch(e) {
+        if (alternateExpected === undefined) {
+          throw e;
+        }
+        assert_style_value_equals(result, alternateExpected);
+      }
+    }
   },
 ];
 
@@ -92,7 +106,10 @@ const gTestSyntaxExamples = {
         input: new CSSMathSum(new CSSUnitValue(0, 'px'), new CSSUnitValue(0, 'em')),
         // Specified/computed calcs are usually simplified.
         // FIXME: Test this properly
-        defaultSpecified: (_, result) => assert_is_calc_sum(result),
+        defaultSpecified: (input, result) => {
+          assert_is_calc_sum(result);
+          assert_numeric_type_equals(result.type(), input.type());
+        },
         defaultComputed: (_, result) => assert_is_unit('px', result)
       }
     ],
@@ -121,7 +138,10 @@ const gTestSyntaxExamples = {
         specifiedAlternateExpected: new CSSMathSum(new CSSUnitValue(0, 'percent')),
         // Specified/computed calcs are usually simplified.
         // FIXME: Test this properly
-        defaultSpecified: (_, result) => assert_is_calc_sum(result),
+        defaultSpecified: (input, result) => {
+          assert_is_calc_sum(result);
+          assert_numeric_type_equals(result.type(), input.type());
+        },
         defaultComputed: (_, result) => assert_is_unit('percent', result)
       }
     ],
@@ -147,7 +167,14 @@ const gTestSyntaxExamples = {
         description: "a calc time",
         input: new CSSMathSum(new CSSUnitValue(0, 's'), new CSSUnitValue(0, 'ms')),
         specifiedExpected: new CSSMathSum(new CSSUnitValue(0, 's'), new CSSUnitValue(0, 's')),
-        defaultSpecified: (_, result) => assert_is_calc_sum(result),
+        // TODO: Consider merging specifiedAlternateExpected with
+        // specifiedExpected once all engines do simplification during
+        // association.
+        specifiedAlternateExpected: new CSSMathSum(new CSSUnitValue(0, 's')),
+        defaultSpecified: (input, result) => {
+          assert_is_calc_sum(result);
+          assert_numeric_type_equals(result.type(), input.type());
+        },
         defaultComputed: (_, result) => assert_is_unit('s', result)
       }
     ],
@@ -163,7 +190,7 @@ const gTestSyntaxExamples = {
         description: "positive radians",
         input: new CSSUnitValue(3.14, 'rad'),
         // Computed values use canonical units
-        defaultComputed: (_, result) => assert_style_value_equals(result, new CSSUnitValue(179.908752, 'deg'))
+        defaultComputed: (_, result) => assert_style_value_equals(result, new CSSUnitValue(179.908752, 'deg'), 1e-4)
       },
       {
         description: "negative degrees",
@@ -172,9 +199,16 @@ const gTestSyntaxExamples = {
       {
         description: "a calc angle",
         input: new CSSMathSum(new CSSUnitValue(0, 'rad'), new CSSUnitValue(0, 'deg')),
+        // TODO: Consider replacing specifiedAlternateExpected with
+        // specifiedExpected once all engines do simplification during
+        // association.
+        specifiedAlternateExpected: new CSSMathSum(new CSSUnitValue(0, 'deg')),
         // Specified/computed calcs are usually simplified.
         // FIXME: Test this properly
-        defaultSpecified: (_, result) => assert_is_calc_sum(result),
+        defaultSpecified: (input, result) => {
+          assert_is_calc_sum(result);
+          assert_numeric_type_equals(result.type(), input.type());
+        },
         defaultComputed: (_, result) => assert_is_unit('deg', result)
       }
     ],
@@ -221,7 +255,14 @@ const gTestSyntaxExamples = {
       {
         description: "a calc number",
         input: new CSSMathSum(new CSSUnitValue(2, 'number'), new CSSUnitValue(3, 'number')),
-        defaultSpecified: (_, result) => assert_is_calc_sum(result),
+        // TODO: Consider merging specifiedAlternateExpected with
+        // specifiedExpected once all engines do simplification during
+        // association.
+        specifiedAlternateExpected: new CSSMathSum(new CSSUnitValue(5, 'number')),
+        defaultSpecified: (input, result) => {
+          assert_is_calc_sum(result);
+          assert_numeric_type_equals(result.type(), input.type());
+        },
         defaultComputed: (_, result) => {
           assert_style_value_equals(result, new CSSUnitValue(5, 'number'));
         }

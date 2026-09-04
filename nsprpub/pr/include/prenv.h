@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,8 @@
 
 /*******************************************************************************/
 /*******************************************************************************/
-/****************** THESE FUNCTIONS MAY NOT BE THREAD SAFE *********************/
+/****************** THESE FUNCTIONS MAY NOT BE THREAD SAFE
+ * *********************/
 /*******************************************************************************/
 /*******************************************************************************/
 
@@ -88,7 +88,8 @@ PR_BEGIN_EXTERN_C
 **   functions on the same platform. (!)
 **
 */
-NSPR_API(char*) PR_GetEnv(const char *var);
+NSPR_API(char*)
+PR_GetEnv(const char* var);
 
 /*
 ** PR_GetEnvSecure() -- get a security-sensitive environment variable
@@ -102,7 +103,8 @@ NSPR_API(char*) PR_GetEnv(const char *var);
 ** platforms may have platform-specific privilege elevation mechanisms
 ** not recognized by this function; see the implementation for details.
 */
-NSPR_API(char*) PR_GetEnvSecure(const char *var);
+NSPR_API(char*)
+PR_GetEnvSecure(const char* var);
 
 /*
 ** PR_SetEnv() -- set, unset or change an environment variable
@@ -125,7 +127,8 @@ NSPR_API(char*) PR_GetEnvSecure(const char *var);
 **
 **
 */
-NSPR_API(PRStatus) PR_SetEnv(const char *string);
+NSPR_API(PRStatus)
+PR_SetEnv(const char* string);
 
 /*
 ** PR_DuplicateEnvironment() -- Obtain a copy of the environment.
@@ -155,7 +158,8 @@ NSPR_API(PRStatus) PR_SetEnv(const char *string);
 **   Similarly to PR_GetEnv(), this function may not interoperate as
 **   expected with the operating system's native environment accessors.
 */
-NSPR_API(char **) PR_DuplicateEnvironment(void);
+NSPR_API(char**)
+PR_DuplicateEnvironment(void);
 
 PR_END_EXTERN_C
 

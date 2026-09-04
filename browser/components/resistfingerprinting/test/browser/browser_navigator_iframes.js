@@ -25,8 +25,6 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
-  WindowsVersionInfo:
-    "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
 });
 
 const osVersion = Services.sysinfo.get("version");
@@ -62,7 +60,7 @@ const WindowsOscpuPromise = (async () => {
   let WindowsOscpu = null;
   if (AppConstants.platform == "win") {
     let cpuArch = Services.sysinfo.get("arch");
-    let isWin11 = WindowsVersionInfo.get().buildNumber >= 22000;
+    let isWin11 = Services.sysinfo.isWindows10BuildOrLater(22000);
     let isWow64 = (await Services.sysinfo.processInfo).isWow64;
     WindowsOscpu =
       cpuArch == "x86-64" || isWow64 || (cpuArch == "aarch64" && isWin11)
@@ -134,7 +132,13 @@ const SPOOFED_UA_GECKO_TRAIL = {
   other: LEGACY_UA_GECKO_TRAIL,
 };
 
-const DEFAULT_HARDWARE_CONCURRENCY = navigator.hardwareConcurrency;
+const SPOOFED_MAX_TOUCH_POINTS = {
+  linux: 5,
+  win: 10,
+  macosx: 0,
+  android: 5,
+  other: 5,
+};
 
 // =============================================================================================
 // =============================================================================================
@@ -295,6 +299,7 @@ add_setup(async () => {
     userAgent: defaultUserAgent,
     framer_crossOrigin_userAgentHTTPHeader: defaultUserAgent,
     framee_crossOrigin_userAgentHTTPHeader: defaultUserAgent,
+    maxTouchPoints: navigator.maxTouchPoints,
   };
   allSpoofed = {
     appVersion: SPOOFED_APPVERSION[AppConstants.platform],
@@ -306,6 +311,7 @@ add_setup(async () => {
     userAgent: spoofedUserAgent,
     framer_crossOrigin_userAgentHTTPHeader: spoofedUserAgent,
     framee_crossOrigin_userAgentHTTPHeader: spoofedUserAgent,
+    maxTouchPoints: SPOOFED_MAX_TOUCH_POINTS[AppConstants.platform],
   };
 
   registerCleanupFunction(async function () {

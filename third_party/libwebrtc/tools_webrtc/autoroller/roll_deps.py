@@ -29,7 +29,8 @@ def FindRootPath():
     webrtc/src repo root.
     """
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    while os.path.basename(root_dir) not in ('src', 'chromium'):
+    while not (os.path.exists(os.path.join(root_dir, 'DEPS'))
+               and os.path.exists(os.path.join(root_dir, '.git'))):
         par_dir = os.path.normpath(os.path.join(root_dir, os.pardir))
         if par_dir == root_dir:
             raise RuntimeError('Could not find the repo root.')
@@ -41,8 +42,6 @@ def FindRootPath():
 # Skip these dependencies (list without solution name prefix).
 DONT_AUTOROLL_THESE = [
     'src/examples/androidtests/third_party/gradle',
-    # Disable the roll of 'android_ndk' as it won't appear in chromium DEPS.
-    'src/third_party/android_ndk',
     'src/third_party/mockito/src',
     'src/third_party/protobuf-javascript',
 ]
@@ -58,10 +57,8 @@ WEBRTC_ONLY_DEPS = [
     'src/ios',
     'src/testing',
     'src/third_party',
-    'src/third_party/clang_format/script',
     'src/third_party/grpc/src',
     'src/third_party/gtest-parallel',
-    'src/third_party/kotlin_stdlib',
     'src/third_party/pipewire/linux-amd64',
     'src/tools',
 ]

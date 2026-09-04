@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -114,6 +112,37 @@ class SlimLinkedListElement {
     return isFirst() ? nullptr : getPrevUnchecked();
   }
 
+  // Remove an element that is in one of the given lists. The element must be
+  // contained in one of the lists.
+  //
+  // Usage: elt->removeFromOneOf(list1, list2, ...)
+  template <typename... Lists>
+  void removeFromOneOf(Lists&... lists) {
+#ifdef DEBUG
+    bool found = (... || lists.contains(thisElement()));
+    MOZ_ASSERT(found, "element not found in any of the lists");
+#endif
+    auto removeFrom = [this](SlimLinkedList<T>& list) {
+      if (this == list.getFirst()) {
+        list.remove(thisElement());
+        return true;
+      }
+      return false;
+    };
+    // Scan through the lists. If this element is the first element of a list,
+    // remove it and short-circuit the scan, skipping the remaining lists. If it
+    // is not the head of any of the lists, fall back to a generic removal from
+    // any list. This is equivalent to the more terse:
+    //
+    // (... || (this == lsts.getFirst() && (lsts.remove(thisElement()), true)))
+    //
+    // but there's already too much magic here.
+    bool removed = (... || removeFrom(lists));
+    if (!removed) {
+      remove();
+    }
+  }
+
  private:
   ElementPtr getNextUnchecked() { return GetPtr(next_); }
   ConstElementPtr getNextUnchecked() const { return GetConstPtr(next_); };
@@ -124,7 +153,11 @@ class SlimLinkedListElement {
 
   void makeSingleton() {
     MOZ_ASSERT(!isInList());
-    LinkElements(thisElement(), thisElement(), EndTag);
+    makeListTo(thisElement());
+  }
+
+  void makeListTo(ElementPtr last) {
+    LinkElements(last, thisElement(), EndTag);
   }
 
   void insertAfter(ElementPtr newElement) {
@@ -176,16 +209,29 @@ class SlimLinkedListElement {
    * Remove element |this| from its containing list.
    */
   void remove() {
+    removeTo(thisElement());
+    next_ = 0;
+    prev_ = 0;
+  }
+
+  /*
+   * Remove elements between |this| and |to| inclusive. The removed elements'
+   * links are not updated.
+   */
+  void removeTo(ElementPtr to) {
     MOZ_ASSERT(isInList());
 
     ElementPtr prev = GetPtr(prev_);
-    ElementPtr next = GetPtr(next_);
-    uintptr_t tag = GetTag(prev_) | GetTag(next_);
+    ElementPtr next = GetPtr(to->next_);
+    uintptr_t tag = GetTag(prev_) | GetTag(to->next_);
 
     LinkElements(prev, next, tag);
 
-    next_ = 0;
-    prev_ = 0;
+#ifdef DEBUG
+    static constexpr uintptr_t PoisonLink = uintptr_t(-1);
+    to->next_ = PoisonLink;
+    prev_ = PoisonLink;
+#endif
   }
 };
 
@@ -377,6 +423,36 @@ class SlimLinkedList {
     element->remove();
   }
 
+  /*
+   * Remove the elements between |from| and |to| inclusive from this list and
+   * return them as a new list.
+   */
+  SlimLinkedList<T> removeRange(ElementPtr from, ElementPtr to) {
+    MOZ_ASSERT(from);
+    MOZ_ASSERT(to);
+    checkContains(from);
+    checkContains(to);
+
+    bool removeFirst = from->isFirst();
+    bool removeLast = to->isLast();
+
+    if (removeFirst && removeLast) {
+      // The range covers every element in the list.
+      return std::move(*this);
+    }
+
+    if (removeFirst) {
+      first_ = to->getNext();
+    }
+
+    from->removeTo(to);
+    from->makeListTo(to);
+
+    SlimLinkedList<T> result;
+    result.first_ = from;
+    return result;
+  }
+
   void checkContains(ElementPtr element) {
 #ifdef DEBUG
     size_t i = 0;
@@ -387,6 +463,7 @@ class SlimLinkedList {
       if (i == 100) {
         return;  // Limit time spent checking.
       }
+      i++;
     }
     MOZ_CRASH("Element not found");
 #endif

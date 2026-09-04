@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include <algorithm>
 #include <ostream>
+#include <tuple>
 
 #include "mozilla/Attributes.h"
 
@@ -94,6 +93,8 @@ struct BaseSize {
   Sub operator/(const Sub& aSize) const {
     return Sub(width / aSize.width, height / aSize.height);
   }
+
+  auto MutTiedFields() { return std::tie(components); }
 
   friend Sub Min(const Sub& aA, const Sub& aB) {
     return Sub(std::min(aA.width, aB.width), std::min(aA.height, aB.height));

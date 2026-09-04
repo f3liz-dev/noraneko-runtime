@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -113,8 +112,8 @@ ITEM_VALUE(WebGLVendorSanitize,         77)
 ITEM_VALUE(WebGLVendorConstant,         78)
 ITEM_VALUE(WebGLVendorRandomize,        79)
 ITEM_VALUE(WebGLRendererConstant,       80)
-
-// !!! Adding a new target? Rename PointerId and repurpose it.
+// How IME software in use chooses to style composition (exposed via EditContext)
+ITEM_VALUE(IMEStyle,                    81)
 
 /*
  * In certain cases, we precompute the value of ShouldRFP for e.g. a Document.

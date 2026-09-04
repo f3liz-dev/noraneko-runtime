@@ -1,14 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteImageProtocolHandler.h"
 
+#include "ImageRegion.h"
 #include "gfxContext.h"
 #include "gfxUtils.h"
-#include "ImageRegion.h"
 #include "imgITools.h"
+#include "mozilla/SVGImageContext.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentProcessManager.h"
+#include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/gfx/2D.h"
 #include "nsContentUtils.h"
 #include "nsIPipe.h"
 #include "nsIURI.h"
@@ -16,11 +20,6 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsURLHelper.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ContentProcessManager.h"
-#include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/SVGImageContext.h"
 
 namespace mozilla::image {
 
@@ -212,6 +211,10 @@ NS_IMETHODIMP RemoteImageProtocolHandler::NewChannel(nsIURI* aURI,
                                                      nsIChannel** aOutChannel) {
   if (!aLoadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
     return NS_ERROR_UNEXPECTED;
+  }
+
+  if (!nsContentUtils::IsImageType(aLoadInfo->GetExternalContentPolicyType())) {
+    return NS_ERROR_CONTENT_BLOCKED;
   }
 
   nsCOMPtr<nsIURI> remoteURI;

@@ -11,7 +11,7 @@ AllowCompilerWarnings()
 
 DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
 
-FINAL_LIBRARY = "xul"
+FINAL_LIBRARY = "abseil"
 
 
 LOCAL_INCLUDES += [
@@ -39,6 +39,12 @@ if CONFIG["OS_TARGET"] == "Android":
     DEFINES["HAVE_SYS_UIO_H"] = True
     DEFINES["_GNU_SOURCE"] = True
     DEFINES["__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__"] = True
+
+if CONFIG["OS_TARGET"] == "Darwin":
+
+    OS_LIBS += [
+        "-framework Foundation"
+    ]
 
 if CONFIG["OS_TARGET"] == "Linux":
 

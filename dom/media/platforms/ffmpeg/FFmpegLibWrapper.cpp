@@ -81,6 +81,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     AV_FUNC_60 = 1 << 7,
     AV_FUNC_61 = 1 << 8,
     AV_FUNC_62 = 1 << 9,
+    AV_FUNC_63 = 1 << 10,
     AV_FUNC_AVUTIL_53 = AV_FUNC_53 | AV_FUNC_AVUTIL_MASK,
     AV_FUNC_AVUTIL_54 = AV_FUNC_54 | AV_FUNC_AVUTIL_MASK,
     AV_FUNC_AVUTIL_55 = AV_FUNC_55 | AV_FUNC_AVUTIL_MASK,
@@ -91,11 +92,22 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     AV_FUNC_AVUTIL_60 = AV_FUNC_60 | AV_FUNC_AVUTIL_MASK,
     AV_FUNC_AVUTIL_61 = AV_FUNC_61 | AV_FUNC_AVUTIL_MASK,
     AV_FUNC_AVUTIL_62 = AV_FUNC_62 | AV_FUNC_AVUTIL_MASK,
+    AV_FUNC_AVUTIL_63 = AV_FUNC_63 | AV_FUNC_AVUTIL_MASK,
     AV_FUNC_AVCODEC_ALL = AV_FUNC_53 | AV_FUNC_54 | AV_FUNC_55 | AV_FUNC_56 |
                           AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
-                          AV_FUNC_61 | AV_FUNC_62,
+                          AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63,
     AV_FUNC_AVUTIL_ALL = AV_FUNC_AVCODEC_ALL | AV_FUNC_AVUTIL_MASK
   };
+  // AV_FUNC_N = 1 << (N - 53), so these two checks enforce that
+  // FFMPEG_MAX_MAJOR_VERSION matches AV_FUNC_AVCODEC_ALL exactly.
+  static_assert(
+      (AV_FUNC_AVCODEC_ALL & (1 << (FFMPEG_MAX_MAJOR_VERSION - 53))) != 0,
+      "FFMPEG_MAX_MAJOR_VERSION has no AV_FUNC entry; add bindings or lower "
+      "the version");
+  static_assert(
+      (AV_FUNC_AVCODEC_ALL & (1 << (FFMPEG_MAX_MAJOR_VERSION - 53 + 1))) == 0,
+      "New FFmpeg version added to AV_FUNC_AVCODEC_ALL; bump "
+      "FFMPEG_MAX_MAJOR_VERSION");
 
   switch (macro) {
     case 53:
@@ -128,8 +140,11 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     case 62:
       version = AV_FUNC_62;
       break;
+    case 63:
+      version = AV_FUNC_63;
+      break;
     default:
-      FFMPEGV_LOG("Unknown avcodec version: %d", macro);
+      FFMPEGV_LOG("Unknown avcodec version: {}", macro);
       Unlink();
       return isFFMpeg ? ((macro > 57) ? LinkResult::UnknownFutureFFMpegVersion
                                       : LinkResult::UnknownOlderFFMpegVersion)
@@ -138,7 +153,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                       : LinkResult::UnknownFutureLibAVVersion;
   }
 
-  FFMPEGP_LOG("version: 0x%x, macro: %d, micro: %d, isFFMpeg: %s", version,
+  FFMPEGP_LOG("version: 0x{:x}, macro: {}, micro: {}, isFFMpeg: {}", version,
               macro, micro, isFFMpeg ? "yes" : "no");
 
 #define AV_FUNC_OPTION_SILENT(func, ver)                                \
@@ -177,11 +192,13 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(avcodec_decode_video2, AV_FUNC_53 | AV_FUNC_54 | AV_FUNC_55 |
                                      AV_FUNC_56 | AV_FUNC_57 | AV_FUNC_58)
   AV_FUNC(avcodec_find_decoder, AV_FUNC_AVCODEC_ALL)
-  AV_FUNC(avcodec_find_decoder_by_name,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+  AV_FUNC(avcodec_find_decoder_by_name, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                            AV_FUNC_61 | AV_FUNC_62 |
+                                            AV_FUNC_63)
   AV_FUNC(avcodec_find_encoder, AV_FUNC_AVCODEC_ALL)
-  AV_FUNC(avcodec_find_encoder_by_name,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+  AV_FUNC(avcodec_find_encoder_by_name, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                            AV_FUNC_61 | AV_FUNC_62 |
+                                            AV_FUNC_63)
   AV_FUNC(avcodec_flush_buffers, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(avcodec_open2, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(avcodec_register_all, AV_FUNC_53 | AV_FUNC_54 | AV_FUNC_55 |
@@ -195,68 +212,72 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(avcodec_alloc_frame, (AV_FUNC_53 | AV_FUNC_54))
   AV_FUNC(avcodec_get_frame_defaults, (AV_FUNC_53 | AV_FUNC_54))
   AV_FUNC(avcodec_free_frame, AV_FUNC_54)
-  AV_FUNC(avcodec_send_packet,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC(avcodec_receive_packet,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC(avcodec_send_frame,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC(avcodec_receive_frame,
-          AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+  AV_FUNC(avcodec_send_packet, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                   AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC(avcodec_receive_packet, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                      AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC(avcodec_send_frame, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                  AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC(avcodec_receive_frame, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
+                                     AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63)
   AV_FUNC(avcodec_default_get_buffer2,
           (AV_FUNC_55 | AV_FUNC_56 | AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 |
-           AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62))
+           AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63))
   AV_FUNC(av_packet_alloc, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
-                            AV_FUNC_61 | AV_FUNC_62))
+                            AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63))
   AV_FUNC(av_packet_unref, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
-                            AV_FUNC_61 | AV_FUNC_62))
+                            AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63))
   AV_FUNC(av_packet_free, (AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
-                           AV_FUNC_61 | AV_FUNC_62))
+                           AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63))
   AV_FUNC(avcodec_descriptor_get, AV_FUNC_AVCODEC_ALL)
   AV_FUNC(av_log_set_callback, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_log_set_level, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_malloc, AV_FUNC_AVUTIL_ALL)
+  AV_FUNC(av_mallocz, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_freep, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_frame_alloc,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_frame_clone,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_frame_free,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_frame_unref,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_frame_get_buffer,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_frame_make_writable,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62))
+           AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_image_check_size, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_image_get_buffer_size, AV_FUNC_AVUTIL_ALL)
   AV_FUNC_OPTION(av_channel_layout_default,
-                 AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62)
+                 AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 |
+                     AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION(av_channel_layout_from_mask,
-                 AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62)
-  AV_FUNC_OPTION(av_channel_layout_copy,
-                 AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62)
+                 AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 |
+                     AV_FUNC_AVUTIL_63)
+  AV_FUNC_OPTION(av_channel_layout_copy, AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                                             AV_FUNC_AVUTIL_62 |
+                                             AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION(av_buffer_get_opaque,
                  (AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 | AV_FUNC_AVUTIL_58 |
                   AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                  AV_FUNC_AVUTIL_62))
+                  AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63))
   AV_FUNC(av_buffer_create,
           (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
            AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-           AV_FUNC_61 | AV_FUNC_62))
+           AV_FUNC_61 | AV_FUNC_62 | AV_FUNC_63))
   AV_FUNC_OPTION(av_frame_get_colorspace,
                  AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 | AV_FUNC_AVUTIL_57 |
                      AV_FUNC_AVUTIL_58)
@@ -265,7 +286,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
                      AV_FUNC_AVUTIL_58)
   AV_FUNC(av_strerror, AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                           AV_FUNC_AVUTIL_62)
+                           AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC(av_get_sample_fmt_name, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_dict_set, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_dict_free, AV_FUNC_AVUTIL_ALL)
@@ -273,65 +294,84 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(av_opt_set_double, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(av_opt_set_int, AV_FUNC_AVUTIL_ALL)
   AV_FUNC(avcodec_free_context, AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 |
-                                    AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+                                    AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62 |
+                                    AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(avcodec_get_hw_config, AV_FUNC_58 | AV_FUNC_59 |
                                                    AV_FUNC_60 | AV_FUNC_61 |
-                                                   AV_FUNC_62)
+                                                   AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(avcodec_get_supported_config, AV_FUNC_62 | AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(av_codec_is_decoder, AV_FUNC_58 | AV_FUNC_59 |
                                                  AV_FUNC_60 | AV_FUNC_61 |
-                                                 AV_FUNC_62)
+                                                 AV_FUNC_62 | AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(av_codec_is_encoder, AV_FUNC_58 | AV_FUNC_59 |
                                                  AV_FUNC_60 | AV_FUNC_61 |
-                                                 AV_FUNC_62)
+                                                 AV_FUNC_62 | AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(av_codec_iterate, AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 |
-                                              AV_FUNC_61 | AV_FUNC_62)
+                                              AV_FUNC_61 | AV_FUNC_62 |
+                                              AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_init,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                            AV_FUNC_AVUTIL_62)
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_create,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_alloc,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                            AV_FUNC_AVUTIL_62)
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION_SILENT(
       av_buffer_ref, AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 | AV_FUNC_AVUTIL_60 |
-                         AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62)
-  AV_FUNC_OPTION_SILENT(av_buffer_unref, AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
-                                             AV_FUNC_AVUTIL_60 |
-                                             AV_FUNC_AVUTIL_61 |
-                                             AV_FUNC_AVUTIL_62)
+                         AV_FUNC_AVUTIL_61 | AV_FUNC_AVUTIL_62 |
+                         AV_FUNC_AVUTIL_63)
+  AV_FUNC_OPTION_SILENT(av_buffer_unref,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION_SILENT(av_hwframe_ctx_alloc,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                            AV_FUNC_AVUTIL_62)
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION_SILENT(av_hwframe_ctx_init,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                            AV_FUNC_AVUTIL_62)
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
+  AV_FUNC_OPTION_SILENT(av_hwframe_map,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
+  AV_FUNC_OPTION_SILENT(avcodec_get_hw_frames_parameters,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
 
 #ifdef MOZ_WIDGET_GTK
-  AV_FUNC_OPTION_SILENT(av_hwdevice_hwconfig_alloc, AV_FUNC_58 | AV_FUNC_59 |
-                                                        AV_FUNC_60 |
-                                                        AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC_OPTION_SILENT(
-      av_hwdevice_get_hwframe_constraints,
-      AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC_OPTION_SILENT(
-      av_hwframe_constraints_free,
-      AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC_OPTION_SILENT(
-      av_hwframe_transfer_get_formats,
-      AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
-  AV_FUNC_OPTION_SILENT(
-      av_hwdevice_ctx_create_derived,
-      AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 | AV_FUNC_62)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_hwconfig_alloc,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_get_hwframe_constraints,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(av_hwframe_constraints_free,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(av_hwframe_transfer_get_formats,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_ctx_create_derived,
+                        AV_FUNC_58 | AV_FUNC_59 | AV_FUNC_60 | AV_FUNC_61 |
+                            AV_FUNC_62 | AV_FUNC_63)
+  AV_FUNC_OPTION_SILENT(av_hwdevice_get_type_name,
+                        AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
+                            AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
   AV_FUNC_OPTION_SILENT(avcodec_get_name, AV_FUNC_57 | AV_FUNC_58 | AV_FUNC_59 |
                                               AV_FUNC_60 | AV_FUNC_61 |
-                                              AV_FUNC_62)
+                                              AV_FUNC_62 | AV_FUNC_63)
   AV_FUNC_OPTION_SILENT(av_get_pix_fmt_string,
                         AV_FUNC_AVUTIL_58 | AV_FUNC_AVUTIL_59 |
                             AV_FUNC_AVUTIL_60 | AV_FUNC_AVUTIL_61 |
-                            AV_FUNC_AVUTIL_62)
+                            AV_FUNC_AVUTIL_62 | AV_FUNC_AVUTIL_63)
 #endif
 
   AV_FUNC_OPTION(av_tx_init, AV_FUNC_AVUTIL_ALL)
@@ -442,7 +482,7 @@ void FFmpegLibWrapper::UpdateLogLevel() {
   if (MOZ_LOG_TEST(sFFmpegLibLog, level)) {
     nsAutoCString msg;
     msg.AppendVprintf(aFmt, aArgs);
-    MOZ_LOG(sFFmpegLibLog, level, ("[%p] %s", aPtr, msg.get()));
+    MOZ_LOG_FMT(sFFmpegLibLog, level, "[{}] {}", fmt::ptr(aPtr), msg.get());
   }
 }
 

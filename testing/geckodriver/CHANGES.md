@@ -3,6 +3,112 @@
 
 All notable changes to this program are documented in this file.
 
+## 0.37.1 (2026-07-20, `300705c65d1b`)
+
+### Known problems
+
+- _Startup hang with Firefox running in a container (e.g. snap, flatpak):_
+
+  When Firefox is packaged inside a container (like the default Firefox browser
+  shipped with Ubuntu versions since 22.04), it may see a different filesystem
+  to the host. This can affect access to the generated profile directory, which
+  may result in a hang when starting Firefox. Workarounds are listed in the
+  geckodriver [usage documentation].
+
+### Changed
+
+- Browser UI testing for Firefox now requires the geckodriver
+  [`--allow-system-access`] command-line argument. Setting the
+  Firefox `--remote-allow-system-access` command-line argument
+  via `moz:firefoxOptions` is no longer supported.
+
+### Fixed
+
+- Fixed a regression in geckodriver 0.37.0 that could cause Firefox for Android
+  to exit immediately on startup on non-rooted Android devices.
+
+## 0.37.0 (2026-06-03, `253b85235865`)
+
+### Known problems
+
+- _Startup hang with Firefox running in a container (e.g. snap, flatpak):_
+
+  When Firefox is packaged inside a container (like the default Firefox browser
+  shipped with Ubuntu versions since 22.04), it may see a different filesystem
+  to the host. This can affect access to the generated profile directory, which
+  may result in a hang when starting Firefox. Workarounds are listed in the
+  geckodriver [usage documentation].
+
+- On non-rooted Android devices, geckodriver 0.37.0 may cause Firefox for Android
+  to exit immediately on startup. This issue is fixed in geckodriver 0.37.1.
+
+### Added
+
+- Added full support for the [Web Authentication specification](https://www.w3.org/TR/webauthn-2/#sctn-automation).
+  Requires Firefox 152 or later.
+
+- Added support for the [Global Privacy Control specification](https://w3c.github.io/gpc/#automation).
+  Requires Firefox 147 or later.
+
+- Added support for the `unhandledPromptBehavior.file` capability, which controls
+  how file dialogs are handled during automation.
+  Requires Firefox 147 or later.
+
+### Changed
+
+- Firefox on Android now detects early exits during startup, preventing
+  geckodriver from making prolonged connection attempts to a process that
+  has already terminated.
+
+- On Linux Snap installations, geckodriver now launches Firefox using
+  the direct binary path, improving compatibility with containerized
+  environments.
+
+- The `implicit` and `pageLoad` timeouts now accept `null` as a value,
+  which disables the respective timeout.
+
+- When the Android test runner fails to start, geckodriver now
+  automatically retries the launch once before reporting an error.
+
+- When geckodriver is terminated (e.g. via SIGTERM), it now attempts
+  a graceful shutdown of Firefox first, falling back to a forced kill
+  if necessary to avoid leaving behind orphaned processes.
+
+- Updated geckodriver to the Rust 2024 edition.
+
+### Fixed
+
+- Invalid files encountered when extracting a custom profile now
+  raise an error.
+
+- Fixed an issue where an already running Firefox package on Android
+  was not correctly force-stopped before launching a new session.
+
+- Fixed retrieval of crash minidump files from the Firefox profile
+  directory.
+
+### Removed
+
+- Linux 32-bit builds have been discontinued.
+
+  Starting with Firefox 145, Mozilla no longer ships binaries for
+  32-bit (x86) Linux. As a result, geckodriver binaries for that
+  platform are no longer provided either.
+
+  If you still need a 32-bit Linux build of geckodriver, you can
+  install it via `cargo install` or cross-compile it yourself:
+
+  ```shell
+  % cargo build --target i686-unknown-linux-gnu
+  ```
+
+- Removed FTP proxy support from WebDriver capabilities, as FTP
+  proxying is no longer supported by modern browsers.
+
+- Removed the deprecated `--enable-crash-reporter` command line argument.
+  Use the `MINIDUMP_SAVE_PATH` environment variable instead to preserve
+  crash dump files.
+
 ## 0.36.0 (2025-02-25, `a3d508507022`)
 
 ### Known problems
@@ -1952,33 +2058,28 @@ and greater.
 [Microsoft Visual Studio redistributable runtime]: https://support.microsoft.com/en-us/help/2977003/the-latest-supported-visual-c-downloads
 [GeckoView]: https://wiki.mozilla.org/Mobile/GeckoView
 [Fission]: https://wiki.mozilla.org/Project_Fission
-[Capabilities]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Capabilities.html
 [Flags]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html
 [`--allow-hosts`]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html#allow-hosts-allow-hosts
 [`--allow-origins`]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html#allow-origins-allow-origins
+[`--allow-system-access`]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html#allow-system-access
 [enable remote debugging on the Android device]: https://developers.google.com/web/tools/chrome-devtools/remote-debugging
 [macOS notarization]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Notarization.html
 [Rust]: https://rustup.rs/
-[mozilla.org] https://www.mozilla.org/firefox/
+[mozilla.org]: https://www.mozilla.org/firefox/
 
 [`CloseWindowResponse`]: https://docs.rs/webdriver/newest/webdriver/response/struct.CloseWindowResponse.html
 [`CookieResponse`]: https://docs.rs/webdriver/newest/webdriver/response/struct.CookieResponse.html
-[`DeleteSession`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.DeleteSession
 [`ElementClickIntercepted`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.ElementClickIntercepted
 [`ElementNotInteractable`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.ElementNotInteractable
 [`FullscreenWindow`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.FullscreenWindow
 [`GetNamedCookie`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.GetNamedCookie
-[`GetWindowRect`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.GetWindowRect
 [`InvalidCoordinates`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.InvalidCoordinates
-[`MaximizeWindow`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.MaximizeWindow
-[`MinimizeWindow`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.MinimizeWindow
 [`NewSession`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.NewSession
 [`NoSuchCookie`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.NoSuchCookie
 [`RectResponse`]: https://docs.rs/webdriver/0.27.0/webdriver/response/struct.RectResponse.html
 [`SendKeysParameters`]: https://docs.rs/webdriver/newest/webdriver/command/struct.SendKeysParameters.html
 [`SessionNotCreated`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.SessionNotCreated
 [`SetTimeouts`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.SetTimeouts
-[`SetWindowRect`]: https://docs.rs/webdriver/newest/webdriver/command/enum.WebDriverCommand.html#variant.SetWindowRect
 [`StaleElementReference`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.StaleElementReference
 [`UnableToCaptureScreen`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.UnableToCaptureScreen
 [`UnknownCommand`]: https://docs.rs/webdriver/newest/webdriver/error/enum.ErrorStatus.html#variant.UnknownCommand

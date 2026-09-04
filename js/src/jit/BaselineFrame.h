@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -92,7 +90,7 @@ class BaselineFrame {
   uint32_t hiReturnValue_;
 
  public:
-  [[nodiscard]] bool initForOsr(InterpreterFrame* fp, uint32_t numStackValues);
+  void initForOsr(InterpreterFrame* fp, uint32_t numStackValues);
 
 #ifdef DEBUG
   uint32_t debugFrameSize() const { return debugFrameSize_; }
@@ -114,6 +112,9 @@ class BaselineFrame {
   }
   bool isConstructing() const {
     return CalleeTokenIsConstructing(calleeToken());
+  }
+  bool isResumingGenerator() const {
+    return framePrefix()->isResumingGenerator();
   }
   JSScript* script() const {
     return MaybeForwardedScriptFromCalleeToken(calleeToken());
@@ -141,6 +142,8 @@ class BaselineFrame {
     }
     return UndefinedValue();
   }
+
+  Value* resumeArgs() { return framePrefix()->resumeArgs(); }
 
 #ifdef DEBUG
   size_t debugNumValueSlots() const { return numValueSlots(debugFrameSize()); }

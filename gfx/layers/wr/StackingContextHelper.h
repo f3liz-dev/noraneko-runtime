@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef GFX_STACKINGCONTEXTHELPER_H
 #define GFX_STACKINGCONTEXTHELPER_H
 
+#include "Units.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "Units.h"
 
 namespace mozilla {
 
@@ -46,6 +44,15 @@ class MOZ_RAII StackingContextHelper {
   // Export the inherited scale
   gfx::MatrixScales GetInheritedScale() const { return mScale; }
 
+  // True if the raster scale that applies to this stacking context is too
+  // small for its content to cover a device pixel. GetInheritedScale() reports
+  // 1.0 in that case rather than the real (near-zero) scale, so callers that
+  // size a rasterization buffer from untransformed bounds must not use it:
+  // those bounds are in a coordinate space that can be arbitrarily large (up
+  // to nscoord saturation), and scaling them by 1.0 asks for an enormous
+  // buffer. Such content is scaled out of sight, so skip it. See bug 1906769.
+  bool HasDegenerateRasterScale() const { return mRasterScaleIsDegenerate; }
+
   const gfx::Matrix& GetInheritedTransform() const {
     return mInheritedTransform;
   }
@@ -78,6 +85,7 @@ class MOZ_RAII StackingContextHelper {
   // transforms do *not* create a new snapping surface, so that for example the
   // existence of a non-animated identity transform does not affect snapping.
   gfx::Matrix mSnappingSurfaceTransform;
+  bool mRasterScaleIsDegenerate;
   bool mAffectsClipPositioning;
   Maybe<wr::WrSpatialId> mReferenceFrameId;
   Maybe<wr::SpaceAndClipChainHelper> mSpaceAndClipChainHelper;
@@ -122,8 +130,6 @@ class MOZ_RAII StackingContextHelper {
   // WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList.
   mutable nsDisplayTransform* mDeferredTransformItem;
   Maybe<gfx::Matrix4x4> mDeferredAncestorTransform;
-
-  bool mRasterizeLocally;
 };
 
 }  // namespace layers

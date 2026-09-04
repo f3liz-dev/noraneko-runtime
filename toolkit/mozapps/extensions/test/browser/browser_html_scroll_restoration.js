@@ -94,11 +94,12 @@ function isLayoutStable(win) {
   // <moz-message-bar> elements may affect the layout of a page, and therefore
   // we should check whether its embedded style sheet has finished loading.
   for (let bar of win.document.querySelectorAll("moz-message-bar")) {
-    // Check for the existence of a CSS property from moz-message-bar.css.
+    // Check for a property from moz-message-bar.css (defined directly on
+    // :host, not via @import or @layer) to detect stylesheet load.
     if (
       !win
         .getComputedStyle(bar)
-        .getPropertyValue("--message-bar-background-color")
+        .getPropertyValue("--message-bar-icon-close-url")
     ) {
       return false;
     }
@@ -118,7 +119,7 @@ function scrollTopLeftIntoView(elem) {
   // Sanity check: In this test, a large padding has been added to the top and
   // left of the document. So when an element has been scrolled into view, the
   // top and left offsets must be non-zero.
-  assertNonZeroScrollOffsets(getScrollOffset(elem.ownerGlobal));
+  assertNonZeroScrollOffsets(getScrollOffset(elem.documentGlobal));
 }
 
 function assertNonZeroScrollOffsets(offsets) {

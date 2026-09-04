@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -488,7 +487,7 @@ InstallLocation::InstallLocation(JSContext* cx, const JS::Value& value)
 
 nsresult AddonManagerStartup::ReadStartupData(
     JSContext* cx, JS::MutableHandle<JS::Value> locations) {
-  locations.set(JS::UndefinedValue());
+  locations.setUndefined();
 
   nsCOMPtr<nsIFile> file =
       CloneAndAppend(ProfileDir(), "addonStartup.json.lz4");
@@ -559,7 +558,7 @@ nsresult AddonManagerStartup::EncodeBlob(JS::Handle<JS::Value> value,
   JS::Rooted<JSObject*> obj(cx, dom::ArrayBuffer::Create(cx, lz4, rv));
   RETURN_NSRESULT_ON_FAILURE(rv);
 
-  result.set(JS::ObjectValue(*obj));
+  result.setObject(*obj);
   return NS_OK;
 }
 

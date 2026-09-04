@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,9 @@
 #ifndef _nsscriptableinputstream_h_
 #define _nsscriptableinputstream_h_
 
-#include "nsIScriptableInputStream.h"
-#include "nsIInputStream.h"
 #include "nsCOMPtr.h"
+#include "nsIInputStream.h"
+#include "nsIScriptableInputStream.h"
 
 #define NS_SCRIPTABLEINPUTSTREAM_CID \
   {0x7225c040, 0xa9bf, 0x11d3, {0xa1, 0x97, 0x0, 0x50, 0x4, 0x1c, 0xaf, 0x44}}

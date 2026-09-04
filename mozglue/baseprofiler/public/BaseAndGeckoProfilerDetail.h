@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,9 +20,17 @@
 namespace mozilla {
 
 class ProfileBufferChunkManagerWithLocalLimit;
+class ProfileChunkedBuffer;
 
 // Centrally defines the version of the gecko profiler JSON format.
-const int GECKO_PROFILER_FORMAT_VERSION = 32;
+// NOTE: when this value is updated, the revision of the Firefox Profiler
+// toolchain in-tree
+// (https://github.com/mozilla-firefox/firefox/blob/main/taskcluster/kinds/fetch/toolchains.yml#L817)
+// should also be updated to ensure symbolication is kept up to date. It should
+// be updated with a stable commit from Firefox Profiler's production branch
+// (https://github.com/firefox-devtools/profiler/tree/production) that contains
+// the version bump.
+const int GECKO_PROFILER_FORMAT_VERSION = 36;
 
 namespace baseprofiler::detail {
 
@@ -59,6 +65,14 @@ namespace profiler::detail {
     Span<const char* const> aFilters,
     baseprofiler::BaseProfilerProcessId aPid =
         baseprofiler::profiler_current_process_id());
+
+// Copy aSource into a new buffer whose only chunk is just big enough to hold
+// its contents, and return it (null if aSource is empty, or on failure).
+// Stacks are captured into a buffer that can hold the deepest possible stack,
+// but a captured backtrace may be kept alive for a long time, so it should not
+// retain much more memory than the stack actually needs.
+[[nodiscard]] MFBT_API UniquePtr<ProfileChunkedBuffer> CopyToRightSizedBuffer(
+    const ProfileChunkedBuffer& aSource);
 
 }  // namespace profiler::detail
 

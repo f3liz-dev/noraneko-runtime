@@ -18,8 +18,6 @@
   class MozTabbrowserTabs extends MozElements.TabsBase {
     static observedAttributes = ["orient"];
 
-    #mustUpdateTabMinHeight = false;
-    #tabMinHeight = 36;
     #animatingGroups = new Set();
 
     constructor() {
@@ -67,7 +65,6 @@
       this.arrowScrollbox = document.getElementById(
         "tabbrowser-arrowscrollbox"
       );
-      this.arrowScrollbox.addEventListener("wheel", this, true);
       this.arrowScrollbox.addEventListener("underflow", this);
       this.arrowScrollbox.addEventListener("overflow", this);
       this.pinnedTabsContainer = document.getElementById(
@@ -109,13 +106,11 @@
       // this then arrowscrollbox computes this value by calling
       // _getScrollableElements and dividing the box size by that number.
       // However in the tabstrip case we already know the answer to this as,
-      // when we're overflowing, it is always the same as the tab min width or
-      // height. For tab group labels, the number won't exactly match, but
-      // that shouldn't be a problem in practice since the arrowscrollbox
-      // stops at element bounds when finishing scrolling.
+      // when we're overflowing, it is always the same as the tab min width.
+      // Vertical mode scrolls natively and takes the amount from
+      // -moz-line-scroll-amount.
       Object.defineProperty(this.arrowScrollbox, "lineScrollAmount", {
-        get: () =>
-          this.verticalMode ? this.#tabMinHeight : this._tabMinWidthPref,
+        get: () => this._tabMinWidthPref,
       });
 
       this.baseConnect();
@@ -135,16 +130,6 @@
       this.previewPanel = null;
 
       this.allTabs[0].label = this.emptyTabTitle;
-
-      // Hide the secondary text for locales where it is unsupported due to size constraints.
-      const language = Services.locale.appLocaleAsBCP47;
-      const unsupportedLocales = Services.prefs.getCharPref(
-        "browser.tabs.secondaryTextUnsupportedLocales"
-      );
-      this.toggleAttribute(
-        "secondarytext-unsupported",
-        unsupportedLocales.split(",").includes(language.split("-")[0])
-      );
 
       this.newTabButton.setAttribute(
         "aria-label",
@@ -185,7 +170,6 @@
         }
       );
       this.#updateTabMinWidth(this._tabMinWidthPref);
-      this.#updateTabMinHeight();
 
       CustomizableUI.addListener(this);
       this._updateNewTabVisibility();
@@ -196,6 +180,9 @@
         "browser.tabs.closeTabByDblclick",
         false
       );
+
+      // The base class set these up before we had the arrowscrollbox.
+      this.updateWheelListeners();
 
       XPCOMUtils.defineLazyPreferenceGetter(
         this,
@@ -239,7 +226,6 @@
         // reset this attribute so we don't have incorrect styling for vertical tabs
         this.removeAttribute("overflow");
         this.#updateTabMinWidth();
-        this.#updateTabMinHeight();
         this.pinnedTabsContainer?.setAttribute("orient", newValue);
       }
       super.attributeChangedCallback(name, oldValue, newValue);
@@ -527,11 +513,18 @@
         let tab = event.target?.closest("tab");
         if (tab) {
           if (tab.multiselected) {
-            gBrowser.removeMultiSelectedTabs();
+            gBrowser.removeMultiSelectedTabs({
+              metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+                gBrowser.TabMetrics.METRIC_SOURCE.MIDDLE_CLICK
+              ),
+            });
           } else {
             gBrowser.removeTab(tab, {
               animate: true,
               triggeringEvent: event,
+              metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+                gBrowser.TabMetrics.METRIC_SOURCE.MIDDLE_CLICK
+              ),
             });
           }
         } else if (isTabGroupLabel(event.target)) {
@@ -598,32 +591,37 @@
           }
         }
       } else if (keyComboForMove) {
+        let moveOptions = {
+          metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.METRIC_SOURCE.KEYBOARD
+          ),
+        };
         switch (event.keyCode) {
           case KeyEvent.DOM_VK_UP:
-            gBrowser.moveTabBackward();
+            gBrowser.moveTabBackward(moveOptions);
             break;
           case KeyEvent.DOM_VK_DOWN:
-            gBrowser.moveTabForward();
+            gBrowser.moveTabForward(moveOptions);
             break;
           case KeyEvent.DOM_VK_RIGHT:
             if (RTL_UI) {
-              gBrowser.moveTabBackward();
+              gBrowser.moveTabBackward(moveOptions);
             } else {
-              gBrowser.moveTabForward();
+              gBrowser.moveTabForward(moveOptions);
             }
             break;
           case KeyEvent.DOM_VK_LEFT:
             if (RTL_UI) {
-              gBrowser.moveTabForward();
+              gBrowser.moveTabForward(moveOptions);
             } else {
-              gBrowser.moveTabBackward();
+              gBrowser.moveTabBackward(moveOptions);
             }
             break;
           case KeyEvent.DOM_VK_HOME:
-            gBrowser.moveTabToStart();
+            gBrowser.moveTabToStart(undefined, moveOptions);
             break;
           case KeyEvent.DOM_VK_END:
-            gBrowser.moveTabToEnd();
+            gBrowser.moveTabToEnd(undefined, moveOptions);
             break;
           default:
             // Consume the keydown event for the above keyboard
@@ -747,11 +745,27 @@
       this.tabDragAndDrop.handle_dragleave(event);
     }
 
+    /**
+     * Only reached while switching tabs by scrolling is enabled, since that's
+     * when the listener exists.
+     */
     on_wheel(event) {
-      if (
-        Services.prefs.getBoolPref("toolkit.tabbox.switchByScrolling", false)
-      ) {
-        event.stopImmediatePropagation();
+      // The tabs are switched from the legacy scroll event in tabbox.js. Keep
+      // the arrowscrollbox from scrolling on top of that.
+      event.stopImmediatePropagation();
+    }
+
+    updateWheelListeners() {
+      super.updateWheelListeners();
+
+      if (!this.arrowScrollbox) {
+        // Called from the base class constructor, before init().
+        return;
+      }
+      if (this.switchByScrolling) {
+        this.arrowScrollbox.addEventListener("wheel", this, true);
+      } else {
+        this.arrowScrollbox.removeEventListener("wheel", this, true);
       }
     }
 
@@ -811,7 +825,6 @@
 
     on_uidensitychanged() {
       this._updateCloseButtons();
-      this.#updateTabMinHeight();
       this._handleTabSelect(true);
     }
 
@@ -1100,6 +1113,25 @@
     }
 
     /**
+     * @override
+     * @param {-1|1} aDir
+     * @param {boolean} aWrap
+     * @param {Event} [aEvent] The DOM event that triggered this call.
+     */
+    advanceSelectedTab(aDir, aWrap, aEvent) {
+      let prevTab = gBrowser.selectedTab;
+      super.advanceSelectedTab(aDir, aWrap, aEvent);
+      if (gBrowser.selectedTab !== prevTab) {
+        gBrowser.recordTabMetrics(
+          gBrowser.TabMetrics.METRIC_ACTION.ACTIVATE,
+          gBrowser.TabMetrics.userTriggeredContext(
+            gBrowser.TabMetrics.sourceForEvent(aEvent)
+          )
+        );
+      }
+    }
+
+    /**
      * Changes the selected tab or tab group label on the tab strip
      * relative to the ARIA-focused tab strip element or the active tab. This
      * is intended for traversing the tab strip visually, e.g by using keyboard
@@ -1155,7 +1187,16 @@
       // group label.
       let newItem = ariaFocusableItems[newItemIndex];
       if (isTab(newItem)) {
+        let prevTab = gBrowser.selectedTab;
         this._selectNewTab(newItem, aDir, aWrap);
+        if (gBrowser.selectedTab !== prevTab) {
+          gBrowser.recordTabMetrics(
+            gBrowser.TabMetrics.METRIC_ACTION.ACTIVATE,
+            gBrowser.TabMetrics.userTriggeredContext(
+              gBrowser.TabMetrics.METRIC_SOURCE.KEYBOARD
+            )
+          );
+        }
       }
       this.ariaFocusedItem = newItem;
 
@@ -1190,10 +1231,6 @@
       }
 
       node.before(tab);
-
-      if (this.#mustUpdateTabMinHeight) {
-        this.#updateTabMinHeight();
-      }
     }
 
     #updateTabMinWidth(val) {
@@ -1201,53 +1238,6 @@
         "--tab-min-width-pref",
         (val ?? this._tabMinWidthPref) + "px"
       );
-    }
-
-    #updateTabMinHeight() {
-      if (!this.verticalMode || !window.toolbar.visible) {
-        this.#mustUpdateTabMinHeight = false;
-        return;
-      }
-
-      // Find at least one tab we can scroll to.
-      let firstScrollableTab = this.visibleTabs.find(
-        this.arrowScrollbox._canScrollToElement
-      );
-
-      if (!firstScrollableTab) {
-        // If not, we're in a pickle. We should never get here except if we
-        // also don't use the outcome of this work (because there's nothing to
-        // scroll so we don't care about the scrollbox size).
-        // So just set a flag so we re-run once we do have a new tab.
-        this.#mustUpdateTabMinHeight = true;
-        return;
-      }
-
-      let { height } =
-        window.windowUtils.getBoundsWithoutFlushing(firstScrollableTab);
-
-      // Use the current known height or a sane default.
-      this.#tabMinHeight = height || 36;
-
-      // The height we got may be incorrect if a flush is pending so re-check it after
-      // a flush completes.
-      window
-        .promiseDocumentFlushed(() => {})
-        .then(
-          () => {
-            height =
-              window.windowUtils.getBoundsWithoutFlushing(
-                firstScrollableTab
-              ).height;
-
-            if (height) {
-              this.#tabMinHeight = height;
-            }
-          },
-          () => {
-            /* ignore errors */
-          }
-        );
     }
 
     get _isCustomizing() {
@@ -1367,7 +1357,11 @@
           let rect = ele => {
             return window.windowUtils.getBoundsWithoutFlushing(ele);
           };
-          let tab = this.visibleTabs[gBrowser.pinnedTabCount];
+          // See bug 2007766, we need to find the first tab that isn't
+          // inside a split view, because those can be narrower than the threshold.
+          let tab = this.visibleTabs
+            .slice(gBrowser.pinnedTabCount)
+            .find(t => !t.splitview);
           if (tab && rect(tab).width <= this._tabClipWidth) {
             this.setAttribute("closebuttons", "activetab");
           } else {
@@ -1736,6 +1730,7 @@
         Services.prefs.removeObserver("privacy.userContext", this.boundObserve);
       }
       CustomizableUI.removeListener(this);
+      this.previewPanel?.forceReset();
     }
 
     updateTabSoundLabel(tab) {

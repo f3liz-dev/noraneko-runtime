@@ -11,13 +11,13 @@ ChromeUtils.defineESModuleGetters(this, {
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
 
-Services.scriptloader.loadSubScript(
+Services.scriptloader.loadSubScriptWithOptions(
   Services.io.newFileURI(do_get_file("head_dnr.js")).spec,
-  this
+  { target: this, allowUnsafeURL: true }
 );
-Services.scriptloader.loadSubScript(
+Services.scriptloader.loadSubScriptWithOptions(
   Services.io.newFileURI(do_get_file("head_dnr_static_rules.js")).spec,
-  this
+  { target: this, allowUnsafeURL: true }
 );
 
 async function dropDNRStartupCache(dnrStore, extension) {
@@ -45,7 +45,7 @@ add_setup(async () => {
 });
 
 add_task(async function test_update_individual_static_rules() {
-  resetTelemetryData();
+  Services.fog.testResetFOG();
 
   const ruleset1 = [
     getDNRRule({

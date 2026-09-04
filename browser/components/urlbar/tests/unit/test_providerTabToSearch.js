@@ -11,6 +11,9 @@
 let testEngine;
 
 add_setup(async () => {
+  // Force settings redesign to false, so that `hideOneOffButton` will correctly
+  // work for the time being.
+  Services.prefs.setBoolPref("browser.settings-redesign.enabled", false);
   // Disable search suggestions for a less verbose test.
   Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
   // Disable ScotchBonnet that provides its own tab to search implementation.
@@ -59,7 +62,7 @@ add_task(async function basic() {
       }),
       makeSearchResult(context, {
         engineName: testEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           testEngine.searchUrlDomain
         ),
@@ -90,6 +93,54 @@ add_task(async function basic() {
   await cleanupPlaces();
 });
 
+add_task(async function noTabToSearchResultsInSmartbar() {
+  await PlacesTestUtils.addVisits([
+    {
+      url: "https://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
+
+  // Sanity check: the tab-to-search result appears in the urlbar SAP.
+  let urlbarController = UrlbarTestUtils.newMockController();
+  let urlbarContext = createContext("examp", {
+    isPrivate: false,
+  });
+
+  await urlbarController.startQuery(urlbarContext);
+  Assert.ok(
+    urlbarContext.results.some(
+      r => r.providerName == "UrlbarProviderTabToSearch"
+    ),
+    "Tab-to-search result should appear in the urlbar SAP"
+  );
+
+  // The same result should not appear in the smartbar SAP.
+  let smartbarController = UrlbarTestUtils.newMockController({
+    sapName: "smartbar",
+  });
+  let smartbarContext = createContext("examp", {
+    isPrivate: false,
+    sapName: "smartbar",
+  });
+
+  await smartbarController.startQuery(smartbarContext);
+
+  Assert.greater(
+    smartbarContext.results.length,
+    0,
+    "Smartbar query should return some results"
+  );
+  Assert.ok(
+    !smartbarContext.results.some(
+      r => r.providerName == "UrlbarProviderTabToSearch"
+    ),
+    "Tab-to-search result should not appear in the smartbar SAP"
+  );
+
+  await cleanupPlaces();
+});
+
 // Tests that tab-to-search results are shown when the typed string matches an
 // engine domain even when there is no autofill.
 add_task(async function noAutofill() {
@@ -106,7 +157,7 @@ add_task(async function noAutofill() {
       }),
       makeSearchResult(context, {
         engineName: testEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           testEngine.searchUrlDomain
         ),
@@ -169,7 +220,7 @@ add_task(async function ignoreWww() {
       }),
       makeSearchResult(context, {
         engineName: testEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           testEngine.searchUrlDomain
         ),
@@ -210,7 +261,7 @@ add_task(async function ignoreWww() {
       }),
       makeSearchResult(context, {
         engineName: wwwTestEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           wwwTestEngine.searchUrlDomain
         ),
@@ -243,7 +294,7 @@ add_task(async function ignoreWww() {
       }),
       makeSearchResult(context, {
         engineName: wwwTestEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           wwwTestEngine.searchUrlDomain
         ),
@@ -308,7 +359,7 @@ add_task(async function conflictingEngines() {
       }),
       makeSearchResult(context, {
         engineName: fooTestEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           fooTestEngine.searchUrlDomain
         ),
@@ -340,7 +391,7 @@ add_task(async function conflictingEngines() {
       }),
       makeSearchResult(context, {
         engineName: fooBarTestEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           fooBarTestEngine.searchUrlDomain
         ),
@@ -406,7 +457,7 @@ add_task(async function multipleEnginesForHostname() {
       }),
       makeSearchResult(context, {
         engineName: testEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           testEngine.searchUrlDomain
         ),
@@ -448,7 +499,7 @@ add_task(async function test_casing() {
       }),
       makeSearchResult(context, {
         engineName: testEngine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           testEngine.searchUrlDomain
         ),
@@ -489,7 +540,7 @@ add_task(async function test_publicSuffix() {
       }),
       makeSearchResult(context, {
         engineName: engine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           engine.searchUrlDomain
         ),
@@ -576,7 +627,7 @@ add_task(async function test_disabledEngine() {
       }),
       makeSearchResult(context, {
         engineName: engine.name,
-        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS,
+        engineIconUri: UrlbarShared.ICON.SEARCH_GLASS,
         searchUrlDomainWithoutSuffix: UrlbarUtils.stripPublicSuffixFromHost(
           engine.searchUrlDomain
         ),

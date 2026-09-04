@@ -1,23 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/net/OpaqueResponseUtils.h"
 
-#include "mozilla/dom/Document.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/dom/JSValidatorParent.h"
 #include "ErrorList.h"
+#include "HttpBaseChannel.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/JSValidatorParent.h"
 #include "nsContentUtils.h"
 #include "nsHttpResponseHead.h"
 #include "nsISupports.h"
 #include "nsMimeTypes.h"
 #include "nsStreamUtils.h"
-#include "nsThreadUtils.h"
 #include "nsStringStream.h"
-#include "HttpBaseChannel.h"
+#include "nsThreadUtils.h"
 
 static mozilla::LazyLogModule gORBLog("ORB");
 
@@ -276,7 +274,8 @@ OpaqueResponseFilter::OnStartRequest(nsIRequest* aRequest) {
     responseHead->ClearHeaders();
   }
 
-  mNext->OnStartRequest(aRequest);
+  nsCOMPtr<nsIStreamListener> next = mNext;
+  next->OnStartRequest(aRequest);
   return NS_OK;
 }
 
@@ -296,7 +295,8 @@ NS_IMETHODIMP
 OpaqueResponseFilter::OnStopRequest(nsIRequest* aRequest,
                                     nsresult aStatusCode) {
   LOGORB();
-  mNext->OnStopRequest(aRequest, aStatusCode);
+  nsCOMPtr<nsIStreamListener> next = mNext;
+  next->OnStopRequest(aRequest, aStatusCode);
   return NS_OK;
 }
 
@@ -341,7 +341,8 @@ OpaqueResponseBlocker::OnStartRequest(nsIRequest* aRequest) {
   // before its FetchDriver::OnStartRequest is called, otherwise it'll
   // resolve the promise regardless the decision of JS validator.
   if (mState != State::Sniffing) {
-    nsresult rv = mNext->OnStartRequest(aRequest);
+    nsCOMPtr<nsIStreamListener> next = mNext;
+    nsresult rv = next->OnStartRequest(aRequest);
     return NS_SUCCEEDED(mStatus) ? rv : mStatus;
   }
 
@@ -370,7 +371,8 @@ OpaqueResponseBlocker::OnStopRequest(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  return mNext->OnStopRequest(aRequest, statusForStop);
+  nsCOMPtr<nsIStreamListener> next = mNext;
+  return next->OnStopRequest(aRequest, statusForStop);
 }
 
 NS_IMETHODIMP
@@ -380,7 +382,8 @@ OpaqueResponseBlocker::OnDataAvailable(nsIRequest* aRequest,
   LOGORB();
 
   if (mState == State::Allowed) {
-    return mNext->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
+    nsCOMPtr<nsIStreamListener> next = mNext;
+    return next->OnDataAvailable(aRequest, aInputStream, aOffset, aCount);
   }
 
   if (mState == State::Blocked) {
@@ -441,7 +444,7 @@ nsresult OpaqueResponseBlocker::EnsureOpaqueResponseIsAllowedAfterSniff(
   switch (httpBaseChannel->PerformOpaqueResponseSafelistCheckAfterSniff(
       mContentType, mNoSniff)) {
     case OpaqueResponse::Block:
-      BlockResponse(httpBaseChannel, NS_BINDING_ABORTED);
+      BlockResponse(httpBaseChannel, NS_ERROR_DOM_NETWORK_ERR);
       return NS_BINDING_ABORTED;
     case OpaqueResponse::Allow:
       AllowResponse();
@@ -557,15 +560,16 @@ nsresult OpaqueResponseBlocker::ValidateJavaScript(HttpBaseChannel* aChannel,
             // case.
             allowed = true;
             self->AllowResponse();
+            channel->OnOpaqueResponseAllowed();
             break;
           case OpaqueResponse::Block:
-            self->BlockResponse(channel, NS_ERROR_FAILURE);
+            self->BlockResponse(channel, NS_ERROR_DOM_NETWORK_ERR);
             break;
           default:
             MOZ_ASSERT_UNREACHABLE(
                 "We should only ever have Allow or Block here.");
             allowed = false;
-            self->BlockResponse(channel, NS_BINDING_ABORTED);
+            self->BlockResponse(channel, NS_ERROR_DOM_NETWORK_ERR);
             break;
         }
 

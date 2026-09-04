@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import mach_initialize
 import pytest
@@ -49,14 +49,34 @@ def patch_resolver(monkeypatch):
     return inner
 
 
+@pytest.fixture()
+def mock_push_to_lando_try():
+    return patch(
+        "tryselect.push.push_to_lando_try",
+        return_value={
+            "lando_instance": "lando-test",
+            "lando_job_id": 42,
+            "duration": 1.5,
+        },
+    )
+
+
 @pytest.fixture(autouse=True)
 def patch_vcs(monkeypatch):
     attrs = {
         "path": push.vcs.path,
+        "push.return_value": "abc123fakegitsha",
     }
     mock = MagicMock()
     mock.configure_mock(**attrs)
     monkeypatch.setattr(push, "vcs", mock)
+
+
+@pytest.fixture(autouse=True)
+def mock_taskcluster_secret(monkeypatch):
+    mock_client = MagicMock()
+    mock_client.get.return_value = {"secret": {"ssh_privkey": "fake_ssh_key"}}
+    monkeypatch.setattr(push, "get_client", MagicMock(return_value=mock_client))
 
 
 @pytest.fixture(scope="session")

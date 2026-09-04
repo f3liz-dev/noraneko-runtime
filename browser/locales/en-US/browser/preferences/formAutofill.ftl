@@ -29,6 +29,9 @@ address-capture-save-button =
 address-capture-not-now-button =
     .label = Not now
     .accessKey = N
+address-capture-never-save-button =
+    .label = Never save
+    .accessKey = v
 address-capture-cancel-button =
     .label = Cancel
     .accessKey = C
@@ -41,7 +44,7 @@ address-capture-learn-more-button =
     .label = Learn more
 address-capture-open-menu-button =
     .aria-label = Open menu
-address-capture-edit-address-button =
+address-capture-edit-address-link = Edit address
     .aria-label = Edit address
 
 
@@ -56,7 +59,7 @@ autofill-edit-address-title = Edit address
 
 autofill-address-name = Name
 autofill-address-organization = Organization
-autofill-address-street-address = Street Address
+autofill-address-street-address = Street address
 
 autofill-address-street = Street Address
 
@@ -100,7 +103,7 @@ autofill-address-oblast = Oblast
 autofill-address-pin = Pin
 autofill-address-postal-code = Postal Code
 # Postal code field.
-autofill-address-zip = ZIP Code
+autofill-address-zip = ZIP code
 # Postal code field used in Ireland (IE).
 autofill-address-eircode = Eircode
 
@@ -114,7 +117,7 @@ autofill-address-email = Email
 
 autofill-cancel-button = Cancel
 autofill-save-button = Save
-autofill-country-warning-message = Form Autofill is currently available only for certain countries.
+autofill-country-warning-message-2 = Form autofill is currently only available for certain countries
 autofill-message-tooltip = View message about autofill
 
 # The dialog title for creating credit cards in browser preferences.
@@ -122,12 +125,17 @@ autofill-add-card-title = Add card
 # The dialog title for editing credit cards in browser preferences.
 autofill-edit-card-title2 = Edit card
 
-autofill-card-number = Card Number
+autofill-card-number-2 =
+    .label = Card number
 autofill-card-invalid-number = Please enter a valid card number
-autofill-card-name-on-card = Name on Card
-autofill-card-expires-month = Exp. Month
-autofill-card-expires-year = Exp. Year
-autofill-card-billing-address = Billing Address
+autofill-card-name-on-card-2 =
+    .label = Name on card
+autofill-card-expires-month-2 =
+    .label = Expires month
+autofill-card-expires-year-2 =
+    .label = Expires year
+autofill-card-billing-address-2 =
+    .label = Billing address
 autofill-card-network = Card Type
 
 # This string is never actually displayed, but is used to make it easier to
@@ -136,3 +144,58 @@ autofill-card-network = Card Type
 # methods section. Localizers should choose terms that make sense for payment
 # methods in their region.
 autofill-card-search-term-credit-cards = credit cards, credit, cards, debit cards, debit, wallet, checkout
+
+## The passport autofill management dialog in browser preferences
+
+# The dialog title for creating a passport in browser preferences.
+autofill-add-passport-title = Add passport
+# The dialog title for editing a passport in browser preferences.
+autofill-edit-passport-title = Edit passport
+
+## Passport field labels shared by the passport capture doorhanger and the
+## passport management dialog. The labels are exposed as a .label attribute so
+## they can be assigned directly to moz-input-text and moz-select fields.
+
+autofill-passport-name =
+    .label = Name
+autofill-passport-country =
+    .label = Country
+autofill-passport-number =
+    .label = Number
+# Heading shown above the passport issue date fields.
+autofill-passport-issue-date = Issue date
+# Heading shown above the passport expiration date fields.
+autofill-passport-expiry-date = Expiration date
+# Month dropdown label for passport dates.
+autofill-passport-date-month =
+    .label = MM
+# Day dropdown label for passport dates.
+autofill-passport-date-day =
+    .label = DD
+# Year dropdown label for passport dates.
+autofill-passport-date-year =
+    .label = YYYY
+
+## The passport capture doorhanger
+
+# Header of the doorhanger shown when Firefox offers to save a passport.
+passport-capture-save-doorhanger-header = Save passport?
+passport-capture-save-doorhanger-description = Save info to { -brand-short-name } so you can fill out forms quickly.
+
+# Accessible label for a passport date part input in the capture doorhanger.
+# The date parts (month/day/year) show their format hint (MM/DD/YYYY) as
+# placeholder text rather than a visible label, so the accessible name combines
+# the date group heading with the part hint. $heading is the group heading
+# (e.g. "Issue date") and $part is the part hint (e.g. "MM"); translators can
+# reorder them to match their locale.
+passport-capture-date-part-aria-label = { $heading } { $part }
+
+passport-capture-save-button =
+    .label = Save
+    .accessKey = S
+passport-capture-not-now-button =
+    .label = Not now
+    .accessKey = w
+passport-capture-never-save-button =
+    .label = Never save passports
+    .accessKey = N

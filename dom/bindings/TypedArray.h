@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -655,51 +653,25 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
         std::forward<Processor>(aProcessor));
   }
 
-  template <typename Processor>
+  template <bool AllowLargeTypedArrays = false, typename Processor>
   [[nodiscard]] ProcessReturnType<Processor> ProcessFixedData(
       Processor&& aProcessor) const {
     mozilla::dom::AutoJSAPI jsapi;
     if (!jsapi.Init(mImplObj)) {
-#if defined(EARLY_BETA_OR_EARLIER)
-      if constexpr (std::is_same_v<ArrayT, JS::ArrayBufferView>) {
-        if (!mImplObj) {
-          MOZ_CRASH("Null mImplObj");
-        }
-        if (!xpc::NativeGlobal(mImplObj)) {
-          MOZ_CRASH("Null xpc::NativeGlobal(mImplObj)");
-        }
-        if (!xpc::NativeGlobal(mImplObj)->GetGlobalJSObject()) {
-          MOZ_CRASH("Null xpc::NativeGlobal(mImplObj)->GetGlobalJSObject()");
-        }
-      }
-#endif
       MOZ_CRASH("Failed to get JSContext");
     }
-#if defined(EARLY_BETA_OR_EARLIER)
-    if constexpr (std::is_same_v<ArrayT, JS::ArrayBufferView>) {
-      JS::Rooted<JSObject*> view(jsapi.cx(),
-                                 js::UnwrapArrayBufferView(mImplObj));
-      if (!view) {
-        if (JSObject* unwrapped = js::CheckedUnwrapStatic(mImplObj)) {
-          if (!js::UnwrapArrayBufferView(unwrapped)) {
-            MOZ_CRASH(
-                "Null "
-                "js::UnwrapArrayBufferView(js::CheckedUnwrapStatic(mImplObj))");
-          }
-          view = unwrapped;
-        } else {
-          MOZ_CRASH("Null js::CheckedUnwrapStatic(mImplObj)");
-        }
-      }
-    }
-#endif
     JS::AutoBrittleMode abm(jsapi.cx());
     if (!JS::EnsureNonInlineArrayBufferOrView(jsapi.cx(), mImplObj)) {
-      MOZ_CRASH("small oom when moving inline data out-of-line");
+      // Fails on (small) OOM, or when trying to modify a buffer when its length
+      // is already pinned. Brittle mode, set just above, will cause the former
+      // to crash before returning false, but that is for diagnostic purposes
+      // only and could be removed at any time.
+      MOZ_CRASH("failed to make ArrayBuffer data be stored separately");
     }
     LengthPinner pinner(this);
 
-    return CallProcessor(GetCurrentData(), std::forward<Processor>(aProcessor));
+    return CallProcessor(GetCurrentData<AllowLargeTypedArrays>(),
+                         std::forward<Processor>(aProcessor));
   }
 
  private:

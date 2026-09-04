@@ -2,18 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "Common.h"
-#include "imgIContainer.h"
 #include "ImageOps.h"
+#include "gtest/gtest.h"
+#include "imgIContainer.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/2D.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIInputStream.h"
 #include "nsIRunnable.h"
 #include "nsIThread.h"
-#include "mozilla/RefPtr.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 
@@ -116,6 +115,9 @@ TEST_F(ImageDecodeToSurface, BMP) { RunDecodeToSurface(GreenBMPTestCase()); }
 TEST_F(ImageDecodeToSurface, ICO) { RunDecodeToSurface(GreenICOTestCase()); }
 TEST_F(ImageDecodeToSurface, Icon) { RunDecodeToSurface(GreenIconTestCase()); }
 TEST_F(ImageDecodeToSurface, WebP) { RunDecodeToSurface(GreenWebPTestCase()); }
+#ifdef MOZ_JXL
+TEST_F(ImageDecodeToSurface, JXL) { RunDecodeToSurface(GreenJXLTestCase()); }
+#endif
 
 TEST_F(ImageDecodeToSurface, AnimatedGIF) {
   RunDecodeToSurface(GreenFirstFrameAnimatedGIFTestCase());

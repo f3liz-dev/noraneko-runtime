@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,24 +7,23 @@
  * stream.
  */
 
+#include "nsMultiplexInputStream.h"
+
+#include "base/basictypes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Mutex.h"
-
-#include "base/basictypes.h"
-
-#include "nsMultiplexInputStream.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsIAsyncInputStream.h"
 #include "nsIBufferedStreams.h"
+#include "nsIClassInfoImpl.h"
 #include "nsICloneableInputStream.h"
+#include "nsIIPCSerializableInputStream.h"
+#include "nsIInputStreamLength.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsISeekableStream.h"
-#include "nsCOMPtr.h"
-#include "nsCOMArray.h"
-#include "nsIClassInfoImpl.h"
-#include "nsIIPCSerializableInputStream.h"
-#include "mozilla/ipc/InputStreamUtils.h"
-#include "nsIAsyncInputStream.h"
-#include "nsIInputStreamLength.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 
@@ -527,7 +524,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
 
       mStreams[i].mCurrentPos -= seek;
       mCurrentStream = i;
-      mStartedReadingCurrent = seek != -pos;
+      mStartedReadingCurrent = seek != pos;
 
       remaining -= seek;
     }
@@ -833,7 +830,7 @@ void nsMultiplexInputStream::AsyncWaitCompleted() {
 nsresult nsMultiplexInputStreamConstructor(REFNSIID aIID, void** aResult) {
   *aResult = nullptr;
 
-  RefPtr<nsMultiplexInputStream> inst = new nsMultiplexInputStream();
+  RefPtr inst = MakeRefPtr<nsMultiplexInputStream>();
 
   return inst->QueryInterface(aIID, aResult);
 }
@@ -1034,7 +1031,7 @@ nsMultiplexInputStream::Clone(nsIInputStream** aClone) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsMultiplexInputStream> clone = new nsMultiplexInputStream();
+  RefPtr clone = MakeRefPtr<nsMultiplexInputStream>();
 
   nsresult rv;
   uint32_t len = mStreams.Length();

@@ -3,6 +3,7 @@
 
 
 #include "../../hb-open-type.hh"
+#include "../../hb-depend-data.hh"
 #include "../../hb-ot-head-table.hh"
 #include "../../hb-ot-hmtx-table.hh"
 #include "../../hb-ot-var-gvar-table.hh"
@@ -121,7 +122,7 @@ struct glyf
 
     if (!use_short_loca)
     {
-      padded_offsets.resize (0);
+      padded_offsets.clear ();
       for (auto &g : glyphs)
 	padded_offsets.push (g.length ());
     }
@@ -216,6 +217,17 @@ struct glyf_accelerator_t
 
   bool has_data () const { return num_glyphs; }
 
+  void depend (hb_depend_data_builder_t *builder) const
+  {
+    if (!has_data ()) return;
+    for (hb_codepoint_t gid = 0; gid < get_num_glyphs (); gid++)
+    {
+      auto glyph = glyph_for_gid (gid);
+      for (auto &item : glyph.get_composite_iterator ())
+        builder->add_depend (gid, HB_OT_TAG_glyf, item.get_gid ());
+    }
+  }
+
   protected:
   template<typename T>
   bool get_points (hb_font_t *font, hb_codepoint_t gid, T consumer,
@@ -226,7 +238,7 @@ struct glyf_accelerator_t
     if (gid >= num_glyphs) return false;
 
     auto &all_points = scratch.all_points;
-    all_points.resize (0);
+    all_points.clear ();
 
     bool phantom_only = !consumer.is_consuming_contour_points ();
     if (unlikely (!glyph_for_gid (gid).get_points (font, *this, all_points, scratch, nullptr, nullptr, nullptr, true, true, phantom_only, coords, gvar_cache)))
@@ -542,6 +554,8 @@ struct glyf_accelerator_t
     }
   }
 
+  unsigned int get_num_glyphs () const { return num_glyphs; }
+
 #ifndef HB_NO_VAR
   const gvar_accelerator_t *gvar;
 #ifndef HB_NO_BEYOND_64K
@@ -613,6 +627,19 @@ glyf::_create_font_for_instancing (const hb_subset_plan_t *plan) const
 {
   hb_font_t *font = hb_font_create (plan->source);
   if (unlikely (font == hb_font_get_empty ())) return nullptr;
+
+#ifndef HB_NO_VAR
+  if (plan->has_avar2)
+  {
+    /* Under avar2, instancing applies only to the self-contained pins,
+     * whose constant final coordinates the plan holds in normalized_coords.
+     * Setting user-space variations would run the full avar2 mapping and
+     * bake contributions that remain live in the instance's variations. */
+    hb_font_set_var_coords_normalized (font, plan->normalized_coords.arrayZ,
+				       plan->normalized_coords.length);
+    return font;
+  }
+#endif
 
   hb_vector_t<hb_variation_t> vars;
   if (unlikely (!vars.alloc (plan->user_axes_location.get_population (), true)))

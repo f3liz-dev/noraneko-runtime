@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,27 +16,27 @@
 #ifndef mozilla_image_RasterImage_h
 #define mozilla_image_RasterImage_h
 
-#include "Image.h"
-#include "nsCOMPtr.h"
-#include "imgIContainer.h"
-#include "nsTArray.h"
-#include "LookupResult.h"
-#include "nsThreadUtils.h"
 #include "DecoderFactory.h"
 #include "FrameAnimator.h"
-#include "ImageMetadata.h"
 #include "ISurfaceProvider.h"
+#include "Image.h"
+#include "ImageContainer.h"
+#include "ImageMetadata.h"
+#include "LookupResult.h"
 #include "Orientation.h"
+#include "PlaybackType.h"
+#include "imgIContainer.h"
 #include "mozilla/AtomicBitfields.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/WeakPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/image/Resolution.h"
-#include "ImageContainer.h"
-#include "PlaybackType.h"
+#include "nsCOMPtr.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 #ifdef DEBUG
 #  include "imgIContainerDebug.h"
 #endif

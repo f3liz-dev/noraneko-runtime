@@ -342,6 +342,151 @@ TEST_F(TlsConnectStreamTls13, ClientAuthWithMultipleTickets) {
   SendReceive(100);
 }
 
+// Splits the server's encrypted handshake flight at the Finished boundary:
+// the pre-Finished messages are delivered immediately, and the Finished record
+// is held for injection via Inject().  Used to simulate the TCP fragmentation
+// case from bug 2022410.
+class SplitServerFinished : public TlsRecordFilter {
+ public:
+  explicit SplitServerFinished(const std::shared_ptr<TlsAgent>& a)
+      : TlsRecordFilter(a), saved_finished_(), done_(false) {
+    EnableDecryption();
+  }
+
+  bool done() const { return done_; }
+
+  void Inject(DummyPrSocket* dst) {
+    ASSERT_TRUE(done_);
+    dst->PacketReceived(saved_finished_);
+  }
+
+ protected:
+  PacketFilter::Action FilterRecord(const TlsRecordHeader& header,
+                                    const DataBuffer& record, size_t* offset,
+                                    DataBuffer* output) override {
+    if (done_) return KEEP;
+    if (!header.is_protected()) return KEEP;
+
+    uint16_t protection_epoch = 0;
+    uint8_t inner_content_type = 0;
+    DataBuffer plaintext;
+    TlsRecordHeader out_header(header);
+    if (!Unprotect(header, record, &protection_epoch, &inner_content_type,
+                   &plaintext, &out_header)) {
+      return KEEP;
+    }
+    if (inner_content_type != ssl_ct_handshake) return KEEP;
+
+    // Locate the Finished message in the plaintext.
+    size_t finished_start = plaintext.len();  // "not found" sentinel
+    {
+      TlsParser scanner(plaintext);
+      while (scanner.remaining() >= 4) {
+        size_t pos = scanner.consumed();
+        uint32_t msg_type = 0, msg_len = 0;
+        if (!scanner.Read(&msg_type, 1) || !scanner.Read(&msg_len, 3)) break;
+        if (static_cast<uint8_t>(msg_type) == kTlsHandshakeFinished) {
+          finished_start = pos;
+          break;
+        }
+        if (!scanner.Skip(msg_len)) break;
+      }
+    }
+    if (finished_start == plaintext.len()) return KEEP;
+
+    auto& pspec = spec(protection_epoch);
+
+    if (finished_start > 0) {
+      DataBuffer without_finished;
+      without_finished.Assign(plaintext.data(), finished_start);
+      DataBuffer ciphertext1;
+      TlsRecordHeader hdr1(out_header);
+      if (!Protect(pspec, hdr1, ssl_ct_handshake, without_finished,
+                   &ciphertext1, &hdr1)) {
+        return KEEP;
+      }
+      *offset = hdr1.Write(output, *offset, ciphertext1);
+    }
+
+    {
+      DataBuffer finished_only;
+      finished_only.Assign(plaintext.data() + finished_start,
+                           plaintext.len() - finished_start);
+      DataBuffer ciphertext2;
+      TlsRecordHeader hdr2(out_header);
+      if (!Protect(pspec, hdr2, ssl_ct_handshake, finished_only, &ciphertext2,
+                   &hdr2)) {
+        return KEEP;
+      }
+      hdr2.Write(&saved_finished_, 0, ciphertext2);
+    }
+
+    done_ = true;
+    Disable();
+    return (finished_start > 0) ? CHANGE : DROP;
+  }
+
+ private:
+  DataBuffer saved_finished_;
+  bool done_ = false;
+};
+
+// Regression tests for bug 2022410: ssl3_ClientCertCallbackComplete must not
+// assert when restartTarget is NULL.  The async cert callback can complete
+// before the server Finished is processed when the Finished is delayed (TLS:
+// TCP fragmentation; DTLS: packet loss).  The fixed code handles this
+// gracefully and the handshake completes once Finished arrives.
+TEST_F(TlsConnectStreamTls13, ClientCertCallbackBeforeServerFinished) {
+  client_->SetupClientAuth(ClientAuthCallbackType::kAsyncDelay, true);
+  server_->RequestClientAuth(true);
+  auto split = MakeTlsFilter<SplitServerFinished>(server_);
+  StartConnect();
+
+  client_->Handshake();  // ClientHello
+  server_
+      ->Handshake();  // ServerHello..CertVerify (Finished withheld by filter)
+  ASSERT_TRUE(split->done());
+
+  // Processes EE..CertVerify; cert hook fires (restartTarget still NULL);
+  // kAsyncDelay calls SSL_ForceHandshake() expecting WOULD_BLOCK, then
+  // SSL_ClientCertCallbackComplete() hits the restartTarget==NULL fixed path.
+  client_->Handshake();
+  EXPECT_EQ(TlsAgent::STATE_CONNECTING, client_->state());
+
+  split->Inject(client_->adapter().get());  // deliver withheld Finished
+
+  client_->Handshake();  // processes Finished, sends client second flight
+  server_->Handshake();  // processes client cert + Finished
+
+  CheckConnected();
+  client_->CheckClientAuthCompleted();
+}
+
+// DTLS variant: Finished is its own record, so SplitServerFinished drops it
+// entirely (finished_start == 0) and saves it for injection via Inject().
+TEST_F(TlsConnectDatagram13, ClientCertCallbackBeforeServerFinished) {
+  client_->SetupClientAuth(ClientAuthCallbackType::kAsyncDelay, true);
+  server_->RequestClientAuth(true);
+  auto split = MakeTlsFilter<SplitServerFinished>(server_);
+  StartConnect();
+
+  client_->Handshake();  // ClientHello
+  server_->Handshake();  // server flight (Finished withheld by filter)
+  ASSERT_TRUE(split->done());
+
+  // Async cert callback fires with restartTarget==NULL; fixed path taken.
+  client_->Handshake();
+  EXPECT_EQ(TlsAgent::STATE_CONNECTING, client_->state());
+
+  split->Inject(client_->adapter().get());  // deliver withheld Finished
+
+  client_->Handshake();  // processes Finished, sends client second flight
+  server_->Handshake();  // processes client cert + Finished
+
+  CheckConnected();
+  client_->CheckClientAuthCompleted();
+}
+
 // All stream only tests; PostHandshakeAuth isn't supported for DTLS.
 
 TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuth) {
@@ -392,6 +537,64 @@ TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuth) {
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
   ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
+}
+
+// Rewrites a client's post-handshake KeyUpdate into a (minimal, well-formed)
+// CertificateRequest, a message a client must never send.
+class KeyUpdateToCertificateRequest : public TlsRecordFilter {
+ public:
+  KeyUpdateToCertificateRequest(const std::shared_ptr<TlsAgent>& a)
+      : TlsRecordFilter(a) {}
+
+ protected:
+  PacketFilter::Action FilterRecord(const TlsRecordHeader& header,
+                                    const DataBuffer& record, size_t* offset,
+                                    DataBuffer* output) override {
+    if (header.content_type() != ssl_ct_application_data) {
+      return KEEP;
+    }
+    uint16_t protection_epoch = 0;
+    uint8_t inner_content_type = 0;
+    DataBuffer plaintext;
+    TlsRecordHeader out_header;
+    if (!Unprotect(header, record, &protection_epoch, &inner_content_type,
+                   &plaintext, &out_header) ||
+        !plaintext.len() || inner_content_type != ssl_ct_handshake) {
+      return KEEP;
+    }
+    uint32_t msg_type = 0;
+    if (!plaintext.Read(0, 1, &msg_type) ||
+        msg_type != kTlsHandshakeKeyUpdate) {
+      return KEEP;
+    }
+    // CertificateRequest: type, 3-byte length, empty request context (1-byte
+    // length), empty extensions (2-byte length).
+    const uint8_t cert_request[] = {
+        kTlsHandshakeCertificateRequest, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00};
+    DataBuffer replacement(cert_request, sizeof(cert_request));
+    DataBuffer ciphertext;
+    if (!Protect(spec(protection_epoch), out_header, inner_content_type,
+                 replacement, &ciphertext, &out_header)) {
+      return KEEP;
+    }
+    *offset = out_header.Write(output, *offset, ciphertext);
+    return CHANGE;
+  }
+};
+
+// A TLS 1.3 server with post-handshake auth enabled must reject a
+// CertificateRequest received from the client rather than process it.
+TEST_F(TlsConnectStreamTls13, ServerRejectsClientCertificateRequest) {
+  EnsureTlsSetup();
+  server_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
+  auto filter = MakeTlsFilter<KeyUpdateToCertificateRequest>(client_);
+  filter->EnableDecryption();
+  Connect();
+
+  EXPECT_EQ(SECSuccess, SSL_KeyUpdate(client_->ssl_fd(), PR_FALSE));
+  server_->ExpectSendAlert(kTlsAlertUnexpectedMessage);
+  server_->Handshake();
+  server_->CheckErrorCode(SSL_ERROR_RX_UNEXPECTED_CERT_REQUEST);
 }
 
 TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthAfterResumption) {
@@ -1293,6 +1496,48 @@ TEST_P(TlsConnectClientAuthStream13, PostHandshakeAuthDisjointSchemes) {
   ASSERT_EQ(nullptr, cert2.get());
 }
 
+// Regression test for Bug 2026089: repeated PHA CertificateRequests must not
+// overflow the negotiated[] extension tracking array.
+TEST_F(TlsConnectStreamTls13, PostHandshakeAuthRepeatedManyRounds) {
+  static const size_t kNumRequests = 60;
+  EnsureTlsSetup();
+
+  client_->SetupClientAuth();
+  client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
+  size_t called = 0;
+  server_->SetAuthCertificateCallback(
+      [&called](TlsAgent*, PRBool, PRBool) -> SECStatus {
+        called++;
+        return SECSuccess;
+      });
+  Connect();
+
+  for (size_t i = 0; i < kNumRequests; i++) {
+    EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
+        << "CertificateRequest " << (i + 1)
+        << " unexpected error: " << PORT_ErrorToName(PORT_GetError());
+
+    server_->SendData(50);
+    client_->ReadBytes(50);
+    client_->SendData(50);
+    server_->ReadBytes(50);
+
+    EXPECT_EQ(i + 1, called);
+
+    size_t needed =
+        std::max(client_->received_bytes(), server_->received_bytes()) + 50;
+    SendReceive(needed);
+  }
+
+  client_->CheckClientAuthCallbacksCompleted(kNumRequests);
+
+  ScopedCERTCertificate cert(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert.get());
+  ScopedCERTCertificate localCert(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, localCert.get());
+  EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert->derCert, &localCert->derCert));
+}
+
 static const SSLSignatureScheme kSignatureSchemeEcdsaSha384[] = {
     ssl_sig_ecdsa_secp384r1_sha384};
 static const SSLSignatureScheme kSignatureSchemeEcdsaSha256[] = {
@@ -1301,16 +1546,6 @@ static const SSLSignatureScheme kSignatureSchemeRsaSha384[] = {
     ssl_sig_rsa_pkcs1_sha384};
 static const SSLSignatureScheme kSignatureSchemeRsaSha256[] = {
     ssl_sig_rsa_pkcs1_sha256};
-
-static SSLNamedGroup NamedGroupForEcdsa384(const TlsConnectTestBase* ctbase) {
-  // NSS tries to match the group size to the symmetric cipher. In TLS 1.1 and
-  // 1.0, TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA is the highest priority suite, so
-  // we use P-384. With TLS 1.2 on we pick AES-128 GCM so use x25519.
-  if (ctbase->GetVersion() <= SSL_LIBRARY_VERSION_TLS_1_1) {
-    return ssl_grp_ec_secp384r1;
-  }
-  return ctbase->GetDefaultGroupFromKEA(ctbase->GetDefaultKEA());
-}
 
 // When signature algorithms match up, this should connect successfully; even
 // for TLS 1.1 and 1.0, where they should be ignored.
@@ -1321,8 +1556,7 @@ TEST_P(TlsConnectGeneric, SignatureAlgorithmServerAuth) {
   server_->SetSignatureSchemes(kSignatureSchemeEcdsaSha384,
                                PR_ARRAY_SIZE(kSignatureSchemeEcdsaSha384));
   Connect();
-  CheckKeys(GetDefaultKEA(), NamedGroupForEcdsa384(this), ssl_auth_ecdsa,
-            ssl_sig_ecdsa_secp384r1_sha384);
+  CheckKeys(ssl_auth_ecdsa, ssl_sig_ecdsa_secp384r1_sha384);
 }
 
 // Here the client picks a single option, which should work in all versions.
@@ -1340,8 +1574,7 @@ TEST_P(TlsConnectGeneric, SignatureAlgorithmClientOnly) {
             SSL_SignaturePrefSet(client_->ssl_fd(), clientAlgorithms,
                                  PR_ARRAY_SIZE(clientAlgorithms)));
   Connect();
-  CheckKeys(GetDefaultKEA(), NamedGroupForEcdsa384(this), ssl_auth_ecdsa,
-            ssl_sig_ecdsa_secp384r1_sha384);
+  CheckKeys(ssl_auth_ecdsa, ssl_sig_ecdsa_secp384r1_sha384);
 }
 
 // Here the server picks a single option, which should work in all versions.
@@ -1351,8 +1584,7 @@ TEST_P(TlsConnectGeneric, SignatureAlgorithmServerOnly) {
   server_->SetSignatureSchemes(kSignatureSchemeEcdsaSha384,
                                PR_ARRAY_SIZE(kSignatureSchemeEcdsaSha384));
   Connect();
-  CheckKeys(GetDefaultKEA(), NamedGroupForEcdsa384(this), ssl_auth_ecdsa,
-            ssl_sig_ecdsa_secp384r1_sha384);
+  CheckKeys(ssl_auth_ecdsa, ssl_sig_ecdsa_secp384r1_sha384);
 }
 
 // In TLS 1.2, curve and hash aren't bound together.
@@ -2294,4 +2526,5 @@ INSTANTIATE_TEST_SUITE_P(
                                          TlsAgent::kServerEcdsa384),
                        ::testing::Values(ssl_auth_ecdsa),
                        ::testing::Values(ssl_sig_ecdsa_sha1)));
+
 }  // namespace nss_test

@@ -6,7 +6,7 @@ package mozilla.components.service.fxa.manager
 
 import android.content.Context
 import androidx.core.content.edit
-import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.sync.toSyncEngine
 
 /**
@@ -43,7 +43,7 @@ class SyncEnginesStorage(private val context: Context) {
      * @param engine A [SyncEngine] for which to update state.
      * @param status New state.
      */
-    fun setStatus(engine: SyncEngine, status: Boolean) {
+    internal fun setStatus(engine: SyncEngine, status: Boolean) {
         storage().edit { putBoolean(engine.nativeName, status) }
     }
 

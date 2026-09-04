@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -33,10 +32,21 @@ enum VisibilityState { "hidden", "visible" };
 
 /* https://dom.spec.whatwg.org/#dictdef-elementcreationoptions */
 dictionary ElementCreationOptions {
+  [Pref="dom.scoped-custom-element-registries.enabled"]
+  CustomElementRegistry? customElementRegistry;
+
   DOMString is;
 
   [ChromeOnly]
   DOMString pseudo;
+};
+
+/* https://dom.spec.whatwg.org/#dictdef-importnodeoptions */
+dictionary ImportNodeOptions {
+  [Pref="dom.scoped-custom-element-registries.enabled"]
+  CustomElementRegistry customElementRegistry;
+
+  boolean selfOnly = false;
 };
 
 /* https://dom.spec.whatwg.org/#interface-document */
@@ -90,7 +100,7 @@ interface Document : Node {
   ProcessingInstruction createProcessingInstruction(DOMString target, DOMString data);
 
   [CEReactions, Throws, Func="IsNotUAWidget"]
-  Node importNode(Node node, optional boolean deep = false);
+  Node importNode(Node node, optional (boolean or ImportNodeOptions) options = false);
   [CEReactions, Throws, Func="IsNotUAWidget"]
   Node adoptNode(Node node);
 
@@ -276,7 +286,9 @@ partial interface Document {
   // @deprecated These are old Netscape 4 methods. Do not use,
   //             the implementation is no-op.
   // XXXbz do we actually need these anymore?
+  [Deprecated=UseOfCaptureEvents]
   undefined captureEvents();
+  [Deprecated=UseOfReleaseEvents]
   undefined releaseEvents();
 
   [SameObject] readonly attribute HTMLAllCollection all;
@@ -303,6 +315,15 @@ partial interface Document {
   // Events handlers
   attribute EventHandler onfullscreenchange;
   attribute EventHandler onfullscreenerror;
+
+  [ChromeOnly, BinaryName="getFullscreenKeyboardLockStatus"]
+  readonly attribute FullscreenKeyboardLock fullscreenKeyboardLock;
+};
+
+// https://w3c.github.io/picture-in-picture/#extensions-to-the-document-interface
+partial interface Document {
+  [Pref="dom.media-pip.enabled"] readonly attribute boolean pictureInPictureEnabled;
+  [Pref="dom.media-pip.enabled", NewObject, Throws] Promise<undefined> exitPictureInPicture();
 };
 
 // https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
@@ -355,6 +376,9 @@ dictionary CaretPositionFromPointOptions {
 // https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface
 partial interface Document {
     CaretPosition? caretPositionFromPoint(float x, float y, optional CaretPositionFromPointOptions options = {});
+
+    [Pref="dom.caretRangeFromPoint.enabled"]
+    Range? caretRangeFromPoint(optional long x = 0, optional long y = 0);
 
     readonly attribute Element? scrollingElement;
 };
@@ -658,7 +682,7 @@ partial interface Document {
    * tracking, fingerprinting, cryptomining and so on. This method is for
    * testing only.
    */
-  [ChromeOnly, Pure]
+  [ChromeOnly]
   readonly attribute NodeList blockedNodesByClassifier;
 };
 

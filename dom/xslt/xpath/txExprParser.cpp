@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -426,7 +425,7 @@ nsresult txExprParser::createFunctionCall(txExprLexer& lexer,
     if (rv == NS_ERROR_NOT_IMPLEMENTED) {
       // this should just happen for unparsed-entity-uri()
       NS_ASSERTION(!fnCall, "Now is it implemented or not?");
-      rv = parseParameters(0, lexer, aContext);
+      rv = parseParameters(nullptr, lexer, aContext);
       NS_ENSURE_SUCCESS(rv, rv);
 
       *aResult = new txLiteralExpr(tok->Value() + u" not implemented."_ns);
@@ -557,7 +556,7 @@ nsresult txExprParser::createLocationStep(txExprLexer& lexer,
  */
 nsresult txExprParser::createNodeTypeTest(txExprLexer& lexer,
                                           txNodeTest** aTest) {
-  *aTest = 0;
+  *aTest = nullptr;
   UniquePtr<txNodeTypeTest> nodeTest;
 
   Token* nodeTok = lexer.peek();
@@ -644,7 +643,7 @@ nsresult txExprParser::createPathExpr(txExprLexer& lexer,
   pathExpr->addExpr(expr.release(), PathExpr::RELATIVE_OP);
 
   // this is ugly
-  while (1) {
+  while (true) {
     PathExpr::PathOperator pathOp;
     switch (lexer.peek()->mType) {
       case Token::ANCESTOR_OP:
@@ -763,7 +762,7 @@ nsresult txExprParser::parseParameters(FunctionCall* aFnCall,
 
   UniquePtr<Expr> expr;
   nsresult rv = NS_OK;
-  while (1) {
+  while (true) {
     rv = createExpr(lexer, aContext, mozilla::getter_Transfers(expr));
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -834,7 +833,7 @@ nsresult txExprParser::resolveQName(const nsAString& aQName, nsAtom** aPrefix,
   }
   aNamespace = kNameSpaceID_None;
   // the lexer dealt with idx == 0
-  *aPrefix = 0;
+  *aPrefix = nullptr;
   if (aIsNameTest && aContext->caseInsensitiveNameTests()) {
     nsAutoString lcname;
     nsContentUtils::ASCIIToLower(aQName, lcname);

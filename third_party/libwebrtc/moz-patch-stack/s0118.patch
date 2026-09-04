@@ -1,69 +1,32 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 18 Jul 2025 16:07:00 -0500
-Subject: Bug 1971201 - (fix-70fb834e8c) most all of libwebrtc has converted
- from rtc:: to webrtc::
+From: Dan Baker <dbaker@mozilla.com>
+Date: Wed, 3 Dec 2025 09:44:00 -0700
+Subject: Bug 2000941 - (fix-412ea40eeb) ifdef out IID_IGraphicsCaptureSession6
+ as current windows build SDK does not include it
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d51a82971b9e755d5514572fcd8ddc557153c8ef
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/cb3700134901dea40f70b2da11e35b3e861d0c3c
 ---
- modules/rtp_rtcp/source/rtp_header_extensions.h | 4 ++--
- modules/video_capture/video_capture.h           | 2 +-
- modules/video_capture/video_capture_impl.cc     | 2 +-
- modules/video_capture/video_capture_impl.h      | 2 +-
- 4 files changed, 5 insertions(+), 5 deletions(-)
+ modules/desktop_capture/win/wgc_capture_session.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
 
-diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.h b/modules/rtp_rtcp/source/rtp_header_extensions.h
-index cc811cae3a..46d80e424a 100644
---- a/modules/rtp_rtcp/source/rtp_header_extensions.h
-+++ b/modules/rtp_rtcp/source/rtp_header_extensions.h
-@@ -321,10 +321,10 @@ class CsrcAudioLevel {
-   static constexpr const char* kUri =
-       "urn:ietf:params:rtp-hdrext:csrc-audio-level";
- 
--  static bool Parse(rtc::ArrayView<const uint8_t> data,
-+  static bool Parse(webrtc::ArrayView<const uint8_t> data,
-                     CsrcAudioLevelList* csrcAudioLevels);
-   static size_t ValueSize(const CsrcAudioLevelList& csrcAudioLevels);
--  static bool Write(rtc::ArrayView<uint8_t> data,
-+  static bool Write(webrtc::ArrayView<uint8_t> data,
-                     const CsrcAudioLevelList& csrcAudioLevels);
- };
+diff --git a/modules/desktop_capture/win/wgc_capture_session.cc b/modules/desktop_capture/win/wgc_capture_session.cc
+index 33e536551e..172463cd2e 100644
+--- a/modules/desktop_capture/win/wgc_capture_session.cc
++++ b/modules/desktop_capture/win/wgc_capture_session.cc
+@@ -322,6 +322,9 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
+   }
  #endif
-diff --git a/modules/video_capture/video_capture.h b/modules/video_capture/video_capture.h
-index a7c1764c51..8a91ca2f83 100644
---- a/modules/video_capture/video_capture.h
-+++ b/modules/video_capture/video_capture.h
-@@ -123,7 +123,7 @@ class VideoCaptureModule : public RefCountInterface {
  
-   //  Remove capture data callback
-   virtual void DeRegisterCaptureDataCallback(
--      rtc::VideoSinkInterface<VideoFrame> *dataCallback) = 0;
-+      webrtc::VideoSinkInterface<VideoFrame> *dataCallback) = 0;
++// Until Mozilla builds with SDK v10.0.26100.0 or newer, this
++// code will not build.
++#if !defined(WEBRTC_MOZILLA_BUILD)
+   // Windows 11 24H2 (10.0.26100.0) added
+   // `IGraphicsCaptureSession6::put_IncludeSecondaryWindows()`. See
+   // `wgc_include_secondary_windows()` in
+@@ -333,6 +336,7 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
+     session6->put_IncludeSecondaryWindows(
+         options.wgc_include_secondary_windows());
+   }
++#endif
  
-   // Start capture device
-   virtual int32_t StartCapture(const VideoCaptureCapability& capability) = 0;
-diff --git a/modules/video_capture/video_capture_impl.cc b/modules/video_capture/video_capture_impl.cc
-index 9663c818e7..6fd29f36db 100644
---- a/modules/video_capture/video_capture_impl.cc
-+++ b/modules/video_capture/video_capture_impl.cc
-@@ -122,7 +122,7 @@ void VideoCaptureImpl::RegisterCaptureDataCallback(
- }
- 
- void VideoCaptureImpl::DeRegisterCaptureDataCallback(
--    rtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
-+    webrtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
-   MutexLock lock(&api_lock_);
-   auto it = _dataCallBacks.find(dataCallBack);
-   if (it != _dataCallBacks.end()) {
-diff --git a/modules/video_capture/video_capture_impl.h b/modules/video_capture/video_capture_impl.h
-index da85692fc4..afcca41386 100644
---- a/modules/video_capture/video_capture_impl.h
-+++ b/modules/video_capture/video_capture_impl.h
-@@ -66,7 +66,7 @@ class RTC_EXPORT VideoCaptureImpl : public VideoCaptureModule {
-   virtual void RegisterCaptureDataCallback(
-       RawVideoSinkInterface* dataCallback) override;
-   void DeRegisterCaptureDataCallback(
--      rtc::VideoSinkInterface<VideoFrame>* dataCallback) override;
-+      webrtc::VideoSinkInterface<VideoFrame>* dataCallback) override;
- 
-   int32_t StopCaptureIfAllClientsClose() override;
-   int32_t SetCaptureRotation(VideoRotation rotation) override;
+   hr = session_->StartCapture();
+   if (FAILED(hr)) {

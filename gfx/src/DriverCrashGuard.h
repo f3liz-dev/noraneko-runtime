@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef gfx_src_DriverCrashGuard_h_
 #define gfx_src_DriverCrashGuard_h_
 
-#include "nsCOMPtr.h"
-#include "nsIGfxInfo.h"
-#include "nsIFile.h"
-#include "nsString.h"
 #include <functional>
 #include <string>
+
+#include "nsCOMPtr.h"
+#include "nsIFile.h"
+#include "nsIGfxInfo.h"
+#include "nsString.h"
 
 namespace mozilla {
 

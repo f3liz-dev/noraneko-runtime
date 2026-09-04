@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -14,7 +12,6 @@
 #include "jit/IonScript.h"
 #include "jit/JitScript.h"
 #include "vm/RegExpObject.h"
-#include "wasm/AsmJS.h"
 
 namespace js {
 
@@ -88,7 +85,7 @@ inline JSFunction* JSScript::getFunction(js::GCThingIndex index) const {
   JSObject* obj = getObject(index);
   MOZ_RELEASE_ASSERT(obj->is<JSFunction>(), "Script object is not JSFunction");
   JSFunction* fun = &obj->as<JSFunction>();
-  MOZ_ASSERT_IF(fun->isNativeFun(), IsAsmJSModuleNative(fun->native()));
+  MOZ_ASSERT(!fun->isNativeFun());
   return fun;
 }
 

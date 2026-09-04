@@ -8,18 +8,16 @@
 # having to create the same entry for each locale.
 
 [localization] @AB_CD@.jar:
-  preview/protections.ftl                          (../components/protections/content/protections.ftl)
   preview/interventions.ftl                        (../components/urlbar/content/interventions.ftl)
   preview/enUS-searchFeatures.ftl                  (../components/urlbar/content/enUS-searchFeatures.ftl)
   preview/onboarding.ftl                           (../components/aboutwelcome/content/onboarding.ftl)
   preview/genai.ftl                                (../components/genai/content/genai.ftl)
   preview/credentialChooser.ftl                    (../../toolkit/components/credentialmanagement/credentialChooser.ftl)
   browser                                          (%browser/**/*.ftl)
-  preview/aiFeatures.ftl                           (../locales-preview/aiFeatures.ftl)
   preview/aiWindow.ftl                             (../locales-preview/aiWindow.ftl)
-  preview/aiWindowContent.ftl                      (../locales-preview/aiWindowContent.ftl)
   preview/smartTabGroups.ftl                       (../locales-preview/smartTabGroups.ftl)
   preview/privacyPreferences.ftl                   (../locales-preview/privacyPreferences.ftl)
+  preview/autoTabGrouping.ftl                      (../locales-preview/autoTabGrouping.ftl)
 
 @AB_CD@.jar:
 % locale browser @AB_CD@ %locale/browser/

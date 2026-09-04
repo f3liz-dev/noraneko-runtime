@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +25,7 @@ const rejected = [
   "S22",
   "5C",
   "Sep26 foo 1995",
+  "4294967303",
 ];
 
 for (const [test, expected] of Object.entries(accepted)) {

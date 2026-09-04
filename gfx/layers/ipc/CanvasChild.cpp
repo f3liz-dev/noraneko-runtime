@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,28 +5,28 @@
 #include "CanvasChild.h"
 
 #include "MainThreadUtils.h"
+#include "RecordedCanvasEventImpl.h"
+#include "mozilla/AppShutdown.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/gfx/CanvasShutdownManager.h"
 #include "mozilla/gfx/DrawTargetRecording.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "mozilla/gfx/Tools.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/gfx/Tools.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
-#include "mozilla/AppShutdown.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "nsIObserverService.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "RecordedCanvasEventImpl.h"
+#include "nsIObserverService.h"
 
 namespace mozilla {
 namespace layers {
@@ -137,7 +135,17 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
         });
   }
 
-  gfx::SurfaceType GetType() const final { return mRecordedSurface->GetType(); }
+  gfx::SurfaceType GetType() const final {
+    return gfx::SurfaceType::CANVAS_RECORDING;
+  }
+
+  gfx::SurfaceType GetUnderlyingType() const final {
+    return mRecordedSurface->GetType();
+  }
+
+  already_AddRefed<SourceSurface> GetUnderlyingSurface() final {
+    return do_AddRef(mRecordedSurface);
+  }
 
   gfx::IntSize GetSize() const final { return mRecordedSurface->GetSize(); }
 
@@ -146,20 +154,18 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   }
 
   already_AddRefed<gfx::DataSourceSurface> GetDataSurface() final {
-    EnsureDataSurfaceOnMainThread();
+    MutexAutoLock lock(mDataSurfaceLock);
+    EnsureDataSurfaceOnMainThread(lock);
     return do_AddRef(mDataSourceSurface);
   }
 
   void AttachSurface() { mDetached = false; }
-  void DetachSurface() { mDetached = true; }
+  void DetachSurface(bool aInvalidate = false) {
+    mDetached = true;
 
-  void InvalidateDataSurface() {
-    if (mDataSourceSurface && mMayInvalidate) {
-      // This must be the only reference to the data left.
-      MOZ_ASSERT(mDataSourceSurface->hasOneRef());
-      mDataSourceSurface =
-          gfx::Factory::CopyDataSourceSurface(mDataSourceSurface);
-      mMayInvalidate = false;
+    if (aInvalidate) {
+      MutexAutoLock lock(mDataSurfaceLock);
+      InvalidateDataSurface(lock);
     }
   }
 
@@ -170,10 +176,15 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
 
   static size_t GetExportSurfaceSize(gfx::SourceSurface* aSurface) {
     return ImageDataSerializer::ComputeRGBBufferSize(aSurface->GetSize(),
-                                                     aSurface->GetFormat());
+                                                     aSurface->GetFormat())
+        .valueOr(0);
   }
 
   bool GetSurfaceDescriptor(SurfaceDescriptor& aDesc) final {
+    if (!NS_IsMainThread()) {
+      // Only allow recording surface upload optimization on main thread.
+      return false;
+    }
     static Atomic<uintptr_t> sNextExportID(0);
     if (!mExportID) {
       if (++sCurrentExportSurfaces >
@@ -198,11 +209,31 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   }
 
  private:
-  void EnsureDataSurfaceOnMainThread() {
-    // The data can only be retrieved on the main thread.
-    if (!mDataSourceSurface && NS_IsMainThread()) {
-      mDataSourceSurface = mCanvasChild->GetDataSurface(
-          mTextureOwnerId, mRecordedSurface, mDetached, mMayInvalidate);
+  void InvalidateDataSurface(const MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(mDataSurfaceLock) {
+    // The data is about to be invalidated and must be copied before it is
+    // modified.
+    if (mDataSourceSurface && mMayInvalidate) {
+      mDataSourceSurface =
+          gfx::Factory::CopyDataSourceSurface(mDataSourceSurface);
+      mMayInvalidate = false;
+    }
+  }
+
+  void EnsureDataSurfaceOnMainThread(const MutexAutoLock& aProofOfLock)
+      MOZ_REQUIRES(mDataSurfaceLock) {
+    if (NS_IsMainThread()) {
+      // The data can only be retrieved on the main thread.
+      if (!mDataSourceSurface) {
+        mDataSourceSurface = mCanvasChild->GetDataSurface(
+            mTextureOwnerId, mRecordedSurface, mDetached, mMayInvalidate);
+      }
+    } else {
+      // If data is going to be accessed on another thread, then copy the data
+      // if necessary before access. This avoids the main thread accidentally
+      // trying to invalidate the data surface while the other thread is still
+      // accessing it.
+      InvalidateDataSurface(aProofOfLock);
     }
   }
 
@@ -231,9 +262,11 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   RefPtr<gfx::SourceSurface> mRecordedSurface;
   RefPtr<CanvasChild> mCanvasChild;
   RefPtr<CanvasDrawEventRecorder> mRecorder;
-  RefPtr<gfx::DataSourceSurface> mDataSourceSurface;
+  Mutex mDataSurfaceLock{"SourceSurfaceCanvasRecording::mDataSurfaceLock"};
+  RefPtr<gfx::DataSourceSurface> mDataSourceSurface
+      MOZ_GUARDED_BY(mDataSurfaceLock);
+  bool mMayInvalidate MOZ_GUARDED_BY(mDataSurfaceLock) = false;
   bool mDetached = false;
-  bool mMayInvalidate = false;
   ReferencePtr mExportID;
 };
 
@@ -259,7 +292,7 @@ class CanvasDataShmemHolder {
     }
 
     MutexAutoLock lock(mMutex);
-    mWorkerRef = new dom::ThreadSafeWorkerRef(workerRef);
+    mWorkerRef = MakeRefPtr<dom::ThreadSafeWorkerRef>(workerRef);
     return true;
   }
 
@@ -522,10 +555,11 @@ size_t CanvasChild::SizeOfDataSurfaceShmem(gfx::IntSize aSize,
   if (!mRecorder) {
     return 0;
   }
-  size_t sizeRequired =
+  Maybe<uint32_t> sizeRequired =
       ImageDataSerializer::ComputeRGBBufferSize(aSize, aFormat);
-  return sizeRequired > 0 ? ipc::shared_memory::PageAlignedSize(sizeRequired)
-                          : 0;
+  return sizeRequired.isSome()
+             ? ipc::shared_memory::PageAlignedSize(size_t(sizeRequired.value()))
+             : 0;
 }
 
 bool CanvasChild::ShouldGrowDataSurfaceShmem(size_t aSizeRequired) {
@@ -617,13 +651,23 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
   gfx::IntSize ssSize = aSurface->GetSize();
   gfx::SurfaceFormat ssFormat = aSurface->GetFormat();
   auto stride = ImageDataSerializer::ComputeRGBStride(ssFormat, ssSize.width);
+  if (stride.isNothing()) {
+    return nullptr;
+  }
+
+  size_t sizeRequired = SizeOfDataSurfaceShmem(ssSize, ssFormat);
+  if (!sizeRequired) {
+    return nullptr;
+  }
 
   // Shmem is only valid if the surface is the latest snapshot (not detached).
   if (!aDetached) {
     // If there is a shmem associated with this snapshot id, then we want to try
-    // use that directly without having to allocate a new shmem for retrieval.
+    // to use that directly instead of allocating a new shmem for retrieval.
+    // Also check that it meets the size required.
     auto it = mTextureInfo.find(aTextureOwnerId);
-    if (it != mTextureInfo.end() && it->second.mSnapshotShmem) {
+    if (it != mTextureInfo.end() && it->second.mSnapshotShmem &&
+        !NS_WARN_IF(sizeRequired > it->second.mSnapshotShmem->Size())) {
       const auto* shmemPtr = it->second.mSnapshotShmem->DataAs<uint8_t>();
       MOZ_ASSERT(shmemPtr);
       mRecorder->RecordEvent(RecordedPrepareShmem(aTextureOwnerId));
@@ -641,16 +685,11 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
       // DataSourceSurface will not be written to.
       RefPtr<gfx::DataSourceSurface> dataSurface =
           gfx::Factory::CreateWrappingDataSourceSurface(
-              const_cast<uint8_t*>(shmemPtr), stride, ssSize, ssFormat,
+              const_cast<uint8_t*>(shmemPtr), stride.value(), ssSize, ssFormat,
               ReleaseDataShmemHolder, closure);
       aMayInvalidate = true;
       return dataSurface.forget();
     }
-  }
-
-  size_t sizeRequired = SizeOfDataSurfaceShmem(ssSize, ssFormat);
-  if (!sizeRequired) {
-    return nullptr;
   }
 
   RecordEvent(RecordedCacheDataSurface(aSurface));
@@ -679,7 +718,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
   // DataSourceSurface will not be written to.
   RefPtr<gfx::DataSourceSurface> dataSurface =
       gfx::Factory::CreateWrappingDataSourceSurface(
-          const_cast<uint8_t*>(data), stride, ssSize, ssFormat,
+          const_cast<uint8_t*>(data), stride.value(), ssSize, ssFormat,
           ReleaseDataShmemHolder, closure);
   aMayInvalidate = false;
   return dataSurface.forget();
@@ -723,10 +762,7 @@ void CanvasChild::DetachSurface(const RefPtr<gfx::SourceSurface>& aSurface,
                                 bool aInvalidate) {
   if (auto* surface =
           static_cast<SourceSurfaceCanvasRecording*>(aSurface.get())) {
-    surface->DetachSurface();
-    if (aInvalidate) {
-      surface->InvalidateDataSurface();
-    }
+    surface->DetachSurface(aInvalidate);
   }
 }
 
@@ -792,9 +828,13 @@ already_AddRefed<gfx::SourceSurface> CanvasChild::SnapshotExternalCanvas(
   // running under the same thread, and that events can be paused or resumed
   // while synchronizing between WebGL and AC2D.
   if (!gfx::gfxVars::UseAcceleratedCanvas2D() ||
-      !StaticPrefs::gfx_canvas_remote_use_canvas_translator_event_AtStartup()) {
+      !StaticPrefs::gfx_canvas_remote_use_canvas_translator_event_AtStartup() ||
+      !aActor) {
     return nullptr;
   }
+
+  uint32_t managerId = static_cast<gfx::CanvasManagerChild*>(Manager())->Id();
+  ActorId canvasId = aActor->Id();
 
   gfx::SurfaceFormat format = aCanvas->GetIsOpaque()
                                   ? gfx::SurfaceFormat::B8G8R8X8
@@ -820,9 +860,6 @@ already_AddRefed<gfx::SourceSurface> CanvasChild::SnapshotExternalCanvas(
   mRecorder->RecordEvent(aTarget,
                          RecordedResolveExternalSnapshot(
                              syncId, gfx::ReferencePtr(surface), size, format));
-
-  uint32_t managerId = static_cast<gfx::CanvasManagerChild*>(Manager())->Id();
-  ActorId canvasId = aActor->Id();
 
   // Actually send the request via IPDL to snapshot the external WebGL canvas.
   SendSnapshotExternalCanvas(syncId, managerId, canvasId);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,15 @@
 #include "TextAttrs.h"
 
 #include "AccAttributes.h"
-#include "nsAccUtils.h"
-#include "nsCoreUtils.h"
+#include "HyperTextAccessible.h"
 #include "StyleInfo.h"
-
 #include "gfxTextRun.h"
+#include "mozilla/AppUnits.h"
+#include "nsAccUtils.h"
+#include "nsContainerFrame.h"
+#include "nsCoreUtils.h"
 #include "nsFontMetrics.h"
 #include "nsLayoutUtils.h"
-#include "nsContainerFrame.h"
-#include "HyperTextAccessible.h"
-#include "mozilla/AppUnits.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -123,7 +121,7 @@ TextAttrsMgr::LangTextAttr::LangTextAttr(HyperTextAccessible* aRoot,
   }
 }
 
-TextAttrsMgr::LangTextAttr::~LangTextAttr() {}
+TextAttrsMgr::LangTextAttr::~LangTextAttr() = default;
 
 void TextAttrsMgr::LangTextAttr::ExposeValue(AccAttributes* aAttributes,
                                              const nsString& aValue) {

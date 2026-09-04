@@ -75,6 +75,14 @@
   list-style-image: url("chrome://browser/skin/synced-tabs.svg");
 }
 
+#send-tab-button {
+  list-style-image: url("chrome://browser/skin/send-tab.svg");
+
+  &:-moz-locale-dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+
 #characterencoding-button {
   list-style-image: url("chrome://browser/skin/characterEncoding.svg");
 }
@@ -194,21 +202,18 @@
 }
 
 #sidebar-button {
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media not -moz-pref("sidebar.revamp") {
-    list-style-image: url("chrome://browser/skin/sidebars.svg");
+    list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
     &:-moz-locale-dir(ltr)[sidebar-positionend],
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
-      list-style-image: url("chrome://browser/skin/sidebars-right.svg");
+      list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
     }
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.revamp") {
     list-style-image: url("chrome://browser/skin/sidebar-collapsed.svg");
 
-    /* stylelint-disable-next-line media-query-no-invalid */
     @media -moz-pref("sidebar.verticalTabs") {
       &:hover {
         list-style-image: url("chrome://browser/skin/sidebar-expanded.svg");
@@ -227,7 +232,6 @@
     &:-moz-locale-dir(rtl):not([sidebar-positionend]) {
       list-style-image: url("chrome://browser/skin/sidebar-collapsed-right.svg");
 
-      /* stylelint-disable-next-line media-query-no-invalid */
       @media -moz-pref("sidebar.verticalTabs") {
         &:hover {
           list-style-image: url("chrome://browser/skin/sidebar-expanded-right.svg");
@@ -318,48 +322,103 @@
 }
 
 #ipprotection-button {
-  list-style-image: url("chrome://browser/content/logos/ipprotection-off.svg");
+  list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-off.svg");
   -moz-context-properties: fill, stroke, fill-opacity;
 
   &:is([overflowedItem="true"], [cui-areatype="panel"]) {
     list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-off.svg");
 
-    > .toolbarbutton-icon {
+    .ipprotection-icon-stack > .toolbarbutton-icon,
+    .ipprotection-icon-layer {
       width: var(--icon-size-small);
-      height: var(--icon-size-small);
     }
-  }
 
-  &.ipprotection-on {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-on.svg");
-    stroke: var(--icon-color-success);
+    .ipprotection-icon-layer {
+      display: none;
+    }
 
-    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+    &.ipprotection-on {
       list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-on.svg");
       fill: var(--icon-color-success);
     }
-  }
 
-  &.ipprotection-error {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-error.svg");
-    stroke: var(--icon-color-critical);
+    &.ipprotection-network-error {
+      list-style-image: url("chrome://global/skin/icons/info-filled.svg");
+      fill: var(--icon-color-information);
+    }
 
-    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+    &.ipprotection-error {
       list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-error.svg");
       fill: var(--icon-color-critical);
     }
-  }
 
-  &.ipprotection-excluded {
-    list-style-image: url("chrome://browser/content/logos/ipprotection-excluded.svg");
-    stroke: var(--icon-color-success);
-
-    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+    &.ipprotection-excluded {
       list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-excluded.svg");
       fill: transparent;
       stroke: var(--icon-color-success);
     }
+
+    &.ipprotection-paused {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-paused.svg");
+      fill: var(--toolbarbutton-icon-fill);
+    }
   }
+
+  /*
+   * Layered toolbar icon: renders every state's artwork into a
+   * stacked <image> layer and reveals the active one with opacity.
+   * This approach prevents flickers between initial state changes.
+   */
+  &:not([overflowedItem="true"], [cui-areatype="panel"]) {
+    .ipprotection-icon-stack > .toolbarbutton-icon,
+    .ipprotection-icon-layer {
+      width: var(--size-image-small);
+    }
+
+    .ipprotection-icon-layer {
+      -moz-context-properties: fill, stroke, fill-opacity;
+      opacity: 0;
+    }
+
+    .ipprotection-icon-layer[data-state="on"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-on.svg");
+      stroke: var(--icon-color-success);
+    }
+    .ipprotection-icon-layer[data-state="network-error"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-info.svg");
+      stroke: var(--icon-color-information);
+    }
+    .ipprotection-icon-layer[data-state="error"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-error.svg");
+      stroke: var(--icon-color-critical);
+    }
+    .ipprotection-icon-layer[data-state="excluded"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-excluded.svg");
+      stroke: var(--icon-color-success);
+    }
+    .ipprotection-icon-layer[data-state="paused"] {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/toolbaricons/ipprotection-paused.svg");
+      fill: var(--toolbarbutton-icon-fill);
+    }
+
+    /* Icon Active State */
+    &.ipprotection-on .ipprotection-icon-layer[data-state="on"],
+    &.ipprotection-network-error .ipprotection-icon-layer[data-state="network-error"],
+    &.ipprotection-error .ipprotection-icon-layer[data-state="error"],
+    &.ipprotection-excluded .ipprotection-icon-layer[data-state="excluded"],
+    &.ipprotection-paused .ipprotection-icon-layer[data-state="paused"] {
+      opacity: 1;
+    }
+
+    /* Icon Inactive State */
+    &:is(.ipprotection-on, .ipprotection-network-error, .ipprotection-error, .ipprotection-excluded, .ipprotection-paused) .toolbarbutton-icon {
+      opacity: 0;
+    }
+  }
+}
+
+#tab-groups-button {
+  list-style-image: url("chrome://browser/skin/tabbrowser/tab-groups.svg");
 }
 
 #taskbar-tabs-favicon {
@@ -386,12 +445,16 @@
   }
 }
 
-#smartwindow-ask-button {
+#smartwindow-ask-button-inner {
   list-style-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
 
-  &.sidebar-is-open {
+  &[aria-expanded="true"] {
     list-style-image: url("chrome://global/skin/icons/close.svg");
   }
+}
+
+#smartwindow-group-tabs-button-inner {
+  list-style-image: url("chrome://browser/skin/grid-sparkle.svg");
 }
 
 #document-pip-return-to-opener-button {

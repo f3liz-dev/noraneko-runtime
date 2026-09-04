@@ -45,7 +45,6 @@ impl Example for App {
         let spatial_id = root_space_and_clip.spatial_id;
 
         builder.push_simple_stacking_context(
-            content_bounds.min,
             spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -53,6 +52,7 @@ impl Example for App {
         let complex = ComplexClipRegion::new(
             (50, 50).to(150, 150),
             BorderRadius::uniform(20.0),
+            LayoutSideOffsets::zero(),
             ClipMode::Clip
         );
         let clip_id = builder.define_clip_rounded_rect(
@@ -89,6 +89,7 @@ impl Example for App {
             bottom: border_side,
             left: border_side,
             radius: BorderRadius::uniform(20.0),
+            inset: LayoutSideOffsets::zero(),
             do_aa: true,
         });
 

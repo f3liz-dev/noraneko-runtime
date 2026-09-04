@@ -2,25 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-buildscript {
-    repositories {
-        gradle.configureMavenRepositories(delegate)
-    }
-
-    dependencies {
-        classpath libs.kotlin.serialization
-    }
-}
-
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlinx-serialization'
 
 android {
     buildFeatures {
@@ -31,10 +18,12 @@ android {
 }
 
 dependencies {
+    implementation platform(libs.androidx.compose.bom)
     implementation ComponentsDependencies.mozilla_appservices_fxrelay
     implementation project(':components:compose-base')
     implementation project(":components:ui-icons")
     implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
     implementation project(":components:lib-state")
     implementation project(':components:service-firefox-accounts')
 

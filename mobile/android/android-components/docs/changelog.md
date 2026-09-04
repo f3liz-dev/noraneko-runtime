@@ -4,14 +4,62 @@ title: Changelog
 permalink: /changelog/
 ---
 
-# 149.0 (In Development)
+# 155.0 (In Development)
+
+# 154.0
+* **browser-icons**
+    * ⚠️ **Breaking change**: Removed the `useMerinoManifest` parameter from `BrowserIcons`. The Merino manifest is now always used as the icon source. Removed `TippyTopIconPreparer` and the `IconRequest.Resource.Type.TIPPY_TOP` resource type. [Bug 2047476](https://bugzilla.mozilla.org/show_bug.cgi?id=2047476)
+* **support-base**
+    * 🆕 Added `Action.NEXT` and `Action.PREVIOUS` to the `Fact`.
+* **feature-media**
+    * 🆕 The media notification now emits `Action.NEXT` and `Action.PREVIOUS` facts when the next/previous track buttons are tapped.
+* **compose-base**
+    * 🆕 Added a version of `FloatingActionButton` that accepts a custom icon composable. [Bug 2050581](https://bugzilla.mozilla.org/show_bug.cgi?id=2050581)
+* **browser-engine-gecko**
+    * Fixed the autocomplete selection prompts (login, credit card, and address) not being dismissed when the associated input field loses focus. [Bug 2040184](https://bugzilla.mozilla.org/show_bug.cgi?id=2040184)
+* **feature-webcompat-reporter**
+    * 🆕 Added `sendGleanBrokenSiteReport` which sends a broken site report using Glean. [Bug 2054543](https://bugzilla.mozilla.org/show_bug.cgi?id=2054543)).
+* **concept-engine**, **browser-engine-gecko**, **browser-engine-system**, **browser-state**, **support-test-fakes**
+    * ⚠️ **Breaking change**: Removed the cookie banner handling feature. Removed the `mozilla.components.concept.engine.cookiehandling` package (`CookieBannersStorage`) and `GeckoCookieBannersStorage`, `EngineSession.CookieBannerHandlingMode`, `EngineSession.CookieBannerHandlingStatus`, `EngineSession.Observer.onCookieBannerChange`, `EngineSession.hasCookieBannerRuleForSession`, the `Settings.cookieBannerHandling*` settings, the `cookieBanner*` parameters of `TrackingProtectionPolicy.toContentBlockingSetting`, `CookieBannerAction` and `SessionState.cookieBanner` (also removed from `SessionState.createCopy`). [Bug 2058143](https://bugzilla.mozilla.org/show_bug.cgi?id=2058143)
+
+# 153.0
+* **support-utils**
+  * 🆕 Added `DiskLruCacheStore` to provide shared `DiskLruCache` read, write, remove, and clear helpers for disk-backed components.
+  * 🆕 Added `CacheDirectoryMigration` to help migrating the cache directory used by `DiskLruCache`.
+* **concept-sync**, **service-firefox-accounts**
+    * ⚠️ **Breaking change**: Removed `OAuthAccount.beginOAuthFlow`, `OAuthAccount.beginPairingFlow`, `OAuthAccount.completeOAuthFlow` and the `AuthFlowUrl` type. Sign-in is now driven entirely through the state machine via `FxaAccountManager.beginAuthentication` / `finishAuthentication`.
+
+# 152.0
+* **browser-engine-gecko**
+    * 🆕 New `getTrackingProtectionEventsByDateRange`, `sumAllTrackingProtectionEvents` and `getEarliestTrackingProtectionDate` APIs to query the tracking protection database from Gecko. [Bug 2031989](https://bugzilla.mozilla.org/show_bug.cgi?id=2031989)
+* **feature-session**
+    * 🆕 New `FetchTrackingEventsUseCase`, `FetchTotalTrackersBlockedUseCase` and `FetchEarliestTrackingDateUseCase` usecases to query for tracking protection related dertails from the current engine. [Bug 2031989](https://bugzilla.mozilla.org/show_bug.cgi?id=2031989)
+
+# 151.0
+* **browser-engine-gecko**
+  * 🆕 New Engine Settings API - `useContentBlockingDatabase` that allows controlling whether the content blocking database is enabled. [Bug 2030082](https://bugzilla.mozilla.org/show_bug.cgi?id=2030082)
+
+# 150.0
+* **browser-engine-gecko**
+  * 🆕 The content blocking log will now inform also of blocked cross-site cookies. [Bug 2020898](https://bugzilla.mozilla.org/show_bug.cgi?id=2020898)
+* **support-utils**
+  * The `Browsers().isDefaultBrowser()` method has been removed in favor of a more performant version available as a `Browsers.isDefaultBrowser()` static method. [Bug 2008662](https://bugzilla.mozilla.org/show_bug.cgi?id=2008662)
+
+* **service-firefox-accounts**
+  * ⚠️ **Breaking change**: Removed `currentDeviceId` and `sessionToken` from `mozilla.components.service.fxa.store.Account`.
+  * Added the `FxaAccountManager.connectedAccount` method, which will return an `OAuthAccount` only if the user is in the `Connected` state.
+
+* **support-test**
+    * ⚠️ **Breaking change**: Removed `MainCoroutineRule`. Inject Main Dispatcher if you need to override it in tests. [Bug 1984347](https://bugzilla.mozilla.org/show_bug.cgi?id=1984347)
+
+# 149.0
 * **lib-state**
   * ⚠️ **Breaking change**: Removed the composableStore API from `ComposeExtensions.kt` in favor of the newer one from `StoreProvider.kt`. [Bug 2017822](https://bugzilla.mozilla.org/show_bug.cgi?id=2017822)
 * **feature-search**
-  * `RegionMiddleware` will not anymore handle `BrowserStore`'s `InitAction`. If you need the region set when the application starts ensure either of `UpdateDistribution` or `RefreshSearchEnginesAction` is dispatched. [Bug 2012962] (https://bugzilla.mozilla.org/show_bug.cgi?id=2012962)
+  * `RegionMiddleware` will not anymore handle `BrowserStore`'s `InitAction`. If you need the region set when the application starts ensure either of `UpdateDistribution` or `RefreshSearchEnginesAction` is dispatched. [Bug 2012962](https://bugzilla.mozilla.org/show_bug.cgi?id=2012962)
 
 * **browser-engine-gecko**
-    * 🆕 New Settings API `DownloadDelegate` that used for `getSuggestedFilename` inside `GeckoEngineSession`.[Bug 2014471] (https://bugzilla.mozilla.org/show_bug.cgi?id=2014471)
+  * 🆕 New Settings API `DownloadDelegate` that used for `getSuggestedFilename` inside `GeckoEngineSession`.[Bug 2014471](https://bugzilla.mozilla.org/show_bug.cgi?id=2014471)
 * **browser-engine-gecko** and **concept-engine**
   * 🆕 New Engine Settings API `firefoxRelay` that can be see to different modes with `FirefoxRelayMode`.
   * Updated GeckoEngine and BrowserPreferencesRuntime to accommodate registering and unregistering multiple browser preferences at a time for observation. [Bug 2006095](https://bugzilla.mozilla.org/show_bug.cgi?id=2006095)

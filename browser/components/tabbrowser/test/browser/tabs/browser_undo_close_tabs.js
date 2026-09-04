@@ -55,7 +55,7 @@ add_task(async function withMultiSelectedTabs() {
   // Check that the tabs are restored in the correct order
   for (let tabId of [2, 3, 4]) {
     let browser = gBrowser.tabs[tabId].linkedBrowser;
-    await ContentTask.spawn(browser, tabId, async aTabId => {
+    await SpecialPowers.spawn(browser, [tabId], async aTabId => {
       await ContentTaskUtils.waitForCondition(
         () => {
           return (
@@ -98,7 +98,7 @@ add_task(async function withBothGroupsAndTab() {
     "SessionStore should know how many tabs were just closed"
   );
 
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   let tab4 = await addTab("http://example.com/4");
 
   is(
@@ -160,7 +160,7 @@ add_task(async function withCloseTabsToTheRight() {
   // Check that the tabs are restored in the correct order
   for (let tabId of [2, 3, 4]) {
     let browser = gBrowser.tabs[tabId].linkedBrowser;
-    ContentTask.spawn(browser, tabId, async aTabId => {
+    SpecialPowers.spawn(browser, [tabId], async aTabId => {
       await ContentTaskUtils.waitForCondition(
         () => {
           return (

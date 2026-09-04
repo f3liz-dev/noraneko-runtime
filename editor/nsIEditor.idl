@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -160,7 +159,8 @@ interface nsIEditor  : nsISupports
   /** Returns true if we have a document that is not marked read-only */
   readonly attribute boolean isDocumentEditable;
 
-  /** Returns true if the current selection anchor is editable */
+  /** Returns true if the current selection anchor is editable,
+      or if this is an EditContext editor. */
   readonly attribute boolean isSelectionEditable;
 
   /**

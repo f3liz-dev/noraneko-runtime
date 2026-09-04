@@ -27,6 +27,7 @@
   <string name="teaser">Navegação privativa automática.\nNavegar. Limpar. Repetir.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Seu histórico de navegação foi apagado.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">O histórico de navegação foi limpo</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">O histórico de navegação da aba foi apagado.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Limpar e abrir %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Pesquisar no Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Pesquisar no Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Pesquisar no Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Pesquisar no Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Pesquisar no Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Pesquisar no Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Assuma o controle com o %1$s.</p>\n<p>Use para navegação privativa:\n<ul>\n<li>Pesquisa e navegação direto no aplicativo.</li>\n<li>Bloqueio de rastreamento (ou mude as configurações para permitir).</li>\n<li>Limpeza de cookies e histórico de pesquisa e navegação.</li>\n</ul> </p>\n<p>O %1$s é produzido pela Mozilla. Nossa missão é promover uma internet saudável e aberta.<br/>\n<a href=\"%2$s\">Saiba mais</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>Assuma o controle com o %1$s.</p>\n<p>Use para navegação privativa:\n<ul>\n<li>Pesquisa e navegação direto no aplicativo.</li>\n<li>Bloqueio de rastreamento (ou mude as configurações para permitir).</li>\n<li>Limpeza de cookies e histórico de pesquisa e navegação.</li>\n</ul> </p>\n<p>O %1$s é produzido pela Mozilla. Nossa missão é promover uma internet saudável e aberta.<br/>\n<a href=\"%2$s\">Saiba mais</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Saiba mais</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Cole ou digite uma URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Exemplo: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Exemplo: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Exemplo: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Definir o %1$s como navegador padrão</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Enviar dados de uso</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Saiba mais</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">A Mozilla se empenha para coletar somente o necessário para fornecer e melhorar o %1$s para todos.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">A Mozilla se empenha para coletar somente o necessário para fornecer e melhorar o %1$s para todos.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping de uso diário</string>
-  <string name="preference_daily_usage_ping_description">Isto ajuda a Mozilla a estimar o número de usuários ativos.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Isto ajuda a Mozilla a estimar o número de usuários ativos.</string>
   <string name="preference_daily_usage_ping_learn_more">Saiba mais</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Aviso de privacidade</string>
@@ -584,6 +588,23 @@
   <string name="security_popup_security_verified">Homologado por: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Segurança do site</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Certificado emitido para %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Qualificado conforme especificado no Regulamento (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">A URL já existe</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Procurar na página</string>
@@ -814,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Fechar aba</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Enviar relatório de travamento para a Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Enviar relatório de travamento para a Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -879,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[O %1$s tenta usar uma conexão HTTPS sempre que possível para maior segurança. <a href=\"%2$s\">Saiba mais</a> <br/><br/> Altere esta configuração em Configurações > Privacidade e segurança > Segurança.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Conexão não segura</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">Conexão não segura</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Isto pode ser um problema com a configuração do servidor, ou pode ser alguém tentando se passar pelo servidor. <br/><br/> Se você já se conectou a este servidor com sucesso antes, o erro pode ser temporário.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[Isto pode ser um problema com a configuração do servidor, ou pode ser alguém tentando se passar pelo servidor. <br/><br/> Se você já se conectou a este servidor com sucesso antes, o erro pode ser temporário.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguém pode estar tentando se passar pelo site, continuar pode ser arriscado.</label> <br><br>\n<label>O %1$s não confia em <b>%2$s</b> porque o emissor do certificado é desconhecido, ou o certificado é autoassinado, ou o servidor não está enviando os certificados intermediários corretos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>Alguém pode estar tentando se passar pelo site, continuar pode ser arriscado.</label> <br><br>\n<label>O %1$s não confia em <b>%2$s</b> porque o emissor do certificado é desconhecido, ou o certificado é autoassinado, ou o servidor não está enviando os certificados intermediários corretos.</label>]]></string>
   <!--
     Sessions List
 

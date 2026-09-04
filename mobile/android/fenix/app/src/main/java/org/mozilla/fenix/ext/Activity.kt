@@ -45,7 +45,6 @@ import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.library.history.HistoryFragmentDirections
 import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentDirections
 import org.mozilla.fenix.library.recentlyclosed.RecentlyClosedFragmentDirections
-import org.mozilla.fenix.search.SearchDialogFragmentDirections
 import org.mozilla.fenix.settings.HttpsOnlyFragmentDirections
 import org.mozilla.fenix.settings.SettingsFragmentDirections
 import org.mozilla.fenix.settings.SupportUtils
@@ -59,7 +58,6 @@ import org.mozilla.fenix.settings.studies.StudiesFragmentDirections
 import org.mozilla.fenix.settings.wallpaper.WallpaperSettingsFragmentDirections
 import org.mozilla.fenix.share.AddNewDeviceFragmentDirections
 import org.mozilla.fenix.tabstray.ui.TabManagementFragmentDirections
-import org.mozilla.fenix.trackingprotection.TrackingProtectionPanelDialogFragmentDirections
 import org.mozilla.fenix.translations.TranslationsDialogFragmentDirections
 import org.mozilla.fenix.translations.preferences.downloadlanguages.DownloadLanguagesPreferenceFragmentDirections
 import org.mozilla.fenix.webcompat.ui.WebCompatReporterFragmentDirections
@@ -289,8 +287,6 @@ private fun getHomeNavDirections(
 
     BrowserDirection.FromWallpaper -> WallpaperSettingsFragmentDirections.actionGlobalBrowser()
 
-    BrowserDirection.FromSearchDialog -> SearchDialogFragmentDirections.actionGlobalBrowser()
-
     BrowserDirection.FromSettings -> SettingsFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromBookmarks -> BookmarkFragmentDirections.actionGlobalBrowser()
@@ -311,9 +307,6 @@ private fun getHomeNavDirections(
     BrowserDirection.FromAbout -> AboutFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromTrackingProtection -> TrackingProtectionFragmentDirections.actionGlobalBrowser()
-
-    BrowserDirection.FromTrackingProtectionDialog ->
-        TrackingProtectionPanelDialogFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromSavedLoginsFragment -> SavedLoginsAuthFragmentDirections.actionGlobalBrowser()
 

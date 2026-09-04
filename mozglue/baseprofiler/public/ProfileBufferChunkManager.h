@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef ProfileBufferChunkManager_h
 #define ProfileBufferChunkManager_h
 
+#include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/ProfileBufferChunk.h"
 #include "mozilla/ScopeExit.h"
 
@@ -52,8 +51,15 @@ class ProfileBufferChunkManager {
 
   // `aChunkReceiver` may be called with a new or recycled chunk, or nullptr.
   // (See `FulfillChunkRequests()` regarding when the callback may happen.)
+  // `MoveOnlyFunction` keeps a small receiver in its inline storage, whereas
+  // `std::function` heap-allocates any receiver that isn't trivially copyable,
+  // e.g. one capturing a `RefPtr`. Requesting a chunk must not allocate,
+  // because the profiler's sampler thread requests chunks while the thread it
+  // samples is suspended, and allocating there would deadlock if the suspended
+  // thread happens to hold the allocator lock.
   virtual void RequestChunk(
-      std::function<void(UniquePtr<ProfileBufferChunk>)>&& aChunkReceiver) = 0;
+      MoveOnlyFunction<void(UniquePtr<ProfileBufferChunk>)>&&
+          aChunkReceiver) = 0;
 
   // This method may be invoked at any time on any thread (and not necessarily
   // by the main user of this class), to do the work necessary to respond to a

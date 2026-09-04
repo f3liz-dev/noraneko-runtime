@@ -21,9 +21,9 @@
  */
 
 const IGNORED_URLS = ["debugger eval code", "XStringBundle"];
-const IGNORED_EXTENSIONS = ["css", "svg", "png"];
+const IGNORED_EXTENSIONS = ["svg", "png"];
 import { getRawSourceURL } from "../utils/source";
-import { prefs } from "../utils/prefs";
+import { prefs, features } from "../utils/prefs";
 import { getDisplayURL } from "../utils/sources-tree/getURL";
 
 import TargetCommand from "resource://devtools/shared/commands/target/target-command.js";
@@ -32,6 +32,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
 });
+
+// Allow css if the stylesheetsInDebugger pref is enabled
+if (!features.stylesheetsInDebugger) {
+  IGNORED_EXTENSIONS.push("css");
+}
 
 export function initialSourcesTreeState({
   isWebExtension,
@@ -808,15 +813,22 @@ function getSourceItemForSelectedLocation(state, selectedLocation) {
     return null;
   }
 
-  // In the SourceTree, we never show the pretty printed sources and only
-  // the minified version, so if we are selecting a pretty file, fake selecting
-  // the minified version by looking up for the minified URL instead of the pretty one.
+  // In case of pretty printed sources, we want to find the minified version in the SourceTree.
+  // See details below
   const sourceUrl = getRawSourceURL(source.url);
 
   const { displayURL } = source;
   function findSourceInItem(item, path) {
     if (item.type == "source") {
-      if (item.source.url == sourceUrl) {
+      // In the SourceTree, we never show the pretty printed sources and only
+      // the minified versions, so if we are selecting a pretty file, fake selecting
+      // the minified version by looking up for the minified URL instead of the pretty one.
+      if (source.isPrettyPrinted && item.source.url == sourceUrl) {
+        return item;
+      }
+      // Lets also make sure to handle unique sources which have the same URL
+      // (e.g. link to same external style sheet within the HTML page)
+      if (item.source.url == sourceUrl && item.source.id == source.id) {
         return item;
       }
       return null;

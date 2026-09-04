@@ -10,17 +10,21 @@ use cubeb_backend::{
 };
 use pulse::{self, ProplistExt};
 use pulse_ffi::*;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::default::Default;
 use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 use std::ptr;
 
 #[derive(Debug)]
 pub struct DefaultInfo {
     pub sample_spec: pulse::SampleSpec,
     pub channel_map: pulse::ChannelMap,
-    pub flags: pulse::SinkFlags,
+}
+
+fn log_cstr(s: *const c_char) -> Cow<'static, str> {
+    try_cstr_from(s).map_or(Cow::Borrowed("<null>"), CStr::to_string_lossy)
 }
 
 pub const PULSE_OPS: Ops = capi_new!(PulseContext, PulseStream);
@@ -50,15 +54,23 @@ pub struct PulseContext {
 impl PulseContext {
     #[cfg(feature = "pulse-dlopen")]
     fn _new(name: Option<CString>) -> Result<Box<Self>> {
-        let libpulse = unsafe { open() };
-        if libpulse.is_none() {
-            cubeb_log!("libpulse not found");
-            return Err(Error::Error);
+        let libpulse = match unsafe { open() } {
+            Some(libpulse) => libpulse,
+            None => {
+                cubeb_log!("libpulse not found");
+                return Err(Error::Error);
+            }
+        };
+
+        if let Some(path) = libpulse.path() {
+            cubeb_log!("libpulse loaded from {}", path.to_string_lossy());
+        } else {
+            cubeb_log!("libpulse loaded from unknown path");
         }
 
         let ctx = Box::new(PulseContext {
             _ops: &PULSE_OPS,
-            libpulse: libpulse.unwrap(),
+            libpulse,
             mainloop: pulse::ThreadedMainloop::new(),
             context: None,
             default_sink_info: None,
@@ -104,11 +116,16 @@ impl PulseContext {
             let ctx = unsafe { &mut *(u as *mut PulseContext) };
             if eol == 0 {
                 let info = unsafe { &*i };
-                let flags = pulse::SinkFlags::from_bits_truncate(info.flags);
+                cubeb_log!(
+                    "PulseAudio default sink info: name={}, description={}, driver={}, latency={}",
+                    log_cstr(info.name),
+                    log_cstr(info.description),
+                    log_cstr(info.driver),
+                    info.latency
+                );
                 ctx.default_sink_info = Some(DefaultInfo {
                     sample_spec: info.sample_spec,
                     channel_map: info.channel_map,
-                    flags,
                 });
             }
             ctx.mainloop.signal();
@@ -116,6 +133,13 @@ impl PulseContext {
 
         if let Some(info) = info {
             let ctx = unsafe { &mut *(u as *mut PulseContext) };
+            cubeb_log!(
+                "PulseAudio server info: server_name={}, server_version={}, default_sink_name={}, default_source_name={}",
+                log_cstr(info.server_name),
+                log_cstr(info.server_version),
+                log_cstr(info.default_sink_name),
+                log_cstr(info.default_source_name)
+            );
 
             // Check if default devices changed, and call the appropriate callback if present.
             let new_sink_name = try_cstr_from(info.default_sink_name).map(|s| s.to_owned());
@@ -145,11 +169,16 @@ impl PulseContext {
                 }
             }
 
-            let _ = context.get_sink_info_by_name(
+            // Fire-and-forget: detach to release our ref without canceling.
+            // PulseAudio holds its own ref while the operation is in flight;
+            // context_destroy's drain ensures it completes before teardown.
+            if let Ok(o) = context.get_sink_info_by_name(
                 try_cstr_from(info.default_sink_name),
                 sink_info_cb,
                 u,
-            );
+            ) {
+                o.detach();
+            }
         } else {
             // If info is None, then an error occured.
             let ctx = unsafe { &mut *(u as *mut PulseContext) };
@@ -260,9 +289,13 @@ impl PulseContext {
                 cubeb_log!("Server changed {}", index as i32);
                 let user_data: *mut c_void = ctx as *mut _ as *mut _;
                 if let Some(ref context) = ctx.context {
-                    if let Err(e) = context.get_server_info(PulseContext::server_info_cb, user_data)
-                    {
-                        cubeb_log!("Error: get_server_info ignored failure: {}", e);
+                    // Fire-and-forget: detach to release our ref without canceling.
+                    // context_destroy's drain ensures it completes before teardown.
+                    match context.get_server_info(PulseContext::server_info_cb, user_data) {
+                        Ok(o) => o.detach(),
+                        Err(e) => {
+                            cubeb_log!("Error: get_server_info ignored failure: {}", e);
+                        }
                     }
                 }
             }
@@ -682,16 +715,18 @@ impl PulseContext {
         }
 
         let context_ptr: *mut c_void = self as *mut _ as *mut _;
-        if let Some(ctx) = self.context.take() {
-            self.mainloop.lock();
-            if let Ok(o) = ctx.drain(drain_complete, context_ptr) {
+        self.mainloop.lock();
+        if let Some(ref context) = self.context {
+            if let Ok(o) = context.drain(drain_complete, context_ptr) {
                 self.operation_wait(None, &o);
             }
+        }
+        if let Some(ctx) = self.context.take() {
             ctx.clear_state_callback();
             ctx.disconnect();
             ctx.unref();
-            self.mainloop.unlock();
         }
+        self.mainloop.unlock();
     }
 
     pub fn operation_wait<'a, S>(&self, s: S, o: &pulse::Operation) -> bool
@@ -700,7 +735,6 @@ impl PulseContext {
     {
         let stream = s.into();
         while o.get_state() == PA_OPERATION_RUNNING {
-            self.mainloop.wait();
             if let Some(ref context) = self.context {
                 if !context.get_state().is_good() {
                     return false;
@@ -712,6 +746,7 @@ impl PulseContext {
                     return false;
                 }
             }
+            self.mainloop.wait();
         }
 
         true

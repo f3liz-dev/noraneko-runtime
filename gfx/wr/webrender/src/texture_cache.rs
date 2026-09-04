@@ -273,9 +273,9 @@ enum BudgetType {
 }
 
 impl BudgetType {
-    pub const COUNT: usize = 7;
+    const COUNT: usize = 7;
 
-    pub const VALUES: [BudgetType; BudgetType::COUNT] = [
+    const VALUES: [BudgetType; BudgetType::COUNT] = [
         BudgetType::SharedColor8Linear,
         BudgetType::SharedColor8Nearest,
         BudgetType::SharedColor8Glyphs,
@@ -285,7 +285,7 @@ impl BudgetType {
         BudgetType::Standalone,
     ];
 
-    pub const PRESSURE_COUNTERS: [usize; BudgetType::COUNT] = [
+    const PRESSURE_COUNTERS: [usize; BudgetType::COUNT] = [
         profiler::ATLAS_COLOR8_LINEAR_PRESSURE,
         profiler::ATLAS_COLOR8_NEAREST_PRESSURE,
         profiler::ATLAS_COLOR8_GLYPHS_PRESSURE,
@@ -696,7 +696,7 @@ impl TextureCache {
     /// Called at the beginning of each frame.
     pub fn begin_frame(&mut self, stamp: FrameStamp, profile: &mut TransactionProfile) {
         debug_assert!(!self.now.is_valid());
-        profile_scope!("begin_frame");
+        tracy_rs::profile_scope!("begin_frame");
         self.now = stamp;
 
         // Texture cache eviction is done at the start of the frame. This ensures that

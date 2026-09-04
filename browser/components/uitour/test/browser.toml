@@ -9,6 +9,7 @@ support-files = [
 
 ["browser_UITour.js"]
 skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && opt && nova", # Bug 2057868
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 951965
   "verify-standalone",
 ]
@@ -23,6 +24,8 @@ fail-if = [
 ["browser_UITour4.js"]
 
 ["browser_UITour5.js"]
+
+["browser_UITour_aiControls.js"]
 
 ["browser_UITour_aiwindow.js"]
 
@@ -48,6 +51,8 @@ tags = "os_integration"
 skip-if = [
   "true", # Bug 1026310
 ]
+
+["browser_UITour_pinToTaskbar.js"]
 
 ["browser_UITour_pocket.js"]
 skip-if = [

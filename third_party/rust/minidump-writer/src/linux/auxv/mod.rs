@@ -1,10 +1,13 @@
 use {
     self::reader::ProcfsAuxvIter,
-    super::Pid,
+    super::{
+        Pid,
+        process_inspection::{self, ProcessInspector},
+    },
     crate::serializers::*,
     error_graph::WriteErrorList,
     failspot::failspot,
-    std::{fs::File, io::BufReader},
+    std::io::BufReader,
     thiserror::Error,
 };
 
@@ -84,6 +87,7 @@ pub struct AuxvDumpInfo {
 impl AuxvDumpInfo {
     pub fn try_filling_missing_info(
         &mut self,
+        process_inspector: &ProcessInspector,
         pid: Pid,
         mut soft_errors: impl WriteErrorList<AuxvError>,
     ) -> Result<(), AuxvError> {
@@ -92,7 +96,9 @@ impl AuxvDumpInfo {
         }
 
         let auxv_path = format!("/proc/{pid}/auxv");
-        let auxv_file = File::open(&auxv_path).map_err(|e| AuxvError::OpenError(auxv_path, e))?;
+        let auxv_file = process_inspector
+            .read_file(&auxv_path)
+            .map_err(|e| AuxvError::OpenError(auxv_path, e))?;
 
         for pair_result in ProcfsAuxvIter::new(BufReader::new(auxv_file)) {
             let AuxvPair { key, value } = match pair_result {
@@ -141,12 +147,7 @@ impl AuxvDumpInfo {
 #[derive(Debug, Error, serde::Serialize)]
 pub enum AuxvError {
     #[error("Failed to open file {0}")]
-    OpenError(
-        String,
-        #[source]
-        #[serde(serialize_with = "serialize_io_error")]
-        std::io::Error,
-    ),
+    OpenError(String, #[source] process_inspection::Error),
     #[error("No auxv entry found for PID {0}")]
     NoAuxvEntryFound(Pid),
     #[error("Invalid auxv format (should not hit EOF before AT_NULL)")]

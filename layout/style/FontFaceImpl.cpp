@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FontFaceBinding.h"
 #include "mozilla/dom/FontFaceSetImpl.h"
+#include "nsStyleUtil.h"
 
 namespace mozilla::dom {
 
@@ -119,7 +118,7 @@ void FontFaceImpl::InitializeSourceURL(const nsACString& aURL) {
   mSourceType = eSourceType_URLs;
 
   IgnoredErrorResult rv;
-  SetDescriptor(eCSSFontDesc_Src, aURL, rv);
+  SetDescriptor(FontFaceDescriptorId::Src, aURL, rv);
   if (rv.Failed()) {
     mOwner->MaybeReject(FontFaceLoadedRejectReason::Syntax,
                         nsPrintfCString("Invalid source url %s",
@@ -137,60 +136,59 @@ void FontFaceImpl::InitializeSourceBuffer(uint8_t* aBuffer, uint32_t aLength) {
     mBufferSource = new FontFaceBufferSource(aBuffer, aLength);
   }
 
-  SetStatus(FontFaceLoadStatus::Loading);
   DoLoad();
 }
 
 void FontFaceImpl::GetFamily(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_Family, aResult);
+  GetDesc(FontFaceDescriptorId::FontFamily, aResult);
 }
 
 void FontFaceImpl::SetFamily(const nsACString& aValue, ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_Family, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontFamily, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetStyle(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_Style, aResult);
+  GetDesc(FontFaceDescriptorId::FontStyle, aResult);
 }
 
 void FontFaceImpl::SetStyle(const nsACString& aValue, ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_Style, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontStyle, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetWeight(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_Weight, aResult);
+  GetDesc(FontFaceDescriptorId::FontWeight, aResult);
 }
 
 void FontFaceImpl::SetWeight(const nsACString& aValue, ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_Weight, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontWeight, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
-void FontFaceImpl::GetStretch(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_Stretch, aResult);
+void FontFaceImpl::GetWidth(nsACString& aResult) {
+  GetDesc(FontFaceDescriptorId::FontWidth, aResult);
 }
 
-void FontFaceImpl::SetStretch(const nsACString& aValue, ErrorResult& aRv) {
+void FontFaceImpl::SetWidth(const nsACString& aValue, ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_Stretch, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontWidth, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetUnicodeRange(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_UnicodeRange, aResult);
+  GetDesc(FontFaceDescriptorId::UnicodeRange, aResult);
 }
 
 void FontFaceImpl::SetUnicodeRange(const nsACString& aValue, ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_UnicodeRange, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::UnicodeRange, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
@@ -207,78 +205,78 @@ void FontFaceImpl::SetVariant(const nsACString& aValue, ErrorResult& aRv) {
 }
 
 void FontFaceImpl::GetFeatureSettings(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_FontFeatureSettings, aResult);
+  GetDesc(FontFaceDescriptorId::FontFeatureSettings, aResult);
 }
 
 void FontFaceImpl::SetFeatureSettings(const nsACString& aValue,
                                       ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_FontFeatureSettings, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontFeatureSettings, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetVariationSettings(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_FontVariationSettings, aResult);
+  GetDesc(FontFaceDescriptorId::FontVariationSettings, aResult);
 }
 
 void FontFaceImpl::SetVariationSettings(const nsACString& aValue,
                                         ErrorResult& aRv) {
   mFontFaceSet->FlushUserFontSet();
-  if (SetDescriptor(eCSSFontDesc_FontVariationSettings, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontVariationSettings, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetDisplay(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_Display, aResult);
+  GetDesc(FontFaceDescriptorId::FontDisplay, aResult);
 }
 
 void FontFaceImpl::SetDisplay(const nsACString& aValue, ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_Display, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::FontDisplay, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetAscentOverride(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_AscentOverride, aResult);
+  GetDesc(FontFaceDescriptorId::AscentOverride, aResult);
 }
 
 void FontFaceImpl::SetAscentOverride(const nsACString& aValue,
                                      ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_AscentOverride, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::AscentOverride, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetDescentOverride(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_DescentOverride, aResult);
+  GetDesc(FontFaceDescriptorId::DescentOverride, aResult);
 }
 
 void FontFaceImpl::SetDescentOverride(const nsACString& aValue,
                                       ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_DescentOverride, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::DescentOverride, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetLineGapOverride(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_LineGapOverride, aResult);
+  GetDesc(FontFaceDescriptorId::LineGapOverride, aResult);
 }
 
 void FontFaceImpl::SetLineGapOverride(const nsACString& aValue,
                                       ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_LineGapOverride, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::LineGapOverride, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
 
 void FontFaceImpl::GetSizeAdjust(nsACString& aResult) {
-  GetDesc(eCSSFontDesc_SizeAdjust, aResult);
+  GetDesc(FontFaceDescriptorId::SizeAdjust, aResult);
 }
 
 void FontFaceImpl::SetSizeAdjust(const nsACString& aValue, ErrorResult& aRv) {
-  if (SetDescriptor(eCSSFontDesc_SizeAdjust, aValue, aRv)) {
+  if (SetDescriptor(FontFaceDescriptorId::SizeAdjust, aValue, aRv)) {
     DescriptorUpdated();
   }
 }
@@ -311,7 +309,7 @@ void FontFaceImpl::DescriptorUpdated() {
 
 FontFaceLoadStatus FontFaceImpl::Status() { return mStatus; }
 
-void FontFaceImpl::Load(ErrorResult& aRv) {
+void FontFaceImpl::Load() {
   mFontFaceSet->FlushUserFontSet();
 
   // Calling Load on a FontFace constructed with an ArrayBuffer data source,
@@ -321,11 +319,6 @@ void FontFaceImpl::Load(ErrorResult& aRv) {
       mStatus != FontFaceLoadStatus::Unloaded) {
     return;
   }
-
-  // Calling the user font entry's Load method will end up setting our
-  // status to Loading, but the spec requires us to set it to Loading
-  // here.
-  SetStatus(FontFaceLoadStatus::Loading);
 
   DoLoad();
 }
@@ -351,6 +344,8 @@ gfxUserFontEntry* FontFaceImpl::CreateUserFontEntry() {
 }
 
 void FontFaceImpl::DoLoad() {
+  // FIXME(emilio): Should this be set even if we bail out right after?
+  SetStatus(FontFaceLoadStatus::Loading);
   if (!CreateUserFontEntry()) {
     return;
   }
@@ -433,7 +428,7 @@ void FontFaceImpl::UpdateOwnerPromiseSync() {
 
 // Boolean result indicates whether the value of the descriptor was actually
 // changed.
-bool FontFaceImpl::SetDescriptor(nsCSSFontDesc aFontDesc,
+bool FontFaceImpl::SetDescriptor(FontFaceDescriptorId aFontDesc,
                                  const nsACString& aValue, ErrorResult& aRv) {
   // FIXME We probably don't need to distinguish between this anymore
   // since we have common backend now.
@@ -458,7 +453,7 @@ bool FontFaceImpl::SetDescriptor(nsCSSFontDesc aFontDesc,
                                          &changed)) {
       return true;
     }
-    if (aFontDesc == eCSSFontDesc_Family) {
+    if (aFontDesc == FontFaceDescriptorId::FontFamily) {
       // TODO: Warn to the console?
       nsAutoCString quoted;
       nsStyleUtil::AppendQuotedCSSString(aValue, quoted, '"');
@@ -478,7 +473,7 @@ bool FontFaceImpl::SetDescriptor(nsCSSFontDesc aFontDesc,
     return false;
   }
 
-  if (aFontDesc == eCSSFontDesc_UnicodeRange) {
+  if (aFontDesc == FontFaceDescriptorId::UnicodeRange) {
     mUnicodeRangeDirty = true;
   }
 
@@ -494,7 +489,8 @@ bool FontFaceImpl::SetDescriptors(const nsACString& aFamily,
 
   nsCString errorMessage;
   // Helper to call SetDescriptor and return true on success, false on failure.
-  auto setDesc = [&](nsCSSFontDesc aDesc, const nsACString& aVal) -> bool {
+  auto setDesc = [&](FontFaceDescriptorId aDesc,
+                     const nsACString& aVal) -> bool {
     IgnoredErrorResult rv;
     SetDescriptor(aDesc, aVal, rv);
     if (!rv.Failed()) {
@@ -508,22 +504,26 @@ bool FontFaceImpl::SetDescriptors(const nsACString& aFamily,
 
   // Parse all of the mDescriptors in aInitializer, which are the values
   // we got from the JS constructor.
-  if (!setDesc(eCSSFontDesc_Family, aFamily) ||
-      !setDesc(eCSSFontDesc_Style, aDescriptors.mStyle) ||
-      !setDesc(eCSSFontDesc_Weight, aDescriptors.mWeight) ||
-      !setDesc(eCSSFontDesc_Stretch, aDescriptors.mStretch) ||
-      !setDesc(eCSSFontDesc_UnicodeRange, aDescriptors.mUnicodeRange) ||
-      !setDesc(eCSSFontDesc_FontFeatureSettings,
+  if (!setDesc(FontFaceDescriptorId::FontFamily, aFamily) ||
+      !setDesc(FontFaceDescriptorId::FontStyle, aDescriptors.mStyle) ||
+      !setDesc(FontFaceDescriptorId::FontWeight, aDescriptors.mWeight) ||
+      !setDesc(FontFaceDescriptorId::FontWidth,
+               aDescriptors.mWidth.WasPassed() ? aDescriptors.mWidth.Value()
+                                               : aDescriptors.mStretch) ||
+      !setDesc(FontFaceDescriptorId::UnicodeRange,
+               aDescriptors.mUnicodeRange) ||
+      !setDesc(FontFaceDescriptorId::FontFeatureSettings,
                aDescriptors.mFeatureSettings) ||
-      (StaticPrefs::layout_css_font_variations_enabled() &&
-       !setDesc(eCSSFontDesc_FontVariationSettings,
-                aDescriptors.mVariationSettings)) ||
-      !setDesc(eCSSFontDesc_Display, aDescriptors.mDisplay) ||
-      ((!setDesc(eCSSFontDesc_AscentOverride, aDescriptors.mAscentOverride) ||
-        !setDesc(eCSSFontDesc_DescentOverride, aDescriptors.mDescentOverride) ||
-        !setDesc(eCSSFontDesc_LineGapOverride,
+      !setDesc(FontFaceDescriptorId::FontVariationSettings,
+               aDescriptors.mVariationSettings) ||
+      !setDesc(FontFaceDescriptorId::FontDisplay, aDescriptors.mDisplay) ||
+      ((!setDesc(FontFaceDescriptorId::AscentOverride,
+                 aDescriptors.mAscentOverride) ||
+        !setDesc(FontFaceDescriptorId::DescentOverride,
+                 aDescriptors.mDescentOverride) ||
+        !setDesc(FontFaceDescriptorId::LineGapOverride,
                  aDescriptors.mLineGapOverride))) ||
-      !setDesc(eCSSFontDesc_SizeAdjust, aDescriptors.mSizeAdjust)) {
+      !setDesc(FontFaceDescriptorId::SizeAdjust, aDescriptors.mSizeAdjust)) {
     // XXX Handle font-variant once we support it (bug 1055385).
 
     // If any of the descriptors failed to parse, none of them should be set
@@ -542,17 +542,19 @@ bool FontFaceImpl::SetDescriptors(const nsACString& aFamily,
   return true;
 }
 
-void FontFaceImpl::GetDesc(nsCSSFontDesc aDescID, nsACString& aResult) const {
+void FontFaceImpl::GetDesc(FontFaceDescriptorId aDescID,
+                           nsACString& aResult) const {
   aResult.Truncate();
   Servo_FontFaceRule_GetDescriptorCssText(GetData(), aDescID, &aResult);
 
   // Fill in a default value for missing descriptors.
   if (aResult.IsEmpty()) {
-    if (aDescID == eCSSFontDesc_UnicodeRange) {
+    if (aDescID == FontFaceDescriptorId::UnicodeRange) {
       aResult.AssignLiteral("U+0-10FFFF");
-    } else if (aDescID == eCSSFontDesc_Display) {
+    } else if (aDescID == FontFaceDescriptorId::FontDisplay) {
       aResult.AssignLiteral("auto");
-    } else if (aDescID != eCSSFontDesc_Family && aDescID != eCSSFontDesc_Src) {
+    } else if (aDescID != FontFaceDescriptorId::FontFamily &&
+               aDescID != FontFaceDescriptorId::Src) {
       aResult.AssignLiteral("normal");
     }
   }
@@ -648,31 +650,19 @@ bool FontFaceImpl::GetAttributesFromRule(
   StyleComputedFontWeightRange weightRange;
   if (Servo_FontFaceRule_GetFontWeight(aData, &weightRange)) {
     aAttr.mRangeFlags &= ~gfxFontEntry::RangeFlags::eAutoWeight;
-    aAttr.mWeight = WeightRange(FontWeight::FromFloat(weightRange._0),
-                                FontWeight::FromFloat(weightRange._1));
+    aAttr.mWeight = WeightRange(weightRange._0, weightRange._1);
   }
 
-  StyleComputedFontStretchRange stretchRange;
-  if (Servo_FontFaceRule_GetFontStretch(aData, &stretchRange)) {
-    aAttr.mRangeFlags &= ~gfxFontEntry::RangeFlags::eAutoStretch;
-    aAttr.mStretch = StretchRange(stretchRange._0, stretchRange._1);
+  StyleComputedFontWidthRange widthRange;
+  if (Servo_FontFaceRule_GetFontWidth(aData, &widthRange)) {
+    aAttr.mRangeFlags &= ~gfxFontEntry::RangeFlags::eAutoWidth;
+    aAttr.mWidth = WidthRange(widthRange._0, widthRange._1);
   }
 
-  auto styleDesc = StyleComputedFontStyleDescriptor::Normal();
-  if (Servo_FontFaceRule_GetFontStyle(aData, &styleDesc)) {
+  StyleComputedFontStyleRange styleRange;
+  if (Servo_FontFaceRule_GetFontStyle(aData, &styleRange)) {
     aAttr.mRangeFlags &= ~gfxFontEntry::RangeFlags::eAutoSlantStyle;
-    switch (styleDesc.tag) {
-      case StyleComputedFontStyleDescriptor::Tag::Italic:
-        aAttr.mStyle = SlantStyleRange(FontSlantStyle::ITALIC);
-        break;
-      case StyleComputedFontStyleDescriptor::Tag::Oblique:
-        aAttr.mStyle = SlantStyleRange(
-            FontSlantStyle::FromFloat(styleDesc.AsOblique()._0),
-            FontSlantStyle::FromFloat(styleDesc.AsOblique()._1));
-        break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("Unhandled tag");
-    }
+    aAttr.mStyle = SlantStyleRange(styleRange._0, styleRange._1);
   }
 
   StylePercentage ascent{0};

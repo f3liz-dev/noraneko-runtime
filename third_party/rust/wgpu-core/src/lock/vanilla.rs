@@ -35,6 +35,10 @@ impl<T> Mutex<T> {
         MutexGuard(self.0.lock())
     }
 
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
+    }
+
     pub fn into_inner(self) -> T {
         self.0.into_inner()
     }
@@ -113,12 +117,6 @@ impl<'a, T> RwLockReadGuard<'a, T> {
         core::mem::forget(this.0);
 
         RankData
-    }
-}
-
-impl<'a, T> RwLockWriteGuard<'a, T> {
-    pub fn downgrade(this: Self) -> RwLockReadGuard<'a, T> {
-        RwLockReadGuard(parking_lot::RwLockWriteGuard::downgrade(this.0))
     }
 }
 

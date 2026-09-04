@@ -30,6 +30,26 @@ fxa-menu-send-to-device =
             [1] Send to device
            *[other] Send { $tabCount } tabs to device
         }
+# Variables:
+#   $tabCount (Number): The number of tabs sent to the device.
+# The following string intentionally omits the word "tab" from the singular and includes it in the plural.
+fxa-menu-send-to-mobile =
+    .label =
+        { $tabCount ->
+            [1] Send to mobile
+           *[other] Send { $tabCount } tabs to mobile
+        }
+
+## The following strings are for displaying elements in the FxA send tab submenu to prompt users to sign in, enable sync, pair a device, troubleshoot device issues, or verify account.
+
+fxa-menu-send-to-mobile-sign-in = Sign in to send tabs
+fxa-menu-send-to-mobile-turn-on-sync = Turn on sync to send tabs
+fxa-menu-send-to-mobile-connect-device = Connect a device to send tabs
+fxa-menu-send-to-mobile-device-missing2 = Don’t see your device?
+fxviewtabrow-send-to-mobile-not-verified = Account not verified
+fxviewtabrow-send-to-mobile-verify-account = Verify your account
+
+##
 
 # This is shown dynamically within "Send tab to device" in fxa menu.
 fxa-menu-send-tab-to-device-syncnotready =
@@ -43,6 +63,27 @@ fxa-menu-sign-out =
 
 
 fxa-menu-sync-description = Access your web anywhere
+
+# Subtitle shown under the account email on the signed-in account button in the
+# account menu, indicating that activating it opens account management.
+fxa-menu-manage-account-subtitle = Manage Account
+
+# Promo shown in the account menu when the user is signed out and no previously
+# signed-in account is remembered, prompting them to sign in and sync.
+fxa-menu-sign-in-promo-heading = Sign in to sync
+fxa-menu-sign-in-promo-message = Get your data everywhere
+fxa-menu-sign-in-promo-button =
+    .label = Sign in
+
+# Card shown in the account menu when a previously signed-in account is
+# remembered but the user needs to sign in again. Shows the remembered email,
+# a reason, and a button to sign back in.
+fxa-menu-signed-out-sign-in-button =
+    .label = Sign in
+# Reason shown when the session expired or credentials are no longer valid.
+fxa-menu-signed-out-message-login-failed = You’re signed out
+# Reason shown when the remembered account still needs to verify their email.
+fxa-menu-signed-out-message-unverified = Finish setup
 
 fxa-avatar-sign-in = Sign in
 fxa-avatar-sign-up = Sign up

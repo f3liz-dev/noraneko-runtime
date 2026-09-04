@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -256,7 +254,11 @@ JitCode* BaselineCacheIRCompiler::compile() {
   } while (reader.more());
 
   MOZ_ASSERT(!enteredStubFrame_);
-  masm.assumeUnreachable("Should have returned from IC");
+  allocator.discardStack(masm);
+  if (JitOptions.enableICFramePointers) {
+    PopICFrameRegs(masm);
+  }
+  EmitReturnFromIC(masm);
 
   // Done emitting the main IC code. Now emit the failure paths.
   perfSpewer_.recordOffset(masm, "FailurePath");
@@ -459,7 +461,7 @@ bool BaselineCacheIRCompiler::emitGuardSpecificAtom(StringOperandId strId,
   // The pointers are not equal, so if the input string is also an atom it
   // must be a different string.
   masm.branchTest32(Assembler::NonZero, Address(str, JSString::offsetOfFlags()),
-                    Imm32(JSString::ATOM_BIT), failure->label());
+                    Imm32(StringFlags::ATOM_BIT), failure->label());
 
   masm.tryFastAtomize(str, scratch, scratch, &notCachedAtom);
   masm.branchPtr(Assembler::Equal, atomAddr, scratch, &done);
@@ -1389,7 +1391,7 @@ void BaselineCacheIRCompiler::emitAtomizeString(Register str, Register temp,
                                                 Label* failure) {
   Label isAtom, notCachedAtom;
   masm.branchTest32(Assembler::NonZero, Address(str, JSString::offsetOfFlags()),
-                    Imm32(JSString::ATOM_BIT), &isAtom);
+                    Imm32(StringFlags::ATOM_BIT), &isAtom);
   masm.tryFastAtomize(str, temp, str, &notCachedAtom);
   masm.jump(&isAtom);
   masm.bind(&notCachedAtom);
@@ -1815,16 +1817,6 @@ bool BaselineCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
   return true;
 }
 
-bool BaselineCacheIRCompiler::emitReturnFromIC() {
-  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
-  allocator.discardStack(masm);
-  if (JitOptions.enableICFramePointers) {
-    PopICFrameRegs(masm);
-  }
-  EmitReturnFromIC(masm);
-  return true;
-}
-
 bool BaselineCacheIRCompiler::emitLoadArgumentFixedSlot(ValOperandId resultId,
                                                         uint8_t slotIndex) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -1890,9 +1882,7 @@ bool BaselineCacheIRCompiler::emitLoadDOMExpandoValueGuardGeneration(
     return false;
   }
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), scratch);
-  Address expandoAddr(scratch,
-                      js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
+  Address expandoAddr(obj, ProxyObject::offsetOfPrivateSlot());
 
   // Load the ExpandoAndGeneration* in the output scratch register and guard
   // it matches the proxy's ExpandoAndGeneration.
@@ -2172,6 +2162,15 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     JSContext* cx, const CacheIRWriter& writer, CacheKind kind,
     JSScript* outerScript, ICScript* icScript, ICFallbackStub* stub,
     const char* name) {
+  gc::AutoMarkingLock lock(cx->zone(), icScript->markingLock());
+  return AttachBaselineCacheIRStubLocked(cx, writer, kind, outerScript,
+                                         icScript, stub, name, lock);
+}
+
+ICAttachResult js::jit::AttachBaselineCacheIRStubLocked(
+    JSContext* cx, const CacheIRWriter& writer, CacheKind kind,
+    JSScript* outerScript, ICScript* icScript, ICFallbackStub* stub,
+    const char* name, const gc::AutoMarkingLock& lock) {
   // We shouldn't GC or report OOM (or any other exception) here.
   AutoAssertNoPendingException aanpe(cx);
   JS::AutoCheckCannotGC nogc;
@@ -2229,7 +2228,7 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
 
   // Try including this case in an existing folded stub.
   if (stub->mayHaveFoldedStub() &&
-      AddToFoldedStub(cx, writer, icScript, stub)) {
+      AddToFoldedStub(cx, writer, icScript, stub, lock)) {
     JitSpew(JitSpew_StubFolding,
             "Added to folded stub at offset %u (icScript: %p) (%s:%u:%u)",
             stub->pcOffset(), icScript, outerScript->filename(),
@@ -2303,6 +2302,8 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
       break;
     case TrialInliningState::Inlined:
       stub->setTrialInliningState(TrialInliningState::Failure);
+      // Ensure we stop using the callee's trial inlining ICScript.
+      stub->discardStubs(cx->zone(), icEntry, lock);
       icScript->removeInlinedChild(stub->pcOffset());
       break;
     case TrialInliningState::Failure:
@@ -3260,7 +3261,8 @@ void BaselineCacheIRCompiler::createThis(Register argcReg, Register calleeReg,
 #ifdef DEBUG
   Label createdThisOK;
   masm.branchTestObject(Assembler::Equal, JSReturnOperand, &createdThisOK);
-  masm.branchTestMagic(Assembler::Equal, JSReturnOperand, &createdThisOK);
+  masm.branchTestMagicValue(Assembler::Equal, JSReturnOperand,
+                            JS_UNINITIALIZED_LEXICAL, &createdThisOK);
   masm.assumeUnreachable(
       "The return of CreateThis must be an object or uninitialized.");
   masm.bind(&createdThisOK);

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -234,7 +232,7 @@ CodeOffset MacroAssembler::nopPatchableToCall() {
   return CodeOffset(0);
 }
 
-FaultingCodeOffset MacroAssembler::wasmTrapInstruction() {
+FaultingCodeRange MacroAssembler::wasmTrapInstruction() {
   MOZ_CRASH();
   return FaultingCodeOffset();
 }
@@ -408,6 +406,11 @@ void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
 
 void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
                                         Register temp, Label* label) {
+  MOZ_CRASH();
+}
+
+void MacroAssembler::testValueSet(Condition cond, const ValueOperand& lhs,
+                                  const Value& rhs, Register dest) {
   MOZ_CRASH();
 }
 

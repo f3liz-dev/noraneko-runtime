@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,35 +5,33 @@
 #ifndef nsComponentManager_h_
 #define nsComponentManager_h_
 
-#include "nsXPCOM.h"
-
-#include "nsIComponentManager.h"
-#include "nsIComponentRegistrar.h"
-#include "nsIMemoryReporter.h"
-#include "nsIServiceManager.h"
-#include "nsIFile.h"
+#include "PLDHashTable.h"
 #include "mozilla/ArenaAllocator.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Components.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Module.h"
 #include "mozilla/Monitor.h"
-#include "nsXULAppAPI.h"
+#include "mozilla/Omnijar.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsClassHashtable.h"
+#include "nsIComponentManager.h"
+#include "nsIComponentRegistrar.h"
 #include "nsIFactory.h"
+#include "nsIFile.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "PLDHashTable.h"
-#include "prtime.h"
-#include "nsCOMPtr.h"
-#include "nsWeakReference.h"
-#include "nsCOMArray.h"
-#include "nsTHashMap.h"
+#include "nsIMemoryReporter.h"
+#include "nsIServiceManager.h"
 #include "nsInterfaceHashtable.h"
-#include "nsClassHashtable.h"
 #include "nsTArray.h"
-
-#include "mozilla/Components.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Omnijar.h"
-#include "mozilla/Attributes.h"
+#include "nsTHashMap.h"
+#include "nsWeakReference.h"
+#include "nsXPCOM.h"
+#include "nsXULAppAPI.h"
+#include "prtime.h"
 
 struct nsFactoryEntry;
 struct PRThread;
@@ -193,11 +189,18 @@ struct nsFactoryEntry {
 
   ~nsFactoryEntry() = default;
 
-  already_AddRefed<nsIFactory> GetFactory();
+  already_AddRefed<nsIFactory> GetFactory() const;
 
-  nsresult CreateInstance(const nsIID& aIID, void** aResult);
+  nsresult CreateInstance(const nsIID& aIID, void** aResult) const;
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
+
+  const nsCID& CID() const { return mCID; }
+
+  nsISupports* ServiceInstance() const { return mServiceObject; }
+  void SetServiceInstance(already_AddRefed<nsISupports> aInst) {
+    mServiceObject = std::move(aInst);
+  }
 
   const nsCID mCID;
 

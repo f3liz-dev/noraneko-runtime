@@ -32,13 +32,13 @@ internal class BrowserToolbarSyncToBookmarksMiddleware(
     ) {
         next(action)
 
-        if (action is Init) {
+        if (action is ViewAppeared && action.bookmarkToLoad == null) {
             syncJob?.cancel()
             syncJob = toolbarStore.flow()
                 .map { it.isEditMode() }
                 .onEach { isInEditMode ->
                     if (store.state.isSearching && !isInEditMode) {
-                        store.dispatch(SearchDismissed)
+                        store.dispatch(SearchAction.SearchDismissed)
                     }
                 }
                 .launchIn(scope)

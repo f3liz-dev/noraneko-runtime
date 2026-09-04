@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -432,8 +430,12 @@ bool SharedArrayBufferObject::growImpl(JSContext* cx, const CallArgs& args) {
 
     Pages newPages =
         Pages::fromByteLengthExact(newByteLength, buffer->wasmPageSize());
-    return buffer->rawWasmBufferObject()->wasmGrowToPagesInPlace(
-        *lock, buffer->wasmAddressType(), newPages);
+    if (!buffer->rawWasmBufferObject()->wasmGrowToPagesInPlace(
+            *lock, buffer->wasmAddressType(), newPages)) {
+      return false;
+    }
+    args.rval().setUndefined();
+    return true;
   }
 
   if (!buffer->rawBufferObject()->growJS(newByteLength)) {
@@ -782,8 +784,8 @@ bool SharedArrayBufferObject::acceptRawBuffer(SharedArrayRawBuffer* buffer,
     return false;
   }
 
-  setFixedSlot(RAWBUF_SLOT, PrivateValue(buffer));
-  setFixedSlot(LENGTH_SLOT, PrivateValue(length));
+  setFixedSlotTyped(RAWBUF_SLOT, PrivateValue(buffer));
+  setFixedSlotTyped(LENGTH_SLOT, PrivateValue(length));
   MOZ_ASSERT(isInitialized());
   return true;
 }
@@ -794,12 +796,12 @@ void SharedArrayBufferObject::dropRawBuffer() {
   zoneFromAnyThread()->removeSharedMemory(rawBufferObject(), size,
                                           MemoryUse::SharedArrayRawBuffer);
   rawBufferObject()->dropReference();
-  setFixedSlot(RAWBUF_SLOT, UndefinedValue());
+  setFixedSlotTyped(RAWBUF_SLOT, UndefinedValue());
   MOZ_ASSERT(!isInitialized());
 }
 
 SharedArrayRawBuffer* SharedArrayBufferObject::rawBufferObject() const {
-  Value v = getFixedSlot(RAWBUF_SLOT);
+  Value v = getFixedSlotTyped(RAWBUF_SLOT);
   MOZ_ASSERT(!v.isUndefined());
   return reinterpret_cast<SharedArrayRawBuffer*>(v.toPrivate());
 }
@@ -813,7 +815,7 @@ void SharedArrayBufferObject::Finalize(JS::GCContext* gcx, JSObject* obj) {
 
   // Detect the case of failure during SharedArrayBufferObject creation,
   // which causes a SharedArrayRawBuffer to never be attached.
-  Value v = buf.getFixedSlot(RAWBUF_SLOT);
+  Value v = buf.getFixedSlotTyped(RAWBUF_SLOT);
   if (!v.isUndefined()) {
     buf.dropRawBuffer();
   }
@@ -937,16 +939,7 @@ void SharedArrayBufferObject::wasmDiscard(Handle<SharedArrayBufferObject*> buf,
 }
 
 static const JSClassOps SharedArrayBufferObjectClassOps = {
-    nullptr,                            // addProperty
-    nullptr,                            // delProperty
-    nullptr,                            // enumerate
-    nullptr,                            // newEnumerate
-    nullptr,                            // resolve
-    nullptr,                            // mayResolve
-    SharedArrayBufferObject::Finalize,  // finalize
-    nullptr,                            // call
-    nullptr,                            // construct
-    nullptr,                            // trace
+    .finalize = SharedArrayBufferObject::Finalize,
 };
 
 static const JSFunctionSpec sharedarray_functions[] = {

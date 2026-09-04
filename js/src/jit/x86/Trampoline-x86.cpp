@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "mozilla/MathAlgorithms.h"
 
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
@@ -25,8 +21,6 @@
 
 #include "jit/MacroAssembler-inl.h"
 #include "vm/JSScript-inl.h"
-
-using mozilla::IsPowerOfTwo;
 
 using namespace js;
 using namespace js::jit;
@@ -51,10 +45,15 @@ enum EnterJitEbpArgumentOffset {
 // Generates a trampoline for calling Jit compiled code from a C++ function.
 // The trampoline use the EnterJitCode signature, with the standard cdecl
 // calling convention.
-void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
+void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm,
+                                  EnterJitMode mode) {
   AutoCreatedBy acb(masm, "JitRuntime::generateEnterJIT");
 
-  enterJITOffset_ = startTrampolineCode(masm);
+  if (mode == EnterJitMode::GeneratorResume) {
+    enterJITGeneratorResumeOffset_ = startTrampolineCode(masm);
+  } else {
+    enterJITOffset_ = startTrampolineCode(masm);
+  }
 
   masm.assertStackAlignment(ABIStackAlignment,
                             -int32_t(sizeof(uintptr_t)) /* return address */);
@@ -70,29 +69,37 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   masm.push(esi);
   masm.push(edi);
 
-  Register reg_argc = eax;
-  masm.loadPtr(Address(ebp, ARG_ARGC), reg_argc);
+  if (mode == EnterJitMode::GeneratorResume) {
+    Register reg_argv = ebx;
+    masm.loadPtr(Address(ebp, ARG_ARGV), reg_argv);
+    Register reg_token = edx;
+    masm.loadPtr(Address(ebp, ARG_CALLEETOKEN), reg_token);
+    generateEnterJitResumeShared(masm, reg_argv, reg_token, eax, ecx);
+  } else {
+    Register reg_argc = eax;
+    masm.loadPtr(Address(ebp, ARG_ARGC), reg_argc);
 
-  Register reg_argv = ebx;
-  masm.loadPtr(Address(ebp, ARG_ARGV), reg_argv);
+    Register reg_argv = ebx;
+    masm.loadPtr(Address(ebp, ARG_ARGV), reg_argv);
 
-  Register reg_token = edx;
-  masm.loadPtr(Address(ebp, ARG_CALLEETOKEN), reg_token);
+    Register reg_token = edx;
+    masm.loadPtr(Address(ebp, ARG_CALLEETOKEN), reg_token);
 
-  generateEnterJitShared(masm, reg_argc, reg_argv, reg_token, ecx, esi, edi);
+    generateEnterJitShared(masm, reg_argc, reg_argv, reg_token, ecx, esi, edi);
 
-  // Push the descriptor.
-  masm.mov(Operand(ebp, ARG_RESULT), eax);
-  masm.unboxInt32(Address(eax, 0x0), eax);
-  masm.pushFrameDescriptorForJitCall(FrameType::CppToJSJit, eax, eax);
+    // Push the descriptor.
+    masm.mov(Operand(ebp, ARG_RESULT), eax);
+    masm.unboxInt32(Address(eax, 0x0), eax);
+    masm.pushFrameDescriptorForJitCall(FrameType::CppToJSJit, eax, eax);
 
-  // Load the InterpreterFrame address into the OsrFrameReg.
-  // This address is also used for setting the constructing bit on all paths.
-  masm.loadPtr(Address(ebp, ARG_STACKFRAME), OsrFrameReg);
+    // Load the InterpreterFrame address into the OsrFrameReg.
+    // This address is also used for setting the constructing bit on all paths.
+    masm.loadPtr(Address(ebp, ARG_STACKFRAME), OsrFrameReg);
+  }
 
   CodeLabel returnLabel;
   Label oomReturnLabel;
-  {
+  if (mode != EnterJitMode::GeneratorResume) {
     // Handle Interpreter -> Baseline OSR.
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
     MOZ_ASSERT(!regs.has(ebp));
@@ -140,7 +147,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     masm.push(jitcode);
 
-    using Fn = bool (*)(BaselineFrame* frame, InterpreterFrame* interpFrame,
+    using Fn = void (*)(BaselineFrame* frame, InterpreterFrame* interpFrame,
                         uint32_t numStackValues);
     masm.setupUnalignedABICall(scratch);
     masm.passABIArg(framePtrScratch);  // BaselineFrame
@@ -153,9 +160,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     MOZ_ASSERT(jitcode != ReturnReg);
 
-    Label error;
     masm.addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), esp);
-    masm.branchIfFalseBool(ReturnReg, &error);
 
     // If OSR-ing, then emit instrumentation for setting lastProfilerFrame
     // if profiler instrumentation is enabled.
@@ -171,14 +176,6 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     masm.jump(jitcode);
 
-    // OOM: frame epilogue, load error value, discard return address and return.
-    masm.bind(&error);
-    masm.mov(ebp, esp);
-    masm.pop(ebp);
-    masm.addPtr(Imm32(sizeof(uintptr_t)), esp);  // Return address.
-    masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
-    masm.jump(&oomReturnLabel);
-
     masm.bind(&notOsr);
     masm.loadPtr(Address(ebp, ARG_SCOPECHAIN), R1.scratchReg());
   }
@@ -193,7 +190,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   ***************************************************************/
   masm.call(Address(ebp, ARG_JITCODE));
 
-  {
+  if (mode != EnterJitMode::GeneratorResume) {
     // Interpreter -> Baseline OSR will return here.
     masm.bind(&returnLabel);
     masm.addCodeLabel(returnLabel);

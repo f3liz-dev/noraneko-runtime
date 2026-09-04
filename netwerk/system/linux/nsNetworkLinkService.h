@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et sw=2 ts=4: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef NSNETWORKLINKSERVICE_LINUX_H_
 #define NSNETWORKLINKSERVICE_LINUX_H_
 
+#include "../netlink/NetlinkService.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/RefPtr.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserver.h"
-#include "../netlink/NetlinkService.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Atomics.h"
 
 class nsNetworkLinkService : public nsINetworkLinkService,
                              public nsIObserver,

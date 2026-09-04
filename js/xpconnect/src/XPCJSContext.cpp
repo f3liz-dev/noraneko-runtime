@@ -1,49 +1,71 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Per JSContext object */
 
+#include "mozilla/AppShutdown.h"
+#include "mozilla/MemoryTelemetry.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
 #include "mozilla/UniquePtr.h"
 
-#include "xpcprivate.h"
-#include "xpcpublic.h"
-#include "XPCWrapper.h"
-#include "XPCJSMemoryReporter.h"
-#include "XPCSelfHostedShmem.h"
-#include "WrapperFactory.h"
-#include "mozJSModuleLoader.h"
-#include "nsNetUtil.h"
-#include "nsThreadUtils.h"
 #include "ExecutionTracerIntegration.h"
-
-#include "nsIObserverService.h"
+#include "mozJSModuleLoader.h"
 #include "nsIDebug2.h"
+#include "nsIObserverService.h"
+#include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
-#include "mozilla/AppShutdown.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/MemoryTelemetry.h"
-#include "mozilla/Services.h"
+#include "nsThreadUtils.h"
+#include "WrapperFactory.h"
+#include "XPCJSMemoryReporter.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
+#include "XPCSelfHostedShmem.h"
+#include "XPCWrapper.h"
 #ifdef FUZZING
 #  include "mozilla/StaticPrefs_fuzzing.h"
 #endif
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/WakeLockBinding.h"
+#include "mozilla/dom/WindowBinding.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/glean/JsXpconnectMetrics.h"
+#include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/scache/StartupCache.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/SystemPrincipal.h"
+#include "mozilla/TaskController.h"
+#include "mozilla/UniquePtrExtensions.h"
 
-#include "nsContentUtils.h"
+#include "AccessCheck.h"
+#include "ExpandedPrincipal.h"
+#include "GeckoProfiler.h"
+#include "jsapi.h"
+#include "nsAboutProtocolUtils.h"
 #include "nsCCUncollectableMarker.h"
+#include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollector.h"
+#include "nsGlobalWindowInner.h"
 #include "nsINode.h"
+#include "nsIXULRuntime.h"
 #include "nsJSEnvironment.h"
-#include "jsapi.h"
+#include "nsJSPrincipals.h"
+
+#include "fmt/format.h"
 #include "js/ArrayBuffer.h"
 #include "js/ContextOptions.h"
 #include "js/DOMEventDispatch.h"
@@ -53,31 +75,6 @@
 #include "js/MemoryMetrics.h"
 #include "js/Prefs.h"
 #include "js/WasmFeatures.h"
-#include "fmt/format.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptLoader.h"
-#include "mozilla/dom/WindowBinding.h"
-#include "mozilla/dom/WakeLockBinding.h"
-#include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/ProcessHangMonitor.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/SystemPrincipal.h"
-#include "mozilla/TaskController.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "AccessCheck.h"
-#include "nsGlobalWindowInner.h"
-#include "nsAboutProtocolUtils.h"
-
-#include "GeckoProfiler.h"
-#include "nsIXULRuntime.h"
-#include "nsJSPrincipals.h"
-#include "ExpandedPrincipal.h"
 
 #if defined(XP_LINUX) && !defined(ANDROID)
 // For getrlimit and min/max.
@@ -837,9 +834,8 @@ void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
 
 void xpc::SetPrefableCompileOptions(JS::PrefableCompileOptions& options) {
   options.setSourcePragmas(StaticPrefs::javascript_options_source_pragmas())
-      .setAsmJS(StaticPrefs::javascript_options_asmjs())
-      .setThrowOnAsmJSValidationFailure(
-          StaticPrefs::javascript_options_throw_on_asmjs_validation_failure());
+      .setSourcePhaseImports(
+          StaticPrefs::javascript_options_experimental_source_phase_imports());
 }
 
 void xpc::SetPrefableContextOptions(JS::ContextOptions& options) {
@@ -1015,6 +1011,12 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
 
   auto& contextOptions = JS::ContextOptionsRef(cx);
   SetPrefableContextOptions(contextOptions);
+
+#ifdef NIGHTLY_BUILD
+  JS_SetGlobalJitCompilerOption(
+      cx, JSJITCOMPILER_REGEXP_BUFFER_BOUNDARIES,
+      StaticPrefs::javascript_options_experimental_regexp_buffer_boundaries());
+#endif
 
   // Set options not shared with workers.
   contextOptions
@@ -1536,7 +1538,10 @@ void XPCJSContext::AfterProcessTask(uint32_t aNewRecursionDepth) {
 
   // Poke the memory telemetry reporter
   if (AppShutdown::GetCurrentShutdownPhase() == ShutdownPhase::NotInShutdown) {
-    MemoryTelemetry::Get().Poke();
+    RefPtr<MemoryTelemetry> telemetry = MemoryTelemetry::Get();
+    if (telemetry) {
+      telemetry->Poke();
+    }
   }
 
   // This exception might have been set if we called an XPCWrappedJS that threw,

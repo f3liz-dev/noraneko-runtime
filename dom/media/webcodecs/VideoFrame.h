@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,7 +87,7 @@ class VideoFrame final : public nsISupports,
                          public nsWrapperCache,
                          public media::ShutdownConsumer {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(VideoFrame)
 
  public:
@@ -252,8 +250,9 @@ class VideoFrame final : public nsISupports,
     ~Resource() = default;
     Maybe<VideoPixelFormat> TryPixelFormat() const;
     uint32_t Stride(const Format::Plane& aPlane) const;
-    bool CopyTo(const Format::Plane& aPlane, const gfx::IntRect& aRect,
-                Span<uint8_t>&& aPlaneDest, size_t aDestinationStride) const;
+    bool CopyPlaneInto(const Format::Plane& aPlane, const gfx::IntRect& aRect,
+                       Span<uint8_t> aPlaneDest,
+                       size_t aDestinationStride) const;
 
     const RefPtr<layers::Image> mImage;
     // Nothing() if mImage is not in VideoPixelFormat

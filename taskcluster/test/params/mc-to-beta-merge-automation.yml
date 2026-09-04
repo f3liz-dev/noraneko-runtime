@@ -16,6 +16,8 @@ files_changed:
 - widget/windows/tests/gtest/TestJumpListBuilder.cpp
 filters:
 - target_tasks_method
+head_git_repository: https://github.com/mozilla-firefox/firefox
+head_git_rev: 4b4e59946a3db5ddf42ea730fc44c22a99877303
 head_ref: 45d7400ced7eab36c5e094eabc83333b77bd5212
 head_repository: https://hg.mozilla.org/mozilla-central
 head_rev: 45d7400ced7eab36c5e094eabc83333b77bd5212
@@ -25,7 +27,6 @@ level: '3'
 merge_config:
   behavior: main-to-beta
   force-dry-run: false
-message: ''
 moz_build_date: '20240512212637'
 next_version: null
 optimize_strategies: null
@@ -46,8 +47,6 @@ release_partners: []
 release_product: null
 release_type: nightly
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: merge_automation
 tasks_for: action
 test_manifest_loader: default

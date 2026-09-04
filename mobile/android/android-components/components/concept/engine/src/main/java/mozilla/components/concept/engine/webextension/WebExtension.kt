@@ -27,6 +27,10 @@ abstract class WebExtension(
 ) {
     /**
      * Registers a [MessageHandler] for message events from background scripts.
+     * Messages received before a listener is registered are queued and
+     * dispatched after the message handler is registered. An extension can
+     * only send messages if it has the "geckoViewAddons" permission (only
+     * available to built-in or privileged extensions).
      *
      * @param name the name of the native "application". This can either be the
      * name of an application, web extension or a specific feature in case
@@ -41,7 +45,17 @@ abstract class WebExtension(
     abstract fun registerBackgroundMessageHandler(name: String, messageHandler: MessageHandler)
 
     /**
-     * Registers a [MessageHandler] for message events from content scripts.
+     * Registers a [MessageHandler] for message events from content scripts or
+     * extension pages. Messages received before a listener is registered are
+     * queued and dispatched after the message handler is registered. A content
+     * script can only send messages if it has the "geckoViewAddons" and
+     * "nativeMessagingFromContent" permissions (only available to built-in or
+     * privileged extensions). Messages can be sent from extension pages
+     * without the "nativeMessagingFromContent" permission.
+     *
+     * Warning: content scripts are hosted in untrusted web content processes,
+     * extension pages in a more privileged extension process (the same as
+     * background scripts handled by registerBackgroundMessageHandler).
      *
      * @param session the session to be observed / attach the message handler to.
      * @param name the name of the native "application". This can either be the
@@ -224,8 +238,18 @@ interface ActionHandler {
 }
 
 /**
- * A handler for all messaging related events, usable for both content and
- * background scripts.
+ * A handler for all messaging related events, usable for content scripts (and
+ * extension pages) and background scripts.
+ *
+ * To register a handler, use WebExtension.registerBackgroundMessageHandler or
+ * WebExtension.registerContentMessageHandler. The extension can only send
+ * messages if their manifest.json contains the "geckoViewAddons" permission,
+ * and in case of content scripts, the "nativeMessagingFromContent" permission.
+ * These permissions are only available to built-in (or privileged) extensions.
+ *
+ * See the documentation for the GeckoView API (that this API wraps) for more
+ * information on usage of the extension API and its requirements, at
+ * https://firefox-source-docs.mozilla.org/mobile/android/geckoview/consumer/web-extensions.html
  *
  * [Port]s are exposed to consumers (higher level components) because
  * how ports are used, how many there are and how messages map to it
@@ -267,7 +291,7 @@ interface MessageHandler {
      * @param message the received message, either be a primitive type
      * or a org.json.JSONObject.
      * @param source the session this message originated from if from a content
-     * script, otherwise null.
+     * script or extension page, otherwise null.
      * @return the response to be sent for this message, either a primitive
      * type or a org.json.JSONObject, null if no response should be sent.
      */
@@ -278,6 +302,11 @@ interface MessageHandler {
  * A handler for all tab related events (triggered by browser.tabs.* methods).
  */
 interface TabHandler {
+    /**
+     * Invoked to determine the current private browsing mode. New tabs opened
+     * by extensions may use this state if not specified otherwise.
+     */
+    fun isInPrivateBrowsing(): Boolean = false
 
     /**
      * Invoked when a web extension attempts to open a new tab via
@@ -287,8 +316,16 @@ interface TabHandler {
      * @param engineSession an instance of engine session to open a new tab with.
      * @param active whether or not the new tab should be active/selected.
      * @param url the target url to be loaded in a new tab.
+     * @param isPrivate whether private browsing mode is enabled for the new
+     * tab. Must match the engineSession.privateMode flag.
      */
-    fun onNewTab(webExtension: WebExtension, engineSession: EngineSession, active: Boolean, url: String) = Unit
+    fun onNewTab(
+        webExtension: WebExtension,
+        engineSession: EngineSession,
+        active: Boolean,
+        url: String,
+        isPrivate: Boolean,
+    ) = Unit
 
     /**
      * Invoked when a web extension attempts to update a tab via
@@ -311,6 +348,13 @@ interface TabHandler {
      * @return true if the tab was closed, otherwise false.
      */
     fun onCloseTab(webExtension: WebExtension, engineSession: EngineSession) = false
+
+    /**
+     * Invoked when an extension wants to open its options page.
+     *
+     * @param extension the extension that wants to open its options page.
+     */
+    fun onOpenOptionsPage(extension: WebExtension) = Unit
 }
 
 /**

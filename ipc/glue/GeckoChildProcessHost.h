@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,7 @@
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/LinkedList.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RWLock.h"
@@ -59,6 +58,34 @@ namespace ipc {
 
 typedef mozilla::MozPromise<base::ProcessHandle, LaunchError, false>
     ProcessHandlePromise;
+
+// Log of child process lifetimes, consumed by external auditing tools, so
+// please keep the format stable:
+//
+//   ++PROCESS [pid = 4208] [childID = 37] [type = tab]
+//   --PROCESS [pid = 4208] [childID = 37] [type = tab]
+//
+// The --PROCESS line is emitted once the parent has released the process, so
+// the operating system may reuse its pid from that point on. It may be
+// emitted while the child is still winding down, and it is not emitted at all
+// if the parent goes away first, so it means "no longer ours" rather than
+// "has exited".
+//
+// Content processes log the remote type they serve on a separate line, once
+// when they launch and again whenever it changes. A process launched for
+// preallocation only learns the remote type it ends up serving once it is
+// adopted, so it is logged twice:
+//
+//   REMOTETYPE [childID = 37] [remoteType = prealloc]
+//   REMOTETYPE [childID = 37] [remoteType = web]
+//
+// remoteType comes last and may itself contain brackets for IPv6 origins, so
+// it has to be parsed greedily to the end of the line.
+//
+// The lines for one process are emitted from different threads and may arrive
+// in any order. Join on childID rather than pid, and treat the last
+// REMOTETYPE line as the current one.
+extern LazyLogModule gChildProcessLifecycleLog;
 
 class GeckoChildProcessHost : public SupportsWeakPtr,
                               public LinkedListElement<GeckoChildProcessHost> {
@@ -210,7 +237,7 @@ class GeckoChildProcessHost : public SupportsWeakPtr,
   GeckoProcessType mProcessType;
   GeckoChildID mChildID;
   bool mIsFileContent;
-  Monitor mMonitor;
+  mutable Monitor mMonitor;
   FilePath mProcessPath;
 #ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
   // Used on platforms where we may launch a child process with a different
@@ -297,6 +324,8 @@ class GeckoChildProcessHost : public SupportsWeakPtr,
   // the child event loop is up.
   virtual bool AppendMacSandboxParams(StringVector& aArgs);
 #endif
+
+  virtual void OnProcessLaunchError(const LaunchError aError);
 
  private:
   DISALLOW_EVIL_CONSTRUCTORS(GeckoChildProcessHost);

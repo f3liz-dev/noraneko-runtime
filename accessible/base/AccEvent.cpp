@@ -1,23 +1,19 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AccEvent.h"
 
-#include "nsAccUtils.h"
-#include "xpcAccEvents.h"
 #include "States.h"
 #include "TextRange.h"
-#include "xpcAccessibleDocument.h"
-#include "xpcAccessibleTextRange.h"
-
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/UserActivation.h"
-
+#include "nsAccUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
+#include "xpcAccEvents.h"
+#include "xpcAccessibleDocument.h"
+#include "xpcAccessibleTextRange.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -124,7 +120,7 @@ AccTextSelChangeEvent::AccTextSelChangeEvent(HyperTextAccessible* aTarget,
       mReason(aReason),
       mGranularity(aGranularity) {}
 
-AccTextSelChangeEvent::~AccTextSelChangeEvent() {}
+AccTextSelChangeEvent::~AccTextSelChangeEvent() = default;
 
 bool AccTextSelChangeEvent::IsCaretMoveOnly() const {
   return mSel->RangeCount() == 1 && mSel->IsCollapsed() &&

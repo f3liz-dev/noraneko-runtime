@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,17 +12,6 @@
 namespace mozilla::dom::notification {
 
 enum class CloseMode;
-
-enum class AlertTopic : uint8_t {
-  Disable,
-  Settings,
-  Click,
-  Show,
-  // Either closed or error.
-  // See ToAlertTopic about why we have both Finished and Closed.
-  Finished,
-  Closed,
-};
 
 struct NotificationParentArgs {
   NotNull<nsCOMPtr<nsIPrincipal>> mPrincipal;
@@ -42,7 +29,9 @@ class NotificationParent final : public PNotificationParent,
  public:
   NS_DECL_ISUPPORTS
 
-  nsresult HandleAlertTopic(AlertTopic aTopic);
+  nsresult OnAlertShow();
+  nsresult FireClickEvent();
+  nsresult OnAlertFinished(bool aIsClosed);
   IPCResult RecvShow(Maybe<IPCImage>&& aIcon, ShowResolver&& aResolver);
   IPCResult RecvClose();
 
@@ -57,7 +46,6 @@ class NotificationParent final : public PNotificationParent,
   ~NotificationParent() = default;
 
   nsresult Show(Maybe<IPCImage>&& aIcon);
-  nsresult FireClickEvent();
 
   void Unregister();
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -169,6 +167,15 @@ void MacroAssembler::andPtr(Imm32 imm, Register dest) {
 void MacroAssembler::andPtr(Imm32 imm, Register src, Register dest) {
   ScratchRegisterScope scratch(*this);
   ma_and(imm, src, dest, scratch);
+}
+
+void MacroAssembler::andPtr(Imm32 imm, const Address& dest) {
+  ScratchRegisterScope scratch(*this);
+  SecondScratchRegisterScope scratch2(*this);
+
+  ma_ldr(dest, scratch, scratch2);
+  ma_and(imm, scratch, scratch2);
+  ma_str(scratch, dest, scratch2);
 }
 
 void MacroAssembler::and64(Imm64 imm, Register64 dest) {
@@ -382,10 +389,9 @@ void MacroAssembler::add64(Imm64 imm, Register64 dest) {
 
 CodeOffset MacroAssembler::sub32FromStackPtrWithPatch(Register dest) {
   ScratchRegisterScope scratch(*this);
-  CodeOffset offs = CodeOffset(currentOffset());
-  ma_movPatchable(Imm32(0), scratch, Always);
+  BufferOffset offset = ma_movPatchable(Imm32(0), scratch, Always);
   ma_sub(getStackPointer(), scratch, dest);
-  return offs;
+  return CodeOffset(offset.getOffset());
 }
 
 void MacroAssembler::patchSub32FromStackPtr(CodeOffset offset, Imm32 imm) {
@@ -1288,7 +1294,7 @@ void MacroAssembler::ctz64(Register64 src, Register64 dest) {
 }
 
 void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
-  // Equivalent to GCC output of mozilla::CountPopulation32()
+  // Equivalent to GCC output of std::popcount()
 
   ScratchRegisterScope scratch(*this);
 
@@ -2397,6 +2403,21 @@ void MacroAssembler::branchTestMagic(Condition cond, const Address& valaddr,
   bind(&notMagic);
 }
 
+void MacroAssembler::branchTestMagic(Condition cond, const BaseIndex& valaddr,
+                                     JSWhyMagic why, Label* label) {
+  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+
+  Label notMagic;
+  if (cond == Assembler::Equal) {
+    branchTestMagic(Assembler::NotEqual, valaddr, &notMagic);
+  } else {
+    branchTestMagic(Assembler::NotEqual, valaddr, label);
+  }
+
+  branch32(cond, ToPayload(valaddr), Imm32(why), label);
+  bind(&notMagic);
+}
+
 template <typename T>
 void MacroAssembler::branchTestValue(Condition cond, const T& lhs,
                                      const ValueOperand& rhs, Label* label) {
@@ -2610,49 +2631,49 @@ void MacroAssembler::spectreBoundsCheckPtr(Register index,
 
 // ========================================================================
 // Memory access primitives.
-FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
-                                               const Address& addr) {
+FaultingCodeRange MacroAssembler::storeDouble(FloatRegister src,
+                                              const Address& addr) {
   ScratchRegisterScope scratch(*this);
   BufferOffset offset = ma_vstr(src, addr, scratch);
-  return FaultingCodeOffset(offset.getOffset());
+  return FaultingCodeRange(offset.getOffset());
 }
-FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
-                                               const BaseIndex& addr) {
+FaultingCodeRange MacroAssembler::storeDouble(FloatRegister src,
+                                              const BaseIndex& addr) {
   ScratchRegisterScope scratch(*this);
   SecondScratchRegisterScope scratch2(*this);
   uint32_t scale = Imm32::ShiftOf(addr.scale).value;
   BufferOffset offset = ma_vstr(src, addr.base, addr.index, scratch, scratch2,
                                 scale, addr.offset);
-  return FaultingCodeOffset(offset.getOffset());
+  return FaultingCodeRange(offset.getOffset());
 }
 
-FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
-                                                const Address& addr) {
+FaultingCodeRange MacroAssembler::storeFloat32(FloatRegister src,
+                                               const Address& addr) {
   ScratchRegisterScope scratch(*this);
   BufferOffset offset = ma_vstr(src.asSingle(), addr, scratch);
-  return FaultingCodeOffset(offset.getOffset());
+  return FaultingCodeRange(offset.getOffset());
 }
-FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
-                                                const BaseIndex& addr) {
+FaultingCodeRange MacroAssembler::storeFloat32(FloatRegister src,
+                                               const BaseIndex& addr) {
   ScratchRegisterScope scratch(*this);
   SecondScratchRegisterScope scratch2(*this);
   uint32_t scale = Imm32::ShiftOf(addr.scale).value;
   BufferOffset offset = ma_vstr(src.asSingle(), addr.base, addr.index, scratch,
                                 scratch2, scale, addr.offset);
-  return FaultingCodeOffset(offset.getOffset());
+  return FaultingCodeRange(offset.getOffset());
 }
 
-FaultingCodeOffset MacroAssembler::storeFloat16(FloatRegister src,
-                                                const Address& dest,
-                                                Register scratch) {
+FaultingCodeRange MacroAssembler::storeFloat16(FloatRegister src,
+                                               const Address& dest,
+                                               Register scratch) {
   ma_vxfer(src, scratch);
 
   // store16 uses |strh|, which supports unaligned access.
   return store16(scratch, dest);
 }
-FaultingCodeOffset MacroAssembler::storeFloat16(FloatRegister src,
-                                                const BaseIndex& dest,
-                                                Register scratch) {
+FaultingCodeRange MacroAssembler::storeFloat16(FloatRegister src,
+                                               const BaseIndex& dest,
+                                               Register scratch) {
   ma_vxfer(src, scratch);
 
   // store16 uses |strh|, which supports unaligned access.

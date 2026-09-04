@@ -1,12 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Windows only app to show a modal debug dialog - launched by nsDebug.cpp */
-#include <windows.h>
 #include <stdlib.h>
+#include <windows.h>
 #ifdef _MSC_VER
 #  include <strsafe.h>
 #endif
@@ -14,8 +12,8 @@
 /* MingW currently does not implement a wide version of the
    startup routines.  Workaround is to implement something like
    it ourselves.  See bug 472063 */
-#  include <stdio.h>
 #  include <shellapi.h>
+#  include <stdio.h>
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int);
 
 #  undef __argc

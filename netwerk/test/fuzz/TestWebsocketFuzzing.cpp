@@ -1,22 +1,22 @@
-#include "mozilla/Preferences.h"
-
 #include "FuzzingInterface.h"
 #include "FuzzyLayer.h"
+#include "NullPrincipal.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsIPrincipal.h"
 #include "nsIWebSocketChannel.h"
 #include "nsIWebSocketListener.h"
+#include "nsIWebSocketProtocolHandler.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
-#include "nsString.h"
+#include "nsSandboxFlags.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
-#include "NullPrincipal.h"
-#include "nsSandboxFlags.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace net {
@@ -138,17 +138,22 @@ static int FuzzingRunNetworkWebsocket(const uint8_t* data, size_t size) {
     RefPtr<FuzzingWebSocketListener> gWebSocketListener;
     nsCOMPtr<nsIWebSocketChannel> gWebSocketChannel;
 
+    nsCOMPtr<nsIWebSocketProtocolHandler> wsHandler;
     if (fuzzWSS) {
       spec = "https://127.0.0.1/";
-      gWebSocketChannel =
-          do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
+      wsHandler =
+          do_GetService("@mozilla.org/network/protocol;1?name=wss", &rv);
     } else {
       spec = "http://127.0.0.1/";
-      gWebSocketChannel =
-          do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
+      wsHandler = do_GetService("@mozilla.org/network/protocol;1?name=ws", &rv);
     }
 
     if (rv != NS_OK) {
+      MOZ_CRASH("Failed to get the WebSocket protocol handler");
+    }
+
+    if (wsHandler->NewWebSocketChannel(getter_AddRefs(gWebSocketChannel)) !=
+        NS_OK) {
       MOZ_CRASH("Failed to create WebSocketChannel");
     }
 
@@ -161,7 +166,7 @@ static int FuzzingRunNetworkWebsocket(const uint8_t* data, size_t size) {
 
     rv = gWebSocketChannel->InitLoadInfoNative(
         nullptr, nullPrincipal, nsContentUtils::GetSystemPrincipal(), nullptr,
-        secFlags, nsIContentPolicy::TYPE_WEBSOCKET, sandboxFlags);
+        secFlags, nsIContentPolicy::TYPE_WEBSOCKET, Nothing(), sandboxFlags);
 
     if (rv != NS_OK) {
       MOZ_CRASH("Failed to call InitLoadInfo");

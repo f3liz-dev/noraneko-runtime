@@ -1,0 +1,290 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// @nova-cleanup(merge-styles): Merge into components/TopSites/_TopSites.scss,
+// dropping the .nova-enabled scope from every selector.
+// These rules are imported last, so they beat the component SCSS on source
+// order alone. Folding them into a component file moves them earlier: any
+// classic declaration they were overriding at equal specificity must be deleted
+// outright, not just moved. Verify by diffing the compiled css/activity-stream.css
+// before and after -- the only rules that should disappear are classic ones.
+
+.nova-enabled .top-sites {
+  display: contents;
+}
+
+.nova-enabled .top-sites-list-wrapper,
+.nova-enabled .edit-topsites-wrapper {
+  grid-column: 1 / -1;
+}
+
+.nova-enabled .top-sites-list {
+  grid-template-columns: repeat(6, auto);
+  column-gap: var(--space-medium);
+  row-gap: var(--space-large);
+
+  .nova-hide-for-xs,
+  .nova-hide-for-s {
+    display: none;
+  }
+
+  @include at-content-cols(8) {
+    grid-template-columns: repeat(8, auto);
+
+    .nova-hide-for-xs {
+      display: inline-block;
+    }
+  }
+
+  @include at-content-cols(12) {
+    grid-template-columns: repeat(var(--top-sites-max-per-row, 8), auto);
+
+    .nova-hide-for-s {
+      display: inline-block;
+    }
+  }
+}
+
+// Hover/focus expands the tile and reveals its pin + menu chrome (and Nova drops
+// the outer hover background). Gated to :not(.dnd-active) so a drag never
+// triggers it: macOS freezes :hover on the dragged tile, and we can't block it
+// with pointer-events because the placeholder is the drop target.
+// @nova-cleanup(remove-conditional): Nova gets rid of outer hover background
+.nova-enabled .top-sites-list:not(.dnd-active) .top-site-outer:is(.active, :has(.top-site-inner:is(:hover, :focus-within))) {
+  background: none;
+
+  .tile {
+    // Only expand the tile on hover for users without a reduced-motion preference
+    @media (prefers-reduced-motion: no-preference) {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: var(--col-width);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      height: var(--col-width);
+    }
+
+    border-color: var(--button-border-color-ghost-hover);
+  }
+
+  .icon-pin-small,
+  .context-menu-button {
+    opacity: 1;
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: opacity 100ms ease-out 50ms;
+    }
+  }
+}
+
+.nova-enabled .top-site-outer {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--col-width);
+  margin-block-end: 0;
+
+  .top-site-button {
+    display: grid;
+    grid-template-rows: var(--col-width) auto;
+    padding: 0;
+  }
+
+  .tile {
+    align-self: end;
+    box-shadow: var(--card-box-shadow);
+    border: var(--border-width) solid var(--button-border-color-ghost);
+    // Bug 2044205 grew the radius scale so "large" is now 16px. The tile was
+    // designed against the old 12px "large", so use "medium" (12px) to keep it.
+    border-radius: var(--border-radius-medium);
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: width 100ms ease-out, height 100ms ease-out;
+    }
+
+    .top-site-icon {
+      border-radius: var(--border-radius-small);
+    }
+  }
+
+  &:active .tile {
+    border-color: var(--button-border-color-ghost-active);
+  }
+
+  .top-site-inner > a:focus .tile {
+    outline: var(--focus-outline);
+  }
+
+  .title {
+    @include wallpaper-contrast-fix;
+  }
+
+  .context-menu {
+    inset-block-start: var(--space-xlarge);
+  }
+
+  .context-menu-button {
+    inset-inline-end: var(--space-xxsmall);
+    inset-block-start: var(--space-xxsmall);
+    border: var(--border-width) solid var(--button-border-color-ghost);
+    border-radius: var(--border-radius-circle);
+    color: var(--button-text-color-ghost);
+    fill: var(--button-icon-fill);
+
+    &:hover {
+      background-color: var(--button-background-color-ghost-hover);
+      border-color: var(--button-border-color-ghost-hover);
+      color: var(--button-text-color-ghost-hover);
+
+      &:active {
+        background-color: var(--button-background-color-ghost-active);
+        border-color: var(--button-border-color-ghost-active);
+      }
+    }
+
+    &:focus-visible {
+      background-color: var(--button-background-color-ghost); // @nova-cleanup(remove-conditional): overrides classic focus background
+    }
+
+    .lightWallpaper &,
+    .darkWallpaper & {
+      color-scheme: light dark; // @nova-cleanup(remove-conditional): mixin no longer needed
+
+      &:focus-visible::after {
+        content: none; // @nova-cleanup(remove-conditional): ::after no longer needed
+      }
+    }
+  }
+
+  .icon-pin-small {
+    inset-block-start: calc(var(--space-xsmall) + var(--space-xxsmall));
+    inset-inline-start: calc(var(--space-xsmall) + var(--space-xxsmall));
+
+    .lightWallpaper &,
+    .darkWallpaper & {
+      color-scheme: light dark; // @nova-cleanup(remove-conditional): mixin no longer needed
+    }
+  }
+
+  .title {
+    .title-label {
+      padding: 0;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: var(--col-width);
+    }
+
+    // Allow a bit more character space for sponsored tile labels
+    &.sponsored > .title-label {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: calc(var(--col-width) + 8px);
+    }
+  }
+}
+
+// Under reduced motion the tile never expands, so reposition the pin and
+// context menu relative to its smaller resting size.
+@media (prefers-reduced-motion: reduce) {
+  .nova-enabled .top-site-outer .context-menu-button {
+    inset-inline-end: calc(var(--space-xsmall) + var(--space-xxsmall) / 2);
+    inset-block-start: var(--space-small);
+  }
+
+  .nova-enabled .top-site-outer .icon-pin-small {
+    inset-block-start: calc(var(--space-medium) + var(--space-xxsmall));
+    inset-inline-start: var(--space-small);
+  }
+}
+
+.nova-enabled .edit-topsites {
+  .modalOverlayOuter {
+    /*
+     * @backward-compat { version 155 }
+     * The Nova value of --panel-background-color aliases --popup-background-color,
+     * which the platform only defines from 155. Remove the "revert" fallback once
+     * 155 reaches Release.
+     */
+    background: var(--panel-background-color, revert);
+    border: 1px solid var(--panel-border-color);
+  }
+
+  .modal {
+    width: 100%;
+  }
+
+  .topsite-form {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-xlarge);
+    gap: var(--space-xlarge);
+
+    label {
+      font-size: var(--font-size-root);
+    }
+
+    .form-input-container {
+      max-width: none;
+      padding: 0;
+    }
+
+    .form-wrapper input[type='text'] {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      width: 368px;
+      background-color: var(--panel-background-color);
+      border-radius: var(--border-radius-medium);
+
+      &:focus-visible {
+        outline: var(--focus-outline);
+      }
+    }
+
+    .top-site-outer {
+      margin-block-start: var(--space-large);
+
+      .title {
+        // Override wallpaper-contrast-fix for in-dialog tile preview
+        color-scheme: initial;
+      }
+    }
+
+    .topsite-form-footer {
+      padding: 0;
+    }
+
+    // "Use a custom image" is styled as an underlined text link, mirroring
+    // .manage-settings-footer's .external-link.
+    .enable-custom-image-input {
+      color: var(--link-color);
+      text-decoration: underline;
+
+      &:hover {
+        color: var(--link-color-hover);
+        text-decoration: none;
+      }
+
+      &:active {
+        color: var(--link-color-active);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-outline);
+        outline-offset: var(--focus-outline-offset);
+        border-radius: var(--border-radius-small);
+      }
+    }
+  }
+}
+
+@media (forced-colors: active) {
+  .nova-enabled .top-site-outer .tile {
+    background-color: var(--button-background-color);
+  }
+
+  .nova-enabled .top-site-outer .context-menu-button {
+    background-color: var(--button-background-color);
+  }
+
+  .nova-enabled .top-site-outer:is(.active, :has(.top-site-inner:is(:hover, :focus-within))) .tile {
+    background-color: var(--button-background-color-hover);
+  }
+
+  .nova-enabled .top-site-outer .sponsored-label {
+    color: var(--text-color);
+  }
+}

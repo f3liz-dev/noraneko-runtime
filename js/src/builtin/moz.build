@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -15,11 +13,14 @@ include("../js-cxxflags.mozbuild")
 
 UNIFIED_SOURCES += [
     "Array.cpp",
+    "AsyncDisposableStackObject.cpp",
     "AtomicsObject.cpp",
     "BigInt.cpp",
     "Boolean.cpp",
     "DataViewObject.cpp",
     "Date.cpp",
+    "DisposableStackObject.cpp",
+    "DisposableStackObjectBase.cpp",
     "Eval.cpp",
     "FinalizationRegistryObject.cpp",
     "JSON.cpp",
@@ -43,13 +44,6 @@ UNIFIED_SOURCES += [
     "WeakSetObject.cpp",
 ]
 
-if CONFIG["ENABLE_EXPLICIT_RESOURCE_MANAGEMENT"]:
-    UNIFIED_SOURCES += [
-        "AsyncDisposableStackObject.cpp",
-        "DisposableStackObject.cpp",
-        "DisposableStackObjectBase.cpp",
-    ]
-
 # builtin/RegExp.cpp cannot be built in unified mode because it causes huge
 #   win32 test slowdowns
 SOURCES += [
@@ -66,8 +60,9 @@ selfhosted_inputs = [
     "SelfHostingDefines.h",
     "Utilities.js",
     "Array.js",
-    "AsyncFunction.js",
+    "AsyncDisposableStack.js",
     "AsyncIteration.js",
+    "DisposableStack.js",
     "Error.js",
     "Generator.js",
     "Iterator.js",
@@ -91,12 +86,6 @@ selfhosted_inputs = [
     if CONFIG["JS_HAS_INTL_API"]
     else []
 )
-
-if CONFIG["ENABLE_EXPLICIT_RESOURCE_MANAGEMENT"]:
-    selfhosted_inputs += [
-        "AsyncDisposableStack.js",
-        "DisposableStack.js",
-    ]
 
 # Prepare self-hosted JS code for embedding
 GeneratedFile(

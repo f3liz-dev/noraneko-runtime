@@ -207,6 +207,42 @@ SI Float sqrt(Float v) {
 #endif
 }
 
+// NOTE: the Bool type is actually int under the hood,
+// and is used for bitwise return value masking in the
+// generated code ("ret_mask" variable).
+//
+// The ret_mask is initialized to -1 (0xffffffff), and
+// is then subsequently masked with condition results.
+//
+// If we use the boolean result directly here (0 or 1),
+// the bitwise AND ends up removing just one bit from
+// the mask, and it doesn't work.
+//
+// Taking the negative transforms 1 (single bit) into -1
+// (all bits 1), and correctly broadcasts the boolean
+// result into all bits of the ret_mask.
+//
+// If the condition is false, 0 becomes -0 which is the
+// same bit pattern for integers (all bits 0).
+
+SI Bool isnan(Float v) {
+  return (Bool){
+    -(fpclassify(v.x) == FP_NAN),
+    -(fpclassify(v.y) == FP_NAN),
+    -(fpclassify(v.z) == FP_NAN),
+    -(fpclassify(v.w) == FP_NAN)
+  };
+}
+
+SI Bool isinf(Float v) {
+  return (Bool){
+    -(fpclassify(v.x) == FP_INFINITE),
+    -(fpclassify(v.y) == FP_INFINITE),
+    -(fpclassify(v.z) == FP_INFINITE),
+    -(fpclassify(v.w) == FP_INFINITE)
+  };
+}
+
 SI float recip(float x) {
 #if USE_SSE2
   return _mm_cvtss_f32(_mm_rcp_ss(_mm_set_ss(x)));
@@ -399,6 +435,9 @@ struct vec2_scalar {
   friend vec2_scalar operator/(vec2_scalar a, float b) {
     return vec2_scalar(a.x / b, a.y / b);
   }
+  friend vec2_scalar operator/(float a, vec2_scalar b) {
+    return vec2_scalar(a / b.x, a / b.y);
+  }
   friend vec2_scalar operator/(vec2_scalar a, vec2_scalar b) {
     return vec2_scalar(a.x / b.x, a.y / b.y);
   }
@@ -466,6 +505,11 @@ struct vec2_scalar_ref {
   vec2_scalar_ref& operator=(const vec2_scalar& a) {
     x = a.x;
     y = a.y;
+    return *this;
+  }
+  vec2_scalar_ref& operator+=(vec2_scalar a) {
+    x += a.x;
+    y += a.y;
     return *this;
   }
   vec2_scalar_ref& operator*=(vec2_scalar a) {
@@ -559,6 +603,7 @@ struct vec2 {
 
   friend vec2 operator/(vec2 a, vec2 b) { return vec2(a.x / b.x, a.y / b.y); }
   friend vec2 operator/(vec2 a, Float b) { return vec2(a.x / b, a.y / b); }
+  friend vec2 operator/(Float a, vec2 b) { return vec2(a / b.x, a / b.y); }
 
   friend vec2 operator-(vec2 a, vec2 b) { return vec2(a.x - b.x, a.y - b.y); }
   friend vec2 operator-(vec2 a, Float b) { return vec2(a.x - b, a.y - b); }
@@ -599,6 +644,9 @@ SI vec2 min(vec2 a, Float b) { return vec2(min(a.x, b), min(a.y, b)); }
 
 SI vec2_scalar min(vec2_scalar a, vec2_scalar b) {
   return vec2_scalar{min(a.x, b.x), min(a.y, b.y)};
+}
+SI vec2_scalar min(vec2_scalar a, float b) {
+  return vec2_scalar{min(a.x, b), min(a.y, b)};
 }
 
 SI vec2 if_then_else(I32 c, vec2 t, vec2 e) {
@@ -798,6 +846,14 @@ Float pow(Float x, Float y) {
   return if_then_else((x == 0) | (x == 1), x, approx_pow2(approx_log2(x) * y));
 }
 
+vec2 pow(vec2 a, vec2 b) {
+  return vec2(pow(a.x, b.x), pow(a.y, b.y));
+}
+
+vec2_scalar pow(vec2_scalar a, vec2_scalar b) {
+  return vec2_scalar(pow(a.x, b.x), pow(a.y, b.y));
+}
+
 #define exp __glsl_exp
 
 SI float exp(float x) { return expf(x); }
@@ -986,6 +1042,32 @@ ivec2 make_ivec2(const X& x, const Y& y) {
 ivec2_scalar force_scalar(const ivec2& v) {
   return ivec2_scalar{force_scalar(v.x), force_scalar(v.y)};
 }
+
+struct uvec2_scalar {
+  typedef uint32_t element_type;
+
+  uint32_t x;
+  uint32_t y;
+
+  uvec2_scalar() : uvec2_scalar(0) {}
+  IMPLICIT constexpr uvec2_scalar(uint32_t a) : x(a), y(a) {}
+  constexpr uvec2_scalar(uint32_t x, uint32_t y) : x(x), y(y) {}
+
+  uint32_t& select(XYZW c) {
+    switch (c) {
+      case X:
+        return x;
+      case Y:
+        return y;
+      default:
+        UNREACHABLE;
+    }
+  }
+  uint32_t& sel(XYZW c1) { return select(c1); }
+  uvec2_scalar sel(XYZW c1, XYZW c2) {
+    return uvec2_scalar{select(c1), select(c2)};
+  }
+};
 
 struct ivec3_scalar {
   int32_t x;
@@ -1589,6 +1671,13 @@ struct vec3 {
     z += a.z;
     return *this;
   }
+
+  vec3& operator*=(Float a) {
+    x *= a;
+    y *= a;
+    z *= a;
+    return *this;
+  }
 };
 
 vec3_scalar force_scalar(const vec3& v) {
@@ -1599,6 +1688,10 @@ vec3_scalar make_vec3(float n) { return vec3_scalar{n, n, n}; }
 
 vec3_scalar make_vec3(const vec2_scalar& v, float z) {
   return vec3_scalar{v.x, v.y, z};
+}
+
+vec3_scalar make_vec3(float x, const vec2_scalar& v) {
+  return vec3_scalar{x, v.x, v.y};
 }
 
 vec3_scalar make_vec3(float x, float y, float z) {
@@ -1653,6 +1746,9 @@ SI vec3 min(vec3 a, Float b) {
 SI vec3_scalar min(vec3_scalar a, vec3_scalar b) {
   return vec3_scalar{min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)};
 }
+SI vec3_scalar min(vec3_scalar a, float b) {
+  return vec3_scalar{min(a.x, b), min(a.y, b), min(a.z, b)};
+}
 
 SI vec3 max(vec3 a, vec3 b) {
   return vec3(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z));
@@ -1662,6 +1758,9 @@ SI vec3 max(vec3 a, Float b) {
 }
 SI vec3_scalar max(vec3_scalar a, vec3_scalar b) {
   return vec3_scalar{max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)};
+}
+SI vec3_scalar max(vec3_scalar a, float b) {
+  return vec3_scalar{max(a.x, b), max(a.y, b), max(a.z, b)};
 }
 
 vec3 pow(vec3 x, vec3 y) {
@@ -2186,6 +2285,32 @@ vec4 step(vec4 edge, vec4 x) {
 vec4_scalar step(vec4_scalar edge, vec4_scalar x) {
   return vec4_scalar(step(edge.x, x.x), step(edge.y, x.y), step(edge.z, x.z),
                      step(edge.w, x.w));
+}
+
+SI vec4 min(vec4 a, vec4 b) {
+  return vec4(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z), min(a.w, b.w));
+}
+SI vec4 min(vec4 a, Float b) {
+  return vec4(min(a.x, b), min(a.y, b), min(a.z, b), min(a.w, b));
+}
+SI vec4_scalar min(vec4_scalar a, vec4_scalar b) {
+  return vec4_scalar{min(a.x, b.x), min(a.y, b.y), min(a.z, b.z), min(a.w, b.w)};
+}
+SI vec4_scalar min(vec4_scalar a, float b) {
+  return vec4_scalar{min(a.x, b), min(a.y, b), min(a.z, b), min(a.w, b)};
+}
+
+SI vec4 max(vec4 a, vec4 b) {
+  return vec4(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z), max(a.w, b.w));
+}
+SI vec4 max(vec4 a, Float b) {
+  return vec4(max(a.x, b), max(a.y, b), max(a.z, b), max(a.w, b));
+}
+SI vec4_scalar max(vec4_scalar a, vec4_scalar b) {
+  return vec4_scalar{max(a.x, b.x), max(a.y, b.y), max(a.z, b.z), max(a.w, b.w)};
+}
+SI vec4_scalar max(vec4_scalar a, float b) {
+  return vec4_scalar{max(a.x, b), max(a.y, b), max(a.z, b), max(a.w, b)};
 }
 
 template <typename T>
@@ -3004,6 +3129,17 @@ struct ElementType<I32> {
 };
 
 void put_nth_component(ivec2_scalar& dst, int n, int32_t src) {
+  switch (n) {
+    case 0:
+      dst.x = src;
+      break;
+    case 1:
+      dst.y = src;
+      break;
+  }
+}
+
+void put_nth_component(uvec2_scalar& dst, int n, uint32_t src) {
   switch (n) {
     case 0:
       dst.x = src;

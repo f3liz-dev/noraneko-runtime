@@ -15,6 +15,8 @@ prefs = [
   # Disable tab previews as some tests click on the toolbar.
   "browser.tabs.hoverPreview.enabled=false",
   "browser.tabs.groups.hoverPreview.enabled=false",
+  # TODO(Bug 2039395): adapt this test to the new bookmarks sidebar panel and remove this sidebar.updateBookmarks.enabled pushPrefEnv
+  "sidebar.updatedBookmarks.enabled=false"
 ]
 
 ["browser_addBookmarkForFrame.js"]
@@ -23,6 +25,8 @@ skip-if = [
 ]
 
 ["browser_autoshow_bookmarks_toolbar.js"]
+
+["browser_bhTooltip_folder_cropping.js"]
 
 ["browser_bookmarkMenu_hiddenWindow.js"]
 run-if = [
@@ -56,6 +60,8 @@ skip-if = [
 
 ["browser_bookmarkProperties_xulStore.js"]
 
+["browser_bookmarkStar_multipleBookmarks.js"]
+
 ["browser_bookmark_add_tags.js"]
 https_first_disabled = true
 skip-if = [
@@ -67,9 +73,8 @@ skip-if = [
 ["browser_bookmark_change_location.js"]
 
 ["browser_bookmark_context_menu_contents.js"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1775657
-]
+
+["browser_bookmark_context_on_gutter.js"]
 
 ["browser_bookmark_copy_folder_tree.js"]
 tags = "os_integration"
@@ -81,6 +86,8 @@ tags = "os_integration"
 ["browser_bookmark_folder_moveability.js"]
 
 ["browser_bookmark_menu_ctrl_click.js"]
+
+["browser_bookmark_open_all_in_tabs.js"]
 
 ["browser_bookmark_popup.js"]
 
@@ -179,6 +186,8 @@ https_first_disabled = true
 
 ["browser_library_commands.js"]
 
+["browser_library_container_menu.js"]
+
 ["browser_library_delete.js"]
 
 ["browser_library_delete_bookmarks_in_tags.js"]
@@ -236,6 +245,11 @@ https_first_disabled = true
 ["browser_recursive_hierarchies.js"]
 
 ["browser_remove_bookmarks.js"]
+
+["browser_sidebar_bookmarks_glean.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 2036783
+]
 
 ["browser_sidebar_bookmarks_telemetry.js"]
 

@@ -5,7 +5,9 @@
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
@@ -29,9 +31,33 @@ class SettingsHTTPSOnlyModePage(composeRule: AndroidComposeTestRule<HomeActivity
                 NavigationStep.Click(SettingsSelectors.HTTPS_ONLY_MODE_BUTTON),
             ),
         )
+
+        NavigationRegistry.register(
+            from = pageName,
+            to = "SettingsPage",
+            steps = listOf(NavigationStep.Click(SettingsSelectors.GO_BACK_BUTTON)),
+        )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
         return SettingsHTTPSOnlyModeSelectors.all.filter { it.groups.contains(group) }
+    }
+
+    override fun navigateToPage(url: String, forceNavigation: Boolean): SettingsHTTPSOnlyModePage {
+        super.navigateToPage(url, forceNavigation)
+        return this
+    }
+
+    fun enableHttpsOnlyMode(): SettingsHTTPSOnlyModePage {
+        if (!appContext.components.settings.shouldUseHttpsOnly) {
+            mozClick(SettingsHTTPSOnlyModeSelectors.HTTPS_ONLY_MODE_TOGGLE)
+        }
+        return this
+    }
+
+    fun verifyHttpsOnlyAllTabsSelected(): SettingsHTTPSOnlyModePage {
+        mozVerifyElementIsChecked(SettingsHTTPSOnlyModeSelectors.HTTPS_ONLY_ALL_TABS_OPTION)
+        mozVerifyElementIsNotChecked(SettingsHTTPSOnlyModeSelectors.HTTPS_ONLY_PRIVATE_TABS_OPTION)
+        return this
     }
 }

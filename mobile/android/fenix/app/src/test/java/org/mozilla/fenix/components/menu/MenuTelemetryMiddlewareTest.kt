@@ -11,7 +11,6 @@ import mozilla.telemetry.glean.private.CounterMetricType
 import mozilla.telemetry.glean.private.EventMetricType
 import mozilla.telemetry.glean.private.NoExtras
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -19,7 +18,6 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeMenu
-import org.mozilla.fenix.GleanMetrics.Menu
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
@@ -28,6 +26,7 @@ import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class MenuTelemetryMiddlewareTest {
@@ -302,6 +301,16 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
+    fun `WHEN navigating to the homepage settings THEN record the change wallpaper browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.CustomizeHomepage)
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "customize_homepage")
+    }
+
+    @Test
     fun `GIVEN the menu accesspoint is from the home screen WHEN navigating to the settings THEN record the home menu interaction telemetry`() {
         val store = createStore(accessPoint = MenuAccessPoint.Home)
         assertNull(Events.browserMenuAction.testGetValue())
@@ -478,23 +487,13 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN CFR is shown THEN record the CFR is shown menu telemetry`() {
+    fun `WHEN moving to a non-private tab THEN record the move to non-private tab browser menu telemetry`() {
         val store = createStore()
-        assertNull(Menu.showCfr.testGetValue())
+        assertNull(Events.browserMenuAction.testGetValue())
 
-        store.dispatch(MenuAction.OnCFRShown)
+        store.dispatch(MenuAction.MoveToNonPrivateTab)
 
-        assertTelemetryRecorded(Menu.showCfr)
-    }
-
-    @Test
-    fun `WHEN CFR is dismissed THEN record the CFR is dismissed menu telemetry`() {
-        val store = createStore()
-        assertNull(Menu.dismissCfr.testGetValue())
-
-        store.dispatch(MenuAction.OnCFRDismiss)
-
-        assertTelemetryRecorded(Menu.dismissCfr)
+        assertTelemetryRecorded(Events.browserMenuAction, item = "move_to_non_private_tab")
     }
 
     @Test

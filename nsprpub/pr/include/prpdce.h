@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +29,8 @@ PR_BEGIN_EXTERN_C
 ** already held, by another thread or this thread, the
 ** result will be PR_FAILURE.
 */
-NSPR_API(PRStatus) PRP_TryLock(PRLock *lock);
+NSPR_API(PRStatus)
+PRP_TryLock(PRLock* lock);
 
 /*
 ** Create a naked condition variable
@@ -40,14 +40,16 @@ NSPR_API(PRStatus) PRP_TryLock(PRLock *lock);
 ** that may be used in the subsequent "naked" condition variable
 ** operations (see PRP_NakedWait, PRP_NakedNotify, PRP_NakedBroadcast);
 */
-NSPR_API(PRCondVar*) PRP_NewNakedCondVar(void);
+NSPR_API(PRCondVar*)
+PRP_NewNakedCondVar(void);
 
 /*
 ** Destroy a naked condition variable
 **
 ** Destroy the condition variable created by PR_NewNakedCondVar.
 */
-NSPR_API(void) PRP_DestroyNakedCondVar(PRCondVar *cvar);
+NSPR_API(void)
+PRP_DestroyNakedCondVar(PRCondVar* cvar);
 
 /*
 ** Wait on a condition
@@ -60,8 +62,8 @@ NSPR_API(void) PRP_DestroyNakedCondVar(PRCondVar *cvar);
 **
 ** NB: The CV ('cvar') must be one created using PR_NewNakedCondVar.
 */
-NSPR_API(PRStatus) PRP_NakedWait(
-    PRCondVar *cvar, PRLock *lock, PRIntervalTime timeout);
+NSPR_API(PRStatus)
+PRP_NakedWait(PRCondVar* cvar, PRLock* lock, PRIntervalTime timeout);
 
 /*
 ** Notify a thread waiting on a condition
@@ -70,7 +72,8 @@ NSPR_API(PRStatus) PRP_NakedWait(
 **
 ** NB: The CV ('cvar') must be one created using PR_NewNakedCondVar.
 */
-NSPR_API(PRStatus) PRP_NakedNotify(PRCondVar *cvar);
+NSPR_API(PRStatus)
+PRP_NakedNotify(PRCondVar* cvar);
 
 /*
 ** Notify all threads waiting on a condition
@@ -79,7 +82,8 @@ NSPR_API(PRStatus) PRP_NakedNotify(PRCondVar *cvar);
 **
 ** NB: The CV ('cvar') must be one created using PR_NewNakedCondVar.
 */
-NSPR_API(PRStatus) PRP_NakedBroadcast(PRCondVar *cvar);
+NSPR_API(PRStatus)
+PRP_NakedBroadcast(PRCondVar* cvar);
 
 PR_END_EXTERN_C
 

@@ -41,6 +41,7 @@ import mozilla.components.concept.engine.prompt.PromptRequest.MultipleChoice
 import mozilla.components.concept.engine.prompt.PromptRequest.Popup
 import mozilla.components.concept.engine.prompt.PromptRequest.Redirect
 import mozilla.components.concept.engine.prompt.PromptRequest.Repost
+import mozilla.components.concept.engine.prompt.PromptRequest.SaveAddress
 import mozilla.components.concept.engine.prompt.PromptRequest.SaveCreditCard
 import mozilla.components.concept.engine.prompt.PromptRequest.SaveLoginPrompt
 import mozilla.components.concept.engine.prompt.PromptRequest.SelectAddress
@@ -50,8 +51,10 @@ import mozilla.components.concept.engine.prompt.PromptRequest.Share
 import mozilla.components.concept.engine.prompt.PromptRequest.SingleChoice
 import mozilla.components.concept.engine.prompt.PromptRequest.TextPrompt
 import mozilla.components.concept.engine.prompt.PromptRequest.TimeSelection
+import mozilla.components.concept.engine.prompt.PromptRequest.WebAuthnRelatedOriginPrompt
 import mozilla.components.concept.identitycredential.Account
 import mozilla.components.concept.identitycredential.Provider
+import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.concept.storage.CreditCardValidationDelegate
 import mozilla.components.concept.storage.Login
@@ -60,6 +63,7 @@ import mozilla.components.concept.storage.LoginHint
 import mozilla.components.concept.storage.LoginValidationDelegate
 import mozilla.components.feature.prompts.address.AddressDelegate
 import mozilla.components.feature.prompts.address.AddressPicker
+import mozilla.components.feature.prompts.address.AddressSaveDialogFragment
 import mozilla.components.feature.prompts.address.DefaultAddressDelegate
 import mozilla.components.feature.prompts.certificate.CertificatePicker
 import mozilla.components.feature.prompts.creditcard.CreditCardDelegate
@@ -79,10 +83,12 @@ import mozilla.components.feature.prompts.dialog.Prompter
 import mozilla.components.feature.prompts.dialog.SaveLoginDialogFragment
 import mozilla.components.feature.prompts.dialog.TextPromptDialogFragment
 import mozilla.components.feature.prompts.dialog.TimePickerDialogFragment
+import mozilla.components.feature.prompts.dialog.WebAuthnRelatedOriginDialogFragment
 import mozilla.components.feature.prompts.dialog.emitGeneratedPasswordShownFact
 import mozilla.components.feature.prompts.emailmask.EmailMaskDelegate
 import mozilla.components.feature.prompts.emailmask.EmailMaskPromptViewListener
 import mozilla.components.feature.prompts.ext.executeIfWindowedPrompt
+import mozilla.components.feature.prompts.facts.emitAddressSaveShownFact
 import mozilla.components.feature.prompts.facts.emitCreditCardSaveShownFact
 import mozilla.components.feature.prompts.facts.emitPromptConfirmedFact
 import mozilla.components.feature.prompts.facts.emitPromptDismissedFact
@@ -497,6 +503,9 @@ class PromptFeature private constructor(
                                     strongPasswordPromptViewListener?.dismissCurrentSuggestStrongPassword(
                                         activePromptRequest as SelectLoginPrompt,
                                     )
+                                    emailMaskPromptViewListener?.dismissCurrentEmailMaskPrompt(
+                                        activePromptRequest as SelectLoginPrompt,
+                                    )
                                 }
 
                                 is SaveLoginPrompt -> {
@@ -849,6 +858,7 @@ class PromptFeature private constructor(
                 is Share -> it.onSuccess()
 
                 is SaveCreditCard -> it.onConfirm(value as CreditCardEntry)
+                is SaveAddress -> it.onConfirm(value as Address)
                 is SaveLoginPrompt -> it.onConfirm(value as LoginEntry)
 
                 is Confirm -> {
@@ -873,6 +883,7 @@ class PromptFeature private constructor(
                 is PromptRequest.IdentityCredential.PrivacyPolicy -> it.onConfirm(value as Boolean)
                 is SelectLoginPrompt -> it.onConfirm(value as Login)
                 is FolderUploadPrompt -> it.onConfirm()
+                is WebAuthnRelatedOriginPrompt -> it.onConfirm()
                 else -> {
                     // no-op
                 }
@@ -962,6 +973,22 @@ class PromptFeature private constructor(
                     currentUrl = currentUrl,
                     onSavedGeneratedPassword = onSaveLogin,
                     colorsProvider = passwordGeneratorColorsProvider,
+                )
+            }
+
+            is SaveAddress -> {
+                if (!isAddressAutofillEnabled.invoke()) {
+                    dismissDialogRequest(promptRequest, session)
+                    return
+                }
+
+                emitAddressSaveShownFact()
+
+                AddressSaveDialogFragment.newInstance(
+                    sessionId = session.id,
+                    promptRequestUID = promptRequest.uid,
+                    shouldDismissOnLoad = false,
+                    address = promptRequest.address,
                 )
             }
 
@@ -1244,6 +1271,19 @@ class PromptFeature private constructor(
                 )
             }
 
+            is WebAuthnRelatedOriginPrompt -> {
+                val messageResId = if (promptRequest.isCreate) {
+                    R.string.webauthn_related_origin_create_message
+                } else {
+                    R.string.webauthn_related_origin_use_message
+                }
+                WebAuthnRelatedOriginDialogFragment.newInstance(
+                    sessionId = session.id,
+                    promptRequestUID = promptRequest.uid,
+                    message = container.getString(messageResId, promptRequest.origin, promptRequest.rpId),
+                )
+            }
+
             is PromptRequest.IdentityCredential.SelectProvider -> {
                 SelectProviderDialogFragment.newInstance(
                     sessionId = session.id,
@@ -1337,7 +1377,8 @@ class PromptFeature private constructor(
      * Helper function to handle showing an email mask prompt if the conditions are met
      * or to fallback to handling the dialog request.
      */
-    private fun handleEmailMaskOrLoginPrompt(
+    @VisibleForTesting
+    internal fun handleEmailMaskOrLoginPrompt(
         promptRequest: SelectLoginPrompt,
         session: SessionState,
         loginsByHint: Map<LoginHint, List<Login>>,
@@ -1389,6 +1430,7 @@ class PromptFeature private constructor(
             is SelectCreditCard,
             is SaveCreditCard,
             is SelectAddress,
+            is SaveAddress,
             is Share,
             is PromptRequest.IdentityCredential.SelectProvider,
             is PromptRequest.IdentityCredential.SelectAccount,
@@ -1397,6 +1439,9 @@ class PromptFeature private constructor(
 
             is Alert, is TextPrompt, is Confirm, is Repost, is Popup, is FolderUploadPrompt, is Redirect,
             -> promptAbuserDetector.shouldShowMoreDialogs
+
+            is WebAuthnRelatedOriginPrompt,
+            -> true
         }
     }
 

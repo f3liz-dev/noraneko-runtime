@@ -69,15 +69,16 @@ task-defaults:
               path: /builds/worker/workspace/obj-build/gradle/build/reports
               type: directory
     run:
+        clone-with: hg
         using: mozharness
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         mozconfig-variant:
             by-release-type:
-                beta: beta
-                release: release
-                esr.*: release
-                default: nightly
+                beta: beta-fat-aar
+                release: release-fat-aar
+                esr.*: release-fat-aar
+                default: nightly-fat-aar
         tooltool-downloads: internal
         # Note: These settings are only honored by nightly (i.e. shipping) builds
         update-channel:
@@ -152,7 +153,9 @@ tasks:
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly
+                MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
+            clone-with: hg
             actions: [get-secrets, build, multi-l10n]
             config:
                 - builds/releng_base_android_64_builds.py
@@ -172,7 +175,6 @@ tasks:
             disable-push-apk: true
             maven_packages:
                 - geckoview
-                - geckoview-exoplayer2
         shipping-phase: build
         shipping-product: fennec
         index:
@@ -189,7 +191,9 @@ tasks:
         worker:
             env:
                 PERFHERDER_EXTRA_OPTIONS: android-geckoview-fat-aar-nightly-lite
+                MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
+            clone-with: hg
             actions: [get-secrets, build, multi-l10n]
             config:
                 - builds/releng_base_android_64_builds.py
@@ -197,7 +201,7 @@ tasks:
             custom-build-variant-cfg: arm-lite
         fetches:
             toolchain:
-                - android-gradle-dependencies-lite
+                - android-gradle-dependencies
         optimization:
             skip-unless-backstop: null
 
@@ -221,6 +225,7 @@ tasks:
                 USE_ARTIFACT: '1'
                 MOZ_ARTIFACT_TASK: {task-reference: '<armeabi-v7a>'}
         run:
+            clone-with: hg
             actions: [get-secrets, build]
             config: ["builds/releng_base_android_64_builds.py"]
             custom-build-variant-cfg: arm

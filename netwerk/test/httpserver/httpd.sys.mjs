@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2838,7 +2836,10 @@ ServerHandler.prototype = {
           // separate these two lines!
           var line = new Error().lineNumber;
           let uri = Services.io.newFileURI(file);
-          Services.scriptloader.loadSubScript(uri.spec, s);
+          Services.scriptloader.loadSubScriptWithOptions(uri.spec, {
+            target: s,
+            allowUnsafeURL: true,
+          });
         } catch (e) {
           dumpn("*** syntax error in SJS at " + file.path + ": " + e);
           throw HTTP_500;

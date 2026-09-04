@@ -4,24 +4,15 @@
 
 package org.mozilla.fenix.benchmark.baselineprofile
 
-import android.content.Intent
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.Parameterized
-import org.mozilla.fenix.benchmark.utils.EXTRA_COMPOSABLE_TOOLBAR
-import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
-import org.mozilla.fenix.benchmark.utils.ParameterizedToolbarsTest
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
-import org.mozilla.fenix.benchmark.utils.dismissWallpaperOnboarding
-import org.mozilla.fenix.benchmark.utils.enterSearchMode
-import org.mozilla.fenix.benchmark.utils.isWallpaperOnboardingShown
-import org.mozilla.fenix.benchmark.utils.loadSite
+import org.mozilla.fenix.benchmark.utils.normalBrowsingJourney
 import org.mozilla.fenix.benchmark.utils.url
 
 /**
@@ -48,11 +39,8 @@ import org.mozilla.fenix.benchmark.utils.url
  * When using this class to generate a baseline profile, only API 33+ or rooted API 28+ are supported.
  */
 @RequiresApi(Build.VERSION_CODES.P)
-@RunWith(Parameterized::class)
 @BaselineProfileGenerator
-class NormalBrowsingBaselineProfileGenerator(
-    private val useComposableToolbar: Boolean,
-): ParameterizedToolbarsTest() {
+class NormalBrowsingBaselineProfileGenerator {
 
     @get:Rule
     val rule = BaselineProfileRule()
@@ -64,18 +52,9 @@ class NormalBrowsingBaselineProfileGenerator(
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
+            maxIterations = baselineProfileMaxIterations(),
         ) {
-            val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-                .putExtra(EXTRA_COMPOSABLE_TOOLBAR, useComposableToolbar)
-
-            startActivityAndWait(intent = intent)
-
-            if (device.isWallpaperOnboardingShown()) {
-                device.dismissWallpaperOnboarding()
-            }
-
-            device.enterSearchMode(useComposableToolbar)
-            device.loadSite(url = mockRule.url(HtmlAsset.SIMPLE), useComposableToolbar)
+            normalBrowsingJourney(url = mockRule.url(HtmlAsset.SIMPLE))
         }
     }
 }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #include "DocAccessibleWrap.h"
 
 #include "Compatibility.h"
+#include "DocAccessibleChild.h"
+#include "RootAccessible.h"
+#include "Statistics.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
-#include "DocAccessibleChild.h"
 #include "nsWinUtils.h"
-#include "RootAccessible.h"
-#include "Statistics.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -25,8 +23,6 @@ using namespace mozilla::a11y;
 DocAccessibleWrap::DocAccessibleWrap(dom::Document* aDocument,
                                      PresShell* aPresShell)
     : DocAccessible(aDocument, aPresShell), mHWND(nullptr) {}
-
-DocAccessibleWrap::~DocAccessibleWrap() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible

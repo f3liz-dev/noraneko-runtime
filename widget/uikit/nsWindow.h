@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,12 @@
 #ifndef NSWINDOW_H_
 #define NSWINDOW_H_
 
-#include <objc/objc.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <objc/objc.h>
 
+#include "gfxPoint.h"
 #include "mozilla/widget/IOSView.h"
 #include "nsIWidget.h"
-#include "gfxPoint.h"
-
 #include "nsTArray.h"
 
 #ifdef __OBJC__
@@ -135,7 +133,7 @@ class nsWindow final : public nsIWidget {
   static already_AddRefed<nsWindow> From(nsPIDOMWindowOuter* aDOMWindow);
   static already_AddRefed<nsWindow> From(nsIWidget* aWidget);
 
-  void SetIOSView(already_AddRefed<mozilla::widget::IOSView>&& aView) {
+  void SetIOSView(already_AddRefed<mozilla::widget::IOSView> aView) {
     mIOSView = aView;
   }
   mozilla::widget::IOSView* GetIOSView() const { return mIOSView; }

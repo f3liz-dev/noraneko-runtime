@@ -104,6 +104,10 @@ add_task(async function replaceToplevel() {
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
     wantLoad: "about:blank",
   });
+  // Make it transient so that it doesn't stay in SH and the BC is discarded
+  tab.linkedBrowser.browsingContext.sessionHistory
+    .getEntryAtIndex(0)
+    .setTransient();
 
   const browsingContext = tab.linkedBrowser.browsingContext;
 
@@ -111,7 +115,7 @@ add_task(async function replaceToplevel() {
 
   const discarded = await observeDiscarded([...expected.keys()], async () => {
     await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-      content.location = "about:newtab";
+      content.location = "about:blocked";
     });
   });
 

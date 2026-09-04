@@ -618,6 +618,18 @@ impl Renderer {
                 continue;
             }
 
+            let mut disable_external_composite = enable_screenshot;
+            if let CompositeTileSurface::ExternalSurface { .. } = tile.surface {
+                let transformed_rect = composite_state.get_device_rect(
+                    &tile.local_rect,
+                    tile.transform_index
+                );
+                if let None = transformed_rect.try_cast::<i16>() {
+                    // Disable external composite when rect is big.
+                    disable_external_composite = true;
+                }
+            }
+
             // Determine if the tile is an external surface or content
             let usage = match tile.surface {
                 CompositeTileSurface::Texture { .. } |
@@ -625,7 +637,7 @@ impl Renderer {
                     CompositorSurfaceUsage::Content
                 }
                 CompositeTileSurface::ExternalSurface { external_surface_index } => {
-                    match (self.current_compositor_kind, enable_screenshot) {
+                    match (self.current_compositor_kind, disable_external_composite) {
                         (CompositorKind::Native { .. }, _) | (CompositorKind::Draw { .. }, _) => {
                             CompositorSurfaceUsage::Content
                         }
@@ -789,11 +801,11 @@ impl Renderer {
                     segment_builder.initialize(
                         rect.cast_unit(),
                         None,
-                        rect.cast_unit(),
                     );
                     segment_builder.push_clip_rect(
                         clip.rect.cast_unit(),
                         Some(clip.radius),
+                        None,
                         ClipMode::Clip,
                     );
                     segment_builder.build(|segment| {
@@ -976,8 +988,11 @@ impl Renderer {
                     combined_dirty_rect = combined_dirty_rect.union(&rect);
                 }
 
+                let device_rect = DeviceRect::from_size(device_size.to_f32());
+                let clipped_dirty_rect = combined_dirty_rect.intersection_unchecked(&device_rect);
+
                 partial_present_mode = Some(PartialPresentMode::Single {
-                    dirty_rect: combined_dirty_rect,
+                    dirty_rect: clipped_dirty_rect,
                 });
             } else {
                 partial_present_mode = None;
@@ -1040,11 +1055,11 @@ impl Renderer {
                     segment_builder.initialize(
                         rect.cast_unit(),
                         None,
-                        rect.cast_unit(),
                     );
                     segment_builder.push_clip_rect(
                         clip.rect.cast_unit(),
                         Some(clip.radius),
+                        None,
                         ClipMode::Clip,
                     );
                     segment_builder.build(|segment| {
@@ -1208,7 +1223,7 @@ impl Renderer {
         results: &mut RenderResults,
         present_mode: Option<PartialPresentMode>,
     ) {
-        profile_scope!("main target");
+        tracy_rs::profile_scope!("main target");
         if let Some(device_size) = device_size {
             if let Some(history) = &mut self.command_log {
                 history.begin_render_target("Window", device_size);

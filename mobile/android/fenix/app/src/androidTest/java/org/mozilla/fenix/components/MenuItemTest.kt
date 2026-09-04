@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.theme.surfaceDimVariant
 import org.junit.Assert.assertFalse
@@ -33,17 +33,17 @@ class MenuItemTest {
     fun testIconListItemIconUntintedArgumentRespected() {
         with(composeTestRule) {
             setContent {
-                Column(Modifier.background(color = MaterialTheme.colorScheme.surfaceDimVariant).padding(16.dp)) {
+                Column(Modifier.background(color = MaterialTheme.colorScheme.surfaceBright).padding(16.dp)) {
                     IconListItem(
                         label = "Test Label",
-                        beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_shield_slash_critical_24),
+                        beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_shield_slash_multicolor_24),
                         beforeIconTint = Color.Unspecified,
                         enabled = true,
                         modifier = Modifier.testTag("NoTint"),
                     )
                     IconListItem(
                         label = "Test Label",
-                        beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_shield_slash_critical_24),
+                        beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_shield_slash_multicolor_24),
                         enabled = true,
                         modifier = Modifier.testTag("DefaultTint"),
                     )

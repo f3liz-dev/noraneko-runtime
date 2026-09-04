@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,12 +14,17 @@
 #include "nsTHashSet.h"
 #include "nsThreadUtils.h"
 
+class JSObject;
+
 namespace mozilla {
 class AbstractThread;
 namespace dom {
 
+class CustomElementConstructor;
 class CustomElementReactionsStack;
+class CustomElementRegistry;
 class JSExecutionManager;
+class MediaSource;
 
 // DocGroup is the Gecko object for a "Similar-origin Window Agent" (the
 // window-global component of an "Agent Cluster").
@@ -66,6 +69,45 @@ class DocGroup final {
 
   mozilla::dom::CustomElementReactionsStack* CustomElementReactionsStack();
 
+  // https://html.spec.whatwg.org/#active-custom-element-constructor-map
+  // Per-agent map from constructors to CustomElementRegistry, keyed by the
+  // constructor function (its callable), matching the spec's use of NewTarget.
+  // Returns the registry currently active for aConstructor, or null.
+  CustomElementRegistry* GetActiveConstructorRegistry(JSObject* aConstructor);
+
+  // Scope aRegistry for aConstructor. The spec swaps out registires in the
+  // active-custom-element-constructor-map, during construction/upgrade -
+  // allowing it to temporarily override the current entry without clobbering
+  // previous entries. It does so to avoid reentrant constructors clobbering the
+  // registry map.
+  // We can use AutoActiveConstructorRegistry to scope-guard this by
+  // automatically restoring the previous registry (or removing the entry when
+  // null) during destruction.
+  class MOZ_STACK_CLASS AutoActiveConstructorRegistry final {
+   public:
+    // This inserts aRegistry into the ActiveConstructorRegistry, keyed by
+    // aConstructor. The previous entry is retained, so that it can be restored
+    // on destruction.
+    AutoActiveConstructorRegistry(DocGroup* aDocGroup,
+                                  CustomElementConstructor* aConstructor,
+                                  CustomElementRegistry* aRegistry);
+
+    // This restores the preivous registry (mPreviousRegistry) that was
+    // discovered during construction. If there was no previous, the entry is
+    // deleted from the map.
+    ~AutoActiveConstructorRegistry();
+
+    AutoActiveConstructorRegistry(const AutoActiveConstructorRegistry&) =
+        delete;
+    AutoActiveConstructorRegistry& operator=(
+        const AutoActiveConstructorRegistry&) = delete;
+
+   private:
+    DocGroup* mDocGroup;
+    RefPtr<CustomElementConstructor> mConstructor;
+    RefPtr<CustomElementRegistry> mPreviousRegistry;
+  };
+
   // Adding documents to a DocGroup should be done through
   // BrowsingContextGroup::AddDocument (which in turn calls
   // DocGroup::AddDocument).
@@ -87,6 +129,13 @@ class DocGroup final {
 
   nsTArray<RefPtr<HTMLSlotElement>> MoveSignalSlotList();
 
+  // Methods for interacting with MediaSource URLs.
+  nsresult RegisterMediaSourceURL(nsGlobalWindowInner* aWindow,
+                                  MediaSource* aMediaSource, nsACString& aURL);
+  bool UnregisterMediaSourceURL(const nsACString& aURL,
+                                bool aNotifyWindow = true);
+  already_AddRefed<MediaSource> LookupMediaSourceURL(nsIURI* aURI);
+
   // List of DocGroups that has non-empty signal slot list.
   static AutoTArray<RefPtr<DocGroup>, 2>* sPendingDocGroups;
 
@@ -105,10 +154,29 @@ class DocGroup final {
 
   DocGroupKey mKey;
 
-  nsTArray<Document*> mDocuments;
+  nsTHashSet<Document*> mDocuments;
   RefPtr<mozilla::dom::CustomElementReactionsStack> mReactionsStack;
   nsTArray<RefPtr<HTMLSlotElement>> mSignalSlotList;
   RefPtr<BrowsingContextGroup> mBrowsingContextGroup;
+
+  // https://html.spec.whatwg.org/#active-custom-element-constructor-map
+  struct ActiveConstructorEntry {
+    RefPtr<mozilla::dom::CustomElementConstructor> mConstructor;
+    RefPtr<mozilla::dom::CustomElementRegistry> mRegistry;
+  };
+  AutoTArray<ActiveConstructorEntry, 2> mActiveConstructorMap;
+
+  // MediaSource URLs (with the `blob:` scheme) which have been created by
+  // documents in this DocGroup.
+  //
+  // These URLs are registered here, rather than in BlobURLProtocolHandler, as
+  // they are only valid within the Agent this DocGroup corresponds to, and need
+  // to be cycle-collected.
+  struct MediaSourceURLEntry {
+    RefPtr<MediaSource> mMediaSource;
+    RefPtr<nsGlobalWindowInner> mOwner;
+  };
+  nsTHashMap<nsCString, MediaSourceURLEntry> mMediaSourceURLs;
 
   // non-null if the JS execution for this docgroup is regulated with regards
   // to worker threads. This should only be used when we are forcing serialized

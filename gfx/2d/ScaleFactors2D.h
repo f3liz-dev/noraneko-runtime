@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +6,12 @@
 #define MOZILLA_GFX_SCALEFACTORS2D_H_
 
 #include <ostream>
-
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/gfx/ScaleFactor.h"
-#include "mozilla/gfx/Point.h"
+#include <tuple>
 
 #include "gfxPoint.h"
+#include "mozilla/FloatingPoint.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/ScaleFactor.h"
 
 namespace mozilla {
 namespace gfx {
@@ -183,6 +181,8 @@ struct BaseScaleFactors2D {
     return BaseScaleFactors2D(std::max(aA.xScale, aB.xScale),
                               std::max(aA.yScale, aB.yScale));
   }
+
+  auto MutTiedFields() { return std::tie(xScale, yScale); }
 };
 
 template <class Src, class Dst>

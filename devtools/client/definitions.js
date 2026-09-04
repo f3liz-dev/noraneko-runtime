@@ -640,22 +640,32 @@ exports.ToolboxButtons = [
       }
     },
   },
-  createHighlightButton(
-    [HIGHLIGHTER_TYPES.RULERS, HIGHLIGHTER_TYPES.VIEWPORT_SIZE],
-    "rulers"
-  ),
-  createHighlightButton([HIGHLIGHTER_TYPES.MEASURING], "measure"),
+  createHighlightButton({
+    highlighterTypes: [
+      HIGHLIGHTER_TYPES.RULERS,
+      HIGHLIGHTER_TYPES.VIEWPORT_SIZE,
+    ],
+    id: "rulers",
+  }),
+  createHighlightButton({
+    highlighterTypes: [HIGHLIGHTER_TYPES.MEASURING],
+    id: "measure",
+  }),
   {
     id: "command-button-jstracer",
     description: l10n(
       "toolbox.buttons.jstracer",
       osString == "Darwin" ? "Cmd+Shift+5" : "Ctrl+Shift+5"
     ),
-    isToolSupported: () =>
-      Services.prefs.getBoolPref(
-        "devtools.debugger.features.javascript-tracing",
-        false
-      ),
+    isToolSupported: () => {
+      return (
+        lazy.AppConstants.NIGHTLY_BUILD ||
+        Services.prefs.getBoolPref(
+          "devtools.debugger.features.javascript-tracing",
+          false
+        )
+      );
+    },
     async onClick(event, toolbox) {
       await toolbox.commands.tracerCommand.toggle();
     },
@@ -673,6 +683,20 @@ exports.ToolboxButtons = [
     isToggle: true,
     setup(toolbox, onChange) {
       toolbox.commands.tracerCommand.on("toggle", onChange);
+
+      // Automatically enable the button if this old preference was set to true.
+      // When enabling the tracer on all channels we will remove this preference.
+      if (
+        Services.prefs.getBoolPref(
+          "devtools.debugger.features.javascript-tracing",
+          false
+        )
+      ) {
+        Services.prefs.setBoolPref(
+          "devtools.command-button-jstracer.enabled",
+          true
+        );
+      }
     },
     teardown(toolbox, onChange) {
       toolbox.commands.tracerCommand.off("toggle", onChange);
@@ -802,29 +826,75 @@ exports.ToolboxButtons = [
   },
 ];
 
-function createHighlightButton(highlighters, id) {
+/**
+ * Return a definition for a toolbox button that triggers highlighters
+ *
+ * @param {object} options
+ * @param {Array<string>} options.highlighterTypes
+ *        An array of the highlighter types the button controls
+ * @param {string} options.id
+ *        The button id
+ * @returns {object}
+ */
+function createHighlightButton({ highlighterTypes, id }) {
   return {
     id: `command-button-${id}`,
     description: l10n(`toolbox.buttons.${id}`),
+    highlighterTypes,
     isToolSupported: toolbox =>
       toolbox.commands.descriptorFront.isTabDescriptor,
     async onClick(event, toolbox) {
-      const inspectorFront = await toolbox.target.getFront("inspector");
+      // @backward-compat { version 154 } Firefox 154 started supporting toggling
+      // global highlighters via Target Actor Configuration. The else branch can be later removed.
+      const { targetConfigurationCommand } = toolbox.commands;
+      if (await targetConfigurationCommand.supports("enabledHighlighters")) {
+        const { configuration } = targetConfigurationCommand;
+        let highlighters = configuration.enabledHighlighters || [];
+        // Check if all the highlighters were enabled
+        if (highlighterTypes.every(type => highlighters.includes(type))) {
+          // Disable the highlighters
+          highlighters = highlighters.filter(
+            type => !highlighterTypes.includes(type)
+          );
+        } else {
+          // Enable the highlighters
+          highlighters = [...highlighters, ...highlighterTypes];
+        }
+        // Instruct the backend to toggle the highlighters on/off
+        await targetConfigurationCommand.updateConfiguration({
+          enabledHighlighters: highlighters,
+        });
+      } else {
+        const inspectorFront = await toolbox.target.getFront("inspector");
+        await Promise.all(
+          highlighterTypes.map(async name => {
+            const highlighter =
+              await inspectorFront.getOrCreateHighlighterByType(name);
 
-      await Promise.all(
-        highlighters.map(async name => {
-          const highlighter =
-            await inspectorFront.getOrCreateHighlighterByType(name);
-
-          if (highlighter.isShown()) {
-            await highlighter.hide();
-          } else {
-            await highlighter.show();
-          }
-        })
-      );
+            if (highlighter.isShown()) {
+              await highlighter.hide();
+            } else {
+              await highlighter.show();
+            }
+          })
+        );
+      }
     },
     isChecked(toolbox) {
+      const { targetConfigurationCommand } = toolbox.commands;
+      const { configuration } = targetConfigurationCommand;
+      // Note that we cannot query targetConfigurationCommand.supports as this is an async function,
+      // so fallback on looking if the enabledHighlighters configuration key exists
+      //
+      // @backward-compat { version 154 } Firefox 154 started supporting toggling
+      // global highlighters via Target Actor Configuration. The else branch can be later removed.
+      if ("enabledHighlighters" in configuration) {
+        const highlighters = configuration.enabledHighlighters || [];
+        const isChecked = highlighterTypes.every(type =>
+          highlighters.includes(type)
+        );
+        return isChecked;
+      }
       // if the inspector doesn't exist, then the highlighter has not yet been connected
       // to the front end.
       const inspectorFront = toolbox.target.getCachedFront("inspector");
@@ -836,7 +906,7 @@ function createHighlightButton(highlighters, id) {
         return false;
       }
 
-      return highlighters.every(name =>
+      return highlighterTypes.every(name =>
         inspectorFront.getKnownHighlighter(name)?.isShown()
       );
     },

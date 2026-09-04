@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,8 +102,6 @@ class AppWindow final : public nsIBaseWindow,
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     void OcclusionStateChanged(bool aIsFullyOccluded) override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
-    void OSToolbarButtonPressed() override;
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY
     void WindowActivated() override;
     MOZ_CAN_RUN_SCRIPT_BOUNDARY
     void WindowDeactivated() override;
@@ -159,7 +156,6 @@ class AppWindow final : public nsIBaseWindow,
       mozilla::DesktopCoord aOverlapAmount);
   MOZ_CAN_RUN_SCRIPT void OcclusionStateChanged(bool aIsFullyOccluded);
   void RecomputeBrowsingContextVisibility();
-  MOZ_CAN_RUN_SCRIPT void OSToolbarButtonPressed();
   MOZ_CAN_RUN_SCRIPT void WindowActivated();
   MOZ_CAN_RUN_SCRIPT void WindowDeactivated();
 

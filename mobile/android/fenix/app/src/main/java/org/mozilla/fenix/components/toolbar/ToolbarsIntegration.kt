@@ -12,8 +12,8 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.feature.pwa.feature.WebAppHideToolbarFeature
 import mozilla.components.feature.session.FullScreenFeature
 import mozilla.components.support.base.feature.LifecycleAwareFeature
+import mozilla.components.support.ktx.android.view.pixelSizeFor
 import mozilla.components.support.utils.ext.isKeyboardVisible
-import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.utils.Settings
 import kotlin.math.roundToInt
 import mozilla.components.compose.browser.toolbar.R as toolbarR
@@ -42,7 +42,7 @@ class ToolbarsIntegration(
     private val settings: Settings,
     private val browserLayout: ViewGroup,
     private val engineView: EngineView,
-    private val toolbar: FenixBrowserToolbarView,
+    private val toolbar: BrowserToolbarComposable,
     private val topToolbarHeight: () -> Int,
     private val onToolbarsReset: () -> Unit,
 ) : LifecycleAwareFeature {

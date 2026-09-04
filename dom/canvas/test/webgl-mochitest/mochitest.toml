@@ -21,7 +21,6 @@ support-files = [
 ["ensure-exts/test_EXT_depth_clamp.html"]
 fail-if = [
   "os == 'android'",
-  "os == 'win'",
 ]
 
 ["ensure-exts/test_EXT_disjoint_timer_query.html"]
@@ -76,7 +75,9 @@ fail-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc.html"]
@@ -86,7 +87,9 @@ fail-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc1.html"]
@@ -98,7 +101,9 @@ fail-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_pvrtc.html"]
@@ -111,7 +116,9 @@ fail-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_s3tc.html"]
@@ -274,6 +281,8 @@ skip-if = [
 ["test_webgl_fingerprinting_resistance.html"]
 
 ["test_webgl_force_enable.html"]
+
+["test_webgl_high_power.html"]
 
 ["test_webgl_renderer_constant_fpp.html"]
 

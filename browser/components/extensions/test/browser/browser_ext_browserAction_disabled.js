@@ -1,6 +1,14 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
+
+// TODO: Bug 2052514 - browser_ext_browserAction_disabled.js fails when Firefox View button is removed
+// Add the Firefox View button, because it's currently required for this test
+// to pass. FirefoxViewTestUtils will remove the button upon cleanup
+// (registerCleanupFunction called internally).
+const FirefoxViewTestUtils = ChromeUtils.importESModule(
+  "resource://testing-common/FirefoxViewTestUtils.sys.mjs"
+);
+FirefoxViewTestUtils.init(this);
+FirefoxViewTestUtils.enableFirefoxViewButton(window);
 
 add_task(async function testDisabled() {
   let extension = ExtensionTestUtils.loadExtension({
@@ -85,6 +93,15 @@ add_task(async function testDisabled() {
 
   extension.sendMessage("check-clicked", false);
   await extension.awaitMessage("next-test");
+
+  // clickBrowserAction had to open the addons panel to reach the widget, and
+  // clicking a disabled browserAction does not close it.
+  let panelHidden = BrowserTestUtils.waitForPopupEvent(
+    gUnifiedExtensions.panel,
+    "hidden"
+  );
+  await gUnifiedExtensions.togglePanel();
+  await panelHidden;
 
   CustomizableUI.addWidgetToArea(widget.id, CustomizableUI.AREA_NAVBAR);
 

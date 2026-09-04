@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +11,6 @@
 #include "TSFStaticSink.h"
 #include "TSFTextInputProcessorList.h"
 #include "TSFTextStore.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/StaticPrefs_intl.h"
@@ -622,7 +620,7 @@ void TSFUtils::ClearStoringTextStoresIf(
 
 IMENotificationRequests TSFUtils::GetIMENotificationRequests() {
   return sCurrentTextStore ? sCurrentTextStore->GetIMENotificationRequests()
-                           : IMENotificationRequests();
+                           : IMENotificationRequests{};
 }
 
 inline std::ostream& operator<<(
@@ -630,6 +628,14 @@ inline std::ostream& operator<<(
     const mozilla::widget::TSFUtils::GotFocus& aGotFocus) {
   return aStream << "GotFocus::"
                  << (static_cast<bool>(aGotFocus) ? "Yes" : "No");
+}
+
+const GUID& TSFUtils::TSATTRID_Text_VerticalWriting_Ref() {
+  return TSATTRID_Text_VerticalWriting;
+}
+
+const GUID& TSFUtils::TSATTRID_Text_Orientation_Ref() {
+  return TSATTRID_Text_Orientation;
 }
 
 nsresult TSFUtils::OnFocusChange(GotFocus aGotFocus, nsWindow* aFocusedWindow,
@@ -996,38 +1002,6 @@ bool TSFUtils::ShouldSetInputScopeOfURLBarToDefault() {
       return true;
     default:
       return false;
-  }
-}
-
-TSFUtils::AttrIndex TSFUtils::GetRequestedAttrIndex(const TS_ATTRID& aAttrID) {
-  if (IsEqualGUID(aAttrID, GUID_PROP_INPUTSCOPE)) {
-    return AttrIndex::InputScope;
-  }
-  if (IsEqualGUID(aAttrID, sGUID_PROP_URL)) {
-    return AttrIndex::DocumentURL;
-  }
-  if (IsEqualGUID(aAttrID, TSATTRID_Text_VerticalWriting)) {
-    return AttrIndex::TextVerticalWriting;
-  }
-  if (IsEqualGUID(aAttrID, TSATTRID_Text_Orientation)) {
-    return AttrIndex::TextOrientation;
-  }
-  return AttrIndex::NotSupported;
-}
-
-TS_ATTRID TSFUtils::GetAttrID(AttrIndex aIndex) {
-  switch (aIndex) {
-    case AttrIndex::InputScope:
-      return GUID_PROP_INPUTSCOPE;
-    case AttrIndex::DocumentURL:
-      return sGUID_PROP_URL;
-    case AttrIndex::TextVerticalWriting:
-      return TSATTRID_Text_VerticalWriting;
-    case AttrIndex::TextOrientation:
-      return TSATTRID_Text_Orientation;
-    default:
-      MOZ_CRASH("Invalid index? Or not implemented yet?");
-      return GUID_NULL;
   }
 }
 

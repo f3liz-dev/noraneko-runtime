@@ -21,8 +21,10 @@ use crate::values::generics::{NonNegative, ZeroToOne};
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericBoxShadow<Color, SizeLength, BlurShapeLength, ShapeLength> {
     /// The base shadow.
     pub base: GenericSimpleShadow<Color, SizeLength, BlurShapeLength>,
@@ -37,22 +39,25 @@ pub struct GenericBoxShadow<Color, SizeLength, BlurShapeLength, ShapeLength> {
 pub use self::GenericBoxShadow as BoxShadow;
 
 /// A generic value for a single `filter`.
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[animation(no_bound(U))]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 pub enum GenericFilter<Angle, Factor, Length, Shadow, U> {
     /// `blur(<length>)`
     #[css(function)]
@@ -108,8 +113,10 @@ pub use self::GenericFilter as Filter;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericSimpleShadow<Color, SizeLength, ShapeLength> {
     /// Color.
     pub color: Color,

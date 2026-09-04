@@ -1,48 +1,46 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set expandtab ts=4 sw=2 sts=2 cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "nsHttpChannelAuthProvider.h"
 
+#include "HttpLog.h"
+#include "MockHttpAuth.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/Tokenizer.h"
-#include "MockHttpAuth.h"
-#include "nsHttpChannelAuthProvider.h"
-#include "nsCRT.h"
-#include "nsNetUtil.h"
-#include "nsHttpHandler.h"
-#include "nsIHttpAuthenticator.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIAuthPrompt2.h"
-#include "nsIAuthPromptProvider.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsEscape.h"
-#include "nsAuthInformationHolder.h"
-#include "nsIStringBundle.h"
-#include "nsIPromptService.h"
 #include "netCore.h"
-#include "nsIHttpAuthenticableChannel.h"
-#include "nsIURI.h"
+#include "nsAuthInformationHolder.h"
+#include "nsCRT.h"
 #include "nsContentUtils.h"
+#include "nsEscape.h"
 #include "nsHttp.h"
 #include "nsHttpBasicAuth.h"
 #include "nsHttpDigestAuth.h"
+#include "nsHttpHandler.h"
+#include "nsIAuthPrompt2.h"
+#include "nsIAuthPromptProvider.h"
+#include "nsIHttpAuthenticableChannel.h"
+#include "nsIHttpAuthenticator.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIPromptService.h"
+#include "nsIStringBundle.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
 #ifdef MOZ_AUTH_EXTENSION
 #  include "nsHttpNegotiateAuth.h"
 #endif
-#include "nsHttpNTLMAuth.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIURL.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_prompts.h"
+#include "nsHttpNTLMAuth.h"
 #include "nsIProxiedChannel.h"
 #include "nsIProxyInfo.h"
+#include "nsIURL.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::net {
 
@@ -340,7 +338,7 @@ nsresult nsHttpChannelAuthProvider::GenCredsAndSetEntry(
 
   // don't log this in release build since it could contain sensitive info.
 #ifdef DEBUG
-  LOG(("generated creds: %s\n", result.BeginReading()));
+  LOG(("generated creds: %s\n", PromiseFlatCString(result).get()));
 #endif
 
   return UpdateCache(auth, scheme, host, port, directory, realm, challenge,
@@ -581,7 +579,7 @@ nsresult nsHttpChannelAuthProvider::GetCredentials(
                                              opaque, &stale, &ac.algorithm,
                                              &qop);
     }
-    cc.AppendElement(ac);
+    cc.AppendElement(std::move(ac));
   }
 
   // Returns true if an authorization is in progress
@@ -1392,10 +1390,11 @@ NS_IMETHODIMP nsHttpChannelAuthProvider::OnAuthAvailable(
   nsCOMPtr<nsISupports> sessionStateGrip;
   if (entry) sessionStateGrip = entry->mMetaData;
 
-  nsAuthInformationHolder* holder =
-      static_cast<nsAuthInformationHolder*>(aAuthInfo);
-  *ident =
-      nsHttpAuthIdentity(holder->Domain(), holder->User(), holder->Password());
+  nsString domain, user, password;
+  aAuthInfo->GetDomain(domain);
+  aAuthInfo->GetUsername(user);
+  aAuthInfo->GetPassword(password);
+  *ident = nsHttpAuthIdentity(domain, user, password);
 
   nsAutoCString unused;
   nsCOMPtr<nsIHttpAuthenticator> auth;

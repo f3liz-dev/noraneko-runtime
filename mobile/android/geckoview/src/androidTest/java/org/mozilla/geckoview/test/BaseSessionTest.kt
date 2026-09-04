@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -43,6 +42,7 @@ open class BaseSessionTest(
         const val DND_HTML_PATH = "/assets/www/dnd.html"
         const val DND_XORIGIN_HTML_PATH = "/assets/www/dnd_xorigin.html"
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
+        const val DOWNLOAD_WEBPAGE_HTML_PATH = "/assets/www/download_webpage.html"
         const val FORM_BLANK_HTML_PATH = "/assets/www/form_blank.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
         const val FORMS_XORIGIN_HTML_PATH = "/assets/www/forms_xorigin.html"
@@ -55,6 +55,8 @@ open class BaseSessionTest(
         const val SELECT_LISTBOX_HTML_PATH = "/assets/www/select-listbox.html"
         const val ADDRESS_FORM_HTML_PATH = "/assets/www/address_form.html"
         const val FORMS_AUTOCOMPLETE_HTML_PATH = "/assets/www/forms_autocomplete.html"
+        const val FORMS_AUTOCOMPLETE2_HTML_PATH = "/assets/www/forms_autocomplete2.html"
+        const val FORMS_DATALIST_HTML_PATH = "/assets/www/forms_datalist.html"
         const val FORMS_ID_VALUE_HTML_PATH = "/assets/www/forms_id_value.html"
         const val CC_FORM_HTML_PATH = "/assets/www/cc_form.html"
         const val FEDCM_RP_HTML_PATH = "/assets/www/fedcm_rp.html"
@@ -100,6 +102,7 @@ open class BaseSessionTest(
         const val STORAGE_TITLE_HTML_PATH = "/assets/www/reflect_local_storage_into_title.html"
         const val HUNG_SCRIPT = "/assets/www/hungScript.html"
         const val PUSH_HTML_PATH = "/assets/www/push/push.html"
+        const val WEBAUTHN_RELATED_ORIGIN_PATH = "https://example.com/tests/junit/webauthn_related_origin.html"
         const val OPEN_WINDOW_PATH = "https://example.org/tests/junit/open_window.html"
         const val OPEN_WINDOW_TARGET_PATH = "https://example.org/tests/junit/open_window_target.html"
         const val CLICK_ACTION_PATH = "/assets/www/worker/click-action.html"
@@ -107,6 +110,8 @@ open class BaseSessionTest(
         const val IFRAME_UNKNOWN_PROTOCOL = "/assets/www/iframe_unknown_protocol.html"
         const val MEDIA_SESSION_DOM1_PATH = "/assets/www/media_session_dom1.html"
         const val MEDIA_SESSION_DEFAULT1_PATH = "/assets/www/media_session_default1.html"
+        const val AUDIO_SESSION_TYPE_WEBAUDIO_PATH = "/assets/www/audio_session_type_webaudio.html"
+        const val AUDIO_SESSION_TYPE_WEBSPEECH_PATH = "/assets/www/audio_session_type_webspeech.html"
         const val PULL_TO_REFRESH_SUBFRAME_PATH = "/assets/www/pull-to-refresh-subframe.html"
         const val TOUCH_HTML_PATH = "/assets/www/touch.html"
         const val TOUCH_XORIGIN_HTML_PATH = "/assets/www/touch_xorigin.html"
@@ -159,7 +164,9 @@ open class BaseSessionTest(
         const val BUG1985669_HTML_PATH = "/assets/www/bug1985669.html"
         const val BUG1993407_HTML_PATH = "/assets/www/bug1993407.html"
         const val BUG1994311_HTML_PATH = "/assets/www/bug1994311.html"
+        const val BUG2028072_HTML_PATH = "/assets/www/bug2028072.html"
         const val PAGE_EXTRACTION_HTML_PATH = "/assets/www/page-extraction.html"
+        const val PAGE_EXTRACTION_READER_MODE_HTML_PATH = "/assets/www/readerModeArticle.html"
         const val POSITION_STICKY_HTML_PATH = "/assets/www/position-sticky.html"
         const val POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH = "/assets/www/position-sticky-on-main-thread.html"
         const val INTERACTIVE_WIDGET_HTML_PATH = "/assets/www/interactive-widget.html"
@@ -314,12 +321,6 @@ open class BaseSessionTest(
 
     fun GeckoSession.setHandlingUserInput(handlingUserInput: Boolean) =
         sessionRule.setHandlingUserInput(this, handlingUserInput)
-
-    fun GeckoSession.triggerCookieBannerDetected() =
-        sessionRule.triggerCookieBannerDetected(this)
-
-    fun GeckoSession.triggerCookieBannerHandled() =
-        sessionRule.triggerCookieBannerHandled(this)
 
     fun GeckoSession.triggerTranslationsOffer() =
         sessionRule.triggerTranslationsOffer(this)

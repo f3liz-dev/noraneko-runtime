@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,7 +92,7 @@ OnlineSpeechRecognitionService::OnStopRequest(nsIRequest* aRequest,
   nsAutoCString errorMsg;
   SpeechRecognitionErrorCode errorCode;
 
-  SR_LOG("STT Result: %s", mBuf.get());
+  SR_LOG("STT Result: {}", mBuf.get());
 
   if (NS_FAILED(aStatusCode)) {
     success = false;
@@ -288,7 +286,7 @@ void OnlineSpeechRecognitionService::DoSTT() {
                           prefEndpoint);
 
   if (!prefEndpoint.IsEmpty()) {
-    speechRecognitionEndpoint = prefEndpoint;
+    speechRecognitionEndpoint = std::move(prefEndpoint);
   } else {
     speechRecognitionEndpoint = DEFAULT_RECOGNITION_ENDPOINT;
   }
@@ -391,7 +389,7 @@ void OnlineSpeechRecognitionService::DoSTT() {
     }
     if (bodyStream) {
       rv = uploadChan->ExplicitSetUploadStream(bodyStream, "audio/ogg"_ns,
-                                               length, "POST"_ns, false);
+                                               length, "POST"_ns);
       MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
     }
   }

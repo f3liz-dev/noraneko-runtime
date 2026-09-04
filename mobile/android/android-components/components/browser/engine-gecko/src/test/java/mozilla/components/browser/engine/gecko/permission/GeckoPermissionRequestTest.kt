@@ -5,6 +5,9 @@
 package mozilla.components.browser.engine.gecko.permission
 
 import android.Manifest
+import android.os.Build
+import androidx.annotation.OptIn
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.concept.engine.permission.Permission
 import mozilla.components.support.test.mock
 import mozilla.components.test.ReflectionUtils
@@ -13,6 +16,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.verify
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
@@ -93,19 +97,24 @@ class GeckoPermissionRequestTest {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_LOCAL_NETWORK,
             "unknown app permission",
         )
 
-        val mappedPermissions = listOf(
-            Permission.AppLocationCoarse(Manifest.permission.ACCESS_COARSE_LOCATION),
-            Permission.AppLocationFine(Manifest.permission.ACCESS_FINE_LOCATION),
-            Permission.AppCamera(Manifest.permission.CAMERA),
-            Permission.AppAudio(Manifest.permission.RECORD_AUDIO),
-            Permission.Generic("unknown app permission"),
-        )
-
         val request = GeckoPermissionRequest.App(permissions, mutableListOf(callback))
-        assertEquals(mappedPermissions, request.permissions)
+
+        assertTrue(request.permissions.contains(Permission.AppLocationCoarse(Manifest.permission.ACCESS_COARSE_LOCATION)))
+        assertTrue(request.permissions.contains(Permission.AppLocationFine(Manifest.permission.ACCESS_FINE_LOCATION)))
+        assertTrue(request.permissions.contains(Permission.AppCamera(Manifest.permission.CAMERA)))
+        assertTrue(request.permissions.contains(Permission.AppAudio(Manifest.permission.RECORD_AUDIO)))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
+            assertTrue(request.permissions.contains(Permission.AppLocalNetworkAccess(Manifest.permission.ACCESS_LOCAL_NETWORK)))
+        } else {
+            assertTrue(request.permissions.contains(Permission.Generic(Manifest.permission.ACCESS_LOCAL_NETWORK)))
+        }
+
+        assertTrue(request.permissions.contains(Permission.Generic("unknown app permission")))
     }
 
     @Test
@@ -276,5 +285,25 @@ class GeckoPermissionRequestTest {
 
         verify(callback1).grant()
         verify(callback2).grant()
+    }
+
+    @OptIn(
+        ExperimentalGeckoViewApi::class,
+        ExperimentalAndroidComponentsApi::class,
+    )
+    @Test
+    fun `notifyShown forwards to underlying GeckoView ContentPermission`() {
+        val uri = "https://mozilla.org"
+        val geckoPermission: GeckoSession.PermissionDelegate.ContentPermission = mock()
+        val request = GeckoPermissionRequest.Content(
+            uri,
+            PERMISSION_GEOLOCATION,
+            geckoPermission,
+            mutableListOf(mock()),
+        )
+
+        request.notifyShown()
+
+        verify(geckoPermission).notifyShown()
     }
 }

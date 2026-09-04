@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +9,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Omnijar.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsReadableUtils.h"
@@ -102,8 +100,7 @@ bool nsMacUtilsImpl::GetAppPath(nsCString& aAppPath) {
   nsAutoCString::const_iterator start, end;
   appBinaryPath.BeginReading(start);
   appBinaryPath.EndReading(end);
-  if (RFindInReadable(pattern, start, end,
-                      nsCaseInsensitiveCStringComparator)) {
+  if (CaseInsensitiveRFindInReadable(pattern, start, end)) {
     end = start;
     appBinaryPath.BeginReading(start);
 
@@ -111,8 +108,7 @@ bool nsMacUtilsImpl::GetAppPath(nsCString& aAppPath) {
     // by searching backwards once more. The child executable resides
     // in Firefox.app/Contents/MacOS/plugin-container/Contents/MacOS.
     if (!XRE_IsParentProcess()) {
-      if (RFindInReadable(pattern, start, end,
-                          nsCaseInsensitiveCStringComparator)) {
+      if (CaseInsensitiveRFindInReadable(pattern, start, end)) {
         end = start;
         appBinaryPath.BeginReading(start);
       } else {
@@ -196,7 +192,8 @@ bool nsMacUtilsImpl::IsTCSMAvailable() {
   if (sTCSMStatus == TCSM_Unknown) {
     uint32_t oldVal = 0;
     size_t oldValSize = sizeof(oldVal);
-    int rv = sysctlbyname("kern.tcsm_available", &oldVal, &oldValSize, NULL, 0);
+    int rv =
+        sysctlbyname("kern.tcsm_available", &oldVal, &oldValSize, nullptr, 0);
     TCSMStatus newStatus;
     if (rv < 0 || oldVal == 0) {
       newStatus = TCSM_Unavailable;
@@ -215,7 +212,8 @@ bool nsMacUtilsImpl::IsTCSMAvailable() {
 
 static nsresult EnableTCSM() {
   uint32_t newVal = 1;
-  int rv = sysctlbyname("kern.tcsm_enable", NULL, 0, &newVal, sizeof(newVal));
+  int rv = sysctlbyname("kern.tcsm_enable", nullptr, nullptr, &newVal,
+                        sizeof(newVal));
   if (rv < 0) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -226,7 +224,7 @@ static nsresult EnableTCSM() {
 static bool IsTCSMEnabled() {
   uint32_t oldVal = 0;
   size_t oldValSize = sizeof(oldVal);
-  int rv = sysctlbyname("kern.tcsm_enable", &oldVal, &oldValSize, NULL, 0);
+  int rv = sysctlbyname("kern.tcsm_enable", &oldVal, &oldValSize, nullptr, 0);
   return (rv == 0) && (oldVal != 0);
 }
 #endif
@@ -251,7 +249,7 @@ void nsMacUtilsImpl::EnableTCSMIfAvailable() {
 uint32_t nsMacUtilsImpl::GetPhysicalCPUCount() {
   uint32_t oldVal = 0;
   size_t oldValSize = sizeof(oldVal);
-  int rv = sysctlbyname("hw.physicalcpu_max", &oldVal, &oldValSize, NULL, 0);
+  int rv = sysctlbyname("hw.physicalcpu_max", &oldVal, &oldValSize, nullptr, 0);
   if (rv == -1) {
     return 0;
   }
@@ -568,23 +566,34 @@ std::string CFStringToStdString(CFStringRef aString) {
   return std::string();
 }
 
-//
 // Read the code signature information of the binary at `aPath` and return
 // A string description of the signature type in `aSignatureType`. Returns
 // CodeSignatureType::UnexpectedError if a failure occurs while reading the
 // signature information.
 //
 CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
+  class CFTypeRefAutoDeleter {
+   public:
+    explicit CFTypeRefAutoDeleter(CFTypeRef ref) : mRef(ref) {}
+    ~CFTypeRefAutoDeleter() {
+      if (mRef != nullptr) ::CFRelease(mRef);
+    }
+
+   private:
+    CFTypeRef mRef;
+  };
+
   LOG("Reading code signature: %s", aPath.get());
   CFStringRef pathRef = CFStringCreateWithCString(
       kCFAllocatorDefault, aPath.get(), kCFStringEncodingUTF8);
   if (!pathRef) {
     return CodeSignatureType::UnexpectedError;
   }
+  CFTypeRefAutoDeleter cfPathRefAuto((CFTypeRef)pathRef);
 
   CFURLRef fileURLRef = CFURLCreateWithFileSystemPath(
       kCFAllocatorDefault, pathRef, kCFURLPOSIXPathStyle, false);
-  CFRelease(pathRef);
+  CFTypeRefAutoDeleter fileURLRefAuto((CFTypeRef)fileURLRef);
   if (!fileURLRef) {
     return CodeSignatureType::UnexpectedError;
   }
@@ -599,11 +608,8 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
   SecStaticCodeRef staticCode = nullptr;
   OSStatus status =
       SecStaticCodeCreateWithPath(fileURLRef, kSecCSDefaultFlags, &staticCode);
-  CFRelease(fileURLRef);
+  CFTypeRefAutoDeleter cfStaticCodeAuto((CFTypeRef)staticCode);
   if (status != errSecSuccess) {
-    if (staticCode) {
-      CFRelease(staticCode);
-    }
     if (status == errSecCSUnsigned) {
       return CodeSignatureType::Unsigned;
     }
@@ -614,7 +620,6 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
   // Check validity and determine if unsigned
   status = SecStaticCodeCheckValidity(staticCode, kSecCSDefaultFlags, nullptr);
   if (status != errSecSuccess) {
-    CFRelease(staticCode);
     if (status == errSecCSUnsigned) {
       return CodeSignatureType::Unsigned;
     }
@@ -626,11 +631,8 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
   CFDictionaryRef signingInfo = nullptr;
   status = SecCodeCopySigningInformation(staticCode, kSecCSSigningInformation,
                                          &signingInfo);
-  CFRelease(staticCode);
+  CFTypeRefAutoDeleter cfSigningInfoAuto((CFTypeRef)signingInfo);
   if (status != errSecSuccess || !signingInfo) {
-    if (signingInfo) {
-      CFRelease(signingInfo);
-    }
     LOG("SecCodeCopySigningInformation failure: %d", (int)status);
     return CodeSignatureType::UnexpectedError;
   }
@@ -640,7 +642,6 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
   if (!flagsRef) {
     // Is it signed? No kSecCodeInfoFlags key indicates unsigned
     // code per SecCodeCopySigningInformation documentation.
-    CFRelease(signingInfo);
     return CodeSignatureType::Unsigned;
   }
 
@@ -660,13 +661,11 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
       LOG("NULL certificates array");
       rv = CodeSignatureType::Other;
     }
-    CFRelease(signingInfo);
     return rv;
   }
 
   if (CFArrayGetCount(certificates) == 0) {
     LOG("Zero length certificates array");
-    CFRelease(signingInfo);
     return CodeSignatureType::Other;
   }
 
@@ -676,12 +675,9 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
       (SecCertificateRef)CFArrayGetValueAtIndex(certificates, 0);
   CFStringRef commonNameRef = nullptr;
   std::string commonName;
-  if (SecCertificateCopyCommonName(leafCert, &commonNameRef) != errSecSuccess ||
-      !commonNameRef) {
-    if (commonNameRef) {
-      CFRelease(commonNameRef);
-    }
-    CFRelease(signingInfo);
+  status = SecCertificateCopyCommonName(leafCert, &commonNameRef);
+  CFTypeRefAutoDeleter cfCommonNameAuto((CFTypeRef)commonNameRef);
+  if (status != errSecSuccess || !commonNameRef) {
     // No leaf common name
     LOG("No leaf common name");
     return CodeSignatureType::Other;
@@ -689,8 +685,6 @@ CodeSignatureType GetSignatureTypeImpl(const nsCString& aPath) {
 
   commonName = CFStringToStdString(commonNameRef);
   LOG("Leaf common name: %s", commonName.c_str());
-  CFRelease(commonNameRef);
-  CFRelease(signingInfo);
 
   // Classify signature based on leaf certificate common name
   if (commonName == "Apple Mac OS Application Signing") {

@@ -1,13 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "DataSurfaceHelpers.h"
+
 #include <cstring>
 
 #include "2D.h"
-#include "DataSurfaceHelpers.h"
 #include "Logging.h"
 #include "Swizzle.h"
 #include "Tools.h"
@@ -320,10 +319,9 @@ bool CopyRect(DataSourceSurface* aSrc, DataSourceSurface* aDest,
   uint8_t* destData =
       DataAtOffset(aDest, destMap.GetMappedSurface(), aDestPoint);
 
-  SwizzleData(sourceData, srcMap.GetStride(), aSrc->GetFormat(), destData,
-              destMap.GetStride(), aDest->GetFormat(), aSrcRect.Size());
-
-  return true;
+  return SwizzleData(sourceData, srcMap.GetStride(), aSrc->GetFormat(),
+                     destData, destMap.GetStride(), aDest->GetFormat(),
+                     aSrcRect.Size());
 }
 
 already_AddRefed<DataSourceSurface> CreateDataSourceSurfaceByCloning(

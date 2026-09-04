@@ -135,7 +135,7 @@ class TestBuildReader(unittest.TestCase):
             list(reader.read_topsrcdir())
 
         e = bre.exception
-        self.assertIn("Python syntax error on line 5", str(e))
+        self.assertIn("Python syntax error on line 4", str(e))
         self.assertIn("    foo =", str(e))
         self.assertIn("         ^", str(e))
 
@@ -146,7 +146,7 @@ class TestBuildReader(unittest.TestCase):
             list(reader.read_topsrcdir())
 
         e = bre.exception
-        self.assertIn("The error was triggered on line 5", str(e))
+        self.assertIn("The error was triggered on line 4", str(e))
         self.assertIn("The underlying problem is an attempt to read", str(e))
         self.assertIn("    FOO", str(e))
 
@@ -157,7 +157,7 @@ class TestBuildReader(unittest.TestCase):
             list(reader.read_topsrcdir())
 
         e = bre.exception
-        self.assertIn("The error was triggered on line 7", str(e))
+        self.assertIn("The error was triggered on line 6", str(e))
         self.assertIn("The underlying problem is an attempt to write", str(e))
         self.assertIn("    FOO", str(e))
 
@@ -168,7 +168,7 @@ class TestBuildReader(unittest.TestCase):
             list(reader.read_topsrcdir())
 
         e = bre.exception
-        self.assertIn("The error was triggered on line 5", str(e))
+        self.assertIn("The error was triggered on line 4", str(e))
         self.assertIn("is an attempt to write an illegal value to a special", str(e))
 
         self.assertIn("variable whose value was rejected is:\n\n    DIRS", str(e))
@@ -542,6 +542,24 @@ class TestBuildReader(unittest.TestCase):
         )
         self.assertEqual(contexts["foo/biz"]["DEFINES"], {"ALL": True, "FOO": True})
         self.assertEqual(contexts["bar"]["DEFINES"], {"ALL": True, "BAR_ONLY": True})
+
+    def test_locale_pp_defines(self):
+        reader = self.reader("locale-pp-defines")
+
+        contexts = list(reader.read_topsrcdir())
+        self.assertEqual(len(contexts), 1)
+
+        locale_pp_defines = contexts[0]["LOCALE_PP_DEFINES"]
+        self.assertEqual(
+            locale_pp_defines,
+            {
+                "ANDROID_MARKETPLACE_AB_CD": {
+                    "es*": "es-ES",
+                    "es-MX": "es-MX",
+                    "fr": "fr",
+                },
+            },
+        )
 
 
 if __name__ == "__main__":

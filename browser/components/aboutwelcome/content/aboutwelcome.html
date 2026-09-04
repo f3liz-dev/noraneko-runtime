@@ -29,6 +29,7 @@
     <link rel="localization" href="browser/spotlight.ftl" />
     <link rel="localization" href="browser/migrationWizard.ftl" />
     <link rel="localization" href="toolkit/branding/brandings.ftl" />
+    <link rel="localization" href="toolkit/global/theme-picker.ftl" />
   </head>
   <body>
     <div
@@ -41,9 +42,28 @@
     <script src="chrome://browser/content/contentTheme.js"></script>
     <script src="chrome://browser/content/aboutwelcome/aboutwelcome.bundle.js"></script>
     <script src="chrome://global/content/elements/named-deck.js" async></script>
-    <script src="chrome://global/content/elements/panel-list.js" async></script>
+    <script
+      src="chrome://global/content/elements/panel-list.mjs"
+      type="module"
+    ></script>
     <script
       src="chrome://browser/content/migration/migration-wizard.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://global/content/elements/moz-segmented-control.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://global/content/elements/moz-visual-picker.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://global/content/elements/moz-checkbox.mjs"
+      type="module"
+    ></script>
+    <script
+      src="chrome://global/content/elements/theme-picker.mjs"
       type="module"
     ></script>
     <script

@@ -10,15 +10,19 @@
 
 #include "media/sctp/dcsctp_transport.h"
 
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "api/environment/environment.h"
-#include "api/environment/environment_factory.h"
 #include "api/priority.h"
 #include "api/rtc_error.h"
 #include "api/transport/data_channel_transport_interface.h"
+#include "api/transport/ecn_marking.h"
 #include "net/dcsctp/public/dcsctp_message.h"
 #include "net/dcsctp/public/dcsctp_options.h"
 #include "net/dcsctp/public/dcsctp_socket.h"
@@ -27,14 +31,19 @@
 #include "net/dcsctp/public/types.h"
 #include "p2p/dtls/fake_dtls_transport.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/network/received_packet.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/clock.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 
 using ::testing::_;
 using ::testing::ByMove;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -55,6 +64,7 @@ class MockDataChannelSink : public DataChannelSink {
   MOCK_METHOD(void, OnConnected, ());
 
   // DataChannelSink
+  MOCK_METHOD(void, OnTransportConnected, (), (override));
   MOCK_METHOD(void,
               OnDataReceived,
               (int, DataMessageType, const CopyOnWriteBuffer&));
@@ -63,16 +73,30 @@ class MockDataChannelSink : public DataChannelSink {
   MOCK_METHOD(void, OnReadyToSend, ());
   MOCK_METHOD(void, OnTransportClosed, (RTCError));
   MOCK_METHOD(void, OnBufferedAmountLow, (int channel_id), (override));
+  MOCK_METHOD(void, OnMaxMessageSize, (int max_message_size), (override));
 };
 
 static_assert(!std::is_abstract_v<MockDataChannelSink>);
 
+// Exposes NotifyPacketReceived() to simulate a decrypted SCTP packet.
+class PacketInjectableFakeDtlsTransport : public FakeDtlsTransport {
+ public:
+  using FakeDtlsTransport::FakeDtlsTransport;
+
+  void InjectDecryptedPacket(std::span<const uint8_t> payload) {
+    NotifyPacketReceived(ReceivedIpPacket(payload, SocketAddress(),
+                                          /*arrival_time=*/std::nullopt,
+                                          EcnMarking::kNotEct,
+                                          ReceivedIpPacket::kDtlsDecrypted));
+  }
+};
+
 class Peer {
  public:
   Peer()
-      : fake_dtls_transport_(kTransportName, kComponent),
-        simulated_clock_(1000),
-        env_(CreateEnvironment(&simulated_clock_)) {
+      : simulated_clock_(1000),
+        env_(CreateTestEnvironment({.time = &simulated_clock_})),
+        fake_dtls_transport_(env_, kTransportName, kComponent) {
     auto socket_ptr = std::make_unique<dcsctp::MockDcSctpSocket>();
     socket_ = socket_ptr.get();
 
@@ -89,9 +113,9 @@ class Peer {
     sctp_transport_->SetOnConnectedCallback([this]() { sink_.OnConnected(); });
   }
 
-  FakeDtlsTransport fake_dtls_transport_;
   SimulatedClock simulated_clock_;
   Environment env_;
+  PacketInjectableFakeDtlsTransport fake_dtls_transport_;
   dcsctp::MockDcSctpSocket* socket_;
   std::unique_ptr<DcSctpTransport> sctp_transport_;
   NiceMock<MockDataChannelSink> sink_;
@@ -99,7 +123,7 @@ class Peer {
 }  // namespace
 
 TEST(DcSctpTransportTest, OpenSequence) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   peer_a.fake_dtls_transport_.SetWritable(true);
 
@@ -109,15 +133,15 @@ TEST(DcSctpTransportTest, OpenSequence) {
                        &dcsctp::DcSctpSocketCallbacks::OnConnected));
   EXPECT_CALL(peer_a.sink_, OnReadyToSend);
   EXPECT_CALL(peer_a.sink_, OnConnected);
-  peer_a.sctp_transport_->Start({.local_port = 5000,
-                                 .remote_port = 5000,
-                                 .max_message_size = 256 * 1024});
+  EXPECT_CALL(peer_a.sink_, OnMaxMessageSize(32 * 1024));
+  peer_a.sctp_transport_->Start(
+      {.local_port = 5000, .remote_port = 5000, .max_message_size = 32 * 1024});
 }
 
 // Tests that the close sequence invoked from one end results in the stream to
 // be reset from both ends and all the proper signals are sent.
 TEST(DcSctpTransportTest, CloseSequence) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   Peer peer_b;
   peer_a.fake_dtls_transport_.SetDestination(&peer_b.fake_dtls_transport_,
@@ -167,7 +191,7 @@ TEST(DcSctpTransportTest, CloseSequence) {
 // terminates properly. Both peers will think they initiated it, so no
 // OnClosingProcedureStartedRemotely should be called.
 TEST(DcSctpTransportTest, CloseSequenceSimultaneous) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   Peer peer_b;
   peer_a.fake_dtls_transport_.SetDestination(&peer_b.fake_dtls_transport_,
@@ -211,7 +235,7 @@ TEST(DcSctpTransportTest, CloseSequenceSimultaneous) {
 }
 
 TEST(DcSctpTransportTest, SetStreamPriority) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   {
@@ -235,7 +259,7 @@ TEST(DcSctpTransportTest, SetStreamPriority) {
 }
 
 TEST(DcSctpTransportTest, DiscardMessageClosedChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(*peer_a.socket_, Send(_, _)).Times(0);
@@ -251,7 +275,7 @@ TEST(DcSctpTransportTest, DiscardMessageClosedChannel) {
 }
 
 TEST(DcSctpTransportTest, DiscardMessageClosingChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(*peer_a.socket_, Send(_, _)).Times(0);
@@ -269,7 +293,7 @@ TEST(DcSctpTransportTest, DiscardMessageClosingChannel) {
 }
 
 TEST(DcSctpTransportTest, SendDataOpenChannel) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
   dcsctp::DcSctpOptions options;
 
@@ -287,7 +311,7 @@ TEST(DcSctpTransportTest, SendDataOpenChannel) {
 }
 
 TEST(DcSctpTransportTest, DeliversMessage) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(peer_a.sink_, OnDataReceived(1, DataMessageType::kBinary, _))
@@ -304,7 +328,7 @@ TEST(DcSctpTransportTest, DeliversMessage) {
 }
 
 TEST(DcSctpTransportTest, DropMessageWithUnknownPpid) {
-  AutoThread main_thread;
+  test::RunLoop main_thread;
   Peer peer_a;
 
   EXPECT_CALL(peer_a.sink_, OnDataReceived(_, _, _)).Times(0);
@@ -317,5 +341,44 @@ TEST(DcSctpTransportTest, DropMessageWithUnknownPpid) {
   static_cast<dcsctp::DcSctpSocketCallbacks*>(peer_a.sctp_transport_.get())
       ->OnMessageReceived(
           dcsctp::DcSctpMessage(dcsctp::StreamID(1), dcsctp::PPID(1337), {0}));
+}
+
+// A SNAP packet received after the socket is created but before it connects
+// must be buffered and replayed on connect, not delivered to the closed socket.
+TEST(DcSctpTransportTest, BuffersPacketReceivedBeforeSnapConnect) {
+  test::RunLoop main_thread;
+  Peer peer_a;
+
+  const std::vector<uint8_t> kLocalInit = {1, 2, 3};
+  const std::vector<uint8_t> kRemoteInit = {4, 5, 6};
+  const std::vector<uint8_t> kEarlyPacket = {7, 8, 9, 10};
+
+  dcsctp::SocketState socket_state = dcsctp::SocketState::kClosed;
+  EXPECT_CALL(*peer_a.socket_, state)
+      .WillRepeatedly(ReturnPointee(&socket_state));
+
+  // The early packet must reach the socket only after it has connected.
+  {
+    InSequence seq;
+    EXPECT_CALL(*peer_a.socket_, ConnectWithConnectionToken)
+        .WillOnce([&](std::span<const uint8_t>, std::span<const uint8_t>) {
+          socket_state = dcsctp::SocketState::kConnected;
+          return true;
+        });
+    EXPECT_CALL(*peer_a.socket_, ReceivePacket(ElementsAreArray(kEarlyPacket)));
+  }
+
+  // Not writable yet: the socket is created but stays closed (not connected).
+  peer_a.sctp_transport_->Start({.local_port = 5000,
+                                 .remote_port = 5000,
+                                 .max_message_size = 256 * 1024,
+                                 .local_init = kLocalInit,
+                                 .remote_init = kRemoteInit});
+
+  // Arrives before connect: must be buffered.
+  peer_a.fake_dtls_transport_.InjectDecryptedPacket(kEarlyPacket);
+
+  // Becoming writable connects the socket and replays the buffered packet.
+  peer_a.fake_dtls_transport_.SetWritable(true);
 }
 }  // namespace webrtc

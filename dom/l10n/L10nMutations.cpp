@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -150,7 +148,7 @@ void L10nMutations::L10nElementChanged(Element* aElement) {
     StartRefreshObserver();
   }
 
-  if (!mBlockingLoad) {
+  if (!mBlockingLoad && mDOMLocalization->IsDocumentL10n()) {
     Document* doc = GetDocument();
     if (doc && doc->GetReadyStateEnum() != Document::READYSTATE_COMPLETE) {
       doc->BlockOnload();
@@ -189,7 +187,7 @@ void L10nMutations::WillRefresh(mozilla::TimeStamp aTime) {
  **/
 class L10nMutationFinalizationHandler final : public PromiseNativeHandler {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(L10nMutationFinalizationHandler)
 
   explicit L10nMutationFinalizationHandler(L10nMutations* aMutations,

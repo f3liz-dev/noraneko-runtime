@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef gc_Cell_h
 #define gc_Cell_h
 
-#include "mozilla/EndianUtils.h"
-
+#include <bit>
 #include <type_traits>
 
 #include "gc/GCContext.h"
 #include "gc/Heap.h"
+#include "gc/LightLock.h"
 #include "gc/TraceKind.h"
 #include "js/GCAnnotations.h"
 #include "js/shadow/Zone.h"  // JS::shadow::Zone
@@ -42,7 +40,8 @@ extern void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc,
                                                      const char* name);
 
 #ifdef MOZ_TSAN
-extern void FullMemoryFence(JSRuntime* runtime);
+extern void TSANMemoryAcquireFence(JSRuntime* runtime);
+extern void TSANMemoryReleaseFence(JSRuntime* runtime);
 #endif
 
 namespace gc {
@@ -54,6 +53,9 @@ class TenuredCell;
 
 extern void PerformIncrementalReadBarrier(TenuredCell* cell);
 extern void PerformIncrementalPreWriteBarrier(TenuredCell* cell);
+#ifdef ENABLE_WASM_JSPI
+extern void PerformIncrementalPreWriteBarrierAllChildren(JSObject* cell);
+#endif
 extern void PerformIncrementalBarrierDuringFlattening(JSString* str);
 extern void UnmarkGrayGCThingRecursively(TenuredCell* cell);
 
@@ -117,9 +119,26 @@ class HeaderWord {
     setAtomic(value);
   }
 
+  // Bitwise operations. Like set() these are atomic.
+  void setBit(uintptr_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    __atomic_fetch_or(&value_, flag, __ATOMIC_RELAXED);
+  }
+  void clearBit(uintptr_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    __atomic_fetch_and(&value_, ~flag, __ATOMIC_RELAXED);
+  }
+  void toggleBit(uintptr_t flag) {
+    MOZ_ASSERT((flag & RESERVED_MASK) == 0);
+    __atomic_fetch_xor(&value_, flag, __ATOMIC_RELAXED);
+  }
+
   // Accessors for GC data.
   uintptr_t flags() const { return getAtomic() & RESERVED_MASK; }
   bool isForwarded() const { return flags() & FORWARD_BIT; }
+  // Non-atomic variant. Only safe when no other thread can be mutating the
+  // header concurrently.
+  bool isForwardedNonAtomic() const { return value_ & FORWARD_BIT; }
   void setForwardingAddress(uintptr_t ptr) {
     MOZ_ASSERT((ptr & RESERVED_MASK) == 0);
     setAtomic(ptr | FORWARD_BIT);
@@ -157,6 +176,7 @@ class Cell {
   void operator=(const Cell&) = delete;
 
   bool isForwarded() const { return header_.isForwarded(); }
+  bool isForwardedNonAtomic() const { return header_.isForwardedNonAtomic(); }
   uintptr_t flags() const { return header_.flags(); }
 
   MOZ_ALWAYS_INLINE bool isTenured() const { return !IsInsideNursery(this); }
@@ -470,7 +490,7 @@ JS::Zone* TenuredCell::zone() const {
   return zone;
 }
 
-JS::Zone* TenuredCell::zoneFromAnyThread() const { return arena()->zone(); }
+JS::Zone* TenuredCell::zoneFromAnyThread() const { return chunk()->info.zone; }
 
 bool TenuredCell::isInsideZone(JS::Zone* zone) const {
   return zone == zoneFromAnyThread();
@@ -593,10 +613,10 @@ MOZ_ALWAYS_INLINE void MemoryReleaseFence(JS::Zone* zone) {
 
   if (JS::shadow::Zone::from(zone)->needsMarkingBarrier(
           JS::shadow::Zone::Concurrent)) {
-#  ifdef MOZ_TSAN
-    FullMemoryFence(JS::shadow::Zone::from(zone)->runtimeFromMainThread());
-#  else
     std::atomic_thread_fence(std::memory_order_release);
+#  ifdef MOZ_TSAN
+    JSRuntime* runtime = JS::shadow::Zone::from(zone)->runtimeFromMainThread();
+    TSANMemoryReleaseFence(runtime);
 #  endif
   }
 #endif
@@ -684,15 +704,17 @@ class alignas(gc::CellAlignBytes) CellWithLengthAndFlags : public Cell {
     return uint32_t(header_.getAtomic());
   }
 
-  void setHeaderFlagBit(uint32_t flag) {
-    header_.set(header_.get() | uintptr_t(flag));
+#if JS_GC_CONCURRENT_MARKING
+  uintptr_t headerFlagsFieldForTracing() const {
+    return headerFlagsFieldAtomic();
   }
-  void clearHeaderFlagBit(uint32_t flag) {
-    header_.set(header_.get() & ~uintptr_t(flag));
-  }
-  void toggleHeaderFlagBit(uint32_t flag) {
-    header_.set(header_.get() ^ uintptr_t(flag));
-  }
+#else
+  uintptr_t headerFlagsFieldForTracing() const { return headerFlagsField(); }
+#endif
+
+  void setHeaderFlagBit(uint32_t flag) { header_.setBit(flag); }
+  void clearHeaderFlagBit(uint32_t flag) { header_.clearBit(flag); }
+  void toggleHeaderFlagBit(uint32_t flag) { header_.toggleBit(flag); }
 
   void setHeaderLengthAndFlags(uint32_t len, uint32_t flags) {
 #if JS_BITS_PER_WORD == 32
@@ -712,28 +734,28 @@ class alignas(gc::CellAlignBytes) CellWithLengthAndFlags : public Cell {
 
   // Offsets for direct field from jit code. A number of places directly
   // access 32-bit length and flags fields so do endian trickery here.
+  static constexpr size_t offsetOfHeaderFlags() {
 #if JS_BITS_PER_WORD == 32
-  static constexpr size_t offsetOfHeaderFlags() {
     return offsetof(CellWithLengthAndFlags, header_);
-  }
-  static constexpr size_t offsetOfHeaderLength() {
-    return offsetof(CellWithLengthAndFlags, length_);
-  }
-#elif MOZ_LITTLE_ENDIAN()
-  static constexpr size_t offsetOfHeaderFlags() {
-    return offsetof(CellWithLengthAndFlags, header_);
-  }
-  static constexpr size_t offsetOfHeaderLength() {
-    return offsetof(CellWithLengthAndFlags, header_) + sizeof(uint32_t);
-  }
 #else
-  static constexpr size_t offsetOfHeaderFlags() {
-    return offsetof(CellWithLengthAndFlags, header_) + sizeof(uint32_t);
+    if constexpr (std::endian::native == std::endian::little) {
+      return offsetof(CellWithLengthAndFlags, header_);
+    } else {
+      return offsetof(CellWithLengthAndFlags, header_) + sizeof(uint32_t);
+    }
+#endif
   }
   static constexpr size_t offsetOfHeaderLength() {
-    return offsetof(CellWithLengthAndFlags, header_);
-  }
+#if JS_BITS_PER_WORD == 32
+    return offsetof(CellWithLengthAndFlags, length_);
+#else
+    if constexpr (std::endian::native == std::endian::little) {
+      return offsetof(CellWithLengthAndFlags, header_) + sizeof(uint32_t);
+    } else {
+      return offsetof(CellWithLengthAndFlags, header_);
+    }
 #endif
+  }
 };
 
 // Base class for non-nursery-allocatable GC things that allows storing a non-GC
@@ -760,6 +782,15 @@ class alignas(gc::CellAlignBytes) TenuredCellWithNonGCPointer
     MOZ_ASSERT(flags() == 0);
     return reinterpret_cast<PtrT*>(uintptr_t(header_.get()));
   }
+
+#if JS_GC_CONCURRENT_MARKING
+  PtrT* headerPtrForTracing() const {
+    MOZ_ASSERT(flags() == 0);
+    return reinterpret_cast<PtrT*>(uintptr_t(header_.getAtomic()));
+  }
+#else
+  PtrT* headerPtrForTracing() const { return headerPtr(); }
+#endif
 
   void setHeaderPtr(PtrT* newValue) {
     // As above, no flags are expected to be set here.
@@ -788,6 +819,15 @@ class alignas(gc::CellAlignBytes) TenuredCellWithFlags : public TenuredCell {
     MOZ_ASSERT(flags() == 0);
     return header_.get();
   }
+
+#if JS_GC_CONCURRENT_MARKING
+  uintptr_t headerFlagsFieldForTracing() const {
+    MOZ_ASSERT(flags() == 0);
+    return header_.getAtomic();
+  }
+#else
+  uintptr_t headerFlagsFieldForTracing() const { return headerFlagsField(); }
+#endif
 
   void setHeaderFlagBits(uintptr_t flags) {
     header_.set(header_.get() | flags);
@@ -848,6 +888,12 @@ class alignas(gc::CellAlignBytes) CellWithTenuredGCPointer : public BaseCell {
     MOZ_ASSERT(this->flags() == 0);
     return reinterpret_cast<PtrT*>(uintptr_t(this->header_.getAtomic()));
   }
+
+#if JS_GC_CONCURRENT_MARKING
+  PtrT* headerPtrForTracing() const { return headerPtrAtomic(); }
+#else
+  PtrT* headerPtrForTracing() const { return headerPtr(); }
+#endif
 
   void unbarrieredSetHeaderPtr(PtrT* newValue) {
     uintptr_t data = uintptr_t(newValue);
@@ -936,6 +982,52 @@ template <>
 inline bool TenuredThingIsMarkedAny<Cell>(Cell* thing) {
   return thing->asTenured().isMarkedAny();
 }
+
+using MarkingLock = LightLock;
+
+// A lock used to synchronize access to some data structures during concurrent
+// marking. This is only intended for use where lock-free approaches are
+// infeasible.
+//
+// Currently this is used for ICScript only. The lock must be taken when
+// mutating data structures owned by ICScript on the main thread. Reading is
+// safe and doesn't require the lock.
+//
+// This is a no op outside concurrent marking builds.
+class MOZ_RAII AutoMarkingLock {
+#ifdef JS_GC_CONCURRENT_MARKING
+  MarkingLock* lock = nullptr;
+  JSRuntime* runtime = nullptr;
+#endif
+
+  AutoMarkingLock(const AutoMarkingLock& other) = delete;
+  AutoMarkingLock& operator=(const AutoMarkingLock& other) = delete;
+
+ public:
+  // Take the lock if concurrent marking is currently happening in zone |zone|.
+  AutoMarkingLock(JS::Zone* zone, MarkingLock& markingLock) {
+#ifdef JS_GC_CONCURRENT_MARKING
+    auto* shadowZone = JS::shadow::Zone::from(zone);
+    if (shadowZone->needsMarkingBarrier(JS::shadow::Zone::Concurrent)) {
+      lock = &markingLock;
+      runtime = shadowZone->runtimeFromAnyThread();
+      lock->lock(runtime);
+    }
+#endif
+  }
+
+  // Take the lock if |trc| is a concurrent marking tracer.
+  inline AutoMarkingLock(JSTracer* trc, MarkingLock& markingLock);
+
+  ~AutoMarkingLock() {
+#ifdef JS_GC_CONCURRENT_MARKING
+    if (lock) {
+      MOZ_ASSERT(runtime);
+      lock->unlock(runtime);
+    }
+#endif
+  }
+};
 
 } /* namespace gc */
 } /* namespace js */

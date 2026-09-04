@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +6,15 @@
 #include "nsClipboardHelper.h"
 
 // basics
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
-#include "nsXPCOM.h"
+#include "nsComponentManagerUtils.h"
 #include "nsISupportsPrimitives.h"
 #include "nsServiceManagerUtils.h"
+#include "nsXPCOM.h"
 
 // helpers
-#include "nsIClipboard.h"
 #include "mozilla/dom/Document.h"
+#include "nsIClipboard.h"
 #include "nsITransferable.h"
 #include "nsReadableUtils.h"
 
@@ -27,9 +26,7 @@ NS_IMPL_ISUPPORTS(nsClipboardHelper, nsIClipboardHelper)
 
 nsClipboardHelper::nsClipboardHelper() = default;
 
-nsClipboardHelper::~nsClipboardHelper() {
-  // no members, nothing to destroy
-}
+nsClipboardHelper::~nsClipboardHelper() = default;
 
 /*****************************************************************************
  * nsIClipboardHelper methods

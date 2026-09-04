@@ -34,6 +34,7 @@
 #include "av1/common/timing.h"
 
 #include "av1/encoder/aq_cyclicrefresh.h"
+#include "av1/encoder/av1_ext_ratectrl.h"
 #include "av1/encoder/av1_quantize.h"
 #include "av1/encoder/block.h"
 #include "av1/encoder/context_tree.h"
@@ -107,17 +108,6 @@ typedef struct aom_rational64 {
 } aom_rational64_t;  // alias for struct aom_rational
 
 enum {
-  // Good Quality Fast Encoding. The encoder balances quality with the amount of
-  // time it takes to encode the output. Speed setting controls how fast.
-  GOOD,
-  // Realtime Fast Encoding. Will force some restrictions on bitrate
-  // constraints.
-  REALTIME,
-  // All intra mode. All the frames are coded as intra frames.
-  ALLINTRA
-} UENUM1BYTE(MODE);
-
-enum {
   FRAMEFLAGS_KEY = 1 << 0,
   FRAMEFLAGS_GOLDEN = 1 << 1,
   FRAMEFLAGS_BWDREF = 1 << 2,
@@ -166,9 +156,8 @@ enum {
   DELTA_Q_PERCEPTUAL = 2,     // Modulation to improve video perceptual quality
   DELTA_Q_PERCEPTUAL_AI = 3,  // Perceptual quality opt for all intra mode
   DELTA_Q_USER_RATING_BASED = 4,  // User rating based delta q mode
-  DELTA_Q_HDR = 5,  // QP adjustment based on HDR block pixel average
-  DELTA_Q_VARIANCE_BOOST =
-      6,              // Variance Boost style modulation for all intra mode
+  DELTA_Q_HDR = 5,             // QP adjustment based on HDR block pixel average
+  DELTA_Q_VARIANCE_BOOST = 6,  // Variance Boost style modulation
   DELTA_Q_MODE_COUNT  // This should always be the last member of the enum
 } UENUM1BYTE(DELTAQ_MODE);
 
@@ -631,6 +620,10 @@ typedef struct {
    * CBR mode.
    */
   int max_consec_drop_ms;
+  /*!
+   * Force to allow the usage of maximum q in vbr mode.
+   */
+  int force_max_q;
 } RateControlCfg;
 
 /*!\cond */
@@ -779,7 +772,7 @@ typedef struct {
 typedef struct {
   // Indicates the framerate of the input video.
   double init_framerate;
-  // Indicates the bit-depth of the input video.
+  // Indicates the actual bit-depth of the input source.
   unsigned int input_bit_depth;
   // Indicates the maximum number of frames to be encoded.
   unsigned int limit;
@@ -790,9 +783,10 @@ typedef struct {
 } InputCfg;
 
 typedef struct {
-  // If true, encoder will use fixed QP offsets, that are either:
-  // - Given by the user, and stored in 'fixed_qp_offsets' array, OR
-  // - Picked automatically from cq_level.
+  // Controls how the encoder applies fixed QP offsets.
+  // If the value is 0, QP offsets are chosen adaptively.
+  // If the value is 1, fixed QP offsets are picked automatically from cq_level.
+  // If the value is 2, no QP offsets will be applied.
   int use_fixed_qp_offsets;
   // Indicates the minimum flatness of the quantization matrix.
   int qm_minlevel;
@@ -827,9 +821,10 @@ typedef struct {
    * For values 1-7, eob and skip block optimization are
    * avoided and rdmult is adjusted in favor of block sharpness.
    *
-   * In all-intra mode: it also sets the `loop_filter_sharpness` syntax element
-   * in the bitstream. Larger values increasingly reduce how much the filtering
-   * can change the sample values on block edges to favor perceived sharpness.
+   * In all-intra mode or tune IQ or SSIMULACRA2: it also sets the
+   * `loop_filter_sharpness` syntax element in the bitstream. Larger values
+   * increasingly reduce how much the filtering can change the sample values on
+   * block edges to favor perceived sharpness.
    */
   int sharpness;
 
@@ -890,6 +885,12 @@ typedef struct {
    * on reconstructed frame.
    */
   bool skip_postproc_filtering;
+
+  /*!
+   * Indicates if mode and reference frame delta should be enabled during
+   * loopfiltering.
+   */
+  int mode_ref_delta_enabled;
 
   /*!
    * Controls screen content detection mode
@@ -1488,6 +1489,7 @@ typedef struct ThreadData {
   CONV_BUF_TYPE *tmp_conv_dst;
   uint64_t abs_sum_level;
   uint8_t *tmp_pred_bufs[2];
+  uint8_t *upsample_pred;
   uint8_t *wiener_tmp_pred_buf;
   int intrabc_used;
   int deltaq_used;
@@ -2379,12 +2381,21 @@ typedef struct WeberStats {
   double max_scale;
 } WeberStats;
 
+/*!
+ * \brief This structure stores different types of frame indices.
+ */
+typedef struct {
+  int show_frame_count;
+} FRAME_INDEX_SET;
+
 typedef struct {
   struct loopfilter lf;
   CdefInfo cdef_info;
   YV12_BUFFER_CONFIG copy_buffer;
   RATE_CONTROL rc;
   MV_STATS mv_stats;
+  unsigned int frame_number;
+  FRAME_INDEX_SET frame_index_set;
 } CODING_CONTEXT;
 
 typedef struct {
@@ -2399,13 +2410,6 @@ typedef struct {
   int subsampling_x;
   int subsampling_y;
 } FRAME_INFO;
-
-/*!
- * \brief This structure stores different types of frame indices.
- */
-typedef struct {
-  int show_frame_count;
-} FRAME_INDEX_SET;
 
 /*!\endcond */
 
@@ -2888,6 +2892,13 @@ typedef struct AV1_PRIMARY {
    * when --deltaq-mode=3.
    */
   AV1EncRowMultiThreadSync intra_row_mt_sync;
+
+  /*!
+   * If set to 1, the encoder should not update any internal state after
+   * completing the encode. E.g. no updates to reference buffers, CDF
+   * tables or RC state.
+   */
+  int b_freeze_internal_state;
 } AV1_PRIMARY;
 
 /*!
@@ -3002,6 +3013,11 @@ typedef struct AV1_COMP {
    * Skip tpl setup when tpl data from gop length decision can be reused.
    */
   int skip_tpl_setup_stats;
+
+  /*!
+   * Flag to indicate if RD multiplier modulation is enabled.
+   */
+  int cb_delta_rdmult_enabled;
 
   /*!
    * Scaling factors used in the RD multiplier modulation.
@@ -3328,6 +3344,20 @@ typedef struct AV1_COMP {
   int prune_ref_frame_mask;
 
   /*!
+   * Mark the single reference frames which are important (based on the temporal
+   * distance and quality) to prevent pruning the reference frame at block
+   * level.
+   */
+  int keep_single_ref_frame_mask;
+
+  /*!
+   * Mark the compound reference frames which are important (based on the
+   * temporal distance and quality) to prevent pruning the reference frame pair
+   * at block level.
+   */
+  int keep_comp_ref_frame_mask;
+
+  /*!
    * Loop Restoration context.
    */
   AV1LrStruct lr_ctxt;
@@ -3499,11 +3529,6 @@ typedef struct AV1_COMP {
   int sb_counter;
 
   /*!
-   * Available bitstream buffer size in bytes
-   */
-  size_t available_bs_size;
-
-  /*!
    * The controller of the external partition model.
    * It is used to do partition type selection based on external models.
    */
@@ -3634,6 +3659,11 @@ typedef struct AV1_COMP {
   uint64_t *src_sad_blk_64x64;
 
   /*!
+   * Size of allocated buffer to store 64x64 SAD, in units of uint64_t.
+   */
+  int src_sad_blk_alloc_size;
+
+  /*!
    * SSE between the current frame and the reconstructed last frame
    * It is only used for CBR mode.
    * It is not used if the reference frame has a different frame size.
@@ -3697,6 +3727,21 @@ typedef struct AV1_COMP {
    * ROI map.
    */
   aom_roi_map_t roi;
+
+  /*!
+   * External rate control.
+   */
+  AOM_EXT_RATECTRL ext_ratectrl;
+
+  /*!
+   * Store TPL stats before propagation
+   */
+  AomTplGopStats extrc_tpl_gop_stats;
+
+  /*!
+   * If true fills residual pixels outside the actual frame border
+   */
+  bool do_border_pad;
 } AV1_COMP;
 
 /*!
@@ -3767,9 +3812,9 @@ typedef struct EncodeFrameParams {
 
 void av1_initialize_enc(unsigned int usage, enum aom_rc_mode end_usage);
 
-struct AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi,
+struct AV1_COMP *av1_create_compressor(struct AV1_PRIMARY *ppi,
                                        const AV1EncoderConfig *oxcf,
-                                       BufferPool *const pool,
+                                       struct BufferPool *const pool,
                                        COMPRESSOR_STAGE stage,
                                        int lap_lag_in_frames);
 
@@ -4107,12 +4152,13 @@ static inline int is_stat_consumption_stage_twopass(const AV1_COMP *const cpi) {
 static inline int is_stat_consumption_stage(const AV1_COMP *const cpi) {
   return (is_stat_consumption_stage_twopass(cpi) ||
           (cpi->oxcf.pass == AOM_RC_ONE_PASS &&
-           (cpi->compressor_stage == ENCODE_STAGE) && cpi->ppi->lap_enabled));
+           (cpi->compressor_stage == ENCODE_STAGE) && cpi->ppi->lap_enabled &&
+           cpi->oxcf.mode != REALTIME));
 }
 
 // Decide whether 'dv_costs' need to be allocated/stored during the encoding.
 static inline bool av1_need_dv_costs(const AV1_COMP *const cpi) {
-  return !cpi->sf.rt_sf.use_nonrd_pick_mode &&
+  return (!cpi->sf.rt_sf.use_nonrd_pick_mode || cpi->sf.rt_sf.rt_use_intrabc) &&
          av1_allow_intrabc(&cpi->common) && !is_stat_generation_stage(cpi);
 }
 
@@ -4128,10 +4174,16 @@ static inline bool av1_need_dv_costs(const AV1_COMP *const cpi) {
 static inline int has_no_stats_stage(const AV1_COMP *const cpi) {
   assert(
       IMPLIES(!cpi->ppi->lap_enabled, cpi->compressor_stage == ENCODE_STAGE));
-  return (cpi->oxcf.pass == AOM_RC_ONE_PASS && !cpi->ppi->lap_enabled);
+  return (cpi->oxcf.pass == AOM_RC_ONE_PASS &&
+          (!cpi->ppi->lap_enabled || cpi->oxcf.mode == REALTIME));
 }
 
 /*!\cond */
+
+static inline int is_one_pass_rt_lag_params(const AV1_COMP *cpi) {
+  return cpi->oxcf.pass == AOM_RC_ONE_PASS &&
+         cpi->oxcf.gf_cfg.lag_in_frames > 0 && cpi->oxcf.mode == REALTIME;
+}
 
 static inline int is_one_pass_rt_params(const AV1_COMP *cpi) {
   return has_no_stats_stage(cpi) && cpi->oxcf.gf_cfg.lag_in_frames == 0 &&
@@ -4157,7 +4209,10 @@ static inline int allow_postencode_drop_rtc(const AV1_COMP *cpi) {
 // Function return size of frame stats buffer
 static inline int get_stats_buf_size(int num_lap_buffer, int num_lag_buffer) {
   /* if lookahead is enabled return num_lap_buffers else num_lag_buffers */
-  return (num_lap_buffer > 0 ? num_lap_buffer + 1 : num_lag_buffer);
+  if (num_lap_buffer > 0) {
+    return AOMMAX(num_lap_buffer + 1, MAX_GF_LENGTH_LAP + 1);
+  }
+  return num_lag_buffer;
 }
 
 // TODO(zoeliu): To set up cpi->oxcf.gf_cfg.enable_auto_brf
@@ -4208,6 +4263,11 @@ static inline int av1_frame_scaled(const AV1_COMMON *cm) {
   return av1_superres_scaled(cm) || av1_resize_scaled(cm);
 }
 
+static inline bool av1_encode_for_extrc(AOM_EXT_RATECTRL const *ext_rc) {
+  return ext_rc->ready && (ext_rc->funcs.rc_type & AOM_RC_QP) != 0 &&
+         ext_rc->funcs.get_encodeframe_decision != NULL;
+}
+
 // Don't allow a show_existing_frame to coincide with an error resilient
 // frame. An exception can be made for a forward keyframe since it has no
 // previous dependencies.
@@ -4225,6 +4285,18 @@ static inline int get_mi_ext_idx(const int mi_row, const int mi_col,
   const int mi_ext_row = mi_row / mi_ext_size_1d;
   const int mi_ext_col = mi_col / mi_ext_size_1d;
   return mi_ext_row * mbmi_ext_stride + mi_ext_col;
+}
+
+static inline void set_pixels_to_frame_edge(MACROBLOCK *x, int bw, int bh,
+                                            int mi_col, int mi_row, int mi_cols,
+                                            int mi_rows, int frame_width,
+                                            int frame_height,
+                                            bool do_border_pad) {
+  int total_frame_width = do_border_pad ? frame_width : (mi_cols * 4);
+  int total_frame_height = do_border_pad ? frame_height : (mi_rows * 4);
+
+  x->pix_to_bottom_edge = total_frame_height - ((mi_row + bh) << MI_SIZE_LOG2);
+  x->pix_to_right_edge = total_frame_width - ((mi_col + bw) << MI_SIZE_LOG2);
 }
 
 // Lighter version of set_offsets that only sets the mode info
@@ -4467,6 +4539,13 @@ static inline int get_lpf_opt_level(const SPEED_FEATURES *sf) {
 static inline bool is_switchable_motion_mode_allowed(bool allow_warped_motion,
                                                      bool enable_obmc) {
   return (allow_warped_motion || enable_obmc);
+}
+
+static inline int warped_motion_update_num_proj_ref(
+    const struct AV1_COMP *const cpi, const MB_MODE_INFO *const mi) {
+  return cpi->oxcf.motion_mode_cfg.allow_warped_motion && is_inter_block(mi) &&
+         !mi->skip_mode && is_motion_variation_allowed_bsize(mi->bsize) &&
+         !has_second_ref(mi);
 }
 
 #if CONFIG_AV1_TEMPORAL_DENOISING

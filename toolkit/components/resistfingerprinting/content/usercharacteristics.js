@@ -528,14 +528,24 @@ async function populateVoiceList() {
 
     const timeout = new Promise(resolve => {
       setTimeout(() => {
-        resolve([]);
+        // `null` is an internal sentinel meaning "voice population timed
+        // out". The outer caller turns this into an empty result object so
+        // the voices_* Glean fields are left unset for this submission --
+        // separating incomplete enumerations (the asynchronous populate
+        // race) from genuine empty voice lists, which previously both
+        // collapsed to voicesCount=0 / voicesSha1=sha1("").
+        resolve(null);
       }, 5000);
     });
 
     return Promise.race([promise, timeout]);
   }
 
-  return fetchVoices().then(processVoices);
+  return fetchVoices().then(result => {
+    // Timeout: emit nothing for voices_* so analysis can tell timed-out
+    // submissions apart from real zero-voice clients.
+    return result === null ? {} : processVoices(result);
+  });
 }
 
 async function populateMediaCapabilities() {
@@ -897,13 +907,28 @@ async function populateCSSSystemColors() {
   ];
 
   const rgbToHex = rgb => {
-    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    // getComputedStyle returns rgb(R, G, B) for opaque colors and
+    // rgba(R, G, B, A) for non-opaque. Gecko normalizes the modern
+    // rgb(R G B / A) form to the legacy rgba(,,,) form (verified
+    // empirically on desktop Firefox 152/153). Alpha is a decimal 0–1
+    // with up to 3 decimal places; round(× 255) round-trips every
+    // nscolor alpha byte we observe in practice (e.g. macOS Highlight
+    // 0x7F, Fenix Highlight 0x4E, Linux GTK-theme alphas).
+    // Output is always 8-char uppercase RRGGBBAA — opaque colors get a
+    // trailing FF so the on-wire format is uniform.
+    const match = rgb.match(
+      /rgba?\(\s*(\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\s*\)/
+    );
     if (!match) {
       return rgb;
     }
-    const [, r, g, b] = match;
-    return [r, g, b]
-      .map(x => parseInt(x, 10).toString(16).padStart(2, "0"))
+    const r = parseInt(match[1], 10);
+    const g = parseInt(match[2], 10);
+    const b = parseInt(match[3], 10);
+    const a =
+      match[4] === undefined ? 255 : Math.round(parseFloat(match[4]) * 255);
+    return [r, g, b, a]
+      .map(x => x.toString(16).padStart(2, "0"))
       .join("")
       .toUpperCase();
   };
@@ -932,6 +957,10 @@ async function populateCSSSystemColors() {
 }
 
 async function populateCSSSystemFonts() {
+  // The CSS `font` shorthand accepts six system-font keywords which the browser
+  // resolves to the platform's actual native UI font (e.g. "Segoe UI" on
+  // Windows, "-apple-system" on macOS, "Cantarell" on GNOME). Setting them via
+  // `font-family` would not trigger this resolution; the shorthand is required.
   const systemFonts = [
     "caption",
     "icon",
@@ -939,18 +968,6 @@ async function populateCSSSystemFonts() {
     "message-box",
     "small-caption",
     "status-bar",
-    "serif",
-    "sans-serif",
-    "monospace",
-    "cursive",
-    "fantasy",
-    "system-ui",
-    "Arial",
-    "Helvetica",
-    "Times New Roman",
-    "Courier New",
-    "Verdana",
-    "Georgia",
   ];
 
   const div = document.createElement("div");
@@ -959,7 +976,7 @@ async function populateCSSSystemFonts() {
 
   const results = [];
   for (const fontName of systemFonts) {
-    div.style.fontFamily = fontName;
+    div.setAttribute("style", `font: ${fontName} !important`);
     const computed = getComputedStyle(div);
     const value = computed.fontSize + " " + computed.fontFamily;
     results.push({ [fontName]: value });
@@ -1503,16 +1520,9 @@ async function populateMathML() {
     el => el.getBoundingClientRect().width
   );
 
-  // Get the actual font-family being used for MathML rendering
-  const firstMathElement = document.querySelector("math");
-  const mathmlFontFamily = firstMathElement
-    ? getComputedStyle(firstMathElement).fontFamily
-    : "";
-
   return {
     ...oldMetrics,
     mathmlDiagValues: mathmlValues,
-    mathmlDiagFontFamily: mathmlFontFamily,
   };
 }
 
@@ -1594,10 +1604,18 @@ function getCanvasSources() {
 // =======================================================================
 // Setup & Populating
 
-/* Pick any local font, we just don't want to needlessly increase binary size */
+/* A small subset of Fira Sans Italic (OFL, see FiraSans.LICENSE) covering
+ * exactly the glyphs the canvas text recipes draw. The face must actually
+ * cover those glyphs: an earlier revision pointed this at a 2-glyph probe
+ * font, so the text canvases silently measured each platform's default
+ * serif fallback instead of a bundled font. Note the canvas recipes render
+ * in a different document (UserCharacteristicsCanvasRenderingChild), which
+ * loads this font itself; this registration only covers canvases drawn in
+ * this page (e.g. WebGL helpers) and any future text probes here. */
 const LocalFiraSans = new FontFace(
   "LocalFiraSans",
-  "url('chrome://global/content/usercharacteristics/usercharacteristics.woff') format('woff')"
+  "url('chrome://global/content/usercharacteristics/usercharacteristics.woff') format('woff')",
+  { style: "italic" }
 );
 
 if (document.readyState === "loading") {

@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CTSerialization.h"
-#include "CTUtils.h"
 
 #include <stdint.h>
+
 #include <type_traits>
+
+#include "CTUtils.h"
 
 namespace mozilla {
 namespace ct {
@@ -125,7 +125,7 @@ template <size_t length, typename T>
 static inline Result WriteUint(T value, Buffer& output) {
   static_assert(length <= 8, "At most 8 byte integers can be written");
   static_assert(sizeof(T) >= length, "T must be able to hold <length> bytes");
-  if (std::is_signed<T>::value) {
+  if (std::is_signed_v<T>) {
     // We accept signed integer types assuming the actual value is non-negative.
     if (value < 0) {
       return Result::FATAL_ERROR_INVALID_ARGS;

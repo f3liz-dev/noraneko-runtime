@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +5,8 @@
 #ifndef nsUserIdleServiceWin_h_
 #define nsUserIdleServiceWin_h_
 
-#include "nsUserIdleService.h"
 #include "mozilla/AppShutdown.h"
+#include "nsUserIdleService.h"
 
 /* NOTE: Compare of GetTickCount() could overflow.  This corrects for
  * overflow situations.
@@ -41,8 +38,8 @@ class nsUserIdleServiceWin : public nsUserIdleService {
   }
 
  protected:
-  nsUserIdleServiceWin() {}
-  virtual ~nsUserIdleServiceWin() {}
+  nsUserIdleServiceWin() = default;
+  virtual ~nsUserIdleServiceWin() = default;
 };
 
 #endif  // nsUserIdleServiceWin_h_

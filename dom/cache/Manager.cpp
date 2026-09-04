@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,9 @@
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/ClientDirectoryLock.h"
 #include "mozilla/dom/quota/ClientImpl.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/ScopedLogExtraInfo.h"
 #include "mozilla/dom/quota/StringifyUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "nsID.h"
@@ -43,6 +43,7 @@ namespace mozilla::dom::cache {
 
 using mozilla::dom::quota::ClientDirectoryLock;
 using mozilla::dom::quota::CloneFileAndAppend;
+using mozilla::dom::quota::ScopedLogExtraInfo;
 
 namespace {
 
@@ -127,6 +128,8 @@ class SetupAction final : public SyncDBAction {
       QM_TRY_INSPECT(const auto& orphanedCacheIdList,
                      db::FindOrphanedCacheIds(*aConn));
 
+      QM_SCOPED_CONTEXT("CacheSetupAction::OrphanCleanupFailed"_ns);
+
       QM_TRY_INSPECT(
           const CheckedInt64& overallDeletedPaddingSize,
           Reduce(
@@ -166,6 +169,12 @@ class SetupAction final : public SyncDBAction {
       // failure, but if we entered it and RestorePaddingFile succeeded, we
       // would have returned NS_OK. Now, we will never propagate a
       // MaybeUpdatePaddingFile failure.
+      const auto scope = overallDeletedPaddingSize.value() > 0
+                             ? Some(ScopedLogExtraInfo{
+                                   ScopedLogExtraInfo::kTagContextTainted,
+                                   "CacheSetupAction::PaddingUpdateFailed"_ns})
+                             : Nothing{};
+
       QM_WARNONLY_TRY(QM_TO_RESULT(
           MaybeUpdatePaddingFile(aDBDir, aConn, /* aIncreaceSize */ 0,
                                  overallDeletedPaddingSize.value(),
@@ -658,7 +667,8 @@ class Manager::CacheMatchAction final : public Manager::BaseAction {
 
     // If we entered shutdown on the main thread while we were doing IO,
     // bail out now.
-    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
+    if (IsCanceled() ||
+        AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
       if (stream) {
         stream->Close();
       }
@@ -734,7 +744,8 @@ class Manager::CacheMatchAllAction final : public Manager::BaseAction {
 
       // If we entered shutdown on the main thread while we were doing IO,
       // bail out now.
-      if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
+      if (IsCanceled() ||
+          AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
         if (stream) {
           stream->Close();
         }
@@ -1297,7 +1308,8 @@ class Manager::CacheKeysAction final : public Manager::BaseAction {
 
       // If we entered shutdown on the main thread while we were doing IO,
       // bail out now.
-      if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
+      if (IsCanceled() ||
+          AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
         if (stream) {
           stream->Close();
         }
@@ -1376,7 +1388,8 @@ class Manager::StorageMatchAction final : public Manager::BaseAction {
 
     // If we entered shutdown on the main thread while we were doing IO,
     // bail out now.
-    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
+    if (IsCanceled() ||
+        AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownQM)) {
       if (stream) {
         stream->Close();
       }

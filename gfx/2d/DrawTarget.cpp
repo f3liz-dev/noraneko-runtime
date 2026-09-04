@@ -1,24 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "2D.h"
 #include "Blur.h"
+#include "BufferEdgePad.h"
+#include "BufferUnrotate.h"
+#include "FilterSupport.h"
 #include "Logging.h"
 #include "PathHelpers.h"
 #include "SourceSurfaceRawData.h"
 #include "Tools.h"
 
-#include "BufferEdgePad.h"
-#include "BufferUnrotate.h"
-
-#include "FilterSupport.h"
-
 #ifdef USE_NEON
-#  include "mozilla/arm.h"
 #  include "LuminanceNEON.h"
+#  include "mozilla/arm.h"
 #endif
 
 namespace mozilla {
@@ -230,8 +226,7 @@ already_AddRefed<SourceSurface> DrawTarget::IntoLuminanceSource(
   }
 
   // Create alpha channel mask for output
-  RefPtr<SourceSurfaceAlignedRawData> destMaskSurface =
-      new SourceSurfaceAlignedRawData;
+  RefPtr destMaskSurface = MakeRefPtr<SourceSurfaceAlignedRawData>();
   if (!destMaskSurface->Init(size, SurfaceFormat::A8, false, 0)) {
     return nullptr;
   }

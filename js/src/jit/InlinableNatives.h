@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,13 +7,9 @@
 
 #include <stdint.h>  // For uint16_t
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
-    _(IntrinsicGuardToAsyncDisposableStack)                \
-    _(IntrinsicGuardToDisposableStack)
-#else
-#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_)
-#endif
+#define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
+  _(IntrinsicGuardToAsyncDisposableStack)                \
+  _(IntrinsicGuardToDisposableStack)
 
 #ifdef FUZZING_JS_FUZZILLI
 #  define INLINABLE_NATIVE_FUZZILLI_LIST(_) _(FuzzilliHash)
@@ -84,6 +78,7 @@
   _(DataViewByteLength)                            \
   _(DataViewByteOffset)                            \
                                                    \
+  _(Date)                                          \
   _(DateGetTime)                                   \
   _(DateGetFullYear)                               \
   _(DateGetMonth)                                  \
@@ -92,6 +87,8 @@
   _(DateGetHours)                                  \
   _(DateGetMinutes)                                \
   _(DateGetSeconds)                                \
+  _(DateNow)                                       \
+  _(DateParse)                                     \
                                                    \
   _(FunctionBind)                                  \
                                                    \

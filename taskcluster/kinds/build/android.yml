@@ -45,6 +45,7 @@ task-defaults:
               type: directory
     run-on-repo-type: [hg]
     run:
+        clone-with: hg
         using: mozharness
         script: "mozharness/scripts/fx_desktop_build.py"
         config: ["builds/releng_base_android_64_builds.py"]
@@ -81,6 +82,7 @@ android-arm/debug:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: arm-debug
         mozconfig-variant: debug
@@ -106,6 +108,7 @@ android-arm/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: arm
     use-sccache: true
@@ -131,6 +134,7 @@ android-arm-lite/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: arm-lite
     use-sccache: true
@@ -138,7 +142,7 @@ android-arm-lite/opt:
         toolchain:
             - linux64-clang
             - linux64-sccache
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-arm-shippable/opt:
     description: "Android Arm Shippable"
@@ -161,6 +165,7 @@ android-arm-shippable/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: arm
@@ -191,13 +196,14 @@ android-arm-shippable-lite/opt:
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: arm-lite
     fetches:
         toolchain:
             - linux64-clang
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-aarch64/opt:
     description: "Android AArch64 Opt"
@@ -214,6 +220,7 @@ android-aarch64/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: aarch64
     use-sccache: true
@@ -239,6 +246,7 @@ android-aarch64-lite/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: aarch64-lite
     use-sccache: true
@@ -246,7 +254,7 @@ android-aarch64-lite/opt:
         toolchain:
             - linux64-clang
             - linux64-sccache
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-aarch64-non-unified/opt:
     description: "Android AArch64 Opt Non-unified"
@@ -256,12 +264,14 @@ android-aarch64-non-unified/opt:
         platform: android-5-0-aarch64/opt
         symbol: B-nu
     run-on-projects: ['integration']
+    worker-type: b-linux-docker-large-amd
     worker:
         env:
             MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: aarch64
         extra-config:
@@ -289,6 +299,7 @@ android-aarch64/debug:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: aarch64-debug
         mozconfig-variant: debug
@@ -320,6 +331,7 @@ android-aarch64-shippable/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: aarch64
@@ -350,13 +362,14 @@ android-aarch64-shippable-lite/opt:
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: aarch64-lite
     fetches:
         toolchain:
             - linux64-clang
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-x86_64/opt:
     description: "Android x86-64 Opt"
@@ -373,6 +386,7 @@ android-x86_64/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64
     use-sccache: true
@@ -399,6 +413,7 @@ android-x86_64-lite/opt:
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64-lite
     use-sccache: true
@@ -406,7 +421,7 @@ android-x86_64-lite/opt:
         toolchain:
             - linux64-clang
             - linux64-sccache
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-x86_64-fuzzing/debug:
     description: "Android x86_64 Fuzzing Debug"
@@ -420,6 +435,7 @@ android-x86_64-fuzzing/debug:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
             PERFHERDER_EXTRA_OPTIONS: fuzzing
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: fuzzing-debug
         mozconfig-variant: debug-fuzzing
@@ -440,12 +456,14 @@ android-x86_64-non-unified/opt:
         platform: android-5-0-x86_64/opt
         symbol: B-nu
     run-on-projects: ['integration']
+    worker-type: b-linux-docker-large-amd
     worker:
         env:
             MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64
         extra-config:
@@ -480,6 +498,7 @@ android-x86_64-shippable/opt:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: x86_64
@@ -510,13 +529,14 @@ android-x86_64-shippable-lite/opt:
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             PERFHERDER_EXTRA_OPTIONS: lite
     run:
+        clone-with: hg
         actions: [get-secrets, build, multi-l10n]
         config: [taskcluster_nightly.py]
         custom-build-variant-cfg: x86_64-lite
     fetches:
         toolchain:
             - linux64-clang
-            - android-gradle-dependencies-lite
+            - android-gradle-dependencies
 
 android-x86_64/debug:
     description: "Android x86-64 Debug"
@@ -532,6 +552,7 @@ android-x86_64/debug:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64-debug
         mozconfig-variant: debug
@@ -557,6 +578,7 @@ android-x86_64/debug-isolated-process:
             MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             PERFHERDER_EXTRA_OPTIONS: isolated-process
     run:
+        clone-with: hg
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64-debug-isolated-process
         mozconfig-variant: debug-isolated-process

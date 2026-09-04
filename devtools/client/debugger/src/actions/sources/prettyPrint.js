@@ -10,10 +10,12 @@ import {
   updateBreakpointPositionsForNewPrettyPrintedSource,
   updateBreakpointsForNewPrettyPrintedSource,
 } from "../breakpoints/index";
-
+const {
+  prettifyCSS,
+} = require("resource://devtools/shared/inspector/css-logic.js");
 import {
   getPrettySourceURL,
-  isJavaScript,
+  isNotPrettyPrintable,
   isMinified,
 } from "../../utils/source";
 import { isFulfilled, fulfilled } from "../../utils/async-value";
@@ -29,7 +31,10 @@ import {
 import { removeSources } from "./removeSources";
 import { mapFrames } from "../pause/index";
 import { selectSpecificLocation } from "../sources/index";
-import { createPrettyPrintOriginalSource } from "../../client/firefox/create";
+import {
+  createPrettyPrintOriginalScriptSource,
+  createPrettyPrintOriginalStyleSheetSource,
+} from "../../client/firefox/create";
 
 import {
   getFirstSourceActorForGeneratedSource,
@@ -79,11 +84,11 @@ export async function prettyPrintSourceTextContent(
 
   const contentValue = content.value;
   if (
-    (!isJavaScript(generatedSource, contentValue) && !generatedSource.isHTML) ||
+    isNotPrettyPrintable(generatedSource, contentValue) ||
     contentValue.type !== "text"
   ) {
     throw new Error(
-      `Can't prettify ${contentValue.contentType} files, only HTML and Javascript.`
+      `Can't prettify ${contentValue.contentType} files, only HTML, Javascript and CSS.`
     );
   }
 
@@ -97,6 +102,12 @@ export async function prettyPrintSourceTextContent(
       content,
       actors,
     });
+  } else if (generatedSource.isStyleSheet) {
+    const { result } = prettifyCSS(contentValue.value, null);
+    return {
+      text: result,
+      contentType: contentValue.contentType,
+    };
   } else {
     prettyPrintWorkerResult = await prettyPrintWorker.prettyPrint({
       sourceText: contentValue.value,
@@ -266,7 +277,9 @@ function createPrettySource(source, sourceActor) {
   return async ({ dispatch }) => {
     const url = getPrettyOriginalSourceURL(source);
     const id = generatedToOriginalId(source.id, url);
-    const prettySource = createPrettyPrintOriginalSource(id, url, source);
+    const prettySource = source.isStyleSheet
+      ? createPrettyPrintOriginalStyleSheetSource(id, url, source)
+      : createPrettyPrintOriginalScriptSource(id, url, source);
 
     dispatch({
       type: "ADD_ORIGINAL_SOURCES",

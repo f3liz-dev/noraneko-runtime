@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This code is made available to you under your choice of the following sets
  * of licensing terms:
  */
@@ -57,7 +55,7 @@ typedef uint8_t SHA384Buffer[SHA384_LENGTH];
 // OCSPCache is thread-safe.
 class OCSPCache {
  public:
-  OCSPCache();
+  OCSPCache() = default;
   ~OCSPCache();
 
   // Returns true if the status of the given certificate (issued by the given
@@ -65,8 +63,6 @@ class OCSPCache {
   // If it is in the cache, returns by reference the error code of the cached
   // status and the time through which the status is considered trustworthy.
   // The passed in origin attributes are used to isolate the OCSP cache.
-  // We currently only use the first party domain portion of the attributes, and
-  // it is non-empty only when "privacy.firstParty.isolate" is enabled.
   bool Get(const mozilla::pkix::CertID& aCertID,
            const OriginAttributes& aOriginAttributes,
            /*out*/ mozilla::pkix::Result& aResult,
@@ -82,8 +78,6 @@ class OCSPCache {
   // status with a less recent thisUpdate unless the less recent status
   // indicates the certificate is revoked.
   // The passed in origin attributes are used to isolate the OCSP cache.
-  // We currently only use the first party domain portion of the attributes, and
-  // it is non-empty only when "privacy.firstParty.isolate" is enabled.
   mozilla::pkix::Result Put(const mozilla::pkix::CertID& aCertID,
                             const OriginAttributes& aOriginAttributes,
                             mozilla::pkix::Result aResult,
@@ -92,6 +86,9 @@ class OCSPCache {
 
   // Removes everything from the cache.
   void Clear();
+
+  // Removes all private-browsing entries from the cache.
+  void ClearPrivateBrowsing();
 
  private:
   class Entry {
@@ -107,10 +104,11 @@ class OCSPCache {
     mozilla::pkix::Result mResult;
     mozilla::pkix::Time mThisUpdate;
     mozilla::pkix::Time mValidThrough;
+    bool mIsPrivateBrowsing = false;
     // The SHA-384 hash of the concatenation of the DER encodings of the
     // issuer name and issuer key, followed by the length of the serial number,
-    // the serial number, the length of the first party domain, and the first
-    // party domain (if "privacy.firstparty.isolate" is enabled).
+    // the serial number, the length of the origin attributes suffix, and the
+    // origin attributes suffix.
     // See the documentation for CertIDHash in OCSPCache.cpp.
     SHA384Buffer mIDHash;
   };
@@ -120,7 +118,7 @@ class OCSPCache {
                     /*out*/ size_t& index, const MutexAutoLock& aProofOfLock);
   void MakeMostRecentlyUsed(size_t aIndex, const MutexAutoLock& aProofOfLock);
 
-  Mutex mMutex;
+  Mutex mMutex{"OCSPCache-mutex"};
   static const size_t MaxEntries = 1024;
   // Sorted with the most-recently-used entry at the end.
   // Using 256 here reserves as much possible inline storage as the vector

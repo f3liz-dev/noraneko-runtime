@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +9,7 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
+
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
@@ -25,6 +25,16 @@ struct GFreeDeleter {
   void operator()(void* aPtr) const { g_free(aPtr); }
   void operator()(GtkPaperSize* aPtr) const { gtk_paper_size_free(aPtr); }
   void operator()(gchar** aPtr) const { g_strfreev(aPtr); }
+  void operator()(GInputStream* aPtr) const {
+    g_input_stream_close(aPtr, nullptr, nullptr);
+    g_object_unref(aPtr);
+  }
+  void operator()(GBytes* aPtr) const { g_bytes_unref(aPtr); }
+  void operator()(GByteArray* aPtr) const { g_byte_array_unref(aPtr); }
+  void operator()(GCancellable* aPtr) const {
+    g_cancellable_cancel(aPtr);
+    g_object_unref(aPtr);
+  }
 };
 
 template <typename T>

@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxPattern.h"
 
-#include "gfxUtils.h"
-#include "gfxTypes.h"
-#include "gfxPlatform.h"
+#include "cairo.h"
 #include "gfx2DGlue.h"
 #include "gfxGradientCache.h"
+#include "gfxPlatform.h"
+#include "gfxTypes.h"
+#include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
-
-#include "cairo.h"
 
 using namespace mozilla::gfx;
 

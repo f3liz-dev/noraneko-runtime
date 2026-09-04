@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,22 +7,22 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/mman.h>
 #include <prenv.h>
+#include <sys/mman.h>
 
+#include "GtkCompositorWidget.h"
+#include "MozContainer.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
-#include "MozContainer.h"
-#include "GtkCompositorWidget.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"
-#include "mozilla/gfx/Tools.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WidgetUtils.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/Tools.h"
 
 #undef LOGWAYLAND
 #ifdef MOZ_LOGGING
-#  include "mozilla/Logging.h"
 #  include "Units.h"
+#  include "mozilla/Logging.h"
 extern mozilla::LazyLogModule gWidgetWaylandLog;
 #  define LOGWAYLAND(...) \
     MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, (__VA_ARGS__))

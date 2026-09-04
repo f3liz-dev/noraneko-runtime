@@ -16,14 +16,15 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
 #include "api/environment/environment.h"
 #include "api/fec_controller.h"
 #include "api/frame_transformer_interface.h"
+#include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
@@ -41,6 +42,7 @@
 #include "call/rtp_transport_config.h"
 #include "call/rtp_transport_controller_send_interface.h"
 #include "call/rtp_video_sender.h"
+#include "modules/congestion_controller/rtp/congestion_controller_feedback_stats.h"
 #include "modules/congestion_controller/rtp/control_handler.h"
 #include "modules/congestion_controller/rtp/transport_feedback_adapter.h"
 #include "modules/congestion_controller/rtp/transport_feedback_demuxer.h"
@@ -49,7 +51,7 @@
 #include "modules/rtp_rtcp/include/report_block_data.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/congestion_control_feedback.h"
-#include "rtc_base/experiments/field_trial_parser.h"
+#include "rtc_base/containers/flat_map.h"
 #include "rtc_base/network_route.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/task_utils/repeating_task.h"
@@ -126,7 +128,7 @@ class RtpTransportControllerSend final
   void OnReceiverEstimatedMaxBitrate(Timestamp receive_time,
                                      DataRate bitrate) override;
   void OnReport(Timestamp receive_time,
-                ArrayView<const ReportBlockData> report_blocks) override;
+                std::span<const ReportBlockData> report_blocks) override;
   void OnRttUpdate(Timestamp receive_time, TimeDelta rtt) override;
   void OnTransportFeedback(Timestamp receive_time,
                            const rtcp::TransportFeedback& feedback) override;
@@ -138,108 +140,113 @@ class RtpTransportControllerSend final
   void OnRemoteNetworkEstimate(NetworkStateEstimate estimate) override;
 
   NetworkControllerInterface* GetNetworkController() override {
-    RTC_DCHECK_RUN_ON(&sequence_checker_);
+    RTC_DCHECK_RUN_ON(worker_thread_);
     return controller_.get();
   }
 
-  // Called once it's known that the remote end supports RFC 8888.
-  void EnableCongestionControlFeedbackAccordingToRfc8888() override;
+  // Determines what type of RTCP feedback that should be used for congestion
+  // control.
+  void SetPreferredRtcpCcAckType(
+      RtcpFeedbackType preferred_rtcp_cc_ack_type) override;
 
   std::optional<int> ReceivedCongestionControlFeedbackCount() const override;
+  flat_map<uint32_t, ReceivedCongestionControlFeedbackStats>
+  GetCongestionControlFeedbackStatsPerSsrc() const override;
   std::optional<int> ReceivedTransportCcFeedbackCount() const override;
+  DataSize GetTransportOverhead() const override;
+
+  // Mimics callbacks for packets sent through this transport.
+  void NotifyBweOfSentPacketForTesting(const RtpPacketToSend& rtp_packet);
 
  private:
-  void MaybeCreateControllers() RTC_RUN_ON(sequence_checker_);
+  void MaybeCreateControllers() RTC_RUN_ON(worker_thread_);
   void HandleTransportPacketsFeedback(const TransportPacketsFeedback& feedback)
-      RTC_RUN_ON(sequence_checker_);
-  void UpdateNetworkAvailability() RTC_RUN_ON(sequence_checker_);
+      RTC_RUN_ON(worker_thread_);
+  void ComputeStatsFromCongestionControlFeedback(
+      const TransportPacketsFeedback& feedback) RTC_RUN_ON(worker_thread_);
+  void UpdateNetworkAvailability() RTC_RUN_ON(worker_thread_);
   void UpdateInitialConstraints(TargetRateConstraints new_contraints)
-      RTC_RUN_ON(sequence_checker_);
+      RTC_RUN_ON(worker_thread_);
 
-  void StartProcessPeriodicTasks() RTC_RUN_ON(sequence_checker_);
-  void UpdateControllerWithTimeInterval() RTC_RUN_ON(sequence_checker_);
+  void StartProcessPeriodicTasks() RTC_RUN_ON(worker_thread_);
+  void UpdateControllerWithTimeInterval() RTC_RUN_ON(worker_thread_);
 
-  std::optional<BitrateConstraints> ApplyOrLiftRelayCap(bool is_relayed);
   bool IsRelevantRouteChange(const NetworkRoute& old_route,
                              const NetworkRoute& new_route) const;
   void UpdateBitrateConstraints(const BitrateConstraints& updated);
-  void UpdateStreamsConfig() RTC_RUN_ON(sequence_checker_);
-  void PostUpdates(NetworkControlUpdate update) RTC_RUN_ON(sequence_checker_);
-  void UpdateControlState() RTC_RUN_ON(sequence_checker_);
-  void UpdateCongestedState() RTC_RUN_ON(sequence_checker_);
+  void UpdateStreamsConfig() RTC_RUN_ON(worker_thread_);
+  void PostUpdates(NetworkControlUpdate update) RTC_RUN_ON(worker_thread_);
+  void UpdateControlState() RTC_RUN_ON(worker_thread_);
+  void UpdateCongestedState() RTC_RUN_ON(worker_thread_);
   std::optional<bool> GetCongestedStateUpdate() const
-      RTC_RUN_ON(sequence_checker_);
+      RTC_RUN_ON(worker_thread_);
 
   // Called by packet router just before packet is sent to the RTP modules.
   void NotifyBweOfPacedSentPacket(const RtpPacketToSend& packet,
                                   const PacedPacketInfo& pacing_info);
   void ProcessSentPacket(const SentPacketInfo& sent_packet)
-      RTC_RUN_ON(sequence_checker_);
+      RTC_RUN_ON(worker_thread_);
   void ProcessSentPacketUpdates(NetworkControlUpdate updates)
-      RTC_RUN_ON(sequence_checker_);
+      RTC_RUN_ON(worker_thread_);
 
   const Environment env_;
-  SequenceChecker sequence_checker_;
-  TaskQueueBase* task_queue_;
+  TaskQueueBase* const worker_thread_;
   PacketRouter packet_router_;
 
   std::vector<std::unique_ptr<RtpVideoSenderInterface>> video_rtp_senders_
-      RTC_GUARDED_BY(&sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_);
   RtpBitrateConfigurator bitrate_configurator_;
   std::map<std::string, NetworkRoute> network_routes_
-      RTC_GUARDED_BY(sequence_checker_);
-  BandwidthEstimationSettings bwe_settings_ RTC_GUARDED_BY(sequence_checker_);
-  bool pacer_started_ RTC_GUARDED_BY(sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_);
+  BandwidthEstimationSettings bwe_settings_ RTC_GUARDED_BY(worker_thread_);
+  bool pacer_started_ RTC_GUARDED_BY(worker_thread_);
   TaskQueuePacedSender pacer_;
 
-  TargetTransferRateObserver* observer_ RTC_GUARDED_BY(sequence_checker_);
+  TargetTransferRateObserver* observer_ RTC_GUARDED_BY(worker_thread_);
   TransportFeedbackDemuxer feedback_demuxer_;
 
   TransportFeedbackAdapter transport_feedback_adapter_
-      RTC_GUARDED_BY(sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_);
 
   NetworkControllerFactoryInterface* const controller_factory_override_
-      RTC_PT_GUARDED_BY(sequence_checker_);
+      RTC_PT_GUARDED_BY(worker_thread_);
 
   std::unique_ptr<CongestionControlHandler> control_handler_
-      RTC_GUARDED_BY(sequence_checker_) RTC_PT_GUARDED_BY(sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_) RTC_PT_GUARDED_BY(worker_thread_);
 
   std::unique_ptr<NetworkControllerInterface> controller_
-      RTC_GUARDED_BY(sequence_checker_) RTC_PT_GUARDED_BY(sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_) RTC_PT_GUARDED_BY(worker_thread_);
 
-  TimeDelta process_interval_ RTC_GUARDED_BY(sequence_checker_);
+  TimeDelta process_interval_ RTC_GUARDED_BY(worker_thread_);
 
   struct LossReport {
     uint32_t extended_highest_sequence_number = 0;
     int cumulative_lost = 0;
   };
   std::map<uint32_t, LossReport> last_report_blocks_
-      RTC_GUARDED_BY(sequence_checker_);
-  Timestamp last_report_block_time_ RTC_GUARDED_BY(sequence_checker_);
+      RTC_GUARDED_BY(worker_thread_);
+  flat_map<uint32_t, ReceivedCongestionControlFeedbackStats>
+      received_ccfb_stats_ RTC_GUARDED_BY(worker_thread_);
+  Timestamp last_report_block_time_ RTC_GUARDED_BY(worker_thread_);
 
-  NetworkControllerConfig initial_config_ RTC_GUARDED_BY(sequence_checker_);
-  StreamsConfig streams_config_ RTC_GUARDED_BY(sequence_checker_);
+  NetworkControllerConfig initial_config_ RTC_GUARDED_BY(worker_thread_);
+  StreamsConfig streams_config_ RTC_GUARDED_BY(worker_thread_);
 
-  const bool reset_feedback_on_route_change_;
   const bool add_pacing_to_cwin_;
   const bool reset_bwe_on_adapter_id_change_;
-  const bool prefer_bwe_using_scream_;
 
-  FieldTrialParameter<DataRate> relay_bandwidth_cap_;
+  size_t transport_overhead_bytes_per_packet_ RTC_GUARDED_BY(worker_thread_);
+  bool network_available_ RTC_GUARDED_BY(worker_thread_);
+  RepeatingTaskHandle pacer_queue_update_task_ RTC_GUARDED_BY(worker_thread_);
+  RepeatingTaskHandle controller_task_ RTC_GUARDED_BY(worker_thread_);
 
-  size_t transport_overhead_bytes_per_packet_ RTC_GUARDED_BY(sequence_checker_);
-  bool network_available_ RTC_GUARDED_BY(sequence_checker_);
-  RepeatingTaskHandle pacer_queue_update_task_
-      RTC_GUARDED_BY(sequence_checker_);
-  RepeatingTaskHandle controller_task_ RTC_GUARDED_BY(sequence_checker_);
-
-  DataSize congestion_window_size_ RTC_GUARDED_BY(sequence_checker_);
-  bool is_congested_ RTC_GUARDED_BY(sequence_checker_);
+  DataSize congestion_window_size_ RTC_GUARDED_BY(worker_thread_);
+  bool is_congested_ RTC_GUARDED_BY(worker_thread_);
   bool rfc_8888_feedback_negotiated_ = false;
   bool sending_packets_as_ect1_ = false;
   // Count of feedback messages received.
-  int feedback_count_ RTC_GUARDED_BY(sequence_checker_) = 0;
-  int transport_cc_feedback_count_ RTC_GUARDED_BY(sequence_checker_) = 0;
+  int feedback_count_ RTC_GUARDED_BY(worker_thread_) = 0;
+  int transport_cc_feedback_count_ RTC_GUARDED_BY(worker_thread_) = 0;
 
   // Protected by internal locks.
   RateLimiter retransmission_rate_limiter_;

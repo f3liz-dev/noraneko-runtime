@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,6 +26,34 @@
  * @return true if we matched all the hashes, false otherwise.
  */
 bool CheckBrowserUserChoiceHashes();
+
+/*
+ * Check whether the UserChoice Protection Driver (UCPD) service is currently
+ * running. Running does not imply that it locks the UserChoice keys, as that
+ * varies by version and is verified by CanRenameUserChoiceAssociationKey().
+ *
+ * @return true if the service exists and is running, false otherwise.
+ */
+bool IsUserChoiceProtectionDriverRunning();
+
+/*
+ * Check whether a UserChoice write for aExt would currently be permitted by
+ * renaming its association key to a temporary name and back.
+ *
+ * A rename is used as the probe because it is the step SetUserChoiceRegistry()
+ * in the WDBA depends on to reach a locked UserChoice subkey, and because it
+ * leaves the subkey untouched. Writing to it instead would bump its last write
+ * time, invalidating the sibling Hash value (see GenerateUserChoiceHash()) and
+ * prompting Windows to reset the current default.
+ *
+ * @param aExt  Association to probe, either a protocol (L"http") or a file
+ *              extension (L".pdf").
+ *
+ * @return true if the association key was renamed and renamed back, false
+ *   otherwise. False if the rename back failed, in which case aExt has no
+ *   association key.
+ */
+bool CanRenameUserChoiceAssociationKey(const wchar_t* aExt);
 
 /*
  * Result from CheckUserChoiceHash()

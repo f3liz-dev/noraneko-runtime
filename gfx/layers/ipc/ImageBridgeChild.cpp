@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "ImageBridgeParent.h"  // for ImageBridgeParent
 #include "ImageContainer.h"     // for ImageContainer
 #include "SynchronousTask.h"
+#include "WindowRenderer.h"
 #include "mozilla/Assertions.h"        // for MOZ_ASSERT, etc
 #include "mozilla/Monitor.h"           // for Monitor, MonitorAutoLock
 #include "mozilla/ReentrantMonitor.h"  // for ReentrantMonitor, etc
@@ -31,14 +30,13 @@
 #include "mozilla/media/MediaSystemResourceManager.h"  // for MediaSystemResourceManager
 #include "mozilla/media/MediaSystemResourceManagerChild.h"  // for MediaSystemResourceManagerChild
 #include "mozilla/mozalloc.h"  // for operator new, etc
-#include "transport/runnable_utils.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsISupportsImpl.h"         // for ImageContainer::AddRef, etc
 #include "nsTArray.h"                // for AutoTArray, nsTArray, etc
 #include "nsTArrayForwardDeclare.h"  // for AutoTArray
 #include "nsThreadUtils.h"           // for NS_IsMainThread
-#include "WindowRenderer.h"
+#include "transport/runnable_utils.h"
 
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
@@ -400,6 +398,24 @@ void ImageBridgeChild::ClearImagesInHost(ImageClient* aClient,
   task.Wait();
 }
 
+void ImageBridgeChild::WaitFlushTasks() {
+  MOZ_ASSERT(!InImageBridgeChildThread());
+
+  if (InImageBridgeChildThread()) {
+    NS_ERROR(
+        "ImageBridgeChild::WaitFlushTasks() is called on ImageBridge "
+        "thread.");
+    return;
+  }
+
+  SynchronousTask task("FlushTaskhWait Lock");
+  RefPtr<Runnable> runnable =
+      NS_NewRunnableFunction("ImageBridgeChild::FlushTaskhWait",
+                             [&]() { AutoCompleteTask complete(&task); });
+  GetThread()->Dispatch(runnable.forget());
+  task.Wait();
+}
+
 void ImageBridgeChild::SyncWithCompositor(const Maybe<uint64_t>& aWindowID) {
   if (NS_WARN_IF(InImageBridgeChildThread())) {
     MOZ_ASSERT_UNREACHABLE("Cannot call on ImageBridge thread!");
@@ -588,7 +604,8 @@ void ImageBridgeChild::InitSameProcess(uint32_t aNamespace) {
   sImageBridgeChildThread = thread.forget();
 
   RefPtr<ImageBridgeChild> child = new ImageBridgeChild(aNamespace);
-  RefPtr<ImageBridgeParent> parent = ImageBridgeParent::CreateSameProcess();
+  RefPtr<ImageBridgeParent> parent =
+      ImageBridgeParent::CreateSameProcess(aNamespace);
 
   RefPtr<Runnable> runnable =
       WrapRunnable(child, &ImageBridgeChild::BindSameProcess, parent);
@@ -787,18 +804,6 @@ bool ImageBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
   return result;
 }
 
-PTextureChild* ImageBridgeChild::AllocPTextureChild(
-    const SurfaceDescriptor&, ReadLockDescriptor&, const LayersBackend&,
-    const TextureFlags&, const uint64_t& aSerial,
-    const wr::MaybeExternalImageId& aExternalImageId) {
-  MOZ_ASSERT(CanSend());
-  return TextureClient::CreateIPDLActor();
-}
-
-bool ImageBridgeChild::DeallocPTextureChild(PTextureChild* actor) {
-  return TextureClient::DestroyIPDLActor(actor);
-}
-
 PMediaSystemResourceManagerChild*
 ImageBridgeChild::AllocPMediaSystemResourceManagerChild() {
   MOZ_ASSERT(CanSend());
@@ -863,15 +868,19 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvReportFramesDropped(
   return IPC_OK();
 }
 
-PTextureChild* ImageBridgeChild::CreateTexture(
+already_AddRefed<PTextureChild> ImageBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags,
     const dom::ContentParentId& aContentId, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId) {
   MOZ_ASSERT(CanSend());
-  return SendPTextureConstructor(aSharedData, std::move(aReadLock),
-                                 aLayersBackend, aFlags, aSerial,
-                                 aExternalImageId);
+  RefPtr actor = TextureClient::CreateIPDLActor();
+  if (!SendPTextureConstructor(actor, aSharedData, std::move(aReadLock),
+                               aLayersBackend, aFlags, aSerial,
+                               aExternalImageId)) {
+    return nullptr;
+  }
+  return actor.forget();
 }
 
 static bool IBCAddOpDestroy(CompositableTransaction* aTxn,

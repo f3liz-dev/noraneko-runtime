@@ -397,13 +397,13 @@ add_task(async function test_tabGroupContextMenuMoveTabToGroupBasics() {
       Assert.ok(
         group2Item.style
           .getPropertyValue("--tab-group-color")
-          .includes("--tab-group-color-blue"),
+          .includes("--tab-group-blue"),
         "group2 menu item chicklet has correct color"
       );
       Assert.ok(
         group2Item.style
           .getPropertyValue("--tab-group-color-invert")
-          .includes("--tab-group-color-blue-invert"),
+          .includes("--tab-group-blue-invert"),
         "group2 menu item chicklet has correct inverted color"
       );
 
@@ -421,13 +421,13 @@ add_task(async function test_tabGroupContextMenuMoveTabToGroupBasics() {
       Assert.ok(
         group1Item.style
           .getPropertyValue("--tab-group-color")
-          .includes("--tab-group-color-red"),
+          .includes("--tab-group-red"),
         "group1 menu item chicklet has correct color"
       );
       Assert.ok(
         group1Item.style
           .getPropertyValue("--tab-group-color-invert")
-          .includes("--tab-group-color-red-invert"),
+          .includes("--tab-group-red-invert"),
         "group1 menu item chicklet has correct inverted color"
       );
 
@@ -882,13 +882,13 @@ add_task(async function test_tabGroupContextMenuSavedGroupsAndNoOpenGroups() {
     Assert.ok(
       savedGroupMenuItem.style
         .getPropertyValue("--tab-group-color")
-        .includes("--tab-group-color-blue"),
+        .includes("--tab-group-blue"),
       "Saved group icon has correct color"
     );
     Assert.ok(
       savedGroupMenuItem.style
         .getPropertyValue("--tab-group-color-invert")
-        .includes("--tab-group-color-blue-invert"),
+        .includes("--tab-group-blue-invert"),
       "Saved group icon has correct inverted color"
     );
   });
@@ -1228,7 +1228,7 @@ add_task(
     );
 
     // Use waitForCondition instead of assert because the TabClose event fires before the tab is fully removed from the DOM
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => gBrowser.tabs.length == 1,
       "Only one tab remains on the tab strip"
     );
@@ -1351,6 +1351,60 @@ add_task(async function test_removeFromGroupForMultipleTabs() {
   tabs.forEach(t => {
     BrowserTestUtils.removeTab(t);
   });
+});
+
+/* Tests that if a selection containing both regular tabs and splitview tabs is
+ * removed from a group, the splitview stays intact (its tabs remain grouped in
+ * the same splitview after being moved out of the tab group).
+ */
+add_task(async function test_removeFromGroupKeepsSplitViewIntact() {
+  const normalTab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+    skipAnimation: true,
+  });
+  const splitTab1 = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+    skipAnimation: true,
+  });
+  const splitTab2 = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+    skipAnimation: true,
+  });
+
+  const splitview = gBrowser.addTabSplitView([splitTab1, splitTab2]);
+  const group = gBrowser.addTabGroup([normalTab, splitview]);
+
+  Assert.equal(group.tabs.length, 3, "group has 3 tabs");
+  Assert.equal(normalTab.group, group, "normalTab is in the group");
+  Assert.equal(splitTab1.group, group, "splitTab1 is in the group");
+  Assert.equal(splitTab2.group, group, "splitTab2 is in the group");
+
+  // Multi-select normalTab and one splitview tab (a mixed regular + splitview
+  // selection).
+  await BrowserTestUtils.switchTab(gBrowser, normalTab);
+  await triggerClickOn(splitTab1, { ctrlKey: true });
+
+  is(gBrowser.selectedTab, normalTab, "normalTab is active");
+  is(gBrowser.selectedTabs.length, 2, "Two selected tabs");
+  ok(splitTab1.multiselected, "Splitview tab is multiselected");
+
+  await withTabMenu(normalTab, async (_m1, _m2, ungroupTabItem) => {
+    Assert.ok(!ungroupTabItem.hidden, "ungroupTabItem is visible");
+    ungroupTabItem.click();
+  });
+
+  Assert.ok(splitTab1.splitview, "splitTab1 is still in a split view");
+  Assert.ok(splitTab2.splitview, "splitTab2 is still in a split view");
+  Assert.equal(
+    splitTab1.splitview,
+    splitTab2.splitview,
+    "Both split tabs remain in the same split view"
+  );
+  Assert.ok(!splitTab1.group, "splitTab1 is no longer in the group");
+  Assert.ok(!splitTab2.group, "splitTab2 is no longer in the group");
+  Assert.ok(!normalTab.group, "normalTab is no longer in the group");
+
+  splitview.close();
+  while (gBrowser.tabs.length > 1) {
+    BrowserTestUtils.removeTab(gBrowser.tabs.at(-1));
+  }
 });
 
 /*

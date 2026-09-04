@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +33,7 @@ class PageInformation final {
   MFBT_API void AddRef() const { ++mRefCnt; }
   MFBT_API void Release() const {
     MOZ_ASSERT(int32_t(mRefCnt) > 0);
-    if (--mRefCnt) {
+    if (--mRefCnt == 0) {
       delete this;
     }
   }

@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsUnicharInputStream.h"
+
+#include <fcntl.h>
+
+#include "nsCRT.h"
+#include "nsConverterInputStream.h"
 #include "nsIInputStream.h"
+#include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsCRT.h"
-#include "nsStreamUtils.h"
-#include "nsConverterInputStream.h"
-#include <fcntl.h>
 #if defined(XP_WIN)
 #  include <io.h>
 #else
@@ -119,7 +119,7 @@ nsresult NS_NewUnicharInputStream(nsIInputStream* aStreamToWrap,
   *aResult = nullptr;
 
   // Create converter input stream
-  RefPtr<nsConverterInputStream> it = new nsConverterInputStream();
+  RefPtr it = mozilla::MakeRefPtr<nsConverterInputStream>();
   nsresult rv = it->Init(aStreamToWrap, "UTF-8", STRING_BUFFER_SIZE,
                          nsIConverterInputStream::ERRORS_ARE_FATAL);
   if (NS_FAILED(rv)) {

@@ -21,9 +21,10 @@ support-files = [
 
 ["browser_policies_notice_in_aboutpreferences.js"]
 
-["browser_policies_setAndLockPref_API.js"]
-
 ["browser_policy_allowfileselectiondialogs.js"]
+skip-if = [
+  "headless", # bug 2046455 - file dialog can't be exercised headless
+]
 
 ["browser_policy_app_auto_update.js"]
 run-if = [
@@ -52,9 +53,18 @@ support-files = "favicon.svg"
 ["browser_policy_cookie_settings.js"]
 https_first_disabled = true
 
+["browser_policy_default_browser_setting.js"]
+
+["browser_policy_disable_buttons.js"]
+
 ["browser_policy_disable_feedback_commands.js"]
 
 ["browser_policy_disable_fxaccounts.js"]
+
+["browser_policy_disable_launch_on_login.js"]
+run-if = [
+  "os == 'win'",
+]
 
 ["browser_policy_disable_masterpassword.js"]
 
@@ -62,11 +72,19 @@ https_first_disabled = true
 
 ["browser_policy_disable_popup_blocker.js"]
 
+["browser_policy_disable_popup_blocker_locked.js"]
+support-files = [
+  "!/browser/base/content/test/popups/popup_blocker2.html",
+  "!/browser/base/content/test/popups/popup_blocker_a.html",
+]
+
 ["browser_policy_disable_privatebrowsing.js"]
 
 ["browser_policy_disable_profile_import.js"]
 
 ["browser_policy_disable_profile_reset.js"]
+
+["browser_policy_disable_remote_settings.js"]
 
 ["browser_policy_disable_safemode.js"]
 
@@ -92,6 +110,9 @@ https_first_disabled = true
 ["browser_policy_extensionsettings2.js"]
 
 ["browser_policy_firefoxhome.js"]
+support-files = [
+  "../../../../extensions/newtab/test/browser/topstories.json",
+]
 
 ["browser_policy_firefoxsuggest.js"]
 
@@ -102,6 +123,8 @@ https_first_disabled = true
 ["browser_policy_masterpassword_aboutlogins.js"]
 
 ["browser_policy_masterpassword_doorhanger.js"]
+
+["browser_policy_mv3_force_installed_host_permissions.js"]
 
 ["browser_policy_offertosavelogins.js"]
 
@@ -117,13 +140,34 @@ https_first_disabled = true
 
 ["browser_policy_privatebrowsingmodeavailability_srd.js"]
 
+["browser_policy_sanitize_on_shutdown.js"]
+
 ["browser_policy_search_engine.js"]
+support-files = [
+  "!/browser/base/content/test/contextMenu/subtst_contextmenu_add_search_engine.html",
+]
 
 ["browser_policy_searchbar.js"]
 
 ["browser_policy_set_homepage.js"]
 
 ["browser_policy_set_startpage.js"]
+
+["browser_policy_sitepolicies_https.js"]
+https_first_disabled = true
+support-files = [
+  "sitepolicies_https_subresource.html",
+]
+
+["browser_policy_sitepolicies_jit.js"]
+https_first_disabled = true
+support-files = [
+  "framed.html",
+  "framed_worker.html",
+  "worker.html",
+  "service-worker.js",
+  "shared-worker.js",
+]
 
 ["browser_policy_support_menu.js"]
 

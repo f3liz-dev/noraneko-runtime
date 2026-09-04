@@ -1,14 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef vm_AsyncFunction_h
 #define vm_AsyncFunction_h
 
+#include "mozilla/Attributes.h"  // MOZ_RAII
+
 #include "js/Class.h"
 #include "vm/GeneratorObject.h"
+#include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PromiseObject.h"
 
@@ -303,11 +304,10 @@ JSObject* AsyncFunctionReject(JSContext* cx,
 
 class AsyncFunctionGeneratorObject : public AbstractGeneratorObject {
  public:
-  enum {
-    PROMISE_SLOT = AbstractGeneratorObject::RESERVED_SLOTS,
-
-    RESERVED_SLOTS
-  };
+  JS_DEFINE_TYPED_SLOT(AbstractGeneratorObject::RESERVED_SLOTS, PROMISE_SLOT,
+                       Object);
+  static constexpr uint32_t RESERVED_SLOTS =
+      AbstractGeneratorObject::RESERVED_SLOTS + 1;
 
   static const JSClass class_;
   static const JSClassOps classOps_;
@@ -319,7 +319,7 @@ class AsyncFunctionGeneratorObject : public AbstractGeneratorObject {
                                               Handle<ModuleObject*> module);
 
   PromiseObject* promise() {
-    return &getFixedSlot(PROMISE_SLOT).toObject().as<PromiseObject>();
+    return &getFixedSlotTyped(PROMISE_SLOT).toObject().as<PromiseObject>();
   }
 };
 

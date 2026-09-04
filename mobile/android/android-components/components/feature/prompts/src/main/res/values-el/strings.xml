@@ -64,11 +64,17 @@
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">Είστε σίγουροι;</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
-  <string name="mozac_feature_prompt_before_unload_dialog_body">Θέλετε να αποχωρήσετε από τον ιστότοπο; Τα καταχωρημένα δεδομένα ενδέχεται να μην αποθηκευτούν</string>
+  <string name="mozac_feature_prompt_before_unload_dialog_body">Θέλετε να αποχωρήσετε από τον ιστότοπο; Τα καταχωρισμένα δεδομένα ενδέχεται να μην αποθηκευτούν</string>
   <!-- Stay button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to stay in the website. -->
   <string name="mozac_feature_prompts_before_unload_stay">Παραμονή</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Αποχώρηση</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">Το %1$s θέλει να δημιουργήσει ένα κλειδί πρόσβασης για το %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">Το %1$s θέλει να χρησιμοποιήσει ένα κλειδί πρόσβασης για το %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Συνέχεια</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Επιλέξτε μήνα</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -166,6 +172,10 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Σύμπτυξη αποθηκευμένων διευθύνσεων</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Διαχείριση διευθύνσεων</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Αποθήκευση διεύθυνσης;</string>
+  <!-- Text for the title of an update address dialog, shown when the address adds information to an already saved address. -->
+  <string name="mozac_feature_prompts_update_address_prompt_title">Ενημέρωση διεύθυνσης;</string>
   <!--
     Federated Credential Management prompts
 

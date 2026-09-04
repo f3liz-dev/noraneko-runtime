@@ -24,6 +24,16 @@ class SettingsCustomizePage(composeRule: AndroidComposeTestRule<HomeActivityInte
         )
     }
 
+    override fun navigateToPage(url: String, forceNavigation: Boolean): SettingsCustomizePage {
+        super.navigateToPage(url, forceNavigation)
+        return this
+    }
+
+    fun verifyOptionIsSelected(selector: Selector): SettingsCustomizePage {
+        mozVerifyElementHasCheckedSiblingByResName(selector, "radio_button")
+        return this
+    }
+
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
         return SettingsCustomizeSelectors.all.filter { it.groups.contains(group) }
     }

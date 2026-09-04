@@ -69,6 +69,8 @@ class DatarateTest : public ::libaom_test::EncoderTest {
       effective_datarate_dynamic_[i] = 0.0;
     }
     avif_mode_ = 0;
+    lag_realtime_mode_ = 0;
+    enable_warped_motion_ = false;
   }
 
   void PreEncodeFrameHook(::libaom_test::VideoSource *video,
@@ -85,7 +87,7 @@ class DatarateTest : public ::libaom_test::EncoderTest {
       encoder->Control(AV1E_SET_ROW_MT, 1);
       if (cfg_.g_usage == AOM_USAGE_REALTIME) {
         encoder->Control(AV1E_SET_ENABLE_GLOBAL_MOTION, 0);
-        encoder->Control(AV1E_SET_ENABLE_WARPED_MOTION, 0);
+        encoder->Control(AV1E_SET_ENABLE_WARPED_MOTION, enable_warped_motion_);
         encoder->Control(AV1E_SET_ENABLE_RESTORATION, 0);
         encoder->Control(AV1E_SET_ENABLE_OBMC, 0);
         encoder->Control(AV1E_SET_DELTAQ_MODE, 0);
@@ -116,6 +118,12 @@ class DatarateTest : public ::libaom_test::EncoderTest {
         encoder->Control(AV1E_SET_ENABLE_CHROMA_DELTAQ, 1);
         encoder->Control(AOME_SET_CQ_LEVEL, 0);
         encoder->Control(AV1E_SET_AQ_MODE, (aq_mode_ > 0) ? 1 : 0);
+      }
+      if (lag_realtime_mode_) {
+        encoder->Control(AV1E_SET_MIN_GF_INTERVAL, 16);
+        encoder->Control(AV1E_SET_MAX_GF_INTERVAL, 16);
+        encoder->Control(AV1E_SET_GF_MAX_PYRAMID_HEIGHT, 1);
+        encoder->Control(AV1E_SET_GF_MIN_PYRAMID_HEIGHT, 1);
       }
     }
 
@@ -239,7 +247,6 @@ class DatarateTest : public ::libaom_test::EncoderTest {
                                          double low_rate_err_limit,
                                          double high_rate_err_limit) {
     cfg_.rc_target_bitrate = bitrate;
-    ResetModel();
     ASSERT_NO_FATAL_FAILURE(RunLoop(video));
     ASSERT_GE(static_cast<double>(cfg_.rc_target_bitrate),
               effective_datarate_ * low_rate_err_limit)
@@ -283,6 +290,8 @@ class DatarateTest : public ::libaom_test::EncoderTest {
   int64_t bits_total_dynamic_[3];
   int frame_number_dynamic_[3];
   int avif_mode_;
+  int lag_realtime_mode_;
+  bool enable_warped_motion_;
 };
 
 }  // namespace

@@ -1,7 +1,8 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "mozilla/net/CookieServiceChild.h"
 
 #include "Cookie.h"
 #include "CookieCommons.h"
@@ -9,38 +10,37 @@
 #include "CookieNotification.h"
 #include "CookieParser.h"
 #include "CookieService.h"
-#include "mozilla/net/CookieServiceChild.h"
 #include "ErrorList.h"
-#include "mozilla/net/HttpChannelChild.h"
-#include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/LoadInfo.h"
+#include "ThirdPartyUtil.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ConsoleReportCollector.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/ipc/URIUtils.h"
-#include "mozilla/net/NeckoChild.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
-#include "nsICookieJarSettings.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/HttpChannelChild.h"
+#include "mozilla/net/NeckoChannelParams.h"
+#include "mozilla/net/NeckoChild.h"
 #include "nsIChannel.h"
 #include "nsIClassifiedChannel.h"
-#include "nsIHttpChannel.h"
+#include "nsIConsoleReportCollector.h"
+#include "nsICookieJarSettings.h"
 #include "nsIEffectiveTLDService.h"
-#include "nsIURI.h"
+#include "nsIHttpChannel.h"
 #include "nsIPrefBranch.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsIURI.h"
 #include "nsIWebProgressListener.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/TimeStamp.h"
-#include "ThirdPartyUtil.h"
-#include "nsIConsoleReportCollector.h"
-#include "mozilla/dom/WindowGlobalChild.h"
 
 using namespace mozilla::ipc;
 
@@ -214,6 +214,8 @@ void CookieServiceChild::RemoveSingleCookie(const CookieStruct& aCookie,
     return;
   }
 
+  uint32_t targetHash =
+      Cookie::ComputeKeyHash(aCookie.name(), aCookie.host(), aCookie.path());
   for (uint32_t i = 0; i < cookiesList->Length(); i++) {
     RefPtr<Cookie> cookie = cookiesList->ElementAt(i);
     // bug 1858366: In the case that we are updating a stale cookie
@@ -222,7 +224,8 @@ void CookieServiceChild::RemoveSingleCookie(const CookieStruct& aCookie,
     // When received by the content process we should not remove
     // the new cookie since we have already updated the content
     // process cookies. So we also check the expiry here.
-    if (cookie->Name().Equals(aCookie.name()) &&
+    if (cookie->KeyHash() == targetHash &&
+        cookie->Name().Equals(aCookie.name()) &&
         cookie->Host().Equals(aCookie.host()) &&
         cookie->Path().Equals(aCookie.path()) &&
         cookie->ExpiryInMSec() <= aCookie.expiryInMSec()) {
@@ -304,8 +307,7 @@ IPCResult CookieServiceChild::RecvTrackCookiesLoad(
   return cookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN ||
          cookieBehavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN ||
          cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
-         cookieBehavior ==
-             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+         cookieBehavior == nsICookieService::BEHAVIOR_PARTITION_FOREIGN;
 }
 
 CookieServiceChild::CookieNotificationAction
@@ -341,7 +343,8 @@ CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
 
   for (uint32_t i = 0; i < cookiesList->Length(); i++) {
     Cookie* cookie = cookiesList->ElementAt(i);
-    if (cookie->Name().Equals(aCookie->Name()) &&
+    if (cookie->KeyHash() == aCookie->KeyHash() &&
+        cookie->Name().Equals(aCookie->Name()) &&
         cookie->Host().Equals(aCookie->Host()) &&
         cookie->Path().Equals(aCookie->Path())) {
       if (cookie->Value().Equals(aCookie->Value()) &&
@@ -417,7 +420,7 @@ bool CookieServiceChild::HasExistingCookies(
   CookieKey key(aBaseDomain, aOriginAttributes);
   mCookiesMap.Get(key, &cookiesList);
 
-  return cookiesList ? cookiesList->Length() : 0;
+  return cookiesList ? cookiesList->Length() : false;
 }
 
 void CookieServiceChild::AddCookieFromDocument(
@@ -449,7 +452,8 @@ void CookieServiceChild::AddCookieFromDocument(
 
     for (uint32_t i = 0; i < cookies->Length(); ++i) {
       RefPtr<Cookie> existingCookie = cookies->ElementAt(i);
-      if (existingCookie->Name().Equals(aCookie.Name()) &&
+      if (existingCookie->KeyHash() == aCookie.KeyHash() &&
+          existingCookie->Name().Equals(aCookie.Name()) &&
           existingCookie->Host().Equals(aCookie.Host()) &&
           existingCookie->Path().Equals(aCookie.Path())) {
         // Can't overwrite an httponly cookie from a script context.
@@ -480,14 +484,13 @@ void CookieServiceChild::AddCookieFromDocument(
 
     // If there is no WindowGlobalChild fall back to PCookieService SetCookies.
     if (NS_WARN_IF(!windowGlobalChild)) {
-      SendSetCookies(aBaseDomain, aOriginAttributes, aDocumentURI, false,
-                     aThirdParty, cookiesToSend);
+      SendSetCookies(aBaseDomain, aOriginAttributes, aDocumentURI, aThirdParty,
+                     cookiesToSend);
       return;
     }
 
     windowGlobalChild->SendSetCookies(aBaseDomain, aOriginAttributes,
-                                      aDocumentURI, false, aThirdParty,
-                                      cookiesToSend);
+                                      aDocumentURI, aThirdParty, cookiesToSend);
   }
 }
 

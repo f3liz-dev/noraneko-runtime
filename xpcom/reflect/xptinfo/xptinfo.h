@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -14,11 +12,12 @@
 #define xptinfo_h
 
 #include <stdint.h>
-#include "nsID.h"
-#include "mozilla/Assertions.h"
-#include "jsapi.h"
+
 #include "js/Symbol.h"
 #include "js/Value.h"
+#include "jsapi.h"
+#include "mozilla/Assertions.h"
+#include "nsID.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
@@ -515,10 +514,10 @@ struct nsXPTConstantInfo {
   const char* Name() const { return xpt::detail::GetString(mName); }
 
   JS::Value JSValue() const {
-    if (mSigned || mValue <= uint32_t(INT32_MAX)) {
+    if (mSigned) {
       return JS::Int32Value(int32_t(mValue));
     }
-    return JS::DoubleValue(mValue);
+    return JS::NumberValue(mValue);
   }
 
   ////////////////////////////////////////////////////////////////

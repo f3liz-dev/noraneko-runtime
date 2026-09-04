@@ -1,19 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This header contains most functions that give information about the Profiler:
 // Whether it is active or not, paused, and the selected features.
-// It is safe to include unconditionally, but uses of structs and functions must
-// be guarded by `#ifdef MOZ_GECKO_PROFILER`.
 
 #ifndef ProfilerState_h
 #define ProfilerState_h
 
 #include <mozilla/DefineEnum.h>
 #include <mozilla/EnumSet.h>
+#include "mozilla/ProfilerPlatformMacros.h"
 #include "mozilla/ProfilerUtils.h"
 #include "mozilla/Perfetto.h"
 
@@ -23,18 +20,18 @@
 // Profiler features
 //---------------------------------------------------------------------------
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(GP_PLAT_arm64_darwin)
 #  define POWER_HELP "Sample per process power use"
-#elif defined(__APPLE__) && defined(__x86_64__)
+#elif defined(GP_PLAT_amd64_darwin)
 #  define POWER_HELP \
     "Record the power used by the entire system with each sample."
-#elif defined(__linux__) && defined(__x86_64__)
+#elif defined(GP_PLAT_amd64_linux)
 #  define POWER_HELP                                                \
     "Record the power used by the entire system with each sample. " \
     "Only available with Intel CPUs and requires setting "          \
     "the sysctl kernel.perf_event_paranoid to 0."
 
-#elif defined(_MSC_VER)
+#elif defined(GP_OS_windows)
 #  define POWER_HELP                                                       \
     "Record the value of every energy meter available on the system with " \
     "each sample. Only available on Windows 11 with Intel CPUs."
@@ -91,53 +88,51 @@
   MACRO(13, "audiocallbacktracing", AudioCallbackTracing,                  \
         "Audio callback tracing")                                          \
                                                                            \
-  MACRO(14, "cpu", CPUUtilization, "CPU utilization")                      \
-                                                                           \
-  MACRO(15, "notimerresolutionchange", NoTimerResolutionChange,            \
+  MACRO(14, "notimerresolutionchange", NoTimerResolutionChange,            \
         "Do not adjust the timer resolution for sampling, so that other "  \
         "Firefox timers do not get affected")                              \
                                                                            \
-  MACRO(16, "cpuallthreads", CPUAllThreads,                                \
+  MACRO(15, "cpuallthreads", CPUAllThreads,                                \
         "Sample the CPU utilization of all registered threads")            \
                                                                            \
-  MACRO(17, "samplingallthreads", SamplingAllThreads,                      \
+  MACRO(16, "samplingallthreads", SamplingAllThreads,                      \
         "Sample the stacks of all registered threads")                     \
                                                                            \
-  MACRO(18, "markersallthreads", MarkersAllThreads,                        \
+  MACRO(17, "markersallthreads", MarkersAllThreads,                        \
         "Record markers from all registered threads")                      \
                                                                            \
-  MACRO(19, "unregisteredthreads", UnregisteredThreads,                    \
+  MACRO(18, "unregisteredthreads", UnregisteredThreads,                    \
         "Discover and profile unregistered threads -- beware: expensive!") \
                                                                            \
-  MACRO(20, "processcpu", ProcessCPU,                                      \
+  MACRO(19, "processcpu", ProcessCPU,                                      \
         "Sample the CPU utilization of each process")                      \
                                                                            \
-  MACRO(21, "power", Power, POWER_HELP)                                    \
+  MACRO(20, "power", Power, POWER_HELP)                                    \
                                                                            \
-  MACRO(22, "cpufreq", CPUFrequency,                                       \
+  MACRO(21, "cpufreq", CPUFrequency,                                       \
         "Record the clock frequency of "                                   \
         "every CPU core for every profiler sample.")                       \
                                                                            \
-  MACRO(23, "bandwidth", Bandwidth,                                        \
+  MACRO(22, "bandwidth", Bandwidth,                                        \
         "Record the network bandwidth used for every profiler sample.")    \
                                                                            \
-  MACRO(24, "memory", Memory,                                              \
+  MACRO(23, "memory", Memory,                                              \
         "Track the memory allocations and deallocations per process over " \
         "time.")                                                           \
                                                                            \
-  MACRO(25, "tracing", Tracing,                                            \
+  MACRO(24, "tracing", Tracing,                                            \
         "Instead of sampling periodically, captures information about "    \
         "every function executed for the duration (JS only)")              \
                                                                            \
-  MACRO(26, "sandbox", Sandbox,                                            \
+  MACRO(25, "sandbox", Sandbox,                                            \
         "Report sandbox syscalls and logs in the "                         \
         "profiler.")                                                       \
                                                                            \
-  MACRO(27, "flows", Flows,                                                \
+  MACRO(26, "flows", Flows,                                                \
         "Include all flow-related markers. These markers show the program" \
         "better but can cause more overhead in some places than normal.")  \
                                                                            \
-  MACRO(28, "jssources", JSSources,                                        \
+  MACRO(27, "jssources", JSSources,                                        \
         "Collect JavaScript source code information for profiled scripts.")
 
 // *** Synchronize with lists in BaseProfilerState.h and geckoProfiler.json ***
@@ -222,32 +217,10 @@ using ProfilingStateSet = mozilla::EnumSet<ProfilingState>;
 // It must NOT call profiler_add/remove_state_change_callback().
 using ProfilingStateChangeCallback = std::function<void(ProfilingState)>;
 
-#ifndef MOZ_GECKO_PROFILER
+#include "mozilla/Atomics.h"
+#include "mozilla/Maybe.h"
 
-[[nodiscard]] inline bool profiler_is_active() { return false; }
-[[nodiscard]] inline bool profiler_is_active_and_unpaused() { return false; }
-[[nodiscard]] inline bool profiler_is_collecting_markers() { return false; }
-[[nodiscard]] inline bool profiler_is_etw_collecting_markers() { return false; }
-[[nodiscard]] inline bool profiler_is_perfetto_tracing() { return false; }
-[[nodiscard]] inline bool profiler_feature_active(uint32_t aFeature) {
-  return false;
-}
-[[nodiscard]] inline bool profiler_is_locked_on_current_thread() {
-  return false;
-}
-inline void profiler_add_state_change_callback(
-    ProfilingStateSet aProfilingStateSet,
-    ProfilingStateChangeCallback&& aCallback, uintptr_t aUniqueIdentifier = 0) {
-}
-inline void profiler_remove_state_change_callback(uintptr_t aUniqueIdentifier) {
-}
-
-#else  // !MOZ_GECKO_PROFILER
-
-#  include "mozilla/Atomics.h"
-#  include "mozilla/Maybe.h"
-
-#  include <stdint.h>
+#include <stdint.h>
 
 namespace mozilla::profiler::detail {
 
@@ -368,13 +341,14 @@ class RacyFeatures {
   static constexpr uint32_t PerfettoTracingEnabled = 1u << 27;
 
 // Ensure Active/Paused don't overlap with any of the feature bits.
-#  define NO_OVERLAP(n_, str_, Name_, desc_)                \
-    static_assert(ProfilerFeature::Name_ != SamplingPaused, \
-                  "bad feature value");
+#define NO_OVERLAP(n_, str_, Name_, desc_)                \
+  static_assert(ProfilerFeature::Name_ != SamplingPaused, \
+                "bad feature "                            \
+                "value");
 
   PROFILER_FOR_EACH_FEATURE(NO_OVERLAP);
 
-#  undef NO_OVERLAP
+#undef NO_OVERLAP
 
   // We combine the active bit with the feature bits so they can be read or
   // written in a single atomic operation.
@@ -481,7 +455,5 @@ void profiler_add_state_change_callback(
 
 // Remove the callback with the given non-zero identifier.
 void profiler_remove_state_change_callback(uintptr_t aUniqueIdentifier);
-
-#endif  // MOZ_GECKO_PROFILER
 
 #endif  // ProfilerState_h

@@ -10,12 +10,13 @@
 use std::i32;
 
 use crate::gpu_types::UvRectKind;
-use crate::internal_types::{FrameId, FrameMemory, FrameVec};
+use crate::internal_types::{FrameId, FrameMemory, FrameVec, TextureSource, TextureSourceExternal};
 use crate::renderer::MAX_VERTEX_TEXTURE_WIDTH;
 use crate::util::ScaleOffset;
-use api::units::{DeviceIntPoint, DeviceIntRect, DeviceIntSize, DeviceRect, LayoutRect, PictureRect};
+use api::units::{DeviceIntRect, DeviceIntSize, DevicePoint, DeviceRect, LayoutRect, LayoutSideOffsets, PictureRect};
 use api::{PremultipliedColorF, ImageFormat};
 use crate::device::Texel;
+use crate::render_task::{RenderTaskLocation, StaticRenderTaskSurface};
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskId};
 
 pub struct GpuBufferBuilder {
@@ -195,6 +196,19 @@ impl Into<GpuBufferBlockF> for crate::quad::LayoutOrDeviceRect {
     }
 }
 
+impl Into<GpuBufferBlockF> for LayoutSideOffsets {
+    fn into(self) -> GpuBufferBlockF {
+        GpuBufferBlockF {
+            data: [
+                self.top,
+                self.right,
+                self.bottom,
+                self.left,
+            ],
+        }
+    }
+}
+
 impl Into<GpuBufferBlockF> for ScaleOffset {
     fn into(self) -> GpuBufferBlockF {
         GpuBufferBlockF {
@@ -221,14 +235,27 @@ impl Into<GpuBufferBlockF> for PictureRect {
     }
 }
 
-impl Into<GpuBufferBlockF> for DeviceRect {
-    fn into(self) -> GpuBufferBlockF {
+impl From<DeviceRect> for GpuBufferBlockF {
+    fn from(rect: DeviceRect) -> Self {
         GpuBufferBlockF {
             data: [
-                self.min.x,
-                self.min.y,
-                self.max.x,
-                self.max.y,
+                rect.min.x,
+                rect.min.y,
+                rect.max.x,
+                rect.max.y,
+            ],
+        }
+    }
+}
+
+impl From<DeviceRect> for GpuBufferBlockI {
+    fn from(rect: DeviceRect) -> Self {
+        GpuBufferBlockI {
+            data: [
+                rect.min.x as i32,
+                rect.min.y as i32,
+                rect.max.x as i32,
+                rect.max.y as i32,
             ],
         }
     }
@@ -410,7 +437,7 @@ pub struct GpuBufferBuilderImpl<T> {
     epoch: u32,
 }
 
-impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRect> {
+impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRect> + std::convert::From<DeviceRect> {
     pub fn new(memory: &FrameMemory, capacity: usize, frame_id: FrameId) -> Self {
         // Pick the first 8 bits of the frame id and store them in the upper bits
         // of the handles.
@@ -486,10 +513,66 @@ impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRec
         // query the location of any dynamic (render target) or static (texture cache)
         // task. This allows us to patch the UV rects in to the GPU buffer before upload
         // to the GPU.
+        let mut deferred_uv_copies = Vec::new();
         for block in self.deferred.drain(..) {
             let render_task = &render_tasks[block.task_id];
-            let target_rect = render_task.get_target_rect();
 
+            // External images (for example Android SurfaceTexture sources) only have
+            // their uv rect resolved by the renderer, and it may be Y-flipped. The
+            // target rect computed below does not capture that, so instead defer copying
+            // the resolved uv rect (written by update_deferred_resolves into the task's
+            // uv_rect_handle block) into this segment block. See `apply_deferred_uv_copies`.
+            if let RenderTaskLocation::Static {
+                surface: StaticRenderTaskSurface::ReadOnly {
+                    source: TextureSource::External(TextureSourceExternal { normalized_uvs, .. }),
+                },
+                ..
+            } = render_task.location {
+                // The gpu buffer stores uv rects in device pixels, but the renderer
+                // writes normalized uvs for external images that use them. Scale by the
+                // image size (the external image task's target rect) during the copy.
+                let task_target_rect = render_task.get_target_rect();
+                let uv_scale = if normalized_uvs {
+                    let size = task_target_rect.size();
+                    [size.width as f32, size.height as f32]
+                } else {
+                    [1.0, 1.0]
+                };
+                // External image uvs are resolved by the renderer, so the sub-rect
+                // can't be baked in here as it is for non-external images.
+                // Instead, express it as fractions of the task and apply it in
+                // `apply_deferred_uv_copies` once the uvs are known.
+                let sub_uv = if block.task_id.has_sub_rect() {
+                    let sub = &render_tasks.sub_rects[block.task_id.sub_rect_index as usize];
+                    let w = task_target_rect.width() as f32;
+                    let h = task_target_rect.height() as f32;
+                    [
+                        sub.sub_rect.min.x as f32 / w,
+                        sub.sub_rect.min.y as f32 / h,
+                        sub.sub_rect.max.x as f32 / w,
+                        sub.sub_rect.max.y as f32 / h,
+                    ]
+                } else {
+                    [0.0, 0.0, 1.0, 1.0]
+                };
+                deferred_uv_copies.push(DeferredUvCopy {
+                    src: render_task.get_texture_address().as_u32(),
+                    dst: block.index as u32,
+                    uv_scale,
+                    sub_uv,
+                });
+                continue;
+            }
+
+            let mut target_rect = render_task.get_target_rect();
+            if block.task_id.has_sub_rect() {
+                let sub = &render_tasks.sub_rects[block.task_id.sub_rect_index as usize];
+                target_rect = sub.sub_rect
+                    .translate(target_rect.min.to_vector())
+                    .intersection_unchecked(&target_rect);
+            }
+
+            let target_rect = target_rect.to_f32();
             let uv_rect = match render_task.uv_rect_kind() {
                 UvRectKind::Rect => {
                     target_rect
@@ -497,14 +580,14 @@ impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRec
                 UvRectKind::Quad { top_left, bottom_right, .. } => {
                     let size = target_rect.size();
 
-                    DeviceIntRect::new(
-                        DeviceIntPoint::new(
-                            target_rect.min.x + (top_left.x * size.width as f32).round() as i32,
-                            target_rect.min.y + (top_left.y * size.height as f32).round() as i32,
+                    DeviceRect::new(
+                        DevicePoint::new(
+                            target_rect.min.x + top_left.x * size.width,
+                            target_rect.min.y + top_left.y * size.height,
                         ),
-                        DeviceIntPoint::new(
-                            target_rect.min.x + (bottom_right.x * size.width as f32).round() as i32,
-                            target_rect.min.y + (bottom_right.y * size.height as f32).round() as i32,
+                        DevicePoint::new(
+                            target_rect.min.x + bottom_right.x * size.width,
+                            target_rect.min.y + bottom_right.y * size.height,
                         ),
                     )
                 }
@@ -517,6 +600,7 @@ impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRec
             data: self.data,
             size: DeviceIntSize::new(MAX_VERTEX_TEXTURE_WIDTH as i32, (len / MAX_VERTEX_TEXTURE_WIDTH) as i32),
             format: T::image_format(),
+            deferred_uv_copies,
             epoch: self.epoch,
         }
     }
@@ -578,13 +662,71 @@ fn finish_row<T: Default>(data: &mut FrameVec<T>) {
     }
 }
 
+/// Records that the uv rect block at `dst` must be overwritten with the block at
+/// `src` once the renderer has resolved external images.
+///
+/// TODO: This is a hack. At the end of frame building we resolve UVs from the
+/// render task graph, however this is too early to resolve the real UVs for
+/// external images (happens on the renderer thread). So this is an even-more-
+/// deferred step on top of the already deferred blocks.
+/// It would be cleaner to move the existing deferred mechanism later and avoid
+/// stacking another one on top, but the better fix would be to not write UV
+/// rects in the gpu buffer and pass render task handles to the quad shaders.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct DeferredUvCopy {
+    pub src: u32,
+    pub dst: u32,
+    /// Per-axis scale applied to the copied uv rect. Used to convert the
+    /// renderer's normalized uvs (for external images that use them) into the
+    /// device pixels that the quad shaders expect. `[1.0, 1.0]` for uvs that
+    /// are already in device pixels.
+    pub uv_scale: [f32; 2],
+    /// Sub-rect to extract from the copied uv rect, expressed as fractions of
+    /// the source task's extent: `[fx0, fy0, fx1, fy1]`. `[0.0, 0.0, 1.0, 1.0]`
+    /// copies the whole task (the common case). Used for image borders, whose
+    /// segments sample a sub-region of the source image via `add_sub_rect`; the
+    /// sub-rect must be applied on top of the renderer-resolved uvs here because
+    /// external image uvs are not known at `finalize` time.
+    pub sub_uv: [f32; 4],
+}
+
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GpuBuffer<T> {
     pub data: FrameVec<T>,
     pub size: DeviceIntSize,
     pub format: ImageFormat,
+    pub deferred_uv_copies: Vec<DeferredUvCopy>,
     epoch: u32,
+}
+
+impl GpuBuffer<GpuBufferBlockF> {
+    /// Apply the uv rect copies deferred during `finalize`. Must be called after the
+    /// renderer has resolved external images into the gpu buffer.
+    pub fn apply_deferred_uv_copies(&mut self) {
+        for i in 0 .. self.deferred_uv_copies.len() {
+            let copy = self.deferred_uv_copies[i];
+            // The uv rect is stored as [p0.x, p0.y, p1.x, p1.y].
+            let mut uv = self.data[copy.src as usize].data;
+            uv[0] *= copy.uv_scale[0];
+            uv[1] *= copy.uv_scale[1];
+            uv[2] *= copy.uv_scale[0];
+            uv[3] *= copy.uv_scale[1];
+            // Extract the sub-rect (fractions of the resolved uv rect). This is an
+            // identity transform in the common (whole-task) case.
+            let w = uv[2] - uv[0];
+            let h = uv[3] - uv[1];
+            let sub = [
+                uv[0] + copy.sub_uv[0] * w,
+                uv[1] + copy.sub_uv[1] * h,
+                uv[0] + copy.sub_uv[2] * w,
+                uv[1] + copy.sub_uv[3] * h,
+            ];
+            self.data[copy.dst as usize] = sub.into();
+        }
+    }
 }
 
 impl<T> GpuBuffer<T> {

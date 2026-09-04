@@ -79,18 +79,18 @@ export async function getElementFromPoint(x, y, doc) {
       rect = await actor.sendQuery(
         "ScreenshotsHelper:GetElementRectFromPoint",
         {
-          x: x + ele.ownerGlobal.mozInnerScreenX,
-          y: y + ele.ownerGlobal.mozInnerScreenY,
-          bcId: ele.browsingContext.id,
+          x: x + ele.documentGlobal.mozInnerScreenX,
+          y: y + ele.documentGlobal.mozInnerScreenY,
+          bc: ele.browsingContext,
         }
       );
 
       if (rect) {
         rect = {
-          left: rect.left - ele.ownerGlobal.mozInnerScreenX,
-          right: rect.right - ele.ownerGlobal.mozInnerScreenX,
-          top: rect.top - ele.ownerGlobal.mozInnerScreenY,
-          bottom: rect.bottom - ele.ownerGlobal.mozInnerScreenY,
+          left: rect.left - ele.documentGlobal.mozInnerScreenX,
+          right: rect.right - ele.documentGlobal.mozInnerScreenX,
+          top: rect.top - ele.documentGlobal.mozInnerScreenY,
+          bottom: rect.bottom - ele.documentGlobal.mozInnerScreenY,
         };
       }
     } else if (ele.openOrClosedShadowRoot) {
@@ -273,6 +273,32 @@ export class Region {
     if (dims.bottom != null) {
       this.bottom = dims.bottom;
     }
+  }
+
+  /**
+   * Sets the dimensions from a given DOMRect. This will offset the rect
+   * relative to the screenshots container before setting the dimensions.
+   *
+   * @param {DOMRect} rect The DOMRect to set the dimensions from
+   */
+  setDimensionsFromDOMRect(rect) {
+    if (rect == null) {
+      this.resetDimensions();
+      return;
+    }
+
+    // eslint-disable-next-line no-shadow
+    let { scrollX, scrollY } = this.#windowDimensions.dimensions;
+    // eslint-disable-next-line no-shadow
+    let { left, top, right, bottom } = rect;
+    let dims = {
+      left: left + scrollX,
+      top: top + scrollY,
+      right: right + scrollX,
+      bottom: bottom + scrollY,
+    };
+
+    this.dimensions = dims;
   }
 
   get dimensions() {

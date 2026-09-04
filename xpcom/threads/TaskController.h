@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,22 +5,23 @@
 #ifndef mozilla_TaskController_h
 #define mozilla_TaskController_h
 
+#include <atomic>
+#include <set>
+#include <stack>
+#include <vector>
+
 #include "MainThreadUtils.h"
 #include "mozilla/CondVar.h"
-#include "mozilla/IdlePeriodState.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/IdlePeriodState.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/StaticString.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"  // for MOZ_COLLECTING_RUNNABLE_TELEMETRY
-
-#include <atomic>
-#include <vector>
-#include <set>
-#include <stack>
 
 class nsIRunnable;
 class nsIThreadObserver;
@@ -67,7 +66,7 @@ class TaskManager {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(TaskManager)
 
-  TaskManager() : mTaskCount(0) {}
+  TaskManager() = default;
 
   // Subclasses implementing task manager will have this function called to
   // determine whether their associated tasks are currently suspended. This
@@ -95,7 +94,7 @@ class TaskManager {
   uint32_t PendingTaskCount() { return mTaskCount; }
 
  protected:
-  virtual ~TaskManager() {}
+  virtual ~TaskManager() = default;
 
  private:
   friend class TaskController;
@@ -107,7 +106,7 @@ class TaskManager {
   bool mCurrentSuspended = false;
   int32_t mCurrentPriorityModifier = 0;
 
-  std::atomic<uint32_t> mTaskCount;
+  std::atomic<uint32_t> mTaskCount{};
 };
 
 // A Task is the the base class for any unit of work that may be scheduled.
@@ -202,7 +201,7 @@ class Task {
         mSeqNo(sCurrentTaskSeqNo++),
         mPriority(static_cast<uint32_t>(aPriority)) {}
 
-  virtual ~Task() {}
+  virtual ~Task() = default;
 
   friend class TaskController;
 
@@ -258,7 +257,7 @@ class Task {
 // run during idle periods.
 class IdleTaskManager : public TaskManager {
  public:
-  explicit IdleTaskManager(already_AddRefed<nsIIdlePeriod>&& aIdlePeriod)
+  explicit IdleTaskManager(already_AddRefed<nsIIdlePeriod> aIdlePeriod)
       : mIdlePeriodState(std::move(aIdlePeriod)), mProcessedTaskCount(0) {}
 
   IdlePeriodState& State() { return mIdlePeriodState; }
@@ -306,7 +305,7 @@ class TaskController {
     mExternalCondVar = aExternalCondVar;
   }
 
-  void SetIdleTaskManager(IdleTaskManager* aIdleTaskManager) {
+  void SetIdleTaskManager(already_AddRefed<IdleTaskManager> aIdleTaskManager) {
     mIdleTaskManager = aIdleTaskManager;
   }
   IdleTaskManager* GetIdleTaskManager() { return mIdleTaskManager.get(); }
@@ -323,7 +322,7 @@ class TaskController {
 
   // This adds a task to the TaskController graph.
   // This may be called on any thread.
-  void AddTask(already_AddRefed<Task>&& aTask);
+  void AddTask(already_AddRefed<Task> aTask);
 
   // This wait function is the theoretical function you would need if our main
   // thread needs to also process OS messages or something along those lines.
@@ -340,7 +339,7 @@ class TaskController {
   // This may be called on any thread.
   void ReprioritizeTask(Task* aTask, uint32_t aPriority);
 
-  void DispatchRunnable(already_AddRefed<nsIRunnable>&& aRunnable,
+  void DispatchRunnable(already_AddRefed<nsIRunnable> aRunnable,
                         uint32_t aPriority, TaskManager* aManager = nullptr);
 
   nsIRunnable* GetRunnableForMTTask(bool aReallyWait);
@@ -368,6 +367,11 @@ class TaskController {
   // If needed, schedule a round of idle processing for moz_jemalloc's
   // idle purge.
   void MayScheduleIdleMemoryCleanup();
+
+  // Request idle memory cleanup, e.g. after GC/CC completion.
+  // Unlike MayScheduleIdleMemoryCleanup, this does not check for pending
+  // tasks -- the caller knows cleanup is needed regardless.
+  void RequestIdleMemoryCleanup(StaticString aReason);
 #endif
 
  private:

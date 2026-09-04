@@ -1,10 +1,10 @@
 add_task(async function test() {
   let tab0 = gBrowser.selectedTab;
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   let tab1 = await addTab("http://example.com/1");
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   let tab2 = await addTab("http://example.com/2");
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   let tab3 = await addTab("http://example.com/3");
   let tabs = [tab0, tab1, tab2, tab3];
 
@@ -40,8 +40,8 @@ add_task(async function test() {
     ok(!tabs[i].multiselected, "Tab" + i + " is not multiselected");
   }
 
-  await BrowserTestUtils.waitForCondition(() => getUrl(tab4) == getUrl(tab1));
-  await BrowserTestUtils.waitForCondition(() => getUrl(tab5) == getUrl(tab2));
+  await TestUtils.waitForCondition(() => getUrl(tab4) == getUrl(tab1));
+  await TestUtils.waitForCondition(() => getUrl(tab5) == getUrl(tab2));
 
   ok(true, "Tab1 and tab2 are duplicated succesfully");
 

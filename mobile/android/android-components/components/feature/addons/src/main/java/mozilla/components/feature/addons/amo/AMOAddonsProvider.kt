@@ -10,11 +10,10 @@ import android.graphics.BitmapFactory
 import android.util.AtomicFile
 import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
@@ -36,6 +35,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlin.collections.set
 
 internal const val API_VERSION = "api/v4"
 internal const val DEFAULT_SERVER_URL = "https://services.addons.mozilla.org"
@@ -80,8 +80,6 @@ class AMOAddonsProvider(
     private val logger = Logger("AMOAddonsProvider")
 
     private val diskCacheLock = Any()
-
-    private val scope = CoroutineScope(Dispatchers.IO)
 
     // Acts as an in-memory cache for the fetched addon's icons.
     @VisibleForTesting
@@ -149,6 +147,39 @@ class AMOAddonsProvider(
         }
     }
 
+    override suspend fun getAddonByID(
+        id: String,
+        readTimeoutInSeconds: Long?,
+        language: String?,
+    ): Addon? {
+        val langParam = when (!language.isNullOrEmpty()) {
+            true -> "&lang=$language"
+            else -> ""
+        }
+
+        return client.fetch(
+            Request(
+                url = "$serverURL/$API_VERSION/addons/search/?guid=$id$langParam",
+                readTimeout = Pair(readTimeoutInSeconds ?: DEFAULT_READ_TIMEOUT_IN_SECONDS, TimeUnit.SECONDS),
+            ),
+        ).use { response ->
+            if (response.isSuccess) {
+                val responseBody = response.body.string(Charsets.UTF_8)
+                try {
+                    JSONObject(responseBody)
+                        .getAddonsFromSearchResults(language)
+                        .firstOrNull()
+                } catch (e: JSONException) {
+                    logger.error("Failed to get addon by uuid [$id]", e)
+                    null
+                }
+            } else {
+                logger.error("Failed to get addon by uuid [$id]. Status code: ${response.status}")
+                null
+            }
+        }
+    }
+
     @Suppress("CognitiveComplexMethod")
     private suspend fun fetchFeaturedAddons(
         readTimeoutInSeconds: Long?,
@@ -195,12 +226,13 @@ class AMOAddonsProvider(
     }
 
     /**
-     * Asynchronously loads add-on icon for the given [iconUrl] and stores in the cache.
+     * Loads the add-on icon for the given [iconUrl] and stores it in the cache.
      */
     @VisibleForTesting
-    internal fun loadIconAsync(addonId: String, iconUrl: String): Deferred<Bitmap?> = scope.async {
+    @Suppress("NestedBlockDepth")
+    internal suspend fun loadIcon(addonId: String, iconUrl: String): Bitmap? {
         val cachedIcon = iconsCache[addonId]
-        if (cachedIcon != null) {
+        return if (cachedIcon != null) {
             logger.info("Icon for $addonId was found in the cache")
             cachedIcon
         } else if (iconUrl.isBlank()) {
@@ -232,14 +264,16 @@ class AMOAddonsProvider(
     }
 
     @VisibleForTesting
-    internal suspend fun List<Addon>.loadIcons(): List<Addon> {
-        this.map {
+    internal suspend fun List<Addon>.loadIcons(): List<Addon> = coroutineScope {
+        this@loadIcons.map { addon ->
             // Instead of loading icons one by one, let's load them async
-            // so we can do multiple request at the time.
-            loadIconAsync(it.id, it.iconUrl)
+            // so we can do multiple request at the time. These are launched as children
+            // of the calling coroutine so they are cancelled together with it, instead of
+            // being orphaned on a long-lived scope and leaking the caller.
+            async { loadIcon(addon.id, addon.iconUrl) }
         }.awaitAll() // wait until all parallel icon requests finish.
 
-        return this.map { addon ->
+        this@loadIcons.map { addon ->
             addon.copy(icon = iconsCache[addon.id])
         }
     }
@@ -356,6 +390,13 @@ enum class SortOption(val value: String) {
     NAME_DESC("-name"),
     DATE_ADDED("added"),
     DATE_ADDED_DESC("-added"),
+}
+
+internal fun JSONObject.getAddonsFromSearchResults(language: String? = null): List<Addon> {
+    val addonsJson = getJSONArray("results")
+    return (0 until addonsJson.length()).map { index ->
+        addonsJson.getJSONObject(index).toAddon(language)
+    }
 }
 
 internal fun JSONObject.getAddonsFromCollection(language: String? = null): List<Addon> {

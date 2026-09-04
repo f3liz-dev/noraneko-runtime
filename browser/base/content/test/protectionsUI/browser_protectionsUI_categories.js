@@ -30,7 +30,7 @@ registerCleanupFunction(function () {
 
 add_task(async function testCookieCategoryLabel() {
   await BrowserTestUtils.withNewTab(
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     "http://www.example.com",
     async function () {
       // Ensure the category nodes exist.
@@ -100,7 +100,7 @@ add_task(async function testCookieCategoryLabel() {
 
       Services.prefs.setIntPref(
         TPC_PREF,
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN
       );
       await TestUtils.waitForCondition(
         () => categoryItem.classList.contains("blocked"),
@@ -163,7 +163,7 @@ add_task(async function testCategorySections() {
   }
 
   await BrowserTestUtils.withNewTab(
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     "http://www.example.com",
     async function () {
       // Ensure the category nodes exist.

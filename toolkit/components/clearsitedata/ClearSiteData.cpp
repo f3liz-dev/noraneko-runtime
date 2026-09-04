@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -136,7 +134,6 @@ void ClearSiteData::Shutdown() {
 }
 
 ClearSiteData::ClearSiteData() = default;
-ClearSiteData::~ClearSiteData() = default;
 
 NS_IMETHODIMP
 ClearSiteData::Observe(nsISupports* aSubject, const char* aTopic,
@@ -220,14 +217,12 @@ void ClearSiteData::ClearDataFromChannel(nsIHttpChannel* aChannel) {
   if (flags & eCookies) {
     LogOpToConsole(aChannel, uri, eCookies);
     cleanFlags |= nsIClearDataService::CLEAR_COOKIES |
-                  nsIClearDataService::CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
                   nsIClearDataService::CLEAR_FINGERPRINTING_PROTECTION_STATE;
   }
 
   if (flags & eStorage) {
     LogOpToConsole(aChannel, uri, eStorage);
     cleanFlags |= nsIClearDataService::CLEAR_DOM_STORAGES |
-                  nsIClearDataService::CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
                   nsIClearDataService::CLEAR_FINGERPRINTING_PROTECTION_STATE;
   }
 
@@ -355,7 +350,7 @@ void ClearSiteData::LogToConsoleInternal(
   }
 
   httpChannel->AddConsoleReport(nsIScriptError::infoFlag, "Clear-Site-Data"_ns,
-                                nsContentUtils::eSECURITY_PROPERTIES, uri, 0, 0,
+                                PropertiesFile::SECURITY_PROPERTIES, uri, 0, 0,
                                 nsDependentCString(aMsg), aParams);
 }
 

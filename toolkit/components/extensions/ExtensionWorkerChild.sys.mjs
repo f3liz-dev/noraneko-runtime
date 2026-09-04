@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -477,7 +475,7 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    * Return an ExtensionAPI class instance given its namespace.
    *
    * @param {string} namespace
-   * @returns {import("ExtensionCommon.sys.mjs").ExtensionAPI}
+   * @returns {import("./ExtensionCommon.sys.mjs").ExtensionAPI}
    */
   getExtensionAPIInstance(namespace) {
     return this.apiCan.apis.get(namespace);
@@ -699,7 +697,9 @@ class WorkerContextChild extends BaseContext {
       { envType: "addon_parent" },
       WebIDLChildAPIManager
     ).call(this);
-    return redefineGetter(this, "childManager", childManager);
+    return /** @type {WebIDLChildAPIManager} */ (
+      redefineGetter(this, "childManager", childManager)
+    );
   }
 
   get messenger() {

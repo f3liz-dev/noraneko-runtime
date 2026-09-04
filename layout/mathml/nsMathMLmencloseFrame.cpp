@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #include "nsMathMLmencloseFrame.h"
 
 #include <algorithm>
+#include <numbers>
 
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
@@ -409,7 +408,7 @@ void nsMathMLmencloseFrame::Place(DrawTarget* aDrawTarget,
   // content. Hence, we need to increase the size of the bounding box by a
   // factor of at least sqrt(2).
   if (IsToDraw(MencloseNotation::Circle)) {
-    double ratio = (sqrt(2.0) - 1.0) / 2.0;
+    double ratio = (std::numbers::sqrt2 - 1.0) / 2.0;
     nscoord padding2;
 
     // Update horizontal parameters

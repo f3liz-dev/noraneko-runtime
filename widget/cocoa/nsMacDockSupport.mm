@@ -1,4 +1,3 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +6,18 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <signal.h>
 
-#include "nsCocoaUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsMacDockSupport.h"
-#include "nsObjCExceptions.h"
-#include "nsNativeThemeColors.h"
-#include "nsString.h"
-#include "imgLoader.h"
 #include "MOZIconHelper.h"
+#include "imgLoader.h"
 #include "mozilla/MacStringHelpers.h"
 #include "mozilla/SVGImageContext.h"
-#include "nsISVGPaintContext.h"
+#include "nsCocoaUtils.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIFile.h"
+#include "nsISVGPaintContext.h"
+#include "nsMacDockSupport.h"
+#include "nsNativeThemeColors.h"
+#include "nsObjCExceptions.h"
+#include "nsString.h"
 
 NS_IMPL_ISUPPORTS(nsMacDockSupport, nsIMacDockSupport, nsITaskbarProgress)
 
@@ -335,7 +334,7 @@ NSString* GetPathForApp(NSDictionary* aPersistantApp) {
     return nil;
   }
   NSURL* url = CFBridgingRelease(
-      _CFURLCreateFromPropertyListRepresentation(NULL, fileData));
+      _CFURLCreateFromPropertyListRepresentation(nullptr, fileData));
   if (!url) {
     return nil;
   }

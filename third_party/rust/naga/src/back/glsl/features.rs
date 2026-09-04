@@ -57,6 +57,8 @@ bitflags::bitflags! {
         const TEXTURE_ATOMICS = 1 << 25;
         /// Image atomics
         const SHADER_BARYCENTRICS = 1 << 26;
+        /// Primitive index builtin
+        const PRIMITIVE_INDEX = 1 << 27;
     }
 }
 
@@ -122,7 +124,7 @@ impl FeaturesManager {
         check_feature!(CLIP_DISTANCE, 130, 300 /* with extension */);
         check_feature!(CULL_DISTANCE, 450, 300 /* with extension */);
         check_feature!(SAMPLE_VARIABLES, 400, 300);
-        check_feature!(DYNAMIC_ARRAY_SIZE, 430, 310);
+        check_feature!(DYNAMIC_ARRAY_SIZE, 400 /* with extension */, 310);
         check_feature!(DUAL_SOURCE_BLENDING, 330, 300 /* with extension */);
         check_feature!(SUBGROUP_OPERATIONS, 430, 310);
         check_feature!(TEXTURE_ATOMICS, 420, 310);
@@ -132,7 +134,7 @@ impl FeaturesManager {
         };
         // Only available on glsl core, this means that opengl es can't query the number
         // of samples nor levels in a image and neither do bound checks on the sample nor
-        // the level argument of texelFecth
+        // the level argument of texelFetch
         check_feature!(TEXTURE_SAMPLES, 150);
         check_feature!(TEXTURE_LEVELS, 130);
         check_feature!(IMAGE_SIZE, 430, 310);
@@ -298,6 +300,18 @@ impl FeaturesManager {
             )?;
         }
 
+        if self.0.contains(Features::PRIMITIVE_INDEX) {
+            match options.version {
+                Version::Embedded { version, .. } if version < 320 => {
+                    writeln!(out, "#extension GL_OES_geometry_shader : require")?;
+                }
+                Version::Desktop(version) if version < 150 => {
+                    writeln!(out, "#extension GL_ARB_geometry_shader4 : require")?;
+                }
+                _ => (),
+            }
+        }
+
         Ok(())
     }
 }
@@ -404,32 +418,44 @@ impl<W> Writer<'_, W> {
                                 self.features.request(Features::MULTISAMPLED_TEXTURE_ARRAYS);
                             }
                         }
-                        ImageClass::Storage { format, .. } => match format {
-                            StorageFormat::R8Unorm
-                            | StorageFormat::R8Snorm
-                            | StorageFormat::R8Uint
-                            | StorageFormat::R8Sint
-                            | StorageFormat::R16Uint
-                            | StorageFormat::R16Sint
-                            | StorageFormat::R16Float
-                            | StorageFormat::Rg8Unorm
-                            | StorageFormat::Rg8Snorm
-                            | StorageFormat::Rg8Uint
-                            | StorageFormat::Rg8Sint
-                            | StorageFormat::Rg16Uint
-                            | StorageFormat::Rg16Sint
-                            | StorageFormat::Rg16Float
-                            | StorageFormat::Rgb10a2Uint
-                            | StorageFormat::Rgb10a2Unorm
-                            | StorageFormat::Rg11b10Ufloat
-                            | StorageFormat::R64Uint
-                            | StorageFormat::Rg32Uint
-                            | StorageFormat::Rg32Sint
-                            | StorageFormat::Rg32Float => {
-                                self.features.request(Features::FULL_IMAGE_FORMATS)
+                        ImageClass::Storage { format, .. } => {
+                            // Storage images require `image_load_store`; the extension write
+                            // (and the `NV_image_formats` write nested under it) is otherwise
+                            // never emitted on targets that need it.
+                            self.features.request(Features::IMAGE_LOAD_STORE);
+                            match format {
+                                StorageFormat::R8Unorm
+                                | StorageFormat::R8Snorm
+                                | StorageFormat::R8Uint
+                                | StorageFormat::R8Sint
+                                | StorageFormat::R16Uint
+                                | StorageFormat::R16Sint
+                                | StorageFormat::R16Float
+                                | StorageFormat::R16Unorm
+                                | StorageFormat::R16Snorm
+                                | StorageFormat::Rg8Unorm
+                                | StorageFormat::Rg8Snorm
+                                | StorageFormat::Rg8Uint
+                                | StorageFormat::Rg8Sint
+                                | StorageFormat::Rg16Uint
+                                | StorageFormat::Rg16Sint
+                                | StorageFormat::Rg16Float
+                                | StorageFormat::Rg16Unorm
+                                | StorageFormat::Rg16Snorm
+                                | StorageFormat::Rgba16Unorm
+                                | StorageFormat::Rgba16Snorm
+                                | StorageFormat::Rgb10a2Uint
+                                | StorageFormat::Rgb10a2Unorm
+                                | StorageFormat::Rg11b10Ufloat
+                                | StorageFormat::R64Uint
+                                | StorageFormat::Rg32Uint
+                                | StorageFormat::Rg32Sint
+                                | StorageFormat::Rg32Float => {
+                                    self.features.request(Features::FULL_IMAGE_FORMATS)
+                                }
+                                _ => {}
                             }
-                            _ => {}
-                        },
+                        }
                         ImageClass::Sampled { multi: false, .. }
                         | ImageClass::Depth { multi: false }
                         | ImageClass::External => {}
@@ -604,17 +630,20 @@ impl<W> Writer<'_, W> {
         } else if let Some(binding) = binding {
             match *binding {
                 Binding::BuiltIn(built_in) => match built_in {
-                    crate::BuiltIn::ClipDistance => self.features.request(Features::CLIP_DISTANCE),
+                    crate::BuiltIn::ClipDistances => self.features.request(Features::CLIP_DISTANCE),
                     crate::BuiltIn::CullDistance => self.features.request(Features::CULL_DISTANCE),
                     crate::BuiltIn::SampleIndex => {
                         self.features.request(Features::SAMPLE_VARIABLES)
                     }
                     crate::BuiltIn::ViewIndex => self.features.request(Features::MULTI_VIEW),
-                    crate::BuiltIn::InstanceIndex | crate::BuiltIn::DrawID => {
+                    crate::BuiltIn::InstanceIndex | crate::BuiltIn::DrawIndex => {
                         self.features.request(Features::INSTANCE_INDEX)
                     }
                     crate::BuiltIn::Barycentric { .. } => {
                         self.features.request(Features::SHADER_BARYCENTRICS)
+                    }
+                    crate::BuiltIn::PrimitiveIndex => {
+                        self.features.request(Features::PRIMITIVE_INDEX)
                     }
                     _ => {}
                 },

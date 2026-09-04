@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -44,9 +42,6 @@ class HLSDecoder final : public MediaDecoder {
   // Called as data arrives on the underlying HLS player. Main thread only.
   void NotifyDataArrived();
 
-  // Called when Exoplayer start to load media. Main thread only.
-  void NotifyLoad(nsCString aMediaUrl);
-
   bool IsHLSDecoder() const override { return true; }
 
  private:
@@ -54,7 +49,7 @@ class HLSDecoder final : public MediaDecoder {
 
   explicit HLSDecoder(MediaDecoderInit& aInit);
   ~HLSDecoder();
-  MediaDecoderStateMachineBase* CreateStateMachine(
+  already_AddRefed<MediaDecoderStateMachineBase> CreateStateMachine(
       bool aDisableExternalEngine) override;
 
   bool CanPlayThroughImpl() final {
@@ -63,9 +58,8 @@ class HLSDecoder final : public MediaDecoder {
     return true;
   }
 
-  void UpdateCurrentPrincipal(nsIURI* aMediaUri);
-  already_AddRefed<nsIPrincipal> GetContentPrincipal(nsIURI* aMediaUri);
-  void RecordMediaUsage(nsIURI* aMediaUri);
+  void UpdateCurrentPrincipal(nsIPrincipal* aPrincipal);
+  void RecordMediaUsage(const nsCString& aMimeType);
 
   static size_t sAllocatedInstances;  // Access only in the main thread.
 

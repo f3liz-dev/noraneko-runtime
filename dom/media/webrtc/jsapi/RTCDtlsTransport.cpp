@@ -6,7 +6,10 @@
 
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventBinding.h"
+#include "mozilla/dom/PMediaTransportChild.h"
 #include "mozilla/dom/RTCDtlsTransportBinding.h"
+#include "mozilla/dom/RTCErrorEvent.h"
+#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla::dom {
 
@@ -55,20 +58,56 @@ void RTCDtlsTransport::UpdateStateNoEvent(TransportLayer::State aState) {
   }
 }
 
-void RTCDtlsTransport::UpdateState(TransportLayer::State aState) {
+void RTCDtlsTransport::UpdateState(TransportLayer::State aState,
+                                   nsTArray<nsTArray<uint8_t>>&& aRemoteCerts,
+                                   Maybe<RTCErrorParams> aError) {
+  // Make absolutely sure we aren't destroyed between the two events we fire
+  auto kungFuDeathGrip = RefPtr(this);
+
   RTCDtlsTransportState oldState = mState;
   UpdateStateNoEvent(aState);
+  // Per webrtc-pc 5.5, when the DTLS transport transitions to "connected", set
+  // [[RemoteCertificates]] before firing statechange so handlers see both.
+  if (mState == RTCDtlsTransportState::Connected && !aRemoteCerts.IsEmpty()) {
+    mRemoteCertsDer = std::move(aRemoteCerts);
+  }
   if (oldState == mState) {
     return;
+  }
+
+  // Spec says first the error event, then the statechange event
+  if (aError.isSome()) {
+    RTCErrorEventInit errorEventInit;
+    errorEventInit.mBubbles = false;
+    errorEventInit.mCancelable = false;
+    errorEventInit.mError =
+        new RTCError(aError->errorInit(), nsCString(aError->message()));
+    RefPtr<Event> errorEvent =
+        RTCErrorEvent::Constructor(this, u"error"_ns, errorEventInit);
+    DispatchTrustedEvent(errorEvent);
   }
 
   EventInit init;
   init.mBubbles = false;
   init.mCancelable = false;
 
-  RefPtr<Event> event = Event::Constructor(this, u"statechange"_ns, init);
+  RefPtr<Event> stateChangeEvent =
+      Event::Constructor(this, u"statechange"_ns, init);
 
-  DispatchTrustedEvent(event);
+  DispatchTrustedEvent(stateChangeEvent);
+}
+
+void RTCDtlsTransport::GetRemoteCertificates(JSContext* aCx,
+                                             nsTArray<JSObject*>& aRetval,
+                                             ErrorResult& aRv) {
+  aRetval.SetCapacity(mRemoteCertsDer.Length());
+  for (const auto& cert : mRemoteCertsDer) {
+    JS::Rooted<JSObject*> buf(aCx, ArrayBuffer::Create(aCx, cert, aRv));
+    if (aRv.Failed()) {
+      return;
+    }
+    aRetval.AppendElement(buf);
+  }
 }
 
 }  // namespace mozilla::dom

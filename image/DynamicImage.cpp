@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DynamicImage.h"
+
+#include "ImageRegion.h"
+#include "Orientation.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Logging.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGImageContext.h"
-#include "ImageRegion.h"
-#include "Orientation.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/image/Resolution.h"
 #include "nsPresContext.h"
-
-#include "mozilla/MemoryReporting.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;

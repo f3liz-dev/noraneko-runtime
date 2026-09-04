@@ -13,7 +13,14 @@ support-files = [
 
 ["browser_document_command_paste_contextmenu.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
   "headless", # bug 1989339
+]
+
+["browser_document_command_paste_contextmenu_event_loop.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+  "os == 'linux' && debug && artifact", # bug 1945658
 ]
 
 ["browser_document_command_paste_contextmenu_ext.js"]
@@ -22,8 +29,16 @@ skip-if = [
 ]
 
 ["browser_document_command_paste_contextmenu_suppression.js"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 2057876
+]
 
 ["browser_document_command_paste_contextmenu_suppression_ext.js"]
+
+["browser_document_command_paste_contextmenu_suppression_key.js"]
+skip-if = [
+  "headless",
+]
 
 ["browser_navigator_clipboard_clickjacking.js"]
 support-files = ["simple_navigator_clipboard_keydown.html"]

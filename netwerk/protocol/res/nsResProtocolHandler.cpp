@@ -1,19 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsResProtocolHandler.h"
+
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Omnijar.h"
 #include "mozilla/chrome/RegistryMessageUtils.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/ClearOnShutdown.h"
-
-#include "nsResProtocolHandler.h"
+#include "nsEscape.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsURLHelper.h"
-#include "nsEscape.h"
 
-#include "mozilla/Omnijar.h"
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoAppShellWrappers.h"
+#endif
 
 using mozilla::LogLevel;
 using mozilla::dom::ContentParent;
@@ -25,6 +27,7 @@ using mozilla::dom::ContentParent;
 mozilla::StaticRefPtr<nsResProtocolHandler> nsResProtocolHandler::sSingleton;
 
 already_AddRefed<nsResProtocolHandler> nsResProtocolHandler::GetSingleton() {
+  MOZ_ASSERT(NS_IsMainThread() || sSingleton);
   if (!sSingleton) {
     RefPtr<nsResProtocolHandler> handler = new nsResProtocolHandler();
     if (NS_WARN_IF(NS_FAILED(handler->Init()))) {
@@ -68,29 +71,12 @@ nsresult nsResProtocolHandler::Init() {
 
 #ifdef ANDROID
 nsresult nsResProtocolHandler::GetApkURI(nsACString& aResult) {
-  nsCString::const_iterator start, iter;
-  mGREURI.BeginReading(start);
-  mGREURI.EndReading(iter);
-  nsCString::const_iterator start_iter = start;
-
-  // This is like jar:jar:file://path/to/apk/base.apk!/path/to/omni.ja!/
-  bool found = FindInReadable("!/"_ns, start_iter, iter);
-  NS_ENSURE_TRUE(found, NS_ERROR_UNEXPECTED);
-
-  // like jar:jar:file://path/to/apk/base.apk!/
-  const nsDependentCSubstring& withoutPath = Substring(start, iter);
-  NS_ENSURE_TRUE(withoutPath.Length() >= 4, NS_ERROR_UNEXPECTED);
-
-  // Let's make sure we're removing what we expect to remove
-  NS_ENSURE_TRUE(Substring(withoutPath, 0, 4).EqualsLiteral("jar:"),
-                 NS_ERROR_UNEXPECTED);
-
-  // like jar:file://path/to/apk/base.apk!/
-  aResult = ToNewCString(Substring(withoutPath, 4));
-
-  // Remove the trailing /
-  NS_ENSURE_TRUE(aResult.Length() >= 1, NS_ERROR_UNEXPECTED);
-  aResult.Truncate(aResult.Length() - 1);
+  mozilla::jni::String::LocalRef path =
+      mozilla::java::GeckoAppShell::GetPackageResourcePath();
+  if (!path) {
+    return NS_ERROR_UNEXPECTED;
+  }
+  aResult = "jar:file://"_ns + path->ToCString() + "!"_ns;
   return NS_OK;
 }
 #endif

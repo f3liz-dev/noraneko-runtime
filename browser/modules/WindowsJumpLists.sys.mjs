@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,7 +93,7 @@ var tasksCfg = [
     get description() {
       return _getString("taskbar.tasks.newTab.description");
     },
-    args: "-new-tab about:blank",
+    args: ["-new-tab", "about:blank"],
     iconIndex: 3, // New window icon
     open: true,
     close: true, // The jump list already has an app launch icon, but
@@ -110,7 +109,7 @@ var tasksCfg = [
     get description() {
       return _getString("taskbar.tasks.newWindow.description");
     },
-    args: "-browser",
+    args: ["-browser"],
     iconIndex: 2, // New tab icon
     open: true,
     close: true, // No point, but we don't always update the list on
@@ -126,7 +125,7 @@ let privateWindowTask = {
   get description() {
     return _getString("taskbar.tasks.newPrivateWindow.description");
   },
-  args: "-private-window",
+  args: ["-private-window"],
   iconIndex: 4, // Private browsing mode icon
   open: true,
   close: true, // No point, but we don't always update the list on
@@ -268,7 +267,7 @@ var Builder = class {
             title: row.getResultByName("title"),
             description: row.getResultByName("title"),
             path: selfPath,
-            arguments: row.getResultByName("url"),
+            arguments: ["-osint", "-url", row.getResultByName("url")],
             fallbackIconIndex: 1,
             iconPath,
           });

@@ -53,6 +53,13 @@ export default class SidebarPinsPromo extends MozLitElement {
       false,
       () => this.requestUpdate()
     );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "novaEnabled",
+      "browser.nova.enabled",
+      false,
+      () => this.requestUpdate()
+    );
     this.launcherObserver = new MutationObserver(() => this.requestUpdate());
   }
   #icons = [
@@ -73,21 +80,6 @@ export default class SidebarPinsPromo extends MozLitElement {
     this.launcherObserver.observe(window.SidebarController.sidebarMain, {
       attributeFilter: ["expanded"],
     });
-
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "verticalTabsEnabled",
-      "sidebar.verticalTabs",
-      false,
-      () => this.requestUpdate()
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "dragToPinPromoDismissed",
-      "sidebar.verticalTabs.dragToPinPromo.dismissed",
-      false,
-      () => this.requestUpdate()
-    );
   }
 
   disconnectedCallback() {
@@ -155,7 +147,9 @@ export default class SidebarPinsPromo extends MozLitElement {
       this.verticalTabsEnabled &&
       lazy.SidebarManager.checkForPinnedTabsComplete &&
       !this.dragToPinPromoDismissed &&
-      window.SidebarController.sidebarMain.hasAttribute("expanded")
+      window.SidebarController.sidebarMain.hasAttribute("expanded") &&
+      // Bug 2052309: temporarily remove promo when Nova is enabled.
+      !this.novaEnabled
     );
   }
 

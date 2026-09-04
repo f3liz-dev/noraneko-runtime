@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +7,8 @@
 #include "IMEData.h"
 #include "PuppetWidget.h"
 #include "TextEvents.h"
-
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/Utf16.h"
 #include "nsCharTraits.h"
 #include "nsIFrame.h"
 #include "nsIWidget.h"
@@ -511,7 +510,7 @@ void TextEventDispatcher::UpdateNotificationRequests() {
     nsCOMPtr<TextEventDispatcherListener> nativeListener =
         mWidget->GetNativeTextEventDispatcherListener();
     if (nativeListener) {
-      mIMENotificationRequests |= nativeListener->GetIMENotificationRequests();
+      mIMENotificationRequests += nativeListener->GetIMENotificationRequests();
     }
   }
 }
@@ -560,23 +559,23 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
   // emulates real text input or synthesizing keyboard events for tests,
   // the arrays may be initialized all commands already.  If so, we need to
   // duplicate the arrays here, but we should do this only when we're
-  // dispatching eKeyPress events because BrowserParent::SendRealKeyEvent()
-  // does this only for eKeyPress event.  Note that this is not required if
-  // we're in the main process because in the parent process, the edit commands
-  // will be initialized by `ExecuteEditCommands()` (when the event is handled
-  // by editor event listener) or `InitAllEditCommands()` (when the event is
-  // set to a content process).  We should test whether these pathes work or
-  // not too.
+  // dispatching eKeyPress and eKeyDown events because
+  // BrowserParent::SendRealKeyEvent() does this only for eKeyPress and eKeyDown
+  // event.  Note that this is not required if we're in the main process because
+  // in the parent process, the edit commands will be initialized by
+  // `ExecuteEditCommands()` (when the event is handled by editor event
+  // listener) or `InitAllEditCommands()` (when the event is set to a content
+  // process).  We should test whether these pathes work or not too.
   if (XRE_IsContentProcess() && keyEvent.mIsSynthesizedByTIP) {
-    if (aMessage == eKeyPress) {
+    if (aMessage == eKeyPress || aMessage == eKeyDown) {
       keyEvent.AssignCommands(aKeyboardEvent);
     } else {
       // Prevent retriving native edit commands if we're in a content process
-      // because only `eKeyPress` events coming from the main process have
-      // edit commands (See `BrowserParent::SendRealKeyEvent`).  And also
-      // retriving edit commands from a content process requires synchonous
-      // IPC and that makes running tests slower.  Therefore, we should mark
-      // the `eKeyPress` event does not need to retrieve edit commands anymore.
+      // because only `eKeyPress` and `eKeyDown` events coming from the main
+      // process have edit commands (See `BrowserParent::SendRealKeyEvent`). And
+      // also retriving edit commands from a content process requires synchonous
+      // IPC and that makes running tests slower.  Therefore, we should mark the
+      // other events as no longer needing to retrieve edit commands.
       keyEvent.PreventNativeKeyBindings();
     }
   }
@@ -624,17 +623,17 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
       // eKeyPress events are dispatched for every character.
       // So, each key value of eKeyPress events should be a character.
       if (ch) {
-        if (!IS_SURROGATE(ch)) {
+        if (!IsSurrogate(ch)) {
           keyEvent.mKeyValue.Assign(ch);
         } else {
           const bool isHighSurrogateFollowedByLowSurrogate =
               aIndexOfKeypress + 1 < keyEvent.mKeyValue.Length() &&
-              NS_IS_HIGH_SURROGATE(ch) &&
-              NS_IS_LOW_SURROGATE(keyEvent.mKeyValue[aIndexOfKeypress + 1]);
+              IsHighSurrogate(ch) &&
+              IsLowSurrogate(keyEvent.mKeyValue[aIndexOfKeypress + 1]);
           const bool isLowSurrogateFollowingHighSurrogate =
               !isHighSurrogateFollowedByLowSurrogate && aIndexOfKeypress > 0 &&
-              NS_IS_LOW_SURROGATE(ch) &&
-              NS_IS_HIGH_SURROGATE(keyEvent.mKeyValue[aIndexOfKeypress - 1]);
+              IsLowSurrogate(ch) &&
+              IsHighSurrogate(keyEvent.mKeyValue[aIndexOfKeypress - 1]);
           NS_WARNING_ASSERTION(isHighSurrogateFollowedByLowSurrogate ||
                                    isLowSurrogateFollowingHighSurrogate,
                                "Lone surrogate input should not happen");
@@ -643,8 +642,7 @@ bool TextEventDispatcher::DispatchKeyboardEventInternal(
             if (isHighSurrogateFollowedByLowSurrogate) {
               keyEvent.mKeyValue.Assign(
                   keyEvent.mKeyValue.BeginReading() + aIndexOfKeypress, 2);
-              keyEvent.SetCharCode(
-                  SURROGATE_TO_UCS4(ch, keyEvent.mKeyValue[1]));
+              keyEvent.SetCharCode(SurrogateToUCS4(ch, keyEvent.mKeyValue[1]));
             } else if (isLowSurrogateFollowingHighSurrogate) {
               // Although not dispatching eKeyPress event (because it's already
               // dispatched for the low surrogate above), the caller should

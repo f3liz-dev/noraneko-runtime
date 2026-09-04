@@ -5,10 +5,6 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
-
 const COLLECTION_NAME = "anti-tracking-url-decoration";
 const PREF_NAME = "privacy.restrict3rdpartystorage.url_decorations";
 const TOKEN_1 = "fooBar";
@@ -24,6 +20,10 @@ const TOP_PAGE_WITHOUT_TRACKING_IDENTIFIER =
   SUB_DOMAIN + TEST_PATH + "page.html";
 const TOP_PAGE_WITH_TRACKING_IDENTIFIER =
   TOP_PAGE_WITHOUT_TRACKING_IDENTIFIER + "?" + TOKEN_1 + "=123";
+
+add_setup(function () {
+  registerCleanupFunction(clearSiteTestData);
+});
 
 add_task(async _ => {
   let uds = Cc["@mozilla.org/tracking-url-decoration-service;1"].getService(
@@ -51,16 +51,16 @@ add_task(async _ => {
 
   await uds.ensureUpdated();
 
-  let list = Preferences.get(PREF_NAME).split(" ");
+  let list = Services.prefs.getStringPref(PREF_NAME).split(" ");
   ok(list.includes(TOKEN_1), "Token must now be available in " + PREF_NAME);
-  ok(Preferences.locked(PREF_NAME), PREF_NAME + " must be locked");
+  ok(Services.prefs.prefIsLocked(PREF_NAME), PREF_NAME + " must be locked");
 
   async function verifyList(array, not_array) {
     await emitSync();
 
     await uds.ensureUpdated();
 
-    list = Preferences.get(PREF_NAME).split(" ");
+    list = Services.prefs.getStringPref(PREF_NAME).split(" ");
     for (let token of array) {
       ok(
         list.includes(token),
@@ -73,7 +73,7 @@ add_task(async _ => {
         token + " must not be available in " + PREF_NAME
       );
     }
-    ok(Preferences.locked(PREF_NAME), PREF_NAME + " must be locked");
+    ok(Services.prefs.prefIsLocked(PREF_NAME), PREF_NAME + " must be locked");
   }
 
   records.push(
@@ -228,12 +228,4 @@ AntiTracking._createTask({
   accessRemoval: null,
   callbackAfterRemoval: null,
   topPage: TOP_PAGE_WITH_TRACKING_IDENTIFIER,
-});
-
-add_task(async _ => {
-  await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      resolve()
-    );
-  });
 });

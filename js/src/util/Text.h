@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +9,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
+#include "mozilla/HashFunctions.h"
 #include "mozilla/Latin1.h"
 #include "mozilla/Likely.h"
 #include "mozilla/TextUtils.h"
@@ -103,6 +102,13 @@ inline int32_t CompareChars(const Char1* s1, size_t len1, const Char2* s2,
   }
 
   return int32_t(len1 - len2);
+}
+
+template <typename Char1, typename Char2>
+inline bool CharsStartsWith(mozilla::Span<const Char1> str,
+                            mozilla::Span<const Char2> prefix) {
+  return str.Length() >= prefix.Length() &&
+         EqualChars(str.data(), prefix.data(), prefix.Length());
 }
 
 // Return s advanced past any Unicode white space characters.
@@ -218,12 +224,13 @@ class InflatedChar16Sequence {
   }
 
   HashNumber computeHash() const {
-    auto copy = *this;
-    HashNumber hash = 0;
-    while (copy.hasMore()) {
-      hash = mozilla::AddToHash(hash, copy.next());
+    size_t length = limit_ - units_;
+    if constexpr (std::is_same_v<CharT, char16_t>) {
+      return mozilla::HashString(units_, length);
+    } else {
+      static_assert(std::is_same_v<CharT, JS::Latin1Char>);
+      return mozilla::HashLatin1AsUTF16(units_, length);
     }
-    return hash;
   }
 };
 
@@ -278,12 +285,10 @@ class InflatedChar16Sequence<mozilla::Utf8Unit> {
   }
 
   HashNumber computeHash() const {
-    auto copy = *this;
-    HashNumber hash = 0;
-    while (copy.hasMore()) {
-      hash = mozilla::AddToHash(hash, copy.next());
-    }
-    return hash;
+    MOZ_ASSERT(!pendingTrailingSurrogate_,
+               "computeHash() assumes a freshly-constructed sequence");
+    return mozilla::HashUTF8AsUTF16(reinterpret_cast<const char*>(units_),
+                                    limit_ - units_);
   }
 };
 

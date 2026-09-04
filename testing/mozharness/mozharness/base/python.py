@@ -7,6 +7,7 @@
 import errno
 import json
 import os
+import platform
 import shutil
 import site
 import socket
@@ -51,6 +52,13 @@ def pip_command(*, python_executable, subcommand=None, args=None, non_uv_args=No
             command.append(subcommand)
             python_root = Path(python_executable).parent.parent
             command.append(f"--python={python_root}")
+            # The fetched uv may not match the target interpreter's arch (e.g.
+            # an x86_64 uv running under Rosetta on an arm64 mac worker), which
+            # makes it resolve wrong-arch wheels. We run under the interpreter
+            # the venv is built from, so tell uv the target arch explicitly.
+            if subcommand == "install" and sys.platform == "darwin":
+                arch = "aarch64" if platform.machine() == "arm64" else "x86_64"
+                command.append(f"--python-platform={arch}-apple-darwin")
         full_command = command + (args or [])
     else:
         command = [python_executable, "-m", "pip"]
@@ -564,17 +572,18 @@ class VirtualenvMixin:
             if uv_executable := get_uv_executable():
                 self.run_command([uv_executable, "--version"])
 
-                # MOZ_PYTHON_HOME is only set in CI, but this code can execute locally for testing
-                # (e.g.: `./mach raptor`), so let's fall back to the sys.executable path in that case.
-                python_path = os.environ.get(
-                    "MOZ_PYTHON_HOME", Path(sys.executable).parents[1]
-                )
-                uv_venv_creation_command = [
-                    "uv",
-                    "venv",
-                    venv_path,
-                    "--relocatable",
-                    f"--python={python_path}",
+                uv_venv_creation_command = ["uv", "venv", venv_path]
+                # `uv venv --relocatable` rewrites console-script shebangs into
+                # a /bin/sh trampoline that shells out to `realpath` to locate
+                # the venv. macOS workers (10.15) don't ship `realpath`, so
+                # those scripts fail to run there. Their task paths are short
+                # enough that plain absolute-path shebangs stay well under the
+                # length limit, whereas the long device-pool paths on other
+                # platforms overflow it and genuinely need a relative shebang.
+                if not self._is_darwin():
+                    uv_venv_creation_command.append("--relocatable")
+                uv_venv_creation_command += [
+                    f"--python={sys.executable}",
                     "--no-project",
                 ]
                 self.run_command(
@@ -835,6 +844,13 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
                 poll_interval=0.1, metadata=metadata
             )
             self._resource_monitor.start()
+
+            upload_dir = self.query_abs_dirs()["abs_blob_upload_dir"]
+            os.makedirs(upload_dir, exist_ok=True)
+            self._resource_profile_path = os.path.join(
+                upload_dir, "profile_resource-usage.json"
+            )
+            self._resource_monitor.start_streaming(self._resource_profile_path)
         except Exception:
             self.warning(
                 "Unable to start resource monitor: %s" % traceback.format_exc()
@@ -867,20 +883,24 @@ class ResourceMonitoringMixin(PerfherderResourceOptionsMixin):
         self._resource_monitor.stop(upload_dir=upload_dir)
         self._log_resource_usage()
 
-        # Upload a JSON file containing the raw resource data.
+        # Write the full profile to a temp file first, then rename over the
+        # streamed file. This way if serialization fails mid-write, the
+        # streamed JSON lines file is preserved.
+        tmp_path = self._resource_profile_path + ".tmp"
         try:
-            if not os.path.exists(upload_dir):
-                os.makedirs(upload_dir)
-            with open(
-                os.path.join(upload_dir, "profile_resource-usage.json"), "w"
-            ) as fh:
+            with open(tmp_path, "w") as fh:
                 json.dump(
                     self._resource_monitor.as_profile(),
                     fh,
                     separators=(",", ":"),
                 )
-        except (AttributeError, KeyError):
+            os.replace(tmp_path, self._resource_profile_path)
+        except Exception:
             self.exception("could not upload resource usage JSON", level=WARNING)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
     def _log_resource_usage(self):
         # Delay import because not available until virtualenv is populated.

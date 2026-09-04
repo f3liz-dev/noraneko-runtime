@@ -42,25 +42,19 @@ add_task(async function test_serverError() {
       const card = netErrorCard.wrappedJSObject;
       await card.getUpdateComplete();
 
-      titleEl = card.netErrorTitleText;
+      titleEl = card.errorTitle;
 
-      const introEl = card.shadowRoot.getElementById("netErrorIntro");
+      const introEl = card.shadowRoot.getElementById("error-intro");
       is(
         introEl?.getAttribute("data-l10n-id"),
-        "fp-neterror-http-error-page-intro",
+        "fp-neterror-http-error-intro",
         "Intro element has correct l10n id"
       );
       const introArgs = JSON.parse(introEl?.getAttribute("data-l10n-args"));
       ok(introArgs?.hostname, "Intro has hostname arg");
-      const responseEl = card.shadowRoot.getElementById(
-        "response-status-label"
-      );
-      const responseArgs = JSON.parse(
-        responseEl?.getAttribute("data-l10n-args")
-      );
-      is(responseArgs?.responsestatus, 500, "Intro has responsestatus 500");
+      is(introArgs?.responsestatus, 500, "Intro has responsestatus 500");
       is(
-        responseArgs?.responsestatustext,
+        introArgs?.responsestatustext,
         "Internal Server Error",
         "Intro has correct responsestatustext"
       );
@@ -120,10 +114,21 @@ add_task(async function test_httpErrorPage_what_can_you_do_list() {
     const card = netErrorCard.wrappedJSObject;
     await card.getUpdateComplete();
 
+    const whatCanYouDoList = netErrorCard.shadowRoot.querySelector(
+      ".what-can-you-do-list"
+    );
+    Assert.ok(whatCanYouDoList, "The what-can-you-do list is present");
+    const items = whatCanYouDoList.querySelectorAll("li");
+    Assert.equal(items.length, 2, "Two what-can-you-do items are present");
     Assert.equal(
-      card.whatCanYouDo.dataset.l10nId,
+      items[0].dataset.l10nId,
       "neterror-http-error-page",
       "First item has correct l10n ID"
+    );
+    Assert.equal(
+      items[1].dataset.l10nId,
+      "neterror-load-error-try-again",
+      "Second item has correct l10n ID"
     );
   });
 

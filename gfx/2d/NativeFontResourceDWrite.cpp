@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NativeFontResourceDWrite.h"
-#include "UnscaledFontDWrite.h"
 
 #include <unordered_map>
 
 #include "Logging.h"
+#include "UnscaledFontDWrite.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
 #include "nsTArray.h"
@@ -24,7 +22,7 @@ MOZ_RUNINIT static std::unordered_map<uint64_t, IDWriteFontFileStream*>
 
 class DWriteFontFileLoader : public IDWriteFontFileLoader {
  public:
-  DWriteFontFileLoader() {}
+  DWriteFontFileLoader() = default;
 
   // IUnknown interface
   IFACEMETHOD(QueryInterface)(IID const& iid, OUT void** ppObject) {
@@ -210,7 +208,7 @@ already_AddRefed<NativeFontResourceDWrite> NativeFontResourceDWrite::Create(
 
   sFontFileStreamsMutex.Lock();
   uint64_t fontFileKey = sNextFontFileKey++;
-  RefPtr<DWriteFontFileStream> ffsRef = new DWriteFontFileStream(fontFileKey);
+  RefPtr ffsRef = MakeRefPtr<DWriteFontFileStream>(fontFileKey);
   if (!ffsRef->Initialize(aFontData, aDataLength)) {
     sFontFileStreamsMutex.Unlock();
     gfxWarning() << "Failed to create DWriteFontFileStream.";
@@ -261,7 +259,7 @@ already_AddRefed<UnscaledFont> NativeFontResourceDWrite::CreateUnscaledFont(
     return nullptr;
   }
 
-  RefPtr<UnscaledFont> unscaledFont = new UnscaledFontDWrite(fontFace, nullptr);
+  RefPtr unscaledFont = MakeRefPtr<UnscaledFontDWrite>(fontFace, nullptr);
 
   return unscaledFont.forget();
 }

@@ -21,6 +21,7 @@ const TYPES = {
 const FTL_FILES = [
   "browser/newtab/asrouter.ftl",
   "browser/defaultBrowserNotification.ftl",
+  "browser/policy-messages.ftl",
   "browser/profiles.ftl",
   "browser/termsofuse.ftl",
 ];
@@ -33,6 +34,7 @@ class InfoBarNotification {
     this.infobarCallback = this.infobarCallback.bind(this);
     this.message = message;
     this.notification = null;
+    this._browser = null;
     const dismissPrefConfig = message?.content?.dismissOnPrefChange;
     // If set, these are the prefs to watch for changes to auto-dismiss the infobar.
     if (Array.isArray(dismissPrefConfig)) {
@@ -76,18 +78,18 @@ class InfoBarNotification {
    * Async helper to render a Fluent string. If the translation contains `<a
    * data-l10n-name>`, it will parse and inject the associated link contained
    * in the message.
+   * text: the message's text object, including at least a string_id field
+   * attributes: Fluent arguments to be used in substitutions in the string specified by the string_id
    */
-  async _buildMessageFragment(doc, browser, stringId, args) {
+  async _buildMessageFragment(doc, browser, text, attributes) {
     // Get the raw HTML translation
-    const html = await lazy.RemoteL10n.formatLocalizableText({
-      string_id: stringId,
-      ...(args && { args }),
-    });
+    const html = await lazy.RemoteL10n.formatLocalizableText(text, attributes);
 
     // If no inline anchors, just return a span
     if (!html.includes('data-l10n-name="')) {
       return lazy.RemoteL10n.createElement(doc, "span", {
-        content: { string_id: stringId, ...(args && { args }) },
+        content: text,
+        attributes,
       });
     }
 
@@ -133,7 +135,7 @@ class InfoBarNotification {
               lazy.SpecialMessageActions.handleAction(
                 {
                   type: "OPEN_URL",
-                  data: { args: a.href, where: args?.where || "tab" },
+                  data: { args: a.href, where: text.args?.where || "tab" },
                 },
                 browser
               );
@@ -175,33 +177,46 @@ class InfoBarNotification {
    * @param {object} browser - The browser reference for the currently selected tab.
    */
   async showNotification(browser) {
+    if (this.message.content.dismiss_action) {
+      this._browser = browser;
+    }
     let { content } = this.message;
-    let { gBrowser } = browser.ownerGlobal;
+    let { gBrowser } = browser.documentGlobal;
     let doc = gBrowser.ownerDocument;
     let notificationContainer;
     if ([TYPES.GLOBAL, TYPES.UNIVERSAL].includes(content.type)) {
-      notificationContainer = browser.ownerGlobal.gNotificationBox;
+      notificationContainer = browser.documentGlobal.gNotificationBox;
     } else {
       notificationContainer = gBrowser.getNotificationBox(browser);
     }
 
     let priority = content.priority || notificationContainer.PRIORITY_SYSTEM;
 
-    let labelNode = await this.formatMessageConfig(doc, browser, content.text);
+    let labelNode = await this.formatMessageConfig(
+      doc,
+      browser,
+      content.text,
+      content.attributes
+    );
 
     this.notification = await notificationContainer.appendNotification(
       this.message.id,
       {
-        label: labelNode,
         image: content.icon || "chrome://branding/content/icon64.png",
         priority,
         eventCallback: this.infobarCallback,
         style: content.style || {},
       },
-      content.buttons.map(b => this.formatButtonConfig(b)),
+      content.buttons.map((b, i) => this.formatButtonConfig(b, i)),
       true, // Disables clickjacking protections
       content.dismissable
     );
+
+    // Slot into light DOM so global-shared link rules reach inline anchors
+    const messageSlot = doc.createElement("span");
+    messageSlot.setAttribute("slot", "message");
+    messageSlot.appendChild(labelNode);
+    this.notification.appendChild(messageSlot);
     // If the infobar is universal, only record an impression for the first
     // instance.
     if (
@@ -227,7 +242,16 @@ class InfoBarNotification {
     this._maybeAttachPrefObserver();
   }
 
-  _createLinkNode(doc, browser, { href, where = "tab", string_id, args, raw }) {
+  /**
+   * Create a clickable anchor node
+   * attributes: Fluent arguments to be used in substitutions in the string specified by the string_id
+   */
+  _createLinkNode(
+    doc,
+    browser,
+    { href, where = "tab", string_id, raw },
+    attributes
+  ) {
     const a = doc.createElement("a");
     a.href = href;
     a.addEventListener("click", e => {
@@ -241,7 +265,8 @@ class InfoBarNotification {
     if (string_id) {
       // wrap a localized span inside
       const span = lazy.RemoteL10n.createElement(doc, "span", {
-        content: { string_id, ...(args && { args }) },
+        content: { string_id },
+        attributes,
       });
       a.appendChild(span);
     } else {
@@ -251,16 +276,20 @@ class InfoBarNotification {
     return a;
   }
 
-  async formatMessageConfig(doc, browser, content) {
+  /**
+   * format a message that may include localizable text
+   * text: the text object of the message. If it is localizable, inlcudes a string_id field
+   * attributes: Fluent arguments to be used in substitutions in the string specified by the string_id
+   */
+  async formatMessageConfig(doc, browser, text, attributes) {
     const frag = doc.createDocumentFragment();
-    const parts = Array.isArray(content) ? content : [content];
-
+    const parts = Array.isArray(text) ? text : [text];
     for (const part of parts) {
       if (!part) {
         continue;
       }
       if (part.href) {
-        frag.appendChild(this._createLinkNode(doc, browser, part));
+        frag.appendChild(this._createLinkNode(doc, browser, part, attributes));
         continue;
       }
 
@@ -268,8 +297,11 @@ class InfoBarNotification {
         const subFrag = await this._buildMessageFragment(
           doc,
           browser,
-          part.string_id,
-          part.args
+          {
+            string_id: part.string_id,
+            args: part.args,
+          },
+          attributes
         );
         frag.appendChild(subFrag);
         continue;
@@ -288,8 +320,13 @@ class InfoBarNotification {
     return frag;
   }
 
-  formatButtonConfig(button) {
-    let btnConfig = { callback: this.buttonCallback, ...button };
+  /**
+   * @param {object} button - The button config from the message content.
+   * @param {number} index - The button's position in `content.buttons`, used to
+   *   identify the button in telemetry when it has no `id`.
+   */
+  formatButtonConfig(button, index) {
+    let btnConfig = { callback: this.buttonCallback, ...button, index };
     // notificationbox will set correct data-l10n-id attributes if passed in
     // using the l10n-id key. Otherwise the `button.label` text is used.
     if (button.label.string_id) {
@@ -346,20 +383,22 @@ class InfoBarNotification {
    * Callback fired when a button in the infobar is clicked.
    *
    * @param {Element} notificationBox - The `<notification-message>` element representing the infobar.
-   * @param {object} btnDescription - An object describing the button, includes the label, the action with an optional dismiss property, and primary button styling.
+   * @param {object} btnDescription - An object describing the button, includes the label, the action with an optional dismiss property, primary button styling, and the optional `id` and generated `index` used to identify the button in telemetry.
    * @param {Element} target - The <button> DOM element that was clicked.
    * @returns {boolean} `true` to keep the infobar open, `false` to dismiss it.
    */
   buttonCallback(notificationBox, btnDescription, target) {
     this.dispatchUserAction(
       btnDescription.action,
-      target.ownerGlobal.gBrowser.selectedBrowser
+      target.documentGlobal.gBrowser.selectedBrowser
     );
     let isPrimary = target.classList.contains("primary");
     let eventName = isPrimary
       ? "CLICK_PRIMARY_BUTTON"
       : "CLICK_SECONDARY_BUTTON";
-    this.sendUserEventTelemetry(eventName);
+    this.sendUserEventTelemetry(eventName, {
+      source: btnDescription.id ?? `button_${btnDescription.index}`,
+    });
 
     // Prevents infobar dismissal when dismiss is explicitly set to `false`
     return btnDescription.action?.dismiss === false;
@@ -384,12 +423,25 @@ class InfoBarNotification {
       InfoBar._activeInfobar?.message?.id === this.message.id;
     if (eventType === "removed") {
       this.notification = null;
+      this._browser = null;
       if (isActiveMessage) {
         InfoBar._activeInfobar = null;
       }
     } else if (this.notification) {
-      this.sendUserEventTelemetry("DISMISSED");
+      // "dismissed" is the X button; anything else reaching here (e.g.
+      // "disconnected") is a teardown the user did not ask for.
+      this.sendUserEventTelemetry("DISMISSED", {
+        source: eventType === "dismissed" ? "dismiss_button" : eventType,
+      });
+      if (eventType === "dismissed" && this.message.content.dismiss_action) {
+        this.dispatchUserAction(
+          this.message.content.dismiss_action,
+          this._browser
+        );
+      }
+
       this.notification = null;
+      this._browser = null;
 
       if (isActiveMessage) {
         InfoBar._activeInfobar = null;
@@ -484,10 +536,17 @@ class InfoBarNotification {
     }
   }
 
-  sendUserEventTelemetry(event) {
+  /**
+   * @param {string} event - The event name, e.g. "IMPRESSION".
+   * @param {object} [eventContext] - Extra context echoed into the
+   *   messaging-system ping. A `source` key is additionally recorded on its own
+   *   `messaging_system.event_source` metric.
+   */
+  sendUserEventTelemetry(event, eventContext) {
     const ping = {
       message_id: this.message.id,
       event,
+      ...(eventContext ? { event_context: eventContext } : {}),
     };
     this._dispatch({
       type: "INFOBAR_TELEMETRY",
@@ -594,7 +653,7 @@ export const InfoBar = {
    * @returns {Promise<InfoBarNotification|null>} The notification instance, or null if not shown.
    */
   async showInfoBarMessage(browser, message, dispatch, universalInNewWin) {
-    const win = browser?.ownerGlobal;
+    const win = browser?.documentGlobal;
     if (!this.isValidInfobarWindow(win)) {
       return null;
     }
@@ -644,14 +703,14 @@ export const InfoBar = {
         () => {
           // Remove this window’s stale entry
           InfoBar._universalInfobars = InfoBar._universalInfobars.filter(
-            ({ box }) => box.ownerGlobal !== win
+            ({ box }) => box.documentGlobal !== win
           );
 
           if (isUniversal) {
             // If there’s still at least one live universal infobar,
             // make it the active infobar; otherwise clear the active infobar
             const nextEntry = InfoBar._universalInfobars.find(
-              ({ box }) => !box.ownerGlobal?.closed
+              ({ box }) => !box.documentGlobal?.closed
             );
             const nextNotification = nextEntry?.notification;
             InfoBar._activeInfobar = nextNotification

@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OuterDocAccessible.h"
 
-#include "LocalAccessible-inl.h"
 #include "DocAccessible-inl.h"
+#include "LocalAccessible-inl.h"
 #include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
+#include "mozilla/a11y/Role.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "mozilla/a11y/Role.h"
 
 #ifdef A11Y_LOG
 #  include "Logging.h"
@@ -46,7 +45,7 @@ OuterDocAccessible::OuterDocAccessible(nsIContent* aContent,
   }
 }
 
-OuterDocAccessible::~OuterDocAccessible() {}
+OuterDocAccessible::~OuterDocAccessible() = default;
 
 void OuterDocAccessible::SendEmbedderAccessible(
     dom::BrowserBridgeChild* aBridge) {

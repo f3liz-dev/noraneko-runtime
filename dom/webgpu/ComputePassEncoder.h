@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,10 +25,7 @@ class BindGroup;
 class Buffer;
 class CommandEncoder;
 class ComputePipeline;
-
-struct ffiWGPUComputePassDeleter {
-  void operator()(ffi::WGPURecordedComputePass*);
-};
+class ExternalTexture;
 
 class ComputePassEncoder final : public nsWrapperCache,
                                  public ObjectBase,
@@ -38,34 +34,22 @@ class ComputePassEncoder final : public nsWrapperCache,
   GPU_DECL_CYCLE_COLLECTION(ComputePassEncoder)
   GPU_DECL_JS_WRAP(ComputePassEncoder)
 
-  ComputePassEncoder(CommandEncoder* const aParent, RawId aId,
-                     const dom::GPUComputePassDescriptor& aDesc);
+  ComputePassEncoder(CommandEncoder* const aParent, RawId aId);
 
  private:
   virtual ~ComputePassEncoder();
 
-  std::unique_ptr<ffi::WGPURecordedComputePass, ffiWGPUComputePassDeleter>
-      mPass;
-  // keep all the used objects alive while the pass is recorded
-  nsTArray<RefPtr<const BindGroup>> mUsedBindGroups;
-  nsTArray<RefPtr<const Buffer>> mUsedBuffers;
-  nsTArray<RefPtr<const ComputePipeline>> mUsedPipelines;
-
   // The canvas contexts of any canvas textures used in bind groups of this
   // compute pass.
   CanvasContextArray mUsedCanvasContexts;
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
 
-  // programmable pass encoder
  private:
-  bool mValid = true;
-
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
                     size_t aDynamicOffsetsLength);
 
  public:
-  void Invalidate() { mValid = false; }
-
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets,
                     ErrorResult& aRv);

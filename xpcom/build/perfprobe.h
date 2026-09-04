@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,14 +14,15 @@
 #  error "For the moment, perfprobe.h is defined only for Windows platforms"
 #endif
 
+#include <windows.h>
+
+#include "mozilla/Logging.h"
 #include "nsError.h"
 #include "nsString.h"
-#include "mozilla/Logging.h"
 #include "nsTArray.h"
-#include <windows.h>
 #undef GetStartupInfo  // Prevent Windows from polluting global namespace
-#include <wmistr.h>
 #include <evntrace.h>
+#include <wmistr.h>
 
 namespace mozilla {
 namespace probes {
@@ -47,7 +46,7 @@ class Probe {
   nsresult Trigger();
 
  protected:
-  ~Probe() {};
+  ~Probe() = default;
 
   Probe(const nsCID& aGUID, const nsACString& aName, ProbeManager* aManager);
   friend class ProbeManager;

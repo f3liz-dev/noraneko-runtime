@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,22 +5,22 @@
 #ifndef HttpConnectionBase_h_
 #define HttpConnectionBase_h_
 
-#include "nsHttpConnectionInfo.h"
+#include "ARefBase.h"
+#include "HttpTrafficAnalyzer.h"
+#include "TimingStruct.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/net/DNS.h"
 #include "nsAHttpTransaction.h"
 #include "nsCOMPtr.h"
-#include "nsProxyRelease.h"
-#include "prinrval.h"
-#include "mozilla/Mutex.h"
-#include "ARefBase.h"
-#include "TimingStruct.h"
-#include "HttpTrafficAnalyzer.h"
-
-#include "mozilla/net/DNS.h"
-#include "mozilla/WeakPtr.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpResponseHead.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsITimer.h"
+#include "nsProxyRelease.h"
+#include "prinrval.h"
 
 class nsISocketTransport;
 class nsITLSSocketControl;
@@ -33,7 +32,6 @@ class ConnectionEntry;
 class nsHttpHandler;
 class ASpdySession;
 class WebTransportSessionBase;
-class nsHttpResponseHead;
 
 enum class ConnectionState : uint32_t {
   HALF_OPEN = 0,
@@ -142,9 +140,25 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual void SetLastTransactionExpectedNoContent(bool) = 0;
   virtual int64_t BytesWritten() = 0;  // includes TLS
   void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks);
+  already_AddRefed<nsIInterfaceRequestor> GetCallbacks() {
+    MutexAutoLock lock(mCallbacksLock);
+    return do_AddRef(mCallbacks.get());
+  }
+  // Call only from Init(), before the object is shared with other threads.
+  void InitCallbacks(nsIInterfaceRequestor* aCallbacks,
+                     const char* aName) MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
+        aName, aCallbacks, false);
+  }
   void SetTrafficCategory(HttpTrafficCategory);
 
   void BootstrapTimings(TimingStruct times);
+  void SetDnsBootstrapTimings(TimeStamp domainLookupStart,
+                              TimeStamp domainLookupEnd);
+  void SetConnectBootstrapTimings(TimeStamp connectStart,
+                                  TimeStamp tcpConnectEnd,
+                                  TimeStamp secureConnectionStart = TimeStamp(),
+                                  TimeStamp connectEnd = TimeStamp());
 
   virtual bool IsPersistent() = 0;
   virtual bool IsReused() = 0;
@@ -180,9 +194,16 @@ class HttpConnectionBase : public nsSupportsWeakReference {
                                       HttpConnectionBase** aHttpConnection,
                                       bool aIsExtendedCONNECT = false) = 0;
   virtual void SetInTunnel() {};
+  const RefPtr<ProxyConnectResponseHead>& GetProxyConnectResponseHead() const {
+    return mProxyConnectResponseHead;
+  }
 
   void SetOwner(ConnectionEntry* aEntry);
   ConnectionEntry* OwnerEntry() const;
+
+  void SetIsRacing(bool aValue) { mIsRacing = aValue; }
+  bool IsRacing() const { return mIsRacing; }
+  virtual void SetDontExclude() {}
 
  protected:
   // The capabailities associated with the most recent transaction
@@ -200,8 +221,9 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   bool mBootstrappedTimingsSet{false};
   TimingStruct mBootstrappedTimings;
 
-  Mutex mCallbacksLock MOZ_UNANNOTATED{"nsHttpConnection::mCallbacksLock"};
-  nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks;
+  Mutex mCallbacksLock{"nsHttpConnection::mCallbacksLock"};
+  nsMainThreadPtrHandle<nsIInterfaceRequestor> mCallbacks
+      MOZ_GUARDED_BY(mCallbacksLock);
 
   nsTArray<HttpTrafficCategory> mTrafficCategory;
   PRIntervalTime mRtt{0};
@@ -217,7 +239,9 @@ class HttpConnectionBase : public nsSupportsWeakReference {
 
   bool mAddressTypeReported{false};
 
-  // Tunnel retated functions:
+  bool mIsRacing{false};
+
+  // Tunnel related functions:
   enum HttpConnectionState {
     UNINITIALIZED,
     SETTING_UP_TUNNEL,
@@ -228,6 +252,9 @@ class HttpConnectionBase : public nsSupportsWeakReference {
   virtual void SetTunnelSetupDone() {}
   virtual nsresult SetupProxyConnectStream() { return NS_OK; }
   nsresult CheckTunnelIsNeeded(nsAHttpTransaction* aTransaction);
+  // Built once when the CONNECT tunnel is established and then shared by
+  // pointer with the transaction and channel. See bug 2045419.
+  RefPtr<ProxyConnectResponseHead> mProxyConnectResponseHead;
 };
 
 #define NS_DECL_HTTPCONNECTIONBASE                                             \

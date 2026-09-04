@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PDFTrustDomain.h"
 
+#include "NSSCertDBTrustDomain.h"
 #include "cert_storage/src/cert_storage.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixutil.h"
-#include "NSSCertDBTrustDomain.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "pdf_trust_anchors/pdf_trust_anchors_ffi_generated.h"
@@ -131,7 +129,7 @@ pkix::Result PDFTrustDomain::DigestBuf(Input item, DigestAlgorithm digestAlg,
 }
 
 pkix::Result PDFTrustDomain::CheckRevocation(EndEntityOrCA, const CertID&, Time,
-                                             Duration,
+                                             pkix::Duration,
                                              /*optional*/ const Input*,
                                              /*optional*/ const Input*) {
   return Success;

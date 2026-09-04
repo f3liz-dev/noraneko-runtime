@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,7 +12,6 @@
 #include "mozilla/Likely.h"
 #include "nsIFrame.h"
 #include "nsILineIterator.h"
-#include "nsStyleConsts.h"
 #include "nsTHashSet.h"
 
 class nsLineBox;
@@ -72,9 +69,9 @@ class nsLineBox final : public nsLineLink {
   // Infallible overloaded new operator. Uses an arena (which comes from the
   // presShell) to perform the allocation.
   void* operator new(size_t sz, mozilla::PresShell* aPresShell);
-  void operator delete(void* aPtr, size_t sz) = delete;
 
  public:
+  void operator delete(void* aPtr, size_t sz) = delete;
   // Use these functions to allocate and destroy line boxes
   friend nsLineBox* NS_NewLineBox(mozilla::PresShell* aPresShell,
                                   nsIFrame* aFrame, bool aIsBlock);
@@ -88,18 +85,18 @@ class nsLineBox final : public nsLineLink {
   bool IsInline() const { return !mFlags.mBlock; }
 
   // mDirty bit
-  void MarkDirty() { mFlags.mDirty = 1; }
-  void ClearDirty() { mFlags.mDirty = 0; }
+  void MarkDirty() { mFlags.mDirty = true; }
+  void ClearDirty() { mFlags.mDirty = false; }
   bool IsDirty() const { return mFlags.mDirty; }
 
   // mPreviousMarginDirty bit
-  void MarkPreviousMarginDirty() { mFlags.mPreviousMarginDirty = 1; }
-  void ClearPreviousMarginDirty() { mFlags.mPreviousMarginDirty = 0; }
+  void MarkPreviousMarginDirty() { mFlags.mPreviousMarginDirty = true; }
+  void ClearPreviousMarginDirty() { mFlags.mPreviousMarginDirty = false; }
   bool IsPreviousMarginDirty() const { return mFlags.mPreviousMarginDirty; }
 
   // mHasClearance bit
-  void SetHasClearance() { mFlags.mHasClearance = 1; }
-  void ClearHasClearance() { mFlags.mHasClearance = 0; }
+  void SetHasClearance() { mFlags.mHasClearance = true; }
+  void ClearHasClearance() { mFlags.mHasClearance = false; }
   bool HasClearance() const { return mFlags.mHasClearance; }
 
   // mImpactedByFloat bit
@@ -153,6 +150,25 @@ class nsLineBox final : public nsLineLink {
   void ClearMovedFragments() { mFlags.mMovedFragments = false; }
   bool MovedFragments() const { return mFlags.mMovedFragments; }
 
+  // mTextBoxTrimStartApplied bit
+  void SetTextBoxTrimStartApplied() { mFlags.mTextBoxTrimStartApplied = true; }
+  void ClearTextBoxTrimStartApplied() {
+    mFlags.mTextBoxTrimStartApplied = false;
+  }
+  bool TextBoxTrimStartApplied() const {
+    return mFlags.mTextBoxTrimStartApplied;
+  }
+
+  // mTextBoxTrimEndApplied bit
+  void SetTextBoxTrimEndApplied() { mFlags.mTextBoxTrimEndApplied = true; }
+  void ClearTextBoxTrimEndApplied() { mFlags.mTextBoxTrimEndApplied = false; }
+  bool TextBoxTrimEndApplied() const { return mFlags.mTextBoxTrimEndApplied; }
+
+  // mTextBoxTrimEndForced bit
+  void SetTextBoxTrimEndForced() { mFlags.mTextBoxTrimEndForced = true; }
+  void ClearTextBoxTrimEndForced() { mFlags.mTextBoxTrimEndForced = false; }
+  bool TextBoxTrimEndForced() const { return mFlags.mTextBoxTrimEndForced; }
+
  private:
   // Add a hash table for fast lookup when the line has more frames than this.
   static const uint32_t kMinChildCountForHashtable = 200;
@@ -174,7 +190,7 @@ class nsLineBox final : public nsLineLink {
   void SwitchToHashtable() {
     MOZ_ASSERT(!mFlags.mHasHashedFrames);
     uint32_t count = GetChildCount();
-    mFlags.mHasHashedFrames = 1;
+    mFlags.mHasHashedFrames = true;
     uint32_t minLength =
         std::max(kMinChildCountForHashtable,
                  uint32_t(PLDHashTable::kDefaultInitialLength));
@@ -187,7 +203,7 @@ class nsLineBox final : public nsLineLink {
     MOZ_ASSERT(mFlags.mHasHashedFrames);
     uint32_t count = GetChildCount();
     delete mFrames;
-    mFlags.mHasHashedFrames = 0;
+    mFlags.mHasHashedFrames = false;
     mChildCount = count;
   }
 
@@ -196,6 +212,61 @@ class nsLineBox final : public nsLineLink {
     return MOZ_UNLIKELY(mFlags.mHasHashedFrames) ? mFrames->Count()
                                                  : mChildCount;
   }
+
+  // An iterator over the child frames of a single line.
+  class ChildFrameIterator {
+   public:
+    using value_type = nsIFrame*;
+    using pointer = value_type*;
+    using reference = value_type&;
+    using difference_type = ptrdiff_t;
+    // Stashing iterator (operator* returns by value), so the category can be
+    // at most std::input_iterator_tag.
+    using iterator_category = std::input_iterator_tag;
+
+    ChildFrameIterator(nsIFrame* aFrame, int32_t aRemaining)
+        : mCurrentFrame(aFrame), mRemainingChildCount(aRemaining) {}
+
+    nsIFrame* operator*() const { return mCurrentFrame; }
+
+    ChildFrameIterator& operator++() {
+      MOZ_ASSERT(mRemainingChildCount > 0);
+      --mRemainingChildCount;
+      mCurrentFrame =
+          mRemainingChildCount > 0 ? mCurrentFrame->GetNextSibling() : nullptr;
+      return *this;
+    }
+
+    bool operator==(const ChildFrameIterator&) const = default;
+
+   private:
+    nsIFrame* mCurrentFrame;
+    int32_t mRemainingChildCount;
+  };
+
+  class ChildFrameRange {
+   public:
+    explicit ChildFrameRange(const nsLineBox* aLine) : mLine(aLine) {}
+    ChildFrameIterator begin() const {
+      const int32_t count = mLine->GetChildCount();
+      return {count > 0 ? mLine->mFirstChild : nullptr, count};
+    }
+    ChildFrameIterator end() const { return {nullptr, 0}; }
+
+   private:
+    const nsLineBox* mLine;
+  };
+
+  // Return a range over this line's child frames, suitable for use with a
+  // range-based for loop.
+  //
+  // Example usage:
+  //   for (nsIFrame* f : line->ChildFrames()) { ... }
+  //
+  // Note: use the range-based for loop only when the frame sibling chain in
+  // this line is not mutated during traversal. If mutation is required, use
+  // mFirstChild and GetChildCount() instead.
+  ChildFrameRange ChildFrames() const { return ChildFrameRange(this); }
 
   /**
    * Register that aFrame is now on this line.
@@ -442,6 +513,11 @@ class nsLineBox final : public nsLineLink {
   // reflowing it) and the end of reflowing the block.
   bool CachedIsEmpty();
 
+  // This line box is considered to not exist when identifying the
+  // first formatted line or when applying text-box-trim.
+  // https://drafts.csswg.org/css-inline-3/#invisible-line-boxes
+  bool IsPhantom() const { return IsEmpty() && !HasForcedLineBreakAfter(); }
+
   void InvalidateCachedIsEmpty() { mFlags.mEmptyCacheValid = false; }
 
   // For debugging purposes
@@ -524,6 +600,14 @@ class nsLineBox final : public nsLineLink {
     // Note: This bit is unrelated to CSS break-after property because it is all
     // about line break-after for inline-level boxes.
     bool mHasForcedLineBreakAfter : 1;
+    // Indicates that text-box-trim was successfully applied to the start or end
+    // side of this line box.
+    bool mTextBoxTrimStartApplied : 1;
+    bool mTextBoxTrimEndApplied : 1;
+    // Indicates that this line box requires text-box-trim on the trim-end side
+    // when being reflowed, as it was identified as the last formatted line of
+    // a fragmented box in a prior reflow.
+    bool mTextBoxTrimEndForced : 1;
     // mFloatClearType indicates that there's a float clearance before a block
     // line, or after an inline line.
     mozilla::UsedClear mFloatClearType;
@@ -1052,10 +1136,10 @@ class nsLineIterator final : public nsILineIterator {
                             nsIFrame** aFirstVisual,
                             nsIFrame** aLastVisual) final;
 
- private:
   nsLineIterator() = delete;
   nsLineIterator(const nsLineIterator& aOther) = delete;
 
+ private:
   const nsLineBox* GetNextLine() {
     MOZ_ASSERT(mIter != mLines.end(), "Already at end!");
     ++mIndex;

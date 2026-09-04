@@ -4,7 +4,7 @@
 // Checks the UPDATE_WEB tip.
 //
 // The update parts of this test are adapted from:
-// https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_unsupported.js
+// https://searchfox.org/firefox-main/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_unsupported.js
 
 "use strict";
 
@@ -36,7 +36,7 @@ add_task(async function test() {
   // Picking the tip should open the download page in a new tab.
   let downloadTab = await doUpdateTest({
     searchString: SEARCH_STRINGS.UPDATE,
-    tip: UrlbarProviderInterventions.TIP_TYPE.UPDATE_WEB,
+    tip: UrlbarShared.INTERVENTION_TIP_TYPE.UPDATE_WEB,
     title: /^Get the latest .+ browser\.$/,
     button: "Download Now",
     awaitCallback() {

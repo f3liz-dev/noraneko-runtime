@@ -6,16 +6,14 @@
  * This module exports a provider that offers about pages.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -23,10 +21,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export class UrlbarProviderAboutPages extends UrlbarProvider {
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -52,16 +50,16 @@ export class UrlbarProviderAboutPages extends UrlbarProvider {
     for (const aboutUrl of lazy.AboutPagesUtils.visibleAboutUrls) {
       if (aboutUrl.startsWith(searchString)) {
         let result = new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.URL,
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          type: lazy.UrlbarShared.RESULT_TYPE.URL,
+          source: lazy.UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           payload: {
             title: aboutUrl,
             url: aboutUrl,
-            icon: UrlbarUtils.getIconForUrl(aboutUrl),
+            icon: lazy.UrlbarShared.getIconForUrl(aboutUrl),
           },
           highlights: {
-            title: UrlbarUtils.HIGHLIGHT.TYPED,
-            url: UrlbarUtils.HIGHLIGHT.TYPED,
+            title: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+            url: lazy.UrlbarShared.HIGHLIGHT.TYPED,
           },
         });
         addCallback(this, result);

@@ -3,7 +3,7 @@
 const profileDir = do_get_profile();
 
 const { ContextualIdentityService } = ChromeUtils.importESModule(
-  "resource://gre/modules/ContextualIdentityService.sys.mjs"
+  "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs"
 );
 
 const TEST_STORE_FILE_PATH = PathUtils.join(
@@ -203,6 +203,29 @@ add_task(function () {
     [id0, id1, id2, id3],
     "Resulting list does not contain duplicate ids"
   );
+});
+
+// Reordering identities notifies observers
+add_task(function () {
+  const [id0, id1] = cis.getPublicUserContextIds();
+
+  let notified = 0;
+  let observer = () => notified++;
+  Services.obs.addObserver(observer, "contextual-identity-reordered");
+
+  ok(cis.move([id1], 0), "Moving a valid id");
+  equal(notified, 1, "A move that reorders identities notifies observers");
+
+  ok(!cis.move([100], 0), "Moving a non-existing id");
+  equal(notified, 1, "A move that changes nothing does not notify observers");
+
+  ok(!cis.move([id0], -10), "Moving to an invalid position");
+  equal(notified, 1, "A rejected move does not notify observers");
+
+  ok(cis.move([id0], 0), "Restoring the initial order");
+  equal(notified, 2, "The restoring move notifies observers");
+
+  Services.obs.removeObserver(observer, "contextual-identity-reordered");
 });
 
 // Update an identity

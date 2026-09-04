@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #include "mozilla/HalSensor.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/DeviceMotionEvent.h"
+#include "mozilla/dom/DeviceOrientationEventBinding.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsIDeviceSensors.h"
@@ -26,6 +25,7 @@ class nsDeviceSensors : public nsIDeviceSensors,
                         public mozilla::hal::ISensorObserver {
   using DeviceAccelerationInit = mozilla::dom::DeviceAccelerationInit;
   using DeviceRotationRateInit = mozilla::dom::DeviceRotationRateInit;
+  using DeviceOrientationEventInit = mozilla::dom::DeviceOrientationEventInit;
 
  public:
   NS_DECL_ISUPPORTS
@@ -49,8 +49,9 @@ class nsDeviceSensors : public nsIDeviceSensors,
   void FireDOMUserProximityEvent(mozilla::dom::EventTarget* aTarget,
                                  bool aNear);
 
-  void FireDOMOrientationEvent(mozilla::dom::EventTarget* target, double aAlpha,
-                               double aBeta, double aGamma, bool aIsAbsolute);
+  void MaybeFireDOMOrientationEvent(mozilla::dom::EventTarget* target,
+                                    double aAlpha, double aBeta, double aGamma,
+                                    bool aIsAbsolute);
 
   void FireDOMMotionEvent(mozilla::dom::Document* domDoc,
                           mozilla::dom::EventTarget* target, uint32_t type,
@@ -62,11 +63,16 @@ class nsDeviceSensors : public nsIDeviceSensors,
 
   bool IsSensorAllowedByPref(uint32_t aType, nsIDOMWindow* aWindow);
 
+  bool CanFireDOMOrientationEvent(double aAlpha, double aBeta, double aGamma,
+                                  bool aIsAbsolute);
+
   mozilla::TimeStamp mLastDOMMotionEventTime;
   bool mIsUserProximityNear;
   mozilla::Maybe<DeviceAccelerationInit> mLastAcceleration;
   mozilla::Maybe<DeviceAccelerationInit> mLastAccelerationIncludingGravity;
   mozilla::Maybe<DeviceRotationRateInit> mLastRotationRate;
+  mozilla::Maybe<DeviceOrientationEventInit> mLastOrientation;
+  mozilla::Maybe<DeviceOrientationEventInit> mLastOrientationAbsolute;
 };
 
 #endif

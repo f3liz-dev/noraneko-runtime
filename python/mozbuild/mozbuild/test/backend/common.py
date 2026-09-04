@@ -40,8 +40,28 @@ CONFIGS = defaultdict(
         "database": {
             "defines": {},
             "substs": {
-                "CC": "clang",
-                "CXX": "clang++",
+                "CC": ["clang"],
+                "CXX": ["clang++"],
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "database-compiler-wrapper": {
+            "defines": {},
+            "substs": {
+                "CC": ["/usr/bin/kache", "clang"],
+                "CXX": ["/usr/bin/kache", "clang++"],
+                "COMPILER_WRAPPER": ["/usr/bin/kache"],
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
+        "database-ccache": {
+            "defines": {},
+            "substs": {
+                "CC": ["/usr/bin/ccache", "clang"],
+                "CXX": ["/usr/bin/ccache", "clang++"],
+                "COMPILER_WRAPPER": ["/usr/bin/ccache"],
                 "LIB_PREFIX": "lib",
                 "LIB_SUFFIX": "a",
             },
@@ -93,6 +113,16 @@ CONFIGS = defaultdict(
             },
         },
         "host-rust-program-features": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "i686-pc-windows-msvc",
+                "RUST_HOST_TARGET": "i686-pc-windows-msvc",
+                "BIN_SUFFIX": ".exe",
+                "HOST_BIN_SUFFIX": ".exe",
+            },
+        },
+        "host-rust-program-output-category": {
             "defines": {},
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
@@ -197,7 +227,23 @@ CONFIGS = defaultdict(
                 "BIN_SUFFIX": ".prog",
             },
         },
+        "extra-link-deps": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "BIN_SUFFIX": "",
+            },
+        },
         "shared-lib-paths": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "LIB_SUFFIX": "a",
+                "DLL_PREFIX": "lib",
+                "DLL_SUFFIX": ".so",
+            },
+        },
+        "shared-library-output-category": {
             "defines": {},
             "substs": {
                 "COMPILE_ENVIRONMENT": "1",
@@ -218,6 +264,16 @@ CONFIGS = defaultdict(
                 "EXPAND_LIBS_LIST_STYLE": "list",
             },
         },
+        "rust-library-archive-dep": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "x86_64-unknown-linux-gnu",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+                "OBJ_SUFFIX": "o",
+            },
+        },
     },
 )
 
@@ -231,16 +287,20 @@ class BackendTester(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._old_env)
 
-    def _get_environment(self, name):
+    def _get_environment(self, name, srcdir_name=None):
         """Obtain a new instance of a ConfigEnvironment for a known profile.
 
         A new temporary object directory is created for the environment. The
         environment is cleaned up automatically when the test finishes.
+
+        `srcdir_name` selects the test data directory, defaulting to `name`. It
+        can differ from `name` to run a different config profile against an
+        existing data directory.
         """
         config = CONFIGS[name]
         config["substs"]["MOZ_UI_LOCALE"] = "en-US"
 
-        srcdir = mozpath.join(test_data_path, name)
+        srcdir = mozpath.join(test_data_path, srcdir_name or name)
         config["substs"]["top_srcdir"] = srcdir
 
         # Create the objdir in the srcdir to ensure that they share the

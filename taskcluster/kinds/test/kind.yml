@@ -5,6 +5,7 @@
 loader: gecko_taskgraph.loader.test:loader
 
 kind-dependencies:
+    - artifact-build
     - build
     - build-signing
     - repackage-signing-shippable-l10n-msix
@@ -30,6 +31,7 @@ transforms:
 tasks-from:
     - awsy.yml
     - compiled.yml
+    - devtools-compat.yml
     - firefox-ui.yml
     - marionette.yml
     - misc.yml
@@ -40,8 +42,8 @@ task-defaults:
     run-on-repo-type: [hg]
     attributes:
         retrigger: true
-    use-python: default
-    use-uv: true
+    use-python: system
+    use-uv: false
     require-signed-extensions:
         by-release-type:
             release|esr.*: true
@@ -61,6 +63,11 @@ task-defaults:
     docker-image:
         in-tree: ubuntu2404-test
     fetches:
+        fetch:
+            by-test-platform:
+                win.*:
+                    - win64-ffmpeg-7.1
+                default: []
         toolchain:
             by-test-platform:
                 win.*:
@@ -86,3 +93,4 @@ task-defaults:
                 default:
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
+                    - linux64-2404-dbus-python

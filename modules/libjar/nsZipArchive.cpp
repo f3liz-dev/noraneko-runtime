@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +12,7 @@
 #include "mozilla/MmapFaultHandler.h"
 #include "prio.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MemUtils.h"
 #include "mozilla/UniquePtrExtensions.h"
@@ -215,6 +215,16 @@ nsresult nsZipHandle::Init(nsIFile* file, nsZipHandle** ret, PRFileDesc** aFd) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+#if defined(XP_UNIX)
+  // Prefetch the archive into the page cache ahead of the ZIP directory scan
+  // and entry reads at startup.
+  madvise(buf, (size_t)size, MADV_WILLNEED);
+#  if defined(XP_LINUX)
+  // Exclude large archive mappings from core dumps; the file is on disk.
+  madvise(buf, (size_t)size, MADV_DONTDUMP);
+#  endif
+#endif
+
 #if defined(XP_WIN)
   if (aFd) {
     *aFd = fd.release();
@@ -322,18 +332,25 @@ nsresult nsZipHandle::findDataStart() {
     headerData += CRXIntSize;  // Skip magic number
     uint32_t version = xtolong(headerData);
     headerData += CRXIntSize;  // Skip version
-    uint32_t headerSize = CRXIntSize * 2;
+    mozilla::CheckedInt<uint32_t> checkedHeaderSize = CRXIntSize * 2;
     if (version == 3) {
       uint32_t subHeaderSize = xtolong(headerData);
-      headerSize += CRXIntSize + subHeaderSize;
+      checkedHeaderSize += CRXIntSize;
+      checkedHeaderSize += subHeaderSize;
     } else if (version < 3) {
       uint32_t pubKeyLength = xtolong(headerData);
       headerData += CRXIntSize;
       uint32_t sigLength = xtolong(headerData);
-      headerSize += CRXIntSize * 2 + pubKeyLength + sigLength;
+      checkedHeaderSize += CRXIntSize * 2;
+      checkedHeaderSize += pubKeyLength;
+      checkedHeaderSize += sigLength;
     } else {
       return NS_ERROR_FILE_CORRUPTED;
     }
+    if (!checkedHeaderSize.isValid()) {
+      return NS_ERROR_FILE_CORRUPTED;
+    }
+    uint32_t headerSize = checkedHeaderSize.value();
     if (mTotalLen > headerSize) {
       mLen = mTotalLen - headerSize;
       mFileData = mFileStart + headerSize;
@@ -423,7 +440,7 @@ nsresult nsZipArchive::Test(const nsACString& aEntryName) {
     if (!currItem) return NS_ERROR_FILE_NOT_FOUND;
     //-- don't test (synthetic) directory items
     if (currItem->IsDirectory()) return NS_OK;
-    return ExtractFile(currItem, 0, 0);
+    return ExtractFile(currItem, nullptr, nullptr);
   }
 
   // test all items in archive
@@ -431,7 +448,7 @@ nsresult nsZipArchive::Test(const nsACString& aEntryName) {
     for (currItem = item; currItem; currItem = currItem->next) {
       //-- don't test (synthetic) directory items
       if (currItem->IsDirectory()) continue;
-      nsresult rv = ExtractFile(currItem, 0, 0);
+      nsresult rv = ExtractFile(currItem, nullptr, nullptr);
       if (rv != NS_OK) return rv;
     }
   }
@@ -453,7 +470,7 @@ nsZipItem* nsZipArchive::GetItem(const nsACString& aEntryName) {
     //-- are created for the directories without their own entry.
     if (!mBuiltSynthetics) {
       if ((len > 0) && (aEntryName[len - 1] == '/')) {
-        if (BuildSynthetics() != NS_OK) return 0;
+        if (BuildSynthetics() != NS_OK) return nullptr;
       }
     }
     MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
@@ -464,7 +481,7 @@ nsZipItem* nsZipArchive::GetItem(const nsACString& aEntryName) {
         // Successful GetItem() is a good indicator that the file is about to be
         // read
         if (mUseZipLog && mURI.Length()) {
-          zipLog.Write(mURI, aEntryName.BeginReading());
+          zipLog.Write(mURI, PromiseFlatCString(aEntryName).get());
         }
         return item;  //-- found it
       }
@@ -539,7 +556,7 @@ nsresult nsZipArchive::FindInit(const char* aPattern, nsZipFind** aFind) {
   *aFind = nullptr;
 
   bool regExp = false;
-  char* pattern = 0;
+  char* pattern = nullptr;
 
   // Create synthetic directory entries on demand
   nsresult rv = BuildSynthetics();
@@ -586,7 +603,7 @@ nsresult nsZipFind::FindNext(const char** aResult, uint16_t* aNameLen) {
   NS_ENSURE_TRUE(mArchive, NS_ERROR_FILE_NOT_FOUND);
 
   MutexAutoLock lock(mArchive->mLock);
-  *aResult = 0;
+  *aResult = nullptr;
   *aNameLen = 0;
   MMAP_FAULT_HANDLER_BEGIN_HANDLE(mArchive->GetFD())
   // we start from last match, look for next
@@ -991,7 +1008,7 @@ nsZipFind::~nsZipFind() {
  */
 MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW
 static uint32_t HashName(const char* aName, uint16_t len) {
-  MOZ_ASSERT(aName != 0);
+  MOZ_ASSERT(aName != nullptr);
 
   const uint8_t* p = (const uint8_t*)aName;
   const uint8_t* endp = p + len;
@@ -1181,6 +1198,7 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       } else {
         *aBytesRead = mZs.avail_in > mBufSize ? mBufSize : mZs.avail_in;
         memcpy(mBuf, mZs.next_in, *aBytesRead);
+        buf = mBuf;
         mZs.avail_in -= *aBytesRead;
         mZs.next_in += *aBytesRead;
       }

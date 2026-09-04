@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,11 +25,6 @@ void CompositeProcessD3D11FencesHolderMap::Shutdown() {
   MOZ_ASSERT(XRE_IsGPUProcess() || XRE_IsParentProcess());
   sInstance = nullptr;
 }
-
-CompositeProcessD3D11FencesHolderMap::CompositeProcessD3D11FencesHolderMap()
-    : mMonitor("CompositeProcessD3D11FencesHolderMap::mMonitor") {}
-
-CompositeProcessD3D11FencesHolderMap::~CompositeProcessD3D11FencesHolderMap() {}
 
 void CompositeProcessD3D11FencesHolderMap::Register(
     CompositeProcessFencesHolderId aHolderId) {

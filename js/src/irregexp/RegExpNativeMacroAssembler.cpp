@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -24,6 +22,7 @@
 
 namespace v8 {
 namespace internal {
+namespace regexp {
 
 using js::MatchPairs;
 using js::jit::AbsoluteAddress;
@@ -49,7 +48,7 @@ SMRegExpMacroAssembler::SMRegExpMacroAssembler(JSContext* cx,
                                                StackMacroAssembler& masm,
                                                Zone* zone, Mode mode,
                                                uint32_t num_capture_registers)
-    : NativeRegExpMacroAssembler(cx->isolate.ref(), zone),
+    : NativeRegExpMacroAssembler(cx->isolate.ref(), zone, mode),
       cx_(cx),
       masm_(masm),
       mode_(mode),
@@ -77,7 +76,7 @@ SMRegExpMacroAssembler::SMRegExpMacroAssembler(JSContext* cx,
 }
 
 int SMRegExpMacroAssembler::stack_limit_slack_slot_count() {
-  return RegExpStack::kStackLimitSlackSlotCount;
+  return Stack::kStackLimitSlackSlotCount;
 }
 
 void SMRegExpMacroAssembler::AdvanceCurrentPosition(int by) {
@@ -371,27 +370,25 @@ void SMRegExpMacroAssembler::CheckBitInTable(Handle<ByteArray> table,
   AddTable(std::move(rawTable));
 }
 
-void SMRegExpMacroAssembler::SkipUntilBitInTable(int cp_offset,
-                                                 Handle<ByteArray> table,
-                                                 Handle<ByteArray> nibble_table,
-                                                 int advance_by) {
+void SMRegExpMacroAssembler::SkipUntilBitInTable(
+    int cp_offset, Handle<ByteArray> table, Handle<ByteArray> nibble_table,
+    int advance_by, int bounds_check_offset, Label* on_match,
+    Label* on_no_match) {
   // Claim ownership of the ByteArray from the current HandleScope.
   // ByteArrays are allocated on the C++ heap and are (eventually)
   // owned by the RegExpShared.
   PseudoHandle<ByteArrayData> rawTable = table->takeOwnership(isolate());
 
-  // TODO: SIMD support (bug 1928862).
+  // TODO: SIMD support (bug 1929128).
   MOZ_ASSERT(!SkipUntilBitInTableUseSimd(advance_by));
 
   // Scalar version.
   Register tableReg = temp0_;
   masm_.movePtr(ImmPtr(rawTable->data()), tableReg);
 
-  Label cont;
   js::jit::Label scalarRepeat;
   masm_.bind(&scalarRepeat);
-  CheckPosition(cp_offset, &cont);
-  LoadCurrentCharacterUnchecked(cp_offset, 1);
+  LoadCurrentCharacter(cp_offset, on_no_match, true, 1, bounds_check_offset);
 
   Register index = current_character_;
   if (mode_ != LATIN1 || kTableMask != String::kMaxOneByteCharCode) {
@@ -400,11 +397,10 @@ void SMRegExpMacroAssembler::SkipUntilBitInTable(int cp_offset,
   }
 
   masm_.load8ZeroExtend(BaseIndex(tableReg, index, js::jit::TimesOne), index);
-  masm_.branchTest32(Assembler::NonZero, index, index, cont.inner());
+  masm_.branchTest32(Assembler::NonZero, index, index,
+                     LabelOrBacktrack(on_match));
   AdvanceCurrentPosition(advance_by);
   masm_.jump(&scalarRepeat);
-
-  masm_.bind(cont.inner());
 
   // Transfer ownership of |rawTable| to the |tables_| vector.
   AddTable(std::move(rawTable));
@@ -651,21 +647,17 @@ void SMRegExpMacroAssembler::CheckPosition(int cp_offset,
                     ImmWord(-cp_offset * char_size()),
                     LabelOrBacktrack(on_outside_input));
   } else {
-    // Compute offset position
-    masm_.computeEffectiveAddress(
-        Address(current_position_, cp_offset * char_size()), temp0_);
-
-    // Compare to start of input.
-    masm_.branchPtr(Assembler::GreaterThan, inputStart(), temp0_,
+    masm_.loadPtr(inputStart(), temp0_);
+    masm_.subPtr(Imm32(cp_offset * char_size()), temp0_);
+    masm_.branchPtr(Assembler::LessThan, current_position_, temp0_,
                     LabelOrBacktrack(on_outside_input));
   }
 }
 
-// This function attempts to generate special case code for character classes.
-// Returns true if a special case is generated.
-// Otherwise returns false and generates no code.
-bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
-    StandardCharacterSet type, Label* on_no_match) {
+// This function generates special case code for character classes.
+void SMRegExpMacroAssembler::CheckSpecialClassRanges(StandardCharacterSet type,
+                                                     Label* on_no_match) {
+  MOZ_ASSERT(CanOptimizeSpecialClassRanges(type));
   js::jit::Label* no_match = LabelOrBacktrack(on_no_match);
 
   // Note: throughout this function, range checks (c in [min, max])
@@ -673,9 +665,7 @@ bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
   switch (type) {
     case StandardCharacterSet::kWhitespace: {
       // Match space-characters
-      if (mode_ != LATIN1) {
-        return false;
-      }
+      MOZ_ASSERT(mode_ == LATIN1);
       js::jit::Label success;
       // One byte space characters are ' ', '\t'..'\r', and '\u00a0' (NBSP).
 
@@ -693,22 +683,22 @@ bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
                      no_match);
 
       masm_.bind(&success);
-      return true;
+      break;
     }
     case StandardCharacterSet::kNotWhitespace:
       // The emitted code for generic character classes is good enough.
-      return false;
+      MOZ_CRASH("unreachable");
     case StandardCharacterSet::kDigit:
       // Match latin1 digits ('0'-'9')
       masm_.computeEffectiveAddress(Address(current_character_, -'0'), temp0_);
       masm_.branch32(Assembler::Above, temp0_, Imm32('9' - '0'), no_match);
-      return true;
+      break;
     case StandardCharacterSet::kNotDigit:
       // Match anything except latin1 digits ('0'-'9')
       masm_.computeEffectiveAddress(Address(current_character_, -'0'), temp0_);
       masm_.branch32(Assembler::BelowOrEqual, temp0_, Imm32('9' - '0'),
                      no_match);
-      return true;
+      break;
     case StandardCharacterSet::kNotLineTerminator:
       // Match non-newlines. This excludes '\n' (0x0a), '\r' (0x0d),
       // U+2028 LINE SEPARATOR, and U+2029 PARAGRAPH SEPARATOR.
@@ -730,7 +720,7 @@ bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
         masm_.branch32(Assembler::BelowOrEqual, temp0_, Imm32(0x2029 - 0x2028),
                        no_match);
       }
-      return true;
+      break;
     case StandardCharacterSet::kWord:
       // \w matches the set of 63 characters defined in Runtime Semantics:
       // WordCharacters. We use a static lookup table, which is defined in
@@ -741,34 +731,33 @@ bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
         masm_.branch32(Assembler::Above, current_character_, Imm32('z'),
                        no_match);
       }
-      static_assert(arraysize(word_character_map) > unibrow::Latin1::kMaxChar);
-      masm_.movePtr(ImmPtr(word_character_map), temp0_);
+      static_assert(arraysize(word_character_map_) > unibrow::Latin1::kMaxChar);
+      masm_.movePtr(ImmPtr(&word_character_map_), temp0_);
       masm_.load8ZeroExtend(
           BaseIndex(temp0_, current_character_, js::jit::TimesOne), temp0_);
       masm_.branchTest32(Assembler::Zero, temp0_, temp0_, no_match);
-      return true;
+      break;
     case StandardCharacterSet::kNotWord: {
       // See 'w' above.
       js::jit::Label done;
       if (mode_ != LATIN1) {
         masm_.branch32(Assembler::Above, current_character_, Imm32('z'), &done);
       }
-      static_assert(arraysize(word_character_map) > unibrow::Latin1::kMaxChar);
-      masm_.movePtr(ImmPtr(word_character_map), temp0_);
+      static_assert(arraysize(word_character_map_) > unibrow::Latin1::kMaxChar);
+      masm_.movePtr(ImmPtr(&word_character_map_), temp0_);
       masm_.load8ZeroExtend(
           BaseIndex(temp0_, current_character_, js::jit::TimesOne), temp0_);
       masm_.branchTest32(Assembler::NonZero, temp0_, temp0_, no_match);
       if (mode_ != LATIN1) {
         masm_.bind(&done);
       }
-      return true;
+      break;
     }
       ////////////////////////////////////////////////////////////////////////
       // Non-standard classes (with no syntactic shorthand) used internally //
       ////////////////////////////////////////////////////////////////////////
     case StandardCharacterSet::kEverything:
-      // Match any character
-      return true;
+      break;
     case StandardCharacterSet::kLineTerminator:
       // Match newlines. The opposite of '.'. See '.' above.
       masm_.xor32(Imm32(0x01), current_character_, temp0_);
@@ -789,9 +778,8 @@ bool SMRegExpMacroAssembler::CheckSpecialCharacterClass(
                        no_match);
         masm_.bind(&done);
       }
-      return true;
+      break;
   }
-  return false;
 }
 
 void SMRegExpMacroAssembler::Fail() {
@@ -819,31 +807,6 @@ void SMRegExpMacroAssembler::IfRegisterLT(int reg, int comparand,
 void SMRegExpMacroAssembler::IfRegisterEqPos(int reg, Label* if_eq) {
   masm_.branchPtr(Assembler::Equal, register_location(reg), current_position_,
                   LabelOrBacktrack(if_eq));
-}
-
-// This is a word-for-word identical copy of the V8 code, which is
-// duplicated in at least nine different places in V8 (one per
-// supported architecture) with no differences outside of comments and
-// formatting. It should be hoisted into the superclass. Once that is
-// done upstream, this version can be deleted.
-void SMRegExpMacroAssembler::LoadCurrentCharacterImpl(int cp_offset,
-                                                      Label* on_end_of_input,
-                                                      bool check_bounds,
-                                                      int characters,
-                                                      int eats_at_least) {
-  // It's possible to preload a small number of characters when each success
-  // path requires a large number of characters, but not the reverse.
-  MOZ_ASSERT(eats_at_least >= characters);
-  MOZ_ASSERT(cp_offset < (1 << 30));  // Be sane! (And ensure negation works)
-
-  if (check_bounds) {
-    if (cp_offset >= 0) {
-      CheckPosition(cp_offset + eats_at_least - 1, on_end_of_input);
-    } else {
-      CheckPosition(cp_offset, on_end_of_input);
-    }
-  }
-  LoadCurrentCharacterUnchecked(cp_offset, characters);
 }
 
 // Load the character (or characters) at the specified offset from the
@@ -896,7 +859,7 @@ void SMRegExpMacroAssembler::PushRegister(int register_index,
                                           StackCheckFlag check_stack_limit) {
   masm_.loadPtr(register_location(register_index), temp0_);
   Push(temp0_);
-  if (check_stack_limit) {
+  if (check_stack_limit == StackCheckFlag::kCheckStackLimit) {
     CheckBacktrackStackLimit();
   }
 }
@@ -1015,8 +978,8 @@ static Handle<HeapObject> DummyCode() {
 
 // Finalize code. This is called last, so that we know how many
 // registers we need.
-Handle<HeapObject> SMRegExpMacroAssembler::GetCode(Handle<String> source,
-                                                   RegExpFlags flags) {
+Handle<HeapObject> SMRegExpMacroAssembler::GetCode(Handle<RegExpData> data,
+                                                   Flags flags) {
   if (!cx_->zone()->ensureJitZoneExists(cx_)) {
     return DummyCode();
   }
@@ -1365,7 +1328,7 @@ void SMRegExpMacroAssembler::stackOverflowHandler() {
   volatileRegs.takeUnchecked(temp1_);
   masm_.PushRegsInMask(volatileRegs);
 
-  using Fn = bool (*)(RegExpStack* regexp_stack);
+  using Fn = bool (*)(Stack* regexp_stack);
   masm_.setupUnalignedABICall(temp0_);
   masm_.passABIArg(temp1_);
   masm_.callWithABI<Fn, ::js::irregexp::GrowBacktrackStack>();
@@ -1417,8 +1380,8 @@ uint32_t SMRegExpMacroAssembler::CaseInsensitiveCompareNonUnicode(
     if (c1 != c2) {
 #ifdef JS_HAS_INTL_API
       // Non-unicode regexps have weird case-folding rules.
-      c1 = RegExpCaseFolding::Canonicalize(c1);
-      c2 = RegExpCaseFolding::Canonicalize(c2);
+      c1 = CaseFolding::Canonicalize(c1);
+      c2 = CaseFolding::Canonicalize(c2);
 #else
       // If we aren't building with ICU, fall back to `/iu` mode. The only
       // differences are in corner cases.
@@ -1461,7 +1424,7 @@ uint32_t SMRegExpMacroAssembler::CaseInsensitiveCompareUnicode(
 }
 
 /* static */
-bool SMRegExpMacroAssembler::GrowBacktrackStack(RegExpStack* regexp_stack) {
+bool SMRegExpMacroAssembler::GrowBacktrackStack(Stack* regexp_stack) {
   js::AutoUnsafeCallWithABI unsafe;
   size_t size = regexp_stack->memory_size();
   return !!regexp_stack->EnsureCapacity(size * 2);
@@ -1477,5 +1440,6 @@ bool SMRegExpMacroAssembler::CanReadUnaligned() const {
 #endif
 }
 
+}  // namespace regexp
 }  // namespace internal
 }  // namespace v8

@@ -54,7 +54,7 @@ exports[`DebugTargetInfo component Connection info renders the expected snapshot
     >
       <img
         alt="toolbox.debugTargetInfo.back"
-        src="chrome://browser/skin/back.svg"
+        src="chrome://devtools/skin/images/back.svg"
       />
     </button>
     <button
@@ -64,7 +64,7 @@ exports[`DebugTargetInfo component Connection info renders the expected snapshot
     >
       <img
         alt="toolbox.debugTargetInfo.forward"
-        src="chrome://browser/skin/forward.svg"
+        src="chrome://devtools/skin/images/forward.svg"
       />
     </button>
     <button
@@ -88,6 +88,7 @@ exports[`DebugTargetInfo component Connection info renders the expected snapshot
       <input
         className="devtools-textinput debug-target-url-input"
         defaultValue="http://some.target/url"
+        dir="auto"
         onChange={[Function]}
         onFocus={[Function]}
       />
@@ -206,7 +207,7 @@ exports[`DebugTargetInfo component Target icon renders the expected snapshot for
     >
       <img
         alt="toolbox.debugTargetInfo.back"
-        src="chrome://browser/skin/back.svg"
+        src="chrome://devtools/skin/images/back.svg"
       />
     </button>
     <button
@@ -216,7 +217,7 @@ exports[`DebugTargetInfo component Target icon renders the expected snapshot for
     >
       <img
         alt="toolbox.debugTargetInfo.forward"
-        src="chrome://browser/skin/forward.svg"
+        src="chrome://devtools/skin/images/forward.svg"
       />
     </button>
     <button
@@ -240,6 +241,7 @@ exports[`DebugTargetInfo component Target icon renders the expected snapshot for
       <input
         className="devtools-textinput debug-target-url-input"
         defaultValue="http://some.target/url"
+        dir="auto"
         onChange={[Function]}
         onFocus={[Function]}
       />
@@ -451,7 +453,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.back"
-        src="chrome://browser/skin/back.svg"
+        src="chrome://devtools/skin/images/back.svg"
       />
     </button>
     <button
@@ -461,7 +463,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.forward"
-        src="chrome://browser/skin/forward.svg"
+        src="chrome://devtools/skin/images/forward.svg"
       />
     </button>
     <button
@@ -485,6 +487,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
       <input
         className="devtools-textinput debug-target-url-input"
         defaultValue="http://some.target/url"
+        dir="auto"
         onChange={[Function]}
         onFocus={[Function]}
       />
@@ -531,7 +534,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.back"
-        src="chrome://browser/skin/back.svg"
+        src="chrome://devtools/skin/images/back.svg"
       />
     </button>
     <button
@@ -541,7 +544,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
     >
       <img
         alt="toolbox.debugTargetInfo.forward"
-        src="chrome://browser/skin/forward.svg"
+        src="chrome://devtools/skin/images/forward.svg"
       />
     </button>
     <button
@@ -565,6 +568,7 @@ exports[`DebugTargetInfo component Target title renders the expected snapshot fo
       <input
         className="devtools-textinput debug-target-url-input"
         defaultValue="http://some.target/without/a/name"
+        dir="auto"
         onChange={[Function]}
         onFocus={[Function]}
       />

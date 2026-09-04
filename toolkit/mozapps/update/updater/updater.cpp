@@ -100,7 +100,7 @@ bool PerformInstallationFromDMG(int argc, char** argv);
 struct UpdateServerThreadArgs {
   int argc;
   const NS_tchar** argv;
-  const char* marChannelID;
+  const char* marChannelID = "";
 };
 #endif
 
@@ -333,7 +333,7 @@ class Thread {
 static NS_tchar gPatchDirPath[MAXPATHLEN];
 static NS_tchar gInstallDirPath[MAXPATHLEN];
 static NS_tchar gWorkingDirPath[MAXPATHLEN];
-MOZ_RUNINIT static ArchiveReader gArchiveReader;
+constinit static ArchiveReader gArchiveReader;
 static bool gSucceeded = false;
 static bool sStagedUpdate = false;
 static bool sReplaceRequest = false;
@@ -365,7 +365,7 @@ static const int kCallbackIndex = 8;
 
 // This string contains the MAR channel IDs that are later extracted by one of
 // the `ReadMARChannelIDsFrom` variants.
-MOZ_RUNINIT static MARChannelStringTable gMARStrings;
+constinit static MARChannelStringTable gMARStrings;
 
 // Normally, we run updates as a result of user action (the user started Firefox
 // or clicked a "Restart to Update" button). But there are some cases when
@@ -1088,7 +1088,7 @@ static int remove_recursive_on_reboot(const NS_tchar* path,
     return rv;
   }
 
-  while ((entry = NS_treaddir(dir)) != 0) {
+  while ((entry = NS_treaddir(dir)) != nullptr) {
     if (NS_tstrcmp(entry->d_name, NS_T(".")) &&
         NS_tstrcmp(entry->d_name, NS_T(".."))) {
       NS_tchar childPath[MAXPATHLEN];
@@ -1594,7 +1594,7 @@ class PatchFileDecoder {
     return ptr;
   }
 
-  virtual ~PatchFileDecoder() {}
+  virtual ~PatchFileDecoder() = default;
 
   virtual unsigned int ComputeCrc32(const uint8_t* aBuf, size_t aBufSize) = 0;
 
@@ -1616,7 +1616,7 @@ class PatchFileDecoder {
 #if defined(MOZ_BSPATCH)
 class BSPatchFileDecoder : public PatchFileDecoder {
  public:
-  ~BSPatchFileDecoder() override {}
+  ~BSPatchFileDecoder() override = default;
 
   unsigned int ComputeCrc32(const uint8_t* aBuf, size_t aBufSize) override;
 
@@ -1696,6 +1696,9 @@ int FromZucchiniStatus(zucchini::status::Code code) {
     case zucchini::status::kStatusInvalidOldImage:
     case zucchini::status::kStatusInvalidNewImage:
       result = CRC_ERROR;
+      break;
+    case zucchini::status::kStatusOutOfMemory:
+      result = BSPATCH_MEM_ERROR;
       break;
     case zucchini::status::kStatusInvalidParam:
     case zucchini::status::kStatusDiskFull:
@@ -2084,6 +2087,10 @@ int PatchFile::Execute() {
   rv = mPatchFileDecoder->Apply(mBuf.get(), mBufSize, ofile);
 
   // Go ahead and do a bit of cleanup now to minimize runtime overhead.
+  // Release the patch decoder and any resources it holds (such as
+  // memory-mapped patch files in zucchini) so they don't accumulate
+  // across sequential patch actions.
+  mPatchFileDecoder.reset();
   // Make sure mPatchStream gets unlocked on Windows; the system will do that,
   // but not until some indeterminate future time, and we want determinism.
 #ifdef XP_WIN
@@ -2275,6 +2282,8 @@ void PatchIfFile::Finish(int status) {
 //-----------------------------------------------------------------------------
 
 #ifdef XP_WIN
+#  include "EnterprisePolicies.h"
+#  include "EnterprisePoliciesFlagFile.h"
 #  include "nsWindowsRestart.cpp"
 #  include "nsWindowsHelpers.h"
 #  include "uachelper.h"
@@ -2390,7 +2399,13 @@ bool LaunchWinPostProcess(const WCHAR* installationDir,
   wcsncpy(dummyArg, L"argv0ignored ",
           sizeof(dummyArg) / sizeof(dummyArg[0]) - 1);
 
-  size_t len = wcslen(exearg) + wcslen(dummyArg);
+  const bool addDesktopLauncher{
+      !EnterprisePoliciesFlagFile::Exists(gPatchDirPath)};
+  if (addDesktopLauncher) {
+    LOG(("Add /DesktopLauncher argument to helper.exe"));
+  }
+  LPCWSTR desktopLauncherArg{addDesktopLauncher ? L" /DesktopLauncher" : L""};
+  size_t len{wcslen(exearg) + wcslen(dummyArg) + wcslen(desktopLauncherArg)};
   WCHAR* cmdline = (WCHAR*)malloc((len + 1) * sizeof(WCHAR));
   if (!cmdline) {
     LOG(
@@ -2402,6 +2417,7 @@ bool LaunchWinPostProcess(const WCHAR* installationDir,
 
   wcsncpy(cmdline, dummyArg, len);
   wcscat(cmdline, exearg);
+  wcscat(cmdline, desktopLauncherArg);
 
   // We want to launch the post update helper app to update the Windows
   // registry even if there is a failure with removing the uninstall.update
@@ -2501,7 +2517,7 @@ static bool WriteToFile(const NS_tchar* aFilename, const char* aStatus) {
   }
 #endif
 
-  AutoFile statusFile(NS_tfopen(statusFilePath, NS_T("wb+")));
+  AutoFile statusFile(CreateAndOpenFile(statusFilePath, true));
   if (statusFile == nullptr) {
     LOG(("WriteToFile failed to open status file: %d", errno));
     return false;
@@ -3004,16 +3020,17 @@ static int ReadMARChannelIDsFromBuffer(char* aChannels,
  *        `OK` on success, `UPDATE_SETTINGS_FILE_CHANNEL` on failure.
  */
 static int PopulategMARStrings() {
+  if (gMARStrings.MARChannelID && gMARStrings.MARChannelID[0] != '\0') {
+    return OK;
+  }
+
   int rv = UPDATE_SETTINGS_FILE_CHANNEL;
 #  ifdef XP_MACOSX
-  if (gInvocation == UpdaterInvocation::Second) {
-    // An elevated update process will have already populated gMARStrings when
-    // it connected to the unelevated update process to obtain the command line
-    // args. See `ObtainUpdaterArguments`.
-    rv = OK;
-  } else if (auto marChannels =
-                 UpdateSettingsUtil::GetAcceptedMARChannelsValue()) {
-    rv = ReadMARChannelIDsFromBuffer(marChannels->data(), &gMARStrings);
+  if (gInvocation != UpdaterInvocation::Second) {
+    if (std::optional<std::string> marChannels =
+            UpdateSettingsUtil::GetAcceptedMARChannelsValue()) {
+      rv = ReadMARChannelIDsFromBuffer(marChannels->data(), &gMARStrings);
+    }
   }
 #  else
   NS_tchar updateSettingsPath[MAXPATHLEN];
@@ -3235,6 +3252,10 @@ int LaunchCallbackAndPostProcessApps(int argc, NS_tchar** argv
     }
 
     EXIT_IF_SECOND_UPDATER_INSTANCE(updateLockFileHandle, 0);
+
+    // Flag removed by the unelevated process during the single-process update
+    EnterprisePoliciesFlagFile::Remove(gPatchDirPath);
+
 #elif XP_MACOSX
     if (gInvocation == UpdaterInvocation::First) {
       if (gSucceeded) {
@@ -3289,6 +3310,8 @@ bool ShouldRunSilently(int argc, NS_tchar** argv) {
 }
 
 int NS_main(int argc, NS_tchar** argv) {
+  LogToOS(NS_T("Updater started"));
+
   // We may need to tweak our argument list when we launch the Second Updater
   // Invocation (SUI), so we are going to make a copy of our arguments to
   // modify.
@@ -3325,6 +3348,7 @@ int NS_main(int argc, NS_tchar** argv) {
 
 #ifdef XP_MACOSX
   if (argc > 2 && NS_tstrcmp(argv[1], NS_T("--openAppBundle")) == 0) {
+    LogToOS(NS_T("Opening App Bundle"));
     // We have been asked to open a .app bundle. The path to the .app bundle and
     // any command line arguments have been passed to us as arguments after
     // "--openAppBundle", so remove the first two arguments and launch the .app
@@ -3377,13 +3401,14 @@ int NS_main(int argc, NS_tchar** argv) {
       isAdmin.unwrap() || isLocalSystem.unwrap();
 #elif defined(XP_MACOSX)
         strstr(argv[0], "/Library/PrivilegedHelperTools/org.mozilla.updater") !=
-        0;
+        nullptr;
 #else
       false;
 #endif
 
 #ifdef XP_MACOSX
   if (isElevated) {
+    LogToOS(NS_T("Updater is elevated"));
     if (!ObtainUpdaterArguments(&argc, &argv, &gMARStrings)) {
       // Won't actually get here because ObtainUpdaterArguments will terminate
       // the current process on failure.
@@ -3391,10 +3416,9 @@ int NS_main(int argc, NS_tchar** argv) {
     }
   }
 
-  if (argc == 4 && (strstr(argv[1], "-dmgInstall") != 0)) {
+  if (argc == 4 && (strstr(argv[1], "-dmgInstall") != nullptr)) {
     isDMGInstall = true;
     if (isElevated) {
-      PerformInstallationFromDMG(argc, argv);
       freeArguments(argc, argv);
       CleanupElevatedMacUpdate(true);
       return 0;
@@ -3698,7 +3722,27 @@ int NS_main(int argc, NS_tchar** argv) {
       UpdateServerThreadArgs threadArgs;
       threadArgs.argc = suiArgc;
       threadArgs.argv = suiArgv.get();
-      threadArgs.marChannelID = gMARStrings.MARChannelID.get();
+      threadArgs.marChannelID = "";
+
+#  ifdef MOZ_VERIFY_MAR_SIGNATURE
+      // Try to populate gMARStrings so that we can pass the resulting MAR
+      // channel ID to the elevated updater via IPC. If this fails (observed on
+      // some macOS standard-profile elevated updates where the unelevated
+      // updater cannot resolve the weak UpdateSettingsGetAcceptedMARChannels
+      // symbol from UpdateSettings.framework), proceed with an empty channel
+      // ID rather than aborting the elevated update.
+      // ArchiveReader::VerifyProductInformation skips the channel-match check
+      // when the channel ID is empty; the MAR's cryptographic signature is
+      // still verified, preserving the security posture that existed prior to
+      // bug 2028575.
+      if (PopulategMARStrings() == OK) {
+        threadArgs.marChannelID = gMARStrings.MARChannelID.get();
+      } else {
+        fprintf(stderr,
+                "Unable to retrieve MAR channels in unelevated updater; "
+                "proceeding with elevation using an empty channel ID.\n");
+      }
+#  endif  // MOZ_VERIFY_MAR_SIGNATURE
 
       Thread t1;
       if (t1.Run(ServeElevatedUpdateThreadFunc, &threadArgs) == 0) {
@@ -3920,6 +3964,14 @@ int NS_main(int argc, NS_tchar** argv) {
         LOG(("Failed to open update lock file: %lu", GetLastError()));
       } else {
         LOG(("Successfully opened lock file"));
+      }
+
+      if (EnterprisePolicies::InDistribution(gInstallDirPath) ||
+          EnterprisePolicies::InRegistry(L"" MOZ_APP_BASENAME)) {
+        LOG(("Enterprise policies detected"));
+        EnterprisePoliciesFlagFile::Add(gPatchDirPath);
+      } else {
+        LOG(("No enterprise policies detected"));
       }
 
       if (updateLockFileHandle == INVALID_HANDLE_VALUE ||
@@ -4253,6 +4305,9 @@ int NS_main(int argc, NS_tchar** argv) {
                  "'succeeded'."));
           }
         }
+
+        // Flag removed by the unelevated process during the two-process update
+        EnterprisePoliciesFlagFile::Remove(gPatchDirPath);
 
         if (updateLockFileHandle != INVALID_HANDLE_VALUE) {
           CloseHandle(updateLockFileHandle);
@@ -5204,6 +5259,16 @@ int DoUpdate() {
   NS_tchar* rb = buf;
 
 #if defined(MOZ_ZUCCHINI)
+#  if defined(TEST_UPDATER) && defined(XP_WIN)
+  // Crash recovery is only supported (and hence tested) on Windows for now.
+  // POSIX support is planned, see bug 2043122 for more information.
+  zucchini::mozilla::TestOptions options;
+  options.logDestructorMarker = EnvHasValue("MOZ_TEST_ZUCCHINI_DTOR_MARKER");
+  options.triggerBadAlloc = EnvHasValue("MOZ_TEST_ZUCCHINI_BAD_ALLOC");
+  options.triggerCheckFailure = EnvHasValue("MOZ_TEST_ZUCCHINI_CHECK_FAILURE");
+  zucchini::mozilla::SetTestOptions(options);
+#  endif  // TEST_UPDATER && XP_WIN
+
   zucchini::mozilla::SetLogFunction(LogZucchiniMessage);
 #endif  // defined(MOZ_ZUCCHINI)
 

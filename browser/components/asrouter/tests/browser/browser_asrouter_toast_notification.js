@@ -87,7 +87,27 @@ add_task(async function test_actionLocalization() {
 
   let dispatchStub = sinon.stub();
 
-  let message = await getMessage("MR2022_BACKGROUND_UPDATE_TOAST_NOTIFICATION");
+  let message = await getMessage("TEST_TOAST_NOTIFICATION1");
+  message.content = {
+    ...message.content,
+    title: { string_id: "mr2022-background-update-toast-title" },
+    body: { string_id: "mr2022-background-update-toast-text" },
+    tag: "mr2022_background_update",
+    actions: [
+      {
+        action: "primary",
+        title: {
+          string_id: "mr2022-background-update-toast-primary-button-label",
+        },
+      },
+      {
+        action: "secondary",
+        title: {
+          string_id: "mr2022-background-update-toast-secondary-button-label",
+        },
+      },
+    ],
+  };
   await ToastNotification.showToastNotification(message, dispatchStub);
 
   // Test display.
@@ -107,6 +127,50 @@ add_task(async function test_actionLocalization() {
     expectedSecondary,
     "Should match secondary"
   );
+});
+
+// Test that the correct image URL variant is selected based on the system
+// color scheme and reduced motion preferences.
+add_task(async function test_dynamic_image_url_selection() {
+  const lightUrl =
+    "chrome://browser/content/asrouter/assets/tabgroups/hort-animated-light.svg";
+  const darkUrl =
+    "chrome://browser/content/asrouter/assets/tabgroups/hort-animated-dark.svg";
+  const reducedUrl =
+    "chrome://browser/content/asrouter/assets/tabgroups/hort-static-light.svg";
+  const darkReducedUrl =
+    "chrome://browser/content/asrouter/assets/tabgroups/hort-static-dark.svg";
+
+  const content = {
+    image_url: lightUrl,
+    dark_mode_image_url: darkUrl,
+    reduced_motion_image_url: reducedUrl,
+    dark_mode_reduced_motion_image_url: darkReducedUrl,
+  };
+
+  const cases = [
+    // [isDark, isReducedMotion, expectedUrl]
+    [false, false, lightUrl],
+    [true, false, darkUrl],
+    [false, true, reducedUrl],
+    [true, true, darkReducedUrl],
+  ];
+
+  for (const [isDark, isReducedMotion, expectedUrl] of cases) {
+    const appInfoStub = sinon.stub(Services, "appinfo").value({
+      chromeColorSchemeIsDark: isDark,
+      prefersReducedMotion: isReducedMotion,
+    });
+    try {
+      Assert.equal(
+        ToastNotification.imageUrlForContent(content),
+        expectedUrl,
+        `Expected image URL for isDark=${isDark} isReducedMotion=${isReducedMotion}`
+      );
+    } finally {
+      appInfoStub.restore();
+    }
+  }
 });
 
 // Test that toast notifications report sensible telemetry.

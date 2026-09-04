@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,6 +8,7 @@
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Atomics.h"     // mozilla::Atomic, mozilla::Relaxed
 #include "mozilla/Maybe.h"       // mozilla::Maybe
+#include "mozilla/RefPtr.h"      // RefPtr
 
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint8_t, uint32_t, uintptr_t
@@ -30,7 +29,6 @@
 #include "wasm/WasmConstants.h"       // js::wasm::Trap
 #include "wasm/WasmFrame.h"           // js::wasm::Frame
 #include "wasm/WasmFrameIter.h"  // js::wasm::{ExitReason,RegisterState,WasmFrameIter}
-#include "wasm/WasmPI.h"         // js::wasm::SuspenderObject
 
 struct JS_PUBLIC_API JSContext;
 class JS_PUBLIC_API JSTracer;
@@ -53,12 +51,6 @@ class JitActivation : public Activation {
 
   // When hasWasmExitFP(), encodedWasmExitReason_ holds ExitReason.
   uint32_t encodedWasmExitReason_;
-#ifdef ENABLE_WASM_JSPI
-  // This would be a 'Rooted', except that the 'Rooted' values in the super
-  // class `Activation` conflict with the LIFO ordering that 'Rooted' requires.
-  // So instead we manually trace it.
-  JS::Rooted<wasm::SuspenderObject*> wasmExitSuspender_;
-#endif
 
   JitActivation* prevJitActivation_;
 
@@ -103,6 +95,12 @@ class JitActivation : public Activation {
   // purposes. Wasm code can't trap reentrantly.
   mozilla::Maybe<wasm::TrapData> wasmTrapData_;
 
+  // Keeps the trapping code alive while the trap is handled. With tail calls
+  // the trapping frame may already be unwound, so no wasm::Frame keeps it alive
+  // and a GC (e.g. while building the RuntimeError) could otherwise free the
+  // code segment we are still executing in.
+  RefPtr<const wasm::Code> wasmTrapCode_;
+
 #ifdef CHECK_OSIPOINT_REGISTERS
  protected:
   // Used to verify that live registers don't change between a VM call and
@@ -144,12 +142,7 @@ class JitActivation : public Activation {
     MOZ_ASSERT(hasJSExitFP());
     return packedExitFP_;
   }
-  void setJSExitFP(uint8_t* fp) {
-    packedExitFP_ = fp;
-#ifdef ENABLE_WASM_JSPI
-    wasmExitSuspender_ = nullptr;
-#endif
-  }
+  void setJSExitFP(uint8_t* fp) { packedExitFP_ = fp; }
 
   uint8_t* packedExitFP() const { return packedExitFP_; }
 
@@ -228,20 +221,13 @@ class JitActivation : public Activation {
   wasm::Instance* wasmExitInstance() const {
     return wasm::GetNearestEffectiveInstance(wasmExitFP());
   }
-  void setWasmExitFP(const wasm::Frame* fp, wasm::SuspenderObject* suspender) {
+  void setWasmExitFP(const wasm::Frame* fp) {
     if (fp) {
       MOZ_ASSERT(!wasm::Frame::isExitFP(fp));
       packedExitFP_ = wasm::Frame::addExitFPTag(fp);
-#ifdef ENABLE_WASM_JSPI
-      wasmExitSuspender_ = suspender;
-#endif
       MOZ_ASSERT(hasWasmExitFP());
     } else {
-      MOZ_ASSERT(!suspender);
       packedExitFP_ = nullptr;
-#ifdef ENABLE_WASM_JSPI
-      wasmExitSuspender_ = nullptr;
-#endif
     }
   }
   wasm::ExitReason wasmExitReason() const {
@@ -251,22 +237,17 @@ class JitActivation : public Activation {
   static size_t offsetOfEncodedWasmExitReason() {
     return offsetof(JitActivation, encodedWasmExitReason_);
   }
-#ifdef ENABLE_WASM_JSPI
-  wasm::SuspenderObject* wasmExitSuspender() const {
-    MOZ_ASSERT(hasWasmExitFP());
-    return wasmExitSuspender_;
-  }
-  static size_t offsetOfWasmExitSuspender() {
-    return offsetof(JitActivation, wasmExitSuspender_) +
-           Rooted<wasm::SuspenderObject*>::offsetOfPtr();
-  }
-#endif
 
   void startWasmTrap(wasm::Trap trap, const wasm::TrapSite& trapSite,
                      const wasm::RegisterState& state);
-  void finishWasmTrap(bool isResuming);
+  void finishWasmTrap();
   bool isWasmTrapping() const { return !!wasmTrapData_; }
   const wasm::TrapData& wasmTrapData() { return *wasmTrapData_; }
+  void setWasmTrapFaultInfo(uint32_t memoryIndex, uint64_t offset) {
+    MOZ_ASSERT(isWasmTrapping());
+    wasmTrapData_->faultInfo =
+        mozilla::Some(wasm::TrapData::FaultInfo{memoryIndex, offset});
+  }
 };
 
 // A filtering of the ActivationIterator to only stop at JitActivations.

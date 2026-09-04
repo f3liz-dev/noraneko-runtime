@@ -13,6 +13,152 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v155
+- Added [WebRequestError.ERROR_LOCAL_NETWORK_ACCESS_DENIED] to indicate that a load failed because the user denied the local network access permission on Android 17+.
+- Added the [`IPProxyException.ERROR_CATASTROPHIC`][155.1] and [`IPProxyException.ERROR_VPN_UNAVAILABLE`][155.2]
+  error codes for the [`IPProtectioController.activate`][155.3].
+
+[155.1]: {{javadoc_uri}}/IPProtectionController.IPProxyException.html#ERROR_CATASTROPHIC
+[155.2]: {{javadoc_uri}}/IPProtectionController.IPProxyException.html#ERROR_VPN_UNAVAILABLE
+[155.3]: {{javadoc_uri}}/IPProtectionController.html#activate(boolean,boolean,java.lang.String)
+
+## v154
+- Added [`Autofill.Node.getDatalist`][154.1] to expose predefined values by [`datalist`][154.2] elements for input fields.
+- Added experimental [`ContentPermission.notifyShown`][154.3] so embedders can signal that a permission prompt UI has been displayed to the user, enabling per-prompt telemetry on the Gecko side (e.g. for local network access). ([bug 2009145]({{bugzilla}}2009145))
+- Added [`IPProtectionController.refreshUsage`][154.4] to request a refresh of proxy usage information, delivered asynchronously via [`Delegate#onUsageChanged`][154.5].
+  ([bug 2042799]({{bugzilla}}2042799))
+- Added [`IPProtectionController.getCountryList`][154.6] and [`IPProtectionController.Country`][154.7] to request the list of countries available in the proxy serverlist, delivered asynchronously via [`Delegate#onCountryListChanged`][154.8] whenever the list changes.
+- Added [`IPProtectionController.activate(boolean, boolean, String)`][154.9] to activate the proxy with explicit user-action, private-browsing, and country options.
+- ⚠️ Made [`ScrollPositionUpdate`][154.10] immutable: its fields are now `final` and instances are constructed via `ScrollPositionUpdate(float, float, float, int)` instead of the previous no-argument constructor with mutable fields. ([bug 1994863]({{bugzilla}}1994863))
+- Added [`GeckoSession.getBrokenSiteReport`][154.11] that returns a `GeckoResult<JSONObject>` containing information for a broken site report. ([bug 2049050]({{bugzilla}}2049050)).
+- Changed [`GeckoSession.setHistoryDelegate`][154.12], [`setContentBlockingDelegate`][154.13], [`setMediaDelegate`][154.14], [`setMediaSessionDelegate`][154.15], [`setTranslationsSessionDelegate`][154.16], [`setPrintDelegate`][154.17], and [`setExperimentDelegate`][154.18] from `@AnyThread` to `@UiThread`, reflecting that they must be called on the UI thread.
+- Added [`MediaSession.notifySystemAudioFocusChange`][154.19] so embedders can route a system audio-focus change to the tab's W3C Audio Session interrupt, suspending and resuming the tab's audible media elements, Web Audio, and Web Speech. ([bug 2048732]({{bugzilla}}2048732))
+- Added [`GeckoSession.sendGleanBrokenSiteReport`][154.20] which sends a broken site report using Glean. ([bug 2054543]({{bugzilla}}2054543)).
+- Added [`GeckoSession.HistoryDelegate.hasVisitedHostSince`][154.21] so embedders can report whether a host was visited within a time window, used to derive first-daily-load pageload telemetry. ([bug 2058980]({{bugzilla}}2058980))
+- Added experimental [`GeckoRuntimeSettings.setIpProtectionAuthProvider`][154.22] and [`getIpProtectionAuthProvider`][154.23] to select the IP Protection authentication provider (`"fxa"` or `"gpi"`) on Android. ([bug 2054901]({{bugzilla}}2054901))
+- ⚠️ Removed the Cookie Banner Handling API. The underlying Gecko feature no longer exists and
+  there is no replacement. The following members were removed:
+  `ContentBlocking.CookieBannerMode` and `ContentBlocking.CBCookieBannerMode`;
+  `ContentBlocking.Settings.setCookieBannerMode`, `getCookieBannerMode`,
+  `setCookieBannerModePrivateBrowsing`, `getCookieBannerModePrivateBrowsing`,
+  `setCookieBannerDetectOnlyMode`, `getCookieBannerDetectOnlyMode`,
+  `setCookieBannerGlobalRulesEnabled`, `getCookieBannerGlobalRulesEnabled`,
+  `setCookieBannerGlobalRulesSubFramesEnabled` and
+  `getCookieBannerGlobalRulesSubFramesEnabled`;
+  `ContentBlocking.Settings.Builder.cookieBannerHandlingMode`,
+  `cookieBannerHandlingModePrivateBrowsing`, `cookieBannerHandlingDetectOnlyMode`,
+  `cookieBannerGlobalRulesEnabled` and `cookieBannerGlobalRulesSubFramesEnabled`;
+  `GeckoSession.ContentDelegate.onCookieBannerDetected` and `onCookieBannerHandled`;
+  `GeckoSession.hasCookieBannerRuleForBrowsingContextTree`;
+  `StorageController.setCookieBannerModeForDomain`,
+  `setCookieBannerModeAndPersistInPrivateBrowsingForDomain`,
+  `removeCookieBannerModeForDomain` and `getCookieBannerModeForDomain`.
+  ([bug 2058143]({{bugzilla}}2058143))
+
+[154.1]: {{javadoc_uri}}/Autofill.Node.html#getDatalist()
+[154.2]: https://developer.mozilla.org/en/docs/Web/HTML/Reference/Elements/datalist
+[154.3]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.ContentPermission.html#notifyShown()
+[154.4]: {{javadoc_uri}}/IPProtectionController.html#refreshUsage()
+[154.5]: {{javadoc_uri}}/IPProtectionController.Delegate.html#onUsageChanged(org.mozilla.geckoview.IPProtectionController.UsageInfo)
+[154.6]: {{javadoc_uri}}/IPProtectionController.html#getCountryList()
+[154.7]: {{javadoc_uri}}/IPProtectionController.Country.html
+[154.8]: {{javadoc_uri}}/IPProtectionController.Delegate.html#onCountryListChanged(java.util.List)
+[154.9]: {{javadoc_uri}}/IPProtectionController.html#activate(boolean,boolean,java.lang.String)
+[154.10]: {{javadoc_uri}}/GeckoSession.ScrollPositionUpdate.html
+[154.12]: {{javadoc_uri}}/GeckoSession.html#setHistoryDelegate(org.mozilla.geckoview.GeckoSession.HistoryDelegate)
+[154.13]: {{javadoc_uri}}/GeckoSession.html#setContentBlockingDelegate(org.mozilla.geckoview.ContentBlocking.Delegate)
+[154.14]: {{javadoc_uri}}/GeckoSession.html#setMediaDelegate(org.mozilla.geckoview.GeckoSession.MediaDelegate)
+[154.15]: {{javadoc_uri}}/GeckoSession.html#setMediaSessionDelegate(org.mozilla.geckoview.MediaSession.Delegate)
+[154.16]: {{javadoc_uri}}/GeckoSession.html#setTranslationsSessionDelegate(org.mozilla.geckoview.TranslationsController.SessionTranslation.Delegate)
+[154.17]: {{javadoc_uri}}/GeckoSession.html#setPrintDelegate(org.mozilla.geckoview.GeckoSession.PrintDelegate)
+[154.18]: {{javadoc_uri}}/GeckoSession.html#setExperimentDelegate(org.mozilla.geckoview.GeckoSession.ExperimentDelegate)
+[154.19]: {{javadoc_uri}}/MediaSession.html#notifySystemAudioFocusChange(int)
+[154.21]: {{javadoc_uri}}/GeckoSession.HistoryDelegate.html#hasVisitedHostSince(org.mozilla.geckoview.GeckoSession,java.lang.String,long,long)
+[154.22]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setIpProtectionAuthProvider(java.lang.String)
+[154.23]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getIpProtectionAuthProvider()
+
+## v153
+- Added [`SourceType`][153.1] annotation to [`ScrollPositionUpdate.source`][153.2]
+  ([bug 1994860]({{bugzilla}}1994860))
+- Updated the [`PURGED_BOUNCETRACKER`][129.3] value and added new [`REPLACED_FINGERPRINTING_CONTENT`] ContentBlockingController.Event. ([bug 2039485]({{bugzilla}}2039485))
+- Added  [`clearTrackingDb`][153.4] to ContentBlockingController to support clearing all data stored about blocked trackers in previous browsing sessions. ([bug 2042068]({{bugzilla}}2042068))
+- Added [`onAudioSessionTypeChanged`][153.5] to [`MediaSession.Delegate`][153.6] so embedders can request platform audio focus matching the tab's W3C Audio Session type. ([bug 2047296]({{bugzilla}}2047296))
+
+[153.1]: {{javadoc_uri}}/GeckoSession.ScrollPositionUpdate.SourceType.html
+[153.2]: {{javadoc_uri}}/GeckoSession.ScrollPositionUpdate.html#source
+[153.3]: {{javadoc_uri}}/ContentBlockingController.Event.html#REPLACED_FINGERPRINTING_CONTENT
+[153.4]: {{javadoc_uri}}/ContentBlockingController.html#clearTrackingDb()
+[153.5]: {{javadoc_uri}}/MediaSession.Delegate.html#onAudioSessionTypeChanged(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.MediaSession,java.lang.String)
+[153.6]: {{javadoc_uri}}/MediaSession.Delegate.html
+
+## v152
+- Added [`WebExtensionController.INSTALLATION_METHOD_RTAMO`][152.1], which should be used when a `WebExtension` is installed for the RTAMO feature. ([bug 2029607]({{bugzilla}}2029607))
+- Added [`IPProtectionController.AuthProvider`][152.2], [`setAuthProvider`][152.3] / [`getAuthProvider`][152.4], and [`notifySignInStateChanged`][152.5] so embedders can supply Guardian authentication tokens to the IP Protection service. ([bug 2020725]({{bugzilla}}2020725))
+- Added `safeBrowsingGlobalCacheEnabled`, `safeBrowsingRealTimeEnabled`, `safeBrowsingRealTimeSimulationEnabled`, `safeBrowsingRealTimeSimulationHitProbability`, `safeBrowsingRealTimeSimulationCacheTTLSec`, `safeBrowsingRealTimeSimulationNegativeCacheEnabled`, `safeBrowsingRealTimeSimulationNegativeCacheTTLSec` to [`ContentBlocking.Settings.Builder`][152.6] to enable configuring SafeBrowsing V5 Real-Time mode simulation.
+- Added new APIs - [`getTrackingDbEventsByDateRange`][152.7], [`sumAllTrackingDbEvents`][152.8] and [`getTrackingDbEarliestRecordedDate`][152.9] to ContentBlockingController to query Gecko for tracking protection details.
+- Added [`WebAuthnRelatedOriginPrompt`][152.10] and [`onWebAuthnRelatedOriginPrompt`][152.11] to `GeckoSession.PromptDelegate` for confirming WebAuthn related origin requests.
+    ([bug 2010193]({{bugzilla}}2010193))
+- Added [`IPProtectionController.enroll`][152.12] and [`IPProtectionController.EnrollResult`][152.13] to trigger enrollment via the active auth provider. ([bug 2037352]({{bugzilla}}2037352))
+- Added [`IPProtectionController.GpiProvider`][152.14], [`setGpiProvider`][152.15] / [`getGpiProvider`][152.16] so embedders can supply Google Play Integrity tokens to the IP Protection service. ([bug 2037184]({{bugzilla}}2037184))
+
+[152.1]: {{javadoc_uri}}/WebExtensionController.html#INSTALLATION_METHOD_RTAMO
+[152.2]: {{javadoc_uri}}/IPProtectionController.AuthProvider.html
+[152.3]: {{javadoc_uri}}/IPProtectionController.html#setAuthProvider(org.mozilla.geckoview.IPProtectionController.AuthProvider)
+[152.4]: {{javadoc_uri}}/IPProtectionController.html#getAuthProvider()
+[152.5]: {{javadoc_uri}}/IPProtectionController.html#notifySignInStateChanged(boolean)
+[152.6]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html
+[152.7]: {{javadoc_uri}}/ContentBlockingController.html#getTrackingDbEventsByDateRange(long,long)
+[152.8]: {{javadoc_uri}}/ContentBlockingController.html#sumAllTrackingDbEvents()
+[152.9]: {{javadoc_uri}}/ContentBlockingController.html#getTrackingDbEarliestRecordedDate()
+[152.10]: {{javadoc_uri}}/GeckoSession.PromptDelegate.WebAuthnRelatedOriginPrompt.html
+[152.11]: {{javadoc_uri}}/GeckoSession.PromptDelegate.html#onWebAuthnRelatedOriginPrompt(org.mozilla.geckoview.GeckoSession,org.mozilla.geckoview.GeckoSession.PromptDelegate.WebAuthnRelatedOriginPrompt)
+[152.12]: {{javadoc_uri}}/IPProtectionController.html#enroll()
+[152.13]: {{javadoc_uri}}/IPProtectionController.EnrollResult.html
+[152.14]: {{javadoc_uri}}/IPProtectionController.GpiProvider.html
+[152.15]: {{javadoc_uri}}/IPProtectionController.html#setGpiProvider(org.mozilla.geckoview.IPProtectionController.GpiProvider)
+[152.16]: {{javadoc_uri}}/IPProtectionController.html#getGpiProvider()
+
+## v151
+- Added `isBlocked` to `AIFeature` on [`AIFeaturesController`][150.3].
+- ⚠️ Remove deprecated `ContentDelegate.ContextElement` constructor.
+- ⚠️ Removed deprecated `ContentDelegate.ContextElement.textContent`.
+- ⚠️ Renamed `RuntimeAIFeatures.resetFeature` to [`RuntimeAIFeatures.makeFeatureAvailable`][151.1] in [`AIFeaturesController`][150.3] and `disable` to `block` to align with updated toolkit API naming.
+- Added [`ERROR_ENGINE_DEACTIVATED`][151.2] to `TranslationsController.TranslationsException` to indicate that session-level translation operations failed because the translations engine was deactivated by AI controls.
+- Added [`ContentParams`][151.3] to [`PageExtractionController`][149.2] and [`getPageContent(ContentParams)`][151.4] to [`SessionPageExtractor`][149.3] for controlling how page text is extracted (e.g. boilerplate removal).
+    ([bug 2015480]({{bugzilla}}2015480))
+- Added [`isReaderable`][151.5] to [`PageMetadata`][150.6] in `PageExtractionController` to indicate whether the page is likely readable by reader mode.
+    ([bug 2030001]({{bugzilla}}2030001))
+- Added `getContentBlockingDatabaseStatus` \ `setContentBlockingDatabaseStatus` to [`ContentBlocking.Settings`][151.6] to enable the trackers blocked database recording blocked trackers events. ([bug 1974742]({{bugzilla}}1974742))
+- Added experimental [`IPProtectionController`][151.7] for accessing the IPProtection feature.
+
+[151.1]: {{javadoc_uri}}/AIFeaturesController.RuntimeAIFeatures.html#makeFeatureAvailable(java.lang.String)
+[151.2]: {{javadoc_uri}}/TranslationsController.TranslationsException.html#ERROR_ENGINE_DEACTIVATED
+[151.3]: {{javadoc_uri}}/PageExtractionController.GetTextOptions.html
+[151.4]: {{javadoc_uri}}/PageExtractionController.SessionPageExtractor.html#getPageContent(org.mozilla.geckoview.PageExtractionController.ContentParams)
+[151.5]: {{javadoc_uri}}/PageExtractionController.PageMetadata.html#isReaderable
+[151.6]: {{javadoc_uri}}/ContentBlocking.Settings.html
+[151.7]: {{javadoc_uri}}/IPProtectionController.html
+
+## v150
+- Added support for `COOKIES_PARTITIONED_TRACKER` in the tracking protection blocking log. ([bug 2020898 ]({{bugzilla}}2020898))
+- Added [`GeckoSession.qwacStatus`][150.1] API.
+- Added [`GeckoRuntime.warmUp`][150.2] method.
+- ⚠️ Creating a GeckoRuntime will no longer eagerly start a child process. You can manually "preallocate" them by calling `GeckoRuntime.warmUp`.
+- Added experimental [`AIFeaturesController`][150.3] for coordinating GeckoView AI feature state.
+- ⚠️ Deprecated [`GeckoRuntimeSettings.getDisableShip`][150.4] and [`GeckoRuntimeSettings.Builder.disableShip`][150.5].
+- Added [`PageMetadata`][150.6] to `PageExtractionController` and [`getPageMetadata`][150.7] to [`SessionPageExtractor`][149.3] for retrieving structured metadata about the current page.
+    ([bug 2020508]({{bugzilla}}2020508))
+- Added `getSafeBrowsingGlobalCacheEnabled`/`setSafeBrowsingGlobalCacheEnabled`, `getSafeBrowsingRealTimeEnabled`/`setSafeBrowsingRealTimeEnabled`, `getSafeBrowsingRealTimeSimulationEnabled`/`setSafeBrowsingRealTimeSimulationEnabled`, `getSafeBrowsingRealTimeSimulationHitProbability`/`setSafeBrowsingRealTimeSimulationHitProbability`, `getSafeBrowsingRealTimeSimulationCacheTTLSec`/`setSafeBrowsingRealTimeSimulationCacheTTLSec`, `getSafeBrowsingRealTimeSimulationNegativeCacheEnabled`/`setSafeBrowsingRealTimeSimulationNegativeCacheEnabled`, and `getSafeBrowsingRealTimeSimulationNegativeCacheTTLSec`/`setSafeBrowsingRealTimeSimulationNegativeCacheTTLSec` to [`ContentBlocking.Settings`][150.8] to control SafeBrowsing real-time lookup and simulation.
+
+[150.1]: {{javadoc_uri}}/GeckoSession.html#qwacStatus()
+[150.2]: {{javadoc_uri}}/GeckoRuntime.html#warmUp
+[150.3]: {{javadoc_uri}}/AIFeaturesController.html
+[150.4]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getDisableShip()
+[150.5]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#disableShip(boolean)
+[150.6]: {{javadoc_uri}}/PageExtractionController.PageMetadata.html
+[150.7]: {{javadoc_uri}}/PageExtractionController.SessionPageExtractor.html#getPageMetadata()
+[150.8]: {{javadoc_uri}}/ContentBlocking.Settings.html
+
 ## v149
 - Introduce the Firefox Relay APIs in `GeckoRuntimeSettings`.
   - See also the annotation [`GeckoRuntimeSettings.FirefoxRelayMode`][149.1].
@@ -90,6 +236,8 @@ exclude: true
 [145.5]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setCertificateTransparencyMode
 
 ## v144
+- Added [`GeckoSession.flushSessionState()`][144.1] to immediately notify the registered [`GeckoSession.ProgressDelegate`][144.2] and [`GeckoSession.HistoryDelegate`][144.3] of the current session state.
+  ([bug 1970055]({{bugzilla}}1970055))
 - Added [`GeckoRuntimeSettings.getIsolatedProcessEnabled`][144.4] and [`GeckoRuntimeSettings.Builder.isolatedProcessEnabled`][144.5] to control whether content service runs on isolated process or not.
 - Added [`ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER`][144.6] for the configuration of the SafeBrowsing V5 provider
 - ⚠️ Removed deprecated `onOptionalPrompt` function signature. ([bug 1972510]({{bugzilla}}1972510))
@@ -1909,4 +2057,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: b5b4a479d32c07f76d70de08a9280ece977cb606
+[api-version]: 5c2745c5d039441ed4363a985bc4f832f62af800

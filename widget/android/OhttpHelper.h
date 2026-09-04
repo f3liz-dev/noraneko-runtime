@@ -1,16 +1,13 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef OhttpHelper_h_
 #define OhttpHelper_h_
 
+#include "mozilla/StaticPtr.h"
 #include "mozilla/java/GeckoResultWrappers.h"
 #include "mozilla/java/WebRequestWrappers.h"
-
-#include "mozilla/StaticPtr.h"
-
 #include "nsIChannel.h"
 #include "nsISupports.h"
 

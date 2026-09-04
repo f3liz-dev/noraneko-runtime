@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +22,6 @@
 
 class nsAtom;
 class nsIURI;
-class nsSimpleContentList;
 struct nsFont;
 class ServoComputedData;
 
@@ -46,6 +43,7 @@ class LoaderReusableStyleSheets;
 }
 namespace dom {
 enum class CompositeOperationOrAuto : uint8_t;
+class SimpleContentList;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -99,8 +97,7 @@ void Gecko_GetQueryContainerSize(const mozilla::dom::Element*,
                                  nscoord* aOutWidth, nscoord* aOutHeight);
 
 void Gecko_ComputedStyle_Init(mozilla::ComputedStyle* context,
-                              const ServoComputedData* values,
-                              mozilla::PseudoStyleType pseudo_type);
+                              const ServoComputedData* values);
 
 void Gecko_ComputedStyle_Destroy(mozilla::ComputedStyle* context);
 
@@ -170,7 +167,8 @@ bool Gecko_HasActiveViewTransitionTypes(
   nsAtom* prefix_##LangValue(implementor_ element);
 
 bool Gecko_LookupAttrValue(const mozilla::dom::Element* aElement,
-                           const nsAtom& aName, nsAString& aResult);
+                           nsAtom& aNamespace, nsAtom& aName,
+                           nsAString& aResult);
 bool Gecko_AttrEquals(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
 bool Gecko_AttrDashEquals(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
 bool Gecko_AttrIncludes(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
@@ -193,8 +191,6 @@ SERVO_DECLARE_ELEMENT_ATTR_MATCHING_FUNCTIONS(
 // Style attributes.
 const mozilla::StyleLockedDeclarationBlock* Gecko_GetStyleAttrDeclarationBlock(
     const mozilla::dom::Element* element);
-
-void Gecko_UnsetDirtyStyleAttr(const mozilla::dom::Element* element);
 
 const mozilla::StyleLockedDeclarationBlock* Gecko_GetViewTransitionDynamicRule(
     const mozilla::dom::Element* element);
@@ -358,10 +354,10 @@ bool Gecko_AnimationNameMayBeReferencedFromStyle(const nsPresContext*,
 
 float Gecko_GetScrollbarInlineSize(const nsPresContext*);
 
-// Retrive pseudo type from an element.
+// Retrieve pseudo type from an element.
 mozilla::PseudoStyleType Gecko_GetImplementedPseudoType(
     const mozilla::dom::Element*);
-// Retrive pseudo identifier from an element if any.
+// Retrieve pseudo identifier from an element if any.
 nsAtom* Gecko_GetImplementedPseudoIdentifier(const mozilla::dom::Element*);
 
 // We'd like to return `nsChangeHint` here, but bindgen bitfield enums don't
@@ -376,6 +372,10 @@ nscoord Gecko_CalcLineHeight(const mozilla::StyleLineHeight*,
                              const nsPresContext*, bool aVertical,
                              const nsStyleFont* aAgainstFont,
                              const mozilla::dom::Element* aElement);
+
+// Given a font size (i.e. the em unit) in CSS px, return the value to use for
+// text-decoration-inset:auto.
+float Gecko_CalcAutoDecorationInset(float aFontSize);
 
 // Get an element snapshot for a given element from the table.
 const mozilla::ServoElementSnapshot* Gecko_GetElementSnapshot(
@@ -393,13 +393,12 @@ void Gecko_EnsureStyleTransitionArrayLength(void* array, size_t len);
 void Gecko_EnsureStyleScrollTimelineArrayLength(void* array, size_t len);
 void Gecko_EnsureStyleViewTimelineArrayLength(void* array, size_t len);
 
-// Searches from the beginning of |keyframes| for a Keyframe object with the
-// specified offset and timing function. If none is found, a new Keyframe object
-// with the specified |offset| and |timingFunction| will be prepended to
-// |keyframes|.
+// Searches from the end of |keyframes| for a Keyframe object with the specified
+// offset and timing function. If none is found, a new Keyframe object with the
+// specified |offset| and |timingFunction| will be appended to |keyframes|.
 //
-// @param keyframes  An array of Keyframe objects, sorted by offset.
-//                   The first Keyframe in the array, if any, MUST have an
+// @param keyframes  An array of Keyframe objects, sorted by descending offset.
+//                   The last Keyframe in the array, if any, MUST have an
 //                   offset greater than or equal to |offset|.
 // @param offset  The offset to search for, or, if no suitable Keyframe is
 //                found, the offset to use for the created Keyframe.
@@ -410,29 +409,20 @@ void Gecko_EnsureStyleViewTimelineArrayLength(void* array, size_t len);
 //                     found, to set on the created Keyframe.
 //
 // @returns  The matching or created Keyframe.
-mozilla::Keyframe* Gecko_GetOrCreateKeyframeAtStart(
+mozilla::Keyframe* Gecko_GetOrCreateKeyframeForPercentageOffset(
     nsTArray<mozilla::Keyframe>* keyframes, float offset,
     const mozilla::StyleComputedTimingFunction* timingFunction,
     const mozilla::dom::CompositeOperationOrAuto composition);
 
-// As with Gecko_GetOrCreateKeyframeAtStart except that this method will search
-// from the beginning of |keyframes| for a Keyframe with matching timing
-// function, composition, and an offset of 0.0.
-// Furthermore, if a matching Keyframe is not found, a new Keyframe will be
-// inserted after the *last* Keyframe in |keyframes| with offset 0.0.
-mozilla::Keyframe* Gecko_GetOrCreateInitialKeyframe(
-    nsTArray<mozilla::Keyframe>* keyframes,
-    const mozilla::StyleComputedTimingFunction* timingFunction,
-    const mozilla::dom::CompositeOperationOrAuto composition);
-
-// As with Gecko_GetOrCreateKeyframeAtStart except that this method will search
-// from the *end* of |keyframes| for a Keyframe with matching timing function,
-// composition, and an offset of 1.0. If a matching Keyframe is not found, a new
-// Keyframe will be appended to the end of |keyframes|.
-mozilla::Keyframe* Gecko_GetOrCreateFinalKeyframe(
-    nsTArray<mozilla::Keyframe>* keyframes,
-    const mozilla::StyleComputedTimingFunction* timingFunction,
-    const mozilla::dom::CompositeOperationOrAuto composition);
+// The variant of the above method but this is specialized for the keyframe
+// offset with the timeline range name.
+// @param aRangeName The timeline range name to search for.
+mozilla::Keyframe* Gecko_GetOrCreateKeyframeForTimelineRangeOffset(
+    nsTArray<mozilla::Keyframe>* aKeyframes,
+    const mozilla::StyleTimelineRangeName aRangeName, float aOffset,
+    const mozilla::StyleComputedTimingFunction* aTimingFunction,
+    const mozilla::dom::CompositeOperationOrAuto aComposition,
+    size_t* aMatchedIdx);
 
 void Gecko_ResetFilters(nsStyleEffects* effects, size_t new_len);
 
@@ -461,6 +451,12 @@ void Gecko_nsIReferrerInfo_Debug(nsIReferrerInfo* aReferrerInfo,
 
 NS_DECL_THREADSAFE_FFI_REFCOUNTING(mozilla::URLExtraData, URLExtraData);
 NS_DECL_THREADSAFE_FFI_REFCOUNTING(nsIReferrerInfo, nsIReferrerInfo);
+
+// Returns whether the base URI of `aData` matches a domain in the
+// comma-separated `aList` value, using the same syntax as
+// `nsContentUtils::IsURIInPrefList`.
+bool Gecko_IsURIInList(const mozilla::URLExtraData* aData,
+                       const nsACString* aList);
 
 void Gecko_FillAllImageLayers(nsStyleImageLayers* layers, uint32_t max_len);
 
@@ -554,7 +550,7 @@ void Gecko_ReportUnexpectedCSSError(
     uint32_t selectorsLen, uint32_t lineNumber, uint32_t colNumber);
 
 // DOM APIs.
-void Gecko_ContentList_AppendAll(nsSimpleContentList* aContentList,
+void Gecko_ContentList_AppendAll(mozilla::dom::SimpleContentList* aContentList,
                                  const mozilla::dom::Element** aElements,
                                  size_t aLength);
 

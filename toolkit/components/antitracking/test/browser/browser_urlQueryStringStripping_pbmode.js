@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +29,6 @@ async function waitForListServiceInit(strippingEnabled) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["test.wait300msAfterTabSwitch", true],
       ["privacy.query_stripping.strip_list", "paramToStrip1 paramToStrip2"],
       ["privacy.query_stripping.listService.logLevel", "Debug"],
       ["privacy.query_stripping.strip_on_share.enabled", false],

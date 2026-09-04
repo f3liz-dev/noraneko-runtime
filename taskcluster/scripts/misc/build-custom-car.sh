@@ -22,6 +22,29 @@ CUSTOM_CAR_DIR=$PWD
 
 # Setup depot_tools
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+
+# vpython resolves its deps through mozilla's no-index pip.conf mirror which lacks
+# some pinned revisions. Bypass it with VPYTHON_BYPASS and directly grab them from
+# chrome's artifact registry and temporarily override the pip.conf.
+if [[ $(uname -s) == "Darwin" ]]; then
+  # uv installs an arm64 native CPython 3.11 standalone (required version)
+  if [[ -d "${MOZ_FETCHES_DIR}/uv" ]]; then
+    export PATH="${MOZ_FETCHES_DIR}/uv:$PATH"
+    export UV_PYTHON_INSTALL_DIR="${MOZ_FETCHES_DIR}/uv-python"
+    uv venv --seed --python-preference only-managed --python 3.11 "${MOZ_FETCHES_DIR}/uv-venv"
+    export VIRTUAL_ENV="${MOZ_FETCHES_DIR}/uv-venv"
+    export PATH="${MOZ_FETCHES_DIR}/uv-venv/bin:$PATH"
+  fi
+  export VPYTHON_BYPASS="manually managed python not supported by chrome operations"
+  PIP_CONFIG_FILE=/dev/null python3 -m pip install --quiet \
+    --index-url https://us-python.pkg.dev/chrome-python-ar/chrome-python-ar/simple/ \
+    "httplib2[socks]==0.13.1" "six==1.10.0" "requests==2.31.0" \
+    "charset-normalizer==2.0.4" "urllib3==1.26.6" "idna==2.8" "brotli==1.0.9" \
+    "tzdata==2023.4" "python-dateutil==2.7.3" "certifi==2021.5.30" \
+    "zstandard==0.16.0"
+  # Force cipd to mac-arm64 otherwise it may grab x64 rollup libs and the arm64 rollup native module goes missing.
+  export ARCH_MAC_OVERRIDE=arm64
+fi
 export PATH="$PATH:$CUSTOM_CAR_DIR/depot_tools"
 # Bug 1901936 changes to config upstream for depot tools path
 if [[ $(uname -s) == "Linux" ]]; then
@@ -31,6 +54,7 @@ fi
 # Log the current revision of depot tools for easier tracking in the future
 DEPOT_TOOLS_REV=$(cd depot_tools && git rev-parse HEAD && cd ..)
 echo "Current depot_tools revision: $DEPOT_TOOLS_REV"
+
 
 # Set up some env variables depending on the target OS
 # Linux is the default case, with minor adjustments for
@@ -59,29 +83,10 @@ fi
 
 # Logic for macosx64
 if [[ $(uname -s) == "Darwin" ]]; then
-  # Modify the config with fetched sdk path
-  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX26.2.sdk"
-  # Bug 1990712 & 1989676
-  # HACK: Create a stub DarwinBasic.modulemap to satisfy Ninja’s dependency graph.
-  # This file does not exist in Command Line Tools SDKs. It seems only the full
-  # Xcode SDK includes DarwinBasic/DarwinFoundation modulemaps.
-  mkdir -p "$MACOS_SYSROOT/usr/include"
-  touch "$MACOS_SYSROOT/usr/include/DarwinFoundation.modulemap"
-
-  # Set the SDK path for build, which is technically a higher version
-  # than what is associated with the current OS version (10.15).
-  # This should work as long as MACOSX_DEPLOYMENT_TARGET is set correctly
+  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX26.5.sdk"
   CONFIG=$(echo $CONFIG mac_sdk_path='"'$MACOS_SYSROOT'"')
 
-  # Ensure we don't use ARM64 profdata with this unique sub string
-  PGO_SUBSTR="chrome-mac-main"
-
-  # Temporary hacky way for now while we build this on intel workers.
-  # Afterwards we can replace it with a $(uname -m) == "arm64" check.
-  # Bug 1858740
-  if [[ "$ARTIFACT_NAME" == *"macosx_arm"* ]]; then
-    PGO_SUBSTR="chrome-mac-arm-main"
-  fi
+  PGO_SUBSTR="chrome-mac-arm-main"
 
   # macOS final build folder is different than linux/win
   FINAL_BIN_PATH="src/out/Default/Chromium.app"
@@ -95,8 +100,8 @@ if [[ $(uname -o) == "Msys" ]]; then
   # Setup some environment variables for chromium build scripts
   export DEPOT_TOOLS_WIN_TOOLCHAIN=0
   export GYP_MSVS_OVERRIDE_PATH="$MOZ_FETCHES_DIR/VS"
-  export GYP_MSVS_VERSION=2022
-  export vs2022_install="$MOZ_FETCHES_DIR/VS"
+  export GYP_MSVS_VERSION=2026
+  export vs2026_install="$MOZ_FETCHES_DIR/VS"
   export WINDOWSSDKDIR="$MOZ_FETCHES_DIR/VS/Windows Kits/10"
   export DEPOT_TOOLS_UPDATE=1
   export GCLIENT_PY3=1
@@ -112,7 +117,9 @@ if [[ $(uname -o) == "Msys" ]]; then
   pushd "$WINDOWSSDKDIR"
   mkdir -p Debuggers/x64/
   popd
-  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
+  MSVC_REDIST_VERSION=$(ls "$MOZ_FETCHES_DIR/VS/VC/Redist/MSVC" | grep -E '^[0-9]' | sort -V | tail -1)
+  [[ -n "$MSVC_REDIST_VERSION" ]] || { echo "ERROR: no numeric MSVC redist version found"; exit 1; }
+  mv "$MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/$MSVC_REDIST_VERSION/x64"/Microsoft.VC*.CRT/* chrome_dll/system32/
   mv "$WINDOWSSDKDIR/App Certification Kit/"* "$WINDOWSSDKDIR"/Debuggers/x64/
   export WINDIR="$PWD/chrome_dll"
 
@@ -151,6 +158,23 @@ if [[ $(uname -o) == "Msys" ]]; then
   # This is ok because we are not doing any development here and don't need
   # the development history, but this file is still needed to proceed.
   python3 build/util/lastchange.py -o build/util/LASTCHANGE
+
+  # Override the SDK version hardcoded upstream to match our fetched Windows SDK.
+  echo "Using Windows SDK version: ${SDK_VERSION}"
+  sed -i "s/SDK_VERSION = '[0-9.]*'/SDK_VERSION = '${SDK_VERSION}'/" build/vs_toolchain.py
+  sed -i "s/SDK_VERSION = '[0-9.]*'/SDK_VERSION = '${SDK_VERSION}'/" build/toolchain/win/setup_toolchain.py
+
+  # Upstream targets a newer NTDDI level than our packaged SDK defines. An
+  # unknown NTDDI_VERSION token silently evaluates to 0 in the preprocessor,
+  # which turns off every SDK version guard and breaks windows.h itself, so
+  # clamp it to the newest level this SDK knows about (WDK_NTDDI_VERSION).
+  SDKDDKVER_H="$WINDOWSSDKDIR/Include/$SDK_VERSION/shared/sdkddkver.h"
+  NTDDI_MAX=$(tr -d '\r' < "$SDKDDKVER_H" | awk '$1 == "#define" && $2 == "WDK_NTDDI_VERSION" { print $3 }')
+  [[ -n "$NTDDI_MAX" ]] || { echo "ERROR: could not read WDK_NTDDI_VERSION from $SDKDDKVER_H"; exit 1; }
+  echo "Clamping NTDDI_VERSION to: ${NTDDI_MAX}"
+  sed -i "s/NTDDI_VERSION=NTDDI_[A-Z0-9_]*/NTDDI_VERSION=${NTDDI_MAX}/" build/config/win/BUILD.gn
+  grep -q "NTDDI_VERSION=${NTDDI_MAX}" build/config/win/BUILD.gn || \
+    { echo "ERROR: NTDDI_VERSION patch failed - upstream BUILD.gn may have changed"; exit 1; }
 fi
 
 if [[ $(uname -s) == "Linux" ]] || [[ $(uname -s) == "Darwin" ]]; then
@@ -162,8 +186,8 @@ if [[ $(uname -s) == "Linux" ]] || [[ $(uname -s) == "Darwin" ]]; then
   cipd_bin_setup
 fi
 
-# Sync again for android, after cipd bin setup
-if [ "$IS_ANDROID" = true ]; then
+# fetch --nohooks skips CIPD deps. re-sync on macOS & Android to pull them.
+if [ "$IS_ANDROID" = true ] || [[ $(uname -s) == "Darwin" ]]; then
   gclient sync
 fi
 
@@ -195,6 +219,15 @@ fi
 CONFIG=$(echo $CONFIG pgo_data_path='"'$PGO_FILE'"')
 
 # Set up then build chrome
+if [[ $(uname -s) == "Darwin" ]]; then
+  # Bug 2045375: build/config/mac/BUILD.gn's sdk_inputs action declares SDK
+  # files as outputs so RBE remote workers can access them. We don't use RBE,
+  # and GN rejects the action when mac_sdk_path is outside root_build_dir.
+  sed -i '' 's/if (use_system_xcode && current_toolchain == default_toolchain)/if (false)/' build/config/mac/BUILD.gn
+  grep -q 'use_system_xcode && current_toolchain == default_toolchain' build/config/mac/BUILD.gn && \
+    { echo "ERROR: sdk_inputs patch failed - upstream BUILD.gn may have changed"; exit 1; }
+fi
+
 gn gen out/Default --args="$CONFIG"
 autoninja -C out/Default $FINAL_BIN
 

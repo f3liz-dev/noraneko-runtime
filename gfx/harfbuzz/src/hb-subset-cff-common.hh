@@ -321,11 +321,38 @@ struct cff_font_dict_op_serializer_t : op_serializer_t
   }
 };
 
+/* CharString command for specialization */
+struct cs_command_t
+{
+  hb_vector_t<number_t> args;
+  hb_vector_t<unsigned char> mask_bytes; /* For hintmask/cntrmask payload bytes. */
+  op_code_t op;
+
+  cs_command_t () : op (OpCode_Invalid) {}
+  cs_command_t (op_code_t op_) : op (op_) {}
+};
+
+typedef hb_vector_t<cs_command_t> *cs_command_vec_t;
+
+struct cff2_instancing_plan_t;
+
 struct flatten_param_t
 {
+  flatten_param_t (str_buff_t &flatStr_,
+                   bool drop_hints_,
+                   const hb_subset_plan_t *plan_,
+                   cs_command_vec_t commands_ = nullptr)
+    : flatStr (flatStr_), drop_hints (drop_hints_), plan (plan_), commands (commands_) {}
+
   str_buff_t     &flatStr;
   bool	drop_hints;
   const hb_subset_plan_t *plan;
+  cs_command_vec_t commands; /* Optional: capture parsed commands for specialization */
+
+  /* CFF2 partial instancing: when set, blends are rewritten against the
+   * instanced variation store instead of being copied or flattened. */
+  const cff2_instancing_plan_t *instancer = nullptr;
+  bool emitted_blend = false;
 };
 
 template <typename ACC, typename ENV, typename OPSET, op_code_t endchar_op=OpCode_Invalid>
@@ -335,7 +362,8 @@ struct subr_flattener_t
 		    const hb_subset_plan_t *plan_)
 		   : acc (acc_), plan (plan_) {}
 
-  bool flatten (str_buff_vec_t &flat_charstrings)
+  bool flatten (str_buff_vec_t &flat_charstrings,
+                hb_vector_t<hb_vector_t<cs_command_t>> *command_capture = nullptr)
   {
     unsigned count = plan->num_output_glyphs ();
     if (!flat_charstrings.resize_exact (count))
@@ -361,7 +389,8 @@ struct subr_flattener_t
       flatten_param_t  param = {
         flat_charstrings.arrayZ[i],
         (bool) (plan->flags & HB_SUBSET_FLAGS_NO_HINTING),
-	plan
+	plan,
+	command_capture ? &(*command_capture)[i] : nullptr
       };
       if (unlikely (!interp.interpret (param)))
 	return false;

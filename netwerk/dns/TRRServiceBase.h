@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,9 +8,9 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/net/rust_helper.h"
-#include "nsString.h"
 #include "nsIDNSService.h"
 #include "nsIProtocolProxyService2.h"
+#include "nsString.h"
 #include "nsTHashMap.h"
 
 class nsICancelable;
@@ -88,6 +87,10 @@ class TRRServiceBase : public nsIProxyConfigChangedCallback {
       nsIDNSService::MODE_NATIVEONLY};
   Atomic<bool, Relaxed> mURISetByDetection{false};
   Atomic<bool, Relaxed> mTRRConnectionInfoInited{false};
+  // Incremented every time a new connection info lookup is started. The async
+  // ProxyConfigLookup callback only stores its result if this still matches,
+  // so a stale lookup can't overwrite the result of a newer one.
+  Atomic<uint32_t, Relaxed> mTRRConnectionInfoGeneration{0};
   DataMutex<RefPtr<nsHttpConnectionInfo>> mDefaultTRRConnectionInfo;
   bool mNativeHTTPSQueryEnabled{false};
 

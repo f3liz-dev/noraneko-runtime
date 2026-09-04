@@ -15,14 +15,10 @@ kind-dependencies:
     - toolchain
 
 not-for-build-platforms:
-    # Address Sanitizer builds don't have symbols to upload.
-    - linux64-asan-reporter-shippable/opt
-    - win64-asan-reporter-shippable/opt
     - linux-geckodriver/opt
     - linux64-geckodriver/opt
     - linux64-aarch64-geckodriver/opt
     - macosx64-geckodriver/opt
-    - macosx64-aarch64-geckodriver/opt
     - win32-geckodriver/opt
     - win64-geckodriver/opt
     - win64-aarch64-geckodriver/opt
@@ -46,6 +42,7 @@ tasks:
                 MAKECAB: /builds/worker/fetches/makecab/makecab
                 MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
         run:
+            clone-with: hg
             using: mach
             mach: {artifact-reference: "python toolkit/crashreporter/tools/upload_symbols.py <build/public/cidata/target.crashreporter-symbols-full.tar.zst>"}
             sparse-profile: upload-symbols

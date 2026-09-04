@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -143,9 +142,7 @@ nsresult nsNavBookmarks::Init() {
 
 nsresult nsNavBookmarks::AdjustIndices(int64_t aFolderId, int32_t aStartIndex,
                                        int32_t aEndIndex, int32_t aDelta) {
-  NS_ASSERTION(
-      aStartIndex >= 0 && aEndIndex <= INT32_MAX && aStartIndex <= aEndIndex,
-      "Bad indices");
+  NS_ASSERTION(aStartIndex >= 0 && aStartIndex <= aEndIndex, "Bad indices");
 
   nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(
       "UPDATE moz_bookmarks SET position = position + :delta "

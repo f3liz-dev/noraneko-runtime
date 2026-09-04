@@ -1,0 +1,68 @@
+{
+  "manifest_version": 2,
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-privatewindow@mozilla.org"
+    }
+  },
+
+  "name": "Firefox Nova Private Window",
+  "description": "Nova theme for Private Window",
+  "author": "Mozilla",
+  "version": "1.0.0",
+
+  "theme": {
+    "colors": {}
+  },
+
+  "dark_theme": {
+    "colors": {
+      "frame": "{color.violet-desaturated.90}",
+      "frame_inactive": "{color.violet-desaturated.80}",
+      "tab_background_text": "#ffffff",
+      "tab_line": "transparent",
+      "popup": "{color.violet-desaturated.60}",
+      "popup_text": "#ffffff",
+      "button_background_active": "color-mix(in srgb, {color.violet-desaturated.30} 40%, transparent)",
+      "button_background_hover": "color-mix(in srgb, {color.violet-desaturated.30} 25%, transparent)",
+      "icons_attention": "{color.violet.20}",
+      "icons": "#ffffff",
+      "ntp_background": "rgba(54,53,57,0.9)",
+      "ntp_text": "#ffffff",
+      "popup_border": "{color.violet-desaturated.60}",
+      "popup_highlight_text": "{color.violet-desaturated.10}",
+      "popup_highlight": "rgba(182,170,217,0.4)",
+      "sidebar_border": "{color.violet-desaturated.60}",
+      "sidebar_highlight_text": "#ffffff",
+      "sidebar_highlight": "{color.gray.75}",
+      "sidebar_text": "#ffffff",
+      "sidebar": "{color.violet-desaturated.70}",
+      "tab_background_separator": "{color.violet-desaturated.60}",
+      "tab_border_color_selected_trailing": "{color.violet.50}",
+      "tab_loading": "{color.violet.20}",
+      "tab_selected": "{color.gray.75}",
+      "tab_text": "#ffffff",
+      "toolbar": "{color.violet-desaturated.70}",
+      "toolbar_text": "#ffffff",
+      "toolbar_bottom_separator": "{color.violet-desaturated.60}",
+      "toolbar_field_border_focus": "{color.violet.30}",
+      "toolbar_field": "{color.violet-desaturated.70}",
+      "toolbar_field_focus": "{color.violet-desaturated.70}",
+      "toolbar_field_text": "{color.violet-desaturated.10}",
+      "toolbar_field_border": "{color.violet-desaturated.50}",
+      "toolbar_field_highlight_text": "{color.violet-desaturated.10}",
+      "toolbar_field_highlight": "color-mix(in srgb, {color.violet-desaturated.30} 40%, transparent)",
+      "toolbar_field_separator": "{color.gray.20}",
+      "toolbar_field_text_focus": "{color.violet-desaturated.10}",
+      "toolbar_top_separator": "{color.violet-desaturated.60}",
+      "toolbar_vertical_separator": "rgba(251, 251, 254, 0.7)"
+    }
+  },
+
+  "theme_experiment": {
+    "colors": {
+      "tab_border_color_selected_trailing": "--tab-border-color-selected-trailing"
+    }
+  }
+}

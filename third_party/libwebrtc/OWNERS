@@ -1,6 +1,7 @@
-henrika@webrtc.org
+danilchap@webrtc.org
+dct@google.com
+eshr@webrtc.org
 hta@webrtc.org
-mflodman@webrtc.org
 stefan@webrtc.org
 tommi@webrtc.org
 include OWNERS_INFRA #{Owners for infra and repo related files}

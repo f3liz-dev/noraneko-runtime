@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,20 +86,20 @@ class ContentIteratorBase {
   [[nodiscard]] nsresult InitInternal(const RawRangeBoundary& aStart,
                                       const RawRangeBoundary& aEnd);
 
-  // Recursively get the deepest first/last child of aRoot.  This will return
-  // aRoot itself if it has no children.
-  static nsINode* GetDeepFirstChild(nsINode* aRoot);
-  // If aAllowCrossShadowBoundary is true, it'll continue with the shadow tree
-  // when it reaches to a shadow host.
-  static nsIContent* GetDeepFirstChild(
-      nsIContent* aRoot,
-      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
-  static nsINode* GetDeepLastChild(nsINode* aRoot);
-  // If aAllowCrossShadowBoundary is true, it'll continue with the shadow tree
-  // when it reaches to a shadow host.
-  static nsIContent* GetDeepLastChild(
-      nsIContent* aRoot,
-      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
+  // Recursively get the deepest first/last child of the node.  This will return
+  // the node itself if it has no children.
+  template <TreeKind>
+  static nsINode* GetDeepFirstInclusiveDescendant(nsINode*);
+  // If TreeKind::FlatForSelection, it'll continue with the shadow tree when it
+  // reaches to a shadow host.
+  template <TreeKind>
+  static nsIContent* GetDeepFirstInclusiveDescendant(nsIContent*);
+  template <TreeKind>
+  static nsINode* GetDeepLastInclusiveDescendant(nsINode*);
+  // If TreeKind::FlatForSelection, it'll continue with the shadow tree when it
+  // reaches to a shadow host.
+  template <TreeKind>
+  static nsIContent* GetDeepLastInclusiveDescendant(nsIContent*);
 
   struct AncestorInfo {
     nsIContent* mAncestor = nullptr;
@@ -123,17 +121,16 @@ class ContentIteratorBase {
   //
   // If aAllowCrossShadowBoundary is true, it'll continue with the shadow host
   // when it reaches to a shadow root.
+  template <TreeKind>
   static nsIContent* GetNextSibling(
       nsINode* aNode,
-      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary =
-          dom::AllowRangeCrossShadowBoundary::No,
       nsTArray<AncestorInfo>* aInclusiveAncestorsOfEndContainer = nullptr);
-  static nsIContent* GetPrevSibling(
-      nsINode* aNode,
-      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary =
-          dom::AllowRangeCrossShadowBoundary::No);
+  template <TreeKind>
+  static nsIContent* GetPrevSibling(nsINode* aNode);
 
+  template <TreeKind>
   nsINode* NextNode(nsINode* aNode);
+  template <TreeKind>
   nsINode* PrevNode(nsINode* aNode);
 
   void SetEmpty();
@@ -372,6 +369,43 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
       dom::AllowRangeCrossShadowBoundary::No;
 };
 
+// The Subtree Content Iterator only returns subtrees that are
+// completely within a given range. It doesn't return a CharacterData
+// node that contains either the start or end point of the range.,
+// nor does it return element nodes when nothing in the element is selected.
+// We need an iterator that will also include these start/end points
+// so that our methods/algorithms aren't cluttered with special
+// case code that tries to include these points while iterating.
+//
+// The RangeSubtreeIterator class mimics the ContentSubtreeIterator
+// methods we need, so should the Content Iterator support the
+// start/end points in the future, we can switchover relatively
+// easy.
+class MOZ_STACK_CLASS RangeSubtreeIterator {
+ private:
+  enum RangeSubtreeIterState { eDone = 0, eUseStart, eUseIterator, eUseEnd };
+
+  Maybe<ContentSubtreeIterator> mSubtreeIter;
+  RangeSubtreeIterState mIterState;
+
+  nsCOMPtr<nsINode> mStart;
+  nsCOMPtr<nsINode> mEnd;
+
+ public:
+  RangeSubtreeIterator() : mIterState(eDone) {}
+  ~RangeSubtreeIterator() = default;
+
+  [[nodiscard]] nsresult Init(dom::AbstractRange* aRange,
+                              dom::AllowRangeCrossShadowBoundary =
+                                  dom::AllowRangeCrossShadowBoundary::No);
+  already_AddRefed<nsINode> GetCurrentNode();
+  void First();
+  void Last();
+  void Next();
+  void Prev();
+
+  bool IsDone() { return mIterState == eDone; }
+};
 }  // namespace mozilla
 
 #endif  // #ifndef mozilla_ContentIterator_h

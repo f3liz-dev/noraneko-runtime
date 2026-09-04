@@ -1,5 +1,5 @@
+#include "Helpers.h"
 #include "gtest/gtest.h"
-
 #include "mozilla/NonBlockingAsyncInputStream.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIAsyncInputStream.h"
@@ -7,7 +7,6 @@
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsStringStream.h"
-#include "Helpers.h"
 
 using mozilla::NonBlockingAsyncInputStream;
 using mozilla::SpinEventLoopUntil;
@@ -124,13 +123,13 @@ TEST(TestNonBlockingAsyncInputStream, AsyncWait_Simple)
   ASSERT_EQ(data.Length(), length);
 
   // Testing ::AsyncWait - without EventTarget
-  RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
+  RefPtr cb = mozilla::MakeRefPtr<testing::InputStreamCallback>();
 
   ASSERT_EQ(NS_OK, async->AsyncWait(cb, 0, 0, nullptr));
   ASSERT_TRUE(cb->Called());
 
   // Testing ::AsyncWait - with EventTarget
-  cb = new testing::InputStreamCallback();
+  cb = mozilla::MakeRefPtr<testing::InputStreamCallback>();
   nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
 
   ASSERT_EQ(NS_OK, async->AsyncWait(cb, 0, 0, thread));
@@ -166,7 +165,7 @@ TEST(TestNonBlockingAsyncInputStream, AsyncWait_ClosureOnly_withoutEventTarget)
   ASSERT_TRUE(!!async);
 
   // Testing ::AsyncWait - no eventTarget
-  RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
+  RefPtr cb = mozilla::MakeRefPtr<testing::InputStreamCallback>();
 
   ASSERT_EQ(NS_OK, async->AsyncWait(cb, nsIAsyncInputStream::WAIT_CLOSURE_ONLY,
                                     0, nullptr));
@@ -194,7 +193,7 @@ TEST(TestNonBlockingAsyncInputStream, AsyncWait_ClosureOnly_withEventTarget)
   ASSERT_TRUE(!!async);
 
   // Testing ::AsyncWait - with EventTarget
-  RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
+  RefPtr cb = mozilla::MakeRefPtr<testing::InputStreamCallback>();
   nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
 
   ASSERT_EQ(NS_OK, async->AsyncWait(cb, nsIAsyncInputStream::WAIT_CLOSURE_ONLY,
@@ -328,7 +327,7 @@ TEST(TestNonBlockingAsyncInputStream, QI)
 
   nsCOMPtr<nsIAsyncInputStream> async;
   {
-    nsCOMPtr<nsIInputStream> stream = new QIInputStream(true, true, true, true);
+    RefPtr stream = mozilla::MakeRefPtr<QIInputStream>(true, true, true, true);
 
     ASSERT_EQ(NS_ERROR_FAILURE, NonBlockingAsyncInputStream::Create(
                                     stream.forget(), getter_AddRefs(async)));
@@ -345,7 +344,7 @@ TEST(TestNonBlockingAsyncInputStream, QI)
     nsCOMPtr<nsISeekableStream> seekable;
 
     {
-      nsCOMPtr<nsIInputStream> stream = new QIInputStream(
+      nsCOMPtr<nsIInputStream> stream = mozilla::MakeRefPtr<QIInputStream>(
           false, shouldBeCloneable, shouldBeSerializable, shouldBeSeekable);
 
       cloneable = do_QueryInterface(stream);

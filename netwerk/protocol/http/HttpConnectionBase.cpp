@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,13 +15,13 @@
 #define TLS_EARLY_DATA_AVAILABLE_BUT_NOT_USED 1
 #define TLS_EARLY_DATA_AVAILABLE_AND_USED 2
 
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
+#include "ConnectionEntry.h"
 #include "HttpConnectionBase.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "nsHttpHandler.h"
 #include "nsIClassOfService.h"
 #include "nsIOService.h"
 #include "nsISocketTransport.h"
-#include "ConnectionEntry.h"
 #include "xpcpublic.h"
 
 namespace mozilla {
@@ -40,6 +38,29 @@ HttpConnectionBase::HttpConnectionBase() {
 void HttpConnectionBase::BootstrapTimings(TimingStruct times) {
   mBootstrappedTimingsSet = true;
   mBootstrappedTimings = times;
+}
+
+void HttpConnectionBase::SetDnsBootstrapTimings(TimeStamp domainLookupStart,
+                                                TimeStamp domainLookupEnd) {
+  mBootstrappedTimingsSet = true;
+  mBootstrappedTimings.domainLookupStart = domainLookupStart;
+  mBootstrappedTimings.domainLookupEnd = domainLookupEnd;
+}
+
+void HttpConnectionBase::SetConnectBootstrapTimings(
+    TimeStamp connectStart, TimeStamp tcpConnectEnd,
+    TimeStamp secureConnectionStart, TimeStamp connectEnd) {
+  mBootstrappedTimingsSet = true;
+  mBootstrappedTimings.connectStart = connectStart;
+  if (!tcpConnectEnd.IsNull()) {
+    mBootstrappedTimings.tcpConnectEnd = tcpConnectEnd;
+  }
+  if (!secureConnectionStart.IsNull()) {
+    mBootstrappedTimings.secureConnectionStart = secureConnectionStart;
+  }
+  if (!connectEnd.IsNull()) {
+    mBootstrappedTimings.connectEnd = connectEnd;
+  }
 }
 
 void HttpConnectionBase::SetSecurityCallbacks(
@@ -75,28 +96,7 @@ void HttpConnectionBase::ChangeConnectionState(ConnectionState aState) {
 }
 
 void HttpConnectionBase::RecordConnectionCloseTelemetry(nsresult aReason) {
-  /**
-   *
-   * The returned telemetry key has the format:
-   * "Version_EndToEndSSL_IsTrrServiceChannel_ExperienceState_ConnectionState"
-   *
-   * - Version: The HTTP version of the connection.
-   * - EndToEndSSL: Indicates whether SSL encryption is end-to-end.
-   * - IsTrrServiceChannel: Specifies if the connection is used to send TRR
-   *    requests.
-   * - ExperienceState: ConnectionExperienceState
-   * - ConnectionState: The connection state before closing.
-   */
-  auto key = nsPrintfCString("%d_%d_%d_%d_%d", static_cast<uint32_t>(Version()),
-                             mConnInfo->EndToEndSSL(),
-                             mConnInfo->GetIsTrrServiceChannel(),
-                             static_cast<uint32_t>(mExperienceState),
-                             static_cast<uint32_t>(mConnectionState));
   SetCloseReason(ToCloseReason(aReason));
-  LOG(("RecordConnectionCloseTelemetry key=%s reason=%d\n", key.get(),
-       static_cast<uint32_t>(mCloseReason)));
-  glean::http::connection_close_reason.Get(key).AccumulateSingleSample(
-      static_cast<uint32_t>(mCloseReason));
 }
 
 void HttpConnectionBase::RecordConnectionAddressType() {

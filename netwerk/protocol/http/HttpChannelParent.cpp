@@ -1,71 +1,68 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "ErrorList.h"
-#include "HttpLog.h"
-
-#include "mozilla/ConsoleReportCollector.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/EarlyHintRegistrar.h"
 #include "mozilla/net/HttpChannelParent.h"
-#include "mozilla/net/CacheEntryWriteHandleParent.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ContentProcessManager.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ServiceWorkerUtils.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/net/NeckoParent.h"
-#include "mozilla/net/ExecuteIfOnMainThreadEventTarget.h"
-#include "mozilla/net/CookieServiceParent.h"
-#include "nsIClassOfService.h"
+
+#include "ErrorList.h"
+#include "HttpBackgroundChannelParent.h"
+#include "HttpLog.h"
+#include "ParentChannelListener.h"
+#include "SerializedLoadContext.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
+#include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "HttpBackgroundChannelParent.h"
-#include "ParentChannelListener.h"
-#include "nsDebug.h"
-#include "nsICacheInfoChannel.h"
-#include "nsHttpHandler.h"
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
-#include "nsISupportsPriority.h"
-#include "mozilla/net/BackgroundChannelRegistrar.h"
-#include "nsSerializationHelper.h"
-#include "nsISerializable.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ContentProcessManager.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "SerializedLoadContext.h"
+#include "mozilla/net/BackgroundChannelRegistrar.h"
+#include "mozilla/net/CacheEntryWriteHandleParent.h"
+#include "mozilla/net/ChannelEventQueue.h"
+#include "mozilla/net/CookieServiceParent.h"
+#include "mozilla/net/EarlyHintRegistrar.h"
+#include "mozilla/net/ExecuteIfOnMainThreadEventTarget.h"
+#include "mozilla/net/NeckoParent.h"
+#include "mozilla/net/RedirectChannelRegistrar.h"
+#include "nsCORSListenerProxy.h"
+#include "nsDebug.h"
+#include "nsHttpHandler.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/LoadInfo.h"
-#include "nsQueryObject.h"
-#include "mozilla/BasePrincipal.h"
-#include "nsCORSListenerProxy.h"
+#include "nsICacheInfoChannel.h"
+#include "nsIClassOfService.h"
 #include "nsIIPCSerializableInputStream.h"
+#include "nsIMultiPartChannel.h"
 #include "nsIPrompt.h"
 #include "nsIPromptFactory.h"
-#include "mozilla/net/ChannelEventQueue.h"
-#include "mozilla/net/RedirectChannelRegistrar.h"
-#include "nsIWindowWatcher.h"
-#include "mozilla/dom/Document.h"
 #include "nsISecureBrowserUI.h"
+#include "nsISerializable.h"
+#include "nsISupportsPriority.h"
+#include "nsIViewSourceChannel.h"
+#include "nsIWindowWatcher.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsSerializationHelper.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
 #include "nsThreadUtils.h"
-#include "nsQueryObject.h"
-#include "nsIMultiPartChannel.h"
-#include "nsIViewSourceChannel.h"
 
 using namespace mozilla;
 
@@ -165,13 +162,12 @@ bool HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs) {
       return DoAsyncOpen(
           a.uri(), a.original(), a.doc(), a.referrerInfo(), a.apiRedirectTo(),
           a.topWindowURI(), a.loadFlags(), a.requestHeaders(),
-          a.requestMethod(), a.uploadStream(), a.uploadStreamHasHeaders(),
-          a.priority(), a.classOfService(), a.redirectionLimit(), a.allowSTS(),
-          a.thirdPartyFlags(), a.resumeAt(), a.startPos(), a.entityID(),
-          a.allowSpdy(), a.allowHttp3(), a.allowAltSvc(), a.beConservative(),
-          a.bypassProxy(), a.tlsFlags(), a.loadInfo(), a.cacheKey(),
-          a.requestContextID(), a.preflightArgs(), a.initialRwin(),
-          a.blockAuthPrompt(), a.allowStaleCacheContent(),
+          a.requestMethod(), a.uploadStream(), a.priority(), a.classOfService(),
+          a.redirectionLimit(), a.allowSTS(), a.thirdPartyFlags(), a.resumeAt(),
+          a.startPos(), a.entityID(), a.allowSpdy(), a.allowHttp3(),
+          a.allowAltSvc(), a.beConservative(), a.bypassProxy(), a.tlsFlags(),
+          a.loadInfo(), a.cacheKey(), a.requestContextID(), a.preflightArgs(),
+          a.initialRwin(), a.blockAuthPrompt(), a.allowStaleCacheContent(),
           a.preferCacheLoadOverBypass(), a.contentTypeHint(), a.requestMode(),
           a.redirectMode(), a.channelId(), a.contentWindowId(),
           a.preferredAlternativeTypes(), a.browserId(),
@@ -213,6 +209,10 @@ void HttpChannelParent::TryInvokeAsyncOpen(nsresult aRv) {
   }
 
   InvokeAsyncOpen(aRv);
+}
+
+dom::ContentParentId HttpChannelParent::GetContentParentId() const {
+  return static_cast<ContentParent*>(Manager()->Manager())->ChildID();
 }
 
 void HttpChannelParent::OnBackgroundParentReady(
@@ -273,12 +273,15 @@ void HttpChannelParent::CleanupBackgroundChannel() {
     }
 
     // This HttpChannelParent might still have a reference from
-    // BackgroundChannelRegistrar.
-    nsCOMPtr<nsIBackgroundChannelRegistrar> registrar =
+    // BackgroundChannelRegistrar. Only remove our own entry; another
+    // HttpChannelParent may have been registered under the same channel Id
+    // (e.g. after a redirect), and we must not remove that entry.
+    RefPtr<BackgroundChannelRegistrar> registrar =
         BackgroundChannelRegistrar::GetOrCreate();
     MOZ_ASSERT(registrar);
-
-    registrar->DeleteChannel(mChannel->ChannelId());
+    if (registrar) {
+      registrar->DeleteChannelIfMatches(mChannel->ChannelId(), this);
+    }
 
     // If mAsyncOpenBarrier is greater than zero, it means AsyncOpen procedure
     // is still on going. we need to abort AsyncOpen with failure to destroy
@@ -421,15 +424,14 @@ bool HttpChannelParent::DoAsyncOpen(
     nsIReferrerInfo* aReferrerInfo, nsIURI* aAPIRedirectToURI,
     nsIURI* aTopWindowURI, const uint32_t& aLoadFlags,
     const RequestHeaderTuples& requestHeaders, const nsCString& requestMethod,
-    const Maybe<IPCStream>& uploadStream, const bool& uploadStreamHasHeaders,
-    const int16_t& priority, const ClassOfService& classOfService,
-    const uint8_t& redirectionLimit, const bool& allowSTS,
-    const uint32_t& thirdPartyFlags, const bool& doResumeAt,
-    const uint64_t& startPos, const nsCString& entityID, const bool& allowSpdy,
-    const bool& allowHttp3, const bool& allowAltSvc, const bool& beConservative,
-    const bool& bypassProxy, const uint32_t& tlsFlags,
-    const LoadInfoArgs& aLoadInfoArgs, const uint32_t& aCacheKey,
-    const uint64_t& aRequestContextID,
+    const Maybe<IPCStream>& uploadStream, const int16_t& priority,
+    const ClassOfService& classOfService, const uint8_t& redirectionLimit,
+    const bool& allowSTS, const uint32_t& thirdPartyFlags,
+    const bool& doResumeAt, const uint64_t& startPos, const nsCString& entityID,
+    const bool& allowSpdy, const bool& allowHttp3, const bool& allowAltSvc,
+    const bool& beConservative, const bool& bypassProxy,
+    const uint32_t& tlsFlags, const LoadInfoArgs& aLoadInfoArgs,
+    const uint32_t& aCacheKey, const uint64_t& aRequestContextID,
     const Maybe<CorsPreflightArgs>& aCorsPreflightArgs,
     const uint32_t& aInitialRwin, const bool& aBlockAuthPrompt,
     const bool& aAllowStaleCacheContent, const bool& aPreferCacheLoadOverBypass,
@@ -594,8 +596,6 @@ bool HttpChannelParent::DoAsyncOpen(
     if (NS_FAILED(rv)) {
       return SendFailedAsyncOpen(rv);
     }
-
-    httpChannel->SetUploadStreamHasHeaders(uploadStreamHasHeaders);
   }
 
   nsCOMPtr<nsICacheInfoChannel> cacheChannel =
@@ -703,7 +703,8 @@ bool HttpChannelParent::ConnectChannel(const uint32_t& registrarId) {
        "[this=%p, id=%" PRIu32 "]\n",
        this, registrarId));
   nsCOMPtr<nsIChannel> channel;
-  rv = NS_LinkRedirectChannels(registrarId, this, getter_AddRefs(channel));
+  rv = NS_LinkRedirectChannels(registrarId, GetContentParentId(), this,
+                               getter_AddRefs(channel));
   if (NS_FAILED(rv)) {
     NS_WARNING("Could not find the http channel to connect its IPC parent");
     // This makes the channel delete itself safely.  It's the only thing
@@ -910,9 +911,40 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRedirect2Verify(
       }
 
       if (aTargetLoadInfoForwarder.isSome()) {
+        const auto& fw = aTargetLoadInfoForwarder.ref();
+        auto* cp = static_cast<ContentParent*>(Manager()->Manager());
+        auto checkPrincipalInfo =
+            [&](const PrincipalInfo& aPrincipalInfo) -> bool {
+          auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
+          if (principalOrErr.isErr()) {
+            return false;
+          }
+          nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+          if (!cp->ValidatePrincipal(
+                  principal, {ValidatePrincipalOptions::AllowSystemIfLoaded})) {
+            ContentParent::LogAndAssertFailedPrincipalValidationInfo(principal,
+                                                                     __func__);
+            return false;
+          }
+          return true;
+        };
+
+        if (fw.reservedClientInfo().isSome() &&
+            !checkPrincipalInfo(
+                fw.reservedClientInfo().ref().principalInfo())) {
+          return IPC_FAIL(this, "Invalid reservedClientInfo principal");
+        }
+        if (fw.initialClientInfo().isSome() &&
+            !checkPrincipalInfo(fw.initialClientInfo().ref().principalInfo())) {
+          return IPC_FAIL(this, "Invalid initialClientInfo principal");
+        }
+        if (fw.controller().isSome() &&
+            !checkPrincipalInfo(fw.controller().ref().principalInfo())) {
+          return IPC_FAIL(this, "Invalid controller principal");
+        }
+
         nsCOMPtr<nsILoadInfo> newLoadInfo = newHttpChannel->LoadInfo();
-        rv = MergeChildLoadInfoForwarder(aTargetLoadInfoForwarder.ref(),
-                                         newLoadInfo);
+        rv = MergeChildLoadInfoForwarder(fw, newLoadInfo);
         if (NS_FAILED(rv) && NS_SUCCEEDED(result)) {
           result = rv;
         }
@@ -978,6 +1010,11 @@ HttpChannelParent::ContinueVerification(
 
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aCallback);
+
+  if (mIPCClosed) {
+    aCallback->ReadyToVerify(NS_ERROR_FAILURE);
+    return NS_OK;
+  }
 
   // Continue the verification procedure if background channel is ready.
   if (mBgParent) {
@@ -1058,25 +1095,6 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRemoveCorsPreflightCacheEntry(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult HttpChannelParent::RecvSetCookies(
-    const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-    nsIURI* aHost, const bool& aFromHttp, const bool& aIsThirdParty,
-    nsTArray<CookieStruct>&& aCookies) {
-  net::PCookieServiceParent* csParent =
-      LoneManagedOrNullAsserts(Manager()->ManagedPCookieServiceParent());
-  NS_ENSURE_TRUE(csParent, IPC_OK());
-
-  auto* cs = static_cast<net::CookieServiceParent*>(csParent);
-
-  BrowsingContext* browsingContext = nullptr;
-  if (mBrowserParent) {
-    browsingContext = mBrowserParent->GetBrowsingContext();
-  }
-
-  return cs->SetCookies(nsCString(aBaseDomain), aOriginAttributes, aHost,
-                        aFromHttp, aIsThirdParty, aCookies, browsingContext);
-}
-
 //-----------------------------------------------------------------------------
 // HttpChannelParent::nsIRequestObserver
 //-----------------------------------------------------------------------------
@@ -1100,6 +1118,10 @@ static ResourceTimingStructArgs GetTimingAttributes(HttpBaseChannel* aChannel) {
   args.requestStart() = timeStamp;
   aChannel->GetResponseStart(&timeStamp);
   args.responseStart() = timeStamp;
+  aChannel->GetFirstInterimResponseStart(&timeStamp);
+  args.firstInterimResponseStart() = timeStamp;
+  aChannel->GetFinalResponseHeadersStart(&timeStamp);
+  args.finalResponseHeadersStart() = timeStamp;
   aChannel->GetResponseEnd(&timeStamp);
   args.responseEnd() = timeStamp;
   aChannel->GetAsyncOpen(&timeStamp);
@@ -1136,7 +1158,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
 
   LOG(("HttpChannelParent::OnStartRequest [this=%p, aRequest=%p]\n", this,
        aRequest));
-  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
   Maybe<uint32_t> multiPartID;
   bool isFirstPartOfMultiPart = false;
@@ -1181,15 +1203,28 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
 
   HttpChannelOnStartRequestArgs args;
 
-  // Send down any permissions/cookies which are relevant to this URL if we are
-  // performing a document load. We can't do that if mIPCClosed is set.
-  if (!mIPCClosed) {
-    PContentParent* pcp = Manager()->Manager();
-    MOZ_ASSERT(pcp, "We should have a manager if our IPC isn't closed");
-    DebugOnly<nsresult> rv =
-        static_cast<ContentParent*>(pcp)->AboutToLoadHttpDocumentForChild(
-            chan, &args.shouldWaitForOnStartRequestSent());
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  // Send down any cookies which are relevant to this URL if we are performing a
+  // cookie-requesting document load. We can't do that if mIPCClosed is set.
+  //
+  // NOTE: Transferring cookies in this way happens here, rather than in
+  // `AboutToLoadDocumentForChild`, as we need the PCookieService actor to be
+  // initialized before we can transmit cookies.
+  if (!mIPCClosed && chan->IsNavigation()) {
+    // FIXME: We should consider skipping sending cookies if the response isn't
+    // going to result in the document being rendered (e.g. if we're going to
+    // display a load error)
+    nsLoadFlags loadFlags;
+    MOZ_ALWAYS_SUCCEEDS(chan->GetLoadFlags(&loadFlags));
+    if (loadFlags & nsIRequest::LOAD_DOCUMENT_NEEDS_COOKIE) {
+      PNeckoParent* neckoParent = Manager();
+      MOZ_ASSERT(neckoParent,
+                 "We should have a manager if our IPC isn't closed");
+      if (PCookieServiceParent* csParent = LoneManagedOrNullAsserts(
+              neckoParent->ManagedPCookieServiceParent())) {
+        static_cast<CookieServiceParent*>(csParent)->TrackCookieLoad(chan);
+        args.shouldWaitForOnStartRequestSent() = true;
+      }
+    }
   }
 
   args.multiPartID() = multiPartID;
@@ -1203,20 +1238,12 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   if (httpChannelImpl) {
     httpChannelImpl->IsFromCache(&args.isFromCache());
     httpChannelImpl->GetCacheDisposition(&args.cacheDisposition());
-    httpChannelImpl->IsRacing(&args.isRacing());
     httpChannelImpl->GetCacheEntryId(&args.cacheEntryId());
     httpChannelImpl->GetCacheTokenFetchCount(&args.cacheFetchCount());
     httpChannelImpl->GetCacheTokenExpirationTime(&args.cacheExpirationTime());
     httpChannelImpl->GetProtocolVersion(args.protocolVersion());
 
     mDataSentToChildProcess = httpChannelImpl->DataSentToChildProcess();
-
-    // If RCWN is enabled and cache wins, we can't use the ODA from socket
-    // process.
-    if (args.isRacing()) {
-      mDataSentToChildProcess =
-          httpChannelImpl->DataSentToChildProcess() && !args.isFromCache();
-    }
     args.dataFromSocketProcess() = mDataSentToChildProcess;
   }
 
@@ -1293,6 +1320,8 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
 
   chan->GetIsResolvedByTRR(&args.isResolvedByTRR());
   chan->GetAllRedirectsSameOrigin(&args.allRedirectsSameOrigin());
+  chan->GetAllRedirectsSameOriginIgnoringInternal(
+      &args.allRedirectsSameOriginIgnoringInternal());
   chan->GetCrossOriginOpenerPolicy(&args.openerPolicy());
   args.selfAddr() = chan->GetSelfAddr();
   args.peerAddr() = chan->GetPeerAddr();
@@ -1342,6 +1371,10 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   if (mIPCClosed) {
     rv = NS_ERROR_UNEXPECTED;
   } else {
+    MOZ_DIAGNOSTIC_ASSERT(
+        responseHead == &cleanedUpResponseHead ||
+            responseHead == chan->GetResponseHead(),
+        "mResponseHead changed between GetResponseHead and copy");
     nsHttpResponseHead newResponseHead = *responseHead;
     if (!mBgParent->OnStartRequest(
             std::move(newResponseHead), useResponseHead,
@@ -1353,9 +1386,9 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
 
   requestHead->Exit();
 
-  // Need to wait for the cookies/permissions to content process, which is sent
-  // via PContent in AboutToLoadHttpFtpDocumentForChild. For multipart channel,
-  // send only one time since the cookies/permissions are the same.
+  // Need to wait for the cookies to be sent to the content process, which is
+  // sent via PContent in ContentParent::UpdateCookieStatus. For multipart
+  // channel, send only one time since the cookies/permissions are the same.
   if (NS_SUCCEEDED(rv) && args.shouldWaitForOnStartRequestSent() &&
       multiPartID.valueOr(0) == 0) {
     LOG(("HttpChannelParent::SendOnStartRequestSent\n"));
@@ -1798,7 +1831,8 @@ HttpChannelParent::StartRedirect(nsIChannel* newChannel, uint32_t redirectFlags,
   }
 
   mRedirectChannelId = nsContentUtils::GenerateLoadIdentifier();
-  rv = registrar->RegisterChannel(newChannel, mRedirectChannelId);
+  rv = registrar->RegisterChannel(newChannel, mRedirectChannelId,
+                                  GetContentParentId());
   NS_ENSURE_SUCCESS(rv, rv);
 
   LOG(("Registered %p channel under id=%" PRIx64, newChannel,
@@ -1860,8 +1894,8 @@ HttpChannelParent::StartRedirect(nsIChannel* newChannel, uint32_t redirectFlags,
 
       // Re-link the HttpChannelParent to the new channel.
       nsCOMPtr<nsIChannel> linkedChannel;
-      rv = NS_LinkRedirectChannels(mRedirectChannelId, this,
-                                   getter_AddRefs(linkedChannel));
+      rv = NS_LinkRedirectChannels(mRedirectChannelId, GetContentParentId(),
+                                   this, getter_AddRefs(linkedChannel));
       NS_ENSURE_SUCCESS(rv, rv);
       MOZ_ASSERT(linkedChannel == newChannel);
 
@@ -1903,6 +1937,7 @@ HttpChannelParent::StartRedirect(nsIChannel* newChannel, uint32_t redirectFlags,
   mozilla::ipc::LoadInfoToParentLoadInfoForwarder(loadInfo,
                                                   &loadInfoForwarderArg);
 
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   nsHttpResponseHead* responseHead = mChannel->GetResponseHead();
 
   nsHttpResponseHead cleanedUpResponseHead;

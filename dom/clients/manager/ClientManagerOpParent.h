@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,13 +10,16 @@
 namespace mozilla::dom {
 
 class ClientManagerService;
+class ThreadsafeContentParentHandle;
 
 class ClientManagerOpParent final : public PClientManagerOpParent {
   RefPtr<ClientManagerService> mService;
   MozPromiseRequestHolder<ClientOpPromise> mPromiseRequestHolder;
 
   template <typename Method, typename... Args>
-  void DoServiceOp(Method aMethod, Args&&... aArgs);
+  void DoServiceOp(Method aMethod,
+                   ThreadsafeContentParentHandle* aContentParentHandle,
+                   Args&&... aArgs);
 
   // PClientManagerOpParent interface
   void ActorDestroy(ActorDestroyReason aReason) override;
@@ -27,7 +28,9 @@ class ClientManagerOpParent final : public PClientManagerOpParent {
   explicit ClientManagerOpParent(ClientManagerService* aService);
   ~ClientManagerOpParent() = default;
 
-  void Init(const ClientOpConstructorArgs& aArgs);
+  mozilla::ipc::IPCResult Init(
+      const ClientOpConstructorArgs& aArgs,
+      ThreadsafeContentParentHandle* aContentParentHandle);
 };
 
 }  // namespace mozilla::dom

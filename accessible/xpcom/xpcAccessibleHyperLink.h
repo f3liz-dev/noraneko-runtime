@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,8 @@
 #ifndef mozilla_a11y_xpcAccessibleHyperLink_h_
 #define mozilla_a11y_xpcAccessibleHyperLink_h_
 
-#include "nsIAccessibleHyperLink.h"
-
 #include "mozilla/a11y/Accessible.h"
+#include "nsIAccessibleHyperLink.h"
 
 class nsIAccessible;
 
@@ -24,6 +21,9 @@ class LocalAccessible;
  */
 class xpcAccessibleHyperLink : public nsIAccessibleHyperLink {
  public:
+  xpcAccessibleHyperLink(const xpcAccessibleHyperLink&) = delete;
+  xpcAccessibleHyperLink& operator=(const xpcAccessibleHyperLink&) = delete;
+
   NS_IMETHOD GetAnchorCount(int32_t* aAnchorCount) final;
   NS_IMETHOD GetStartIndex(int32_t* aStartIndex) final;
   NS_IMETHOD GetEndIndex(int32_t* aEndIndex) final;
@@ -32,13 +32,10 @@ class xpcAccessibleHyperLink : public nsIAccessibleHyperLink {
   NS_IMETHOD GetValid(bool* aValid) final;
 
  protected:
-  xpcAccessibleHyperLink() {}
-  virtual ~xpcAccessibleHyperLink() {}
+  xpcAccessibleHyperLink() = default;
+  virtual ~xpcAccessibleHyperLink() = default;
 
  private:
-  xpcAccessibleHyperLink(const xpcAccessibleHyperLink&) = delete;
-  xpcAccessibleHyperLink& operator=(const xpcAccessibleHyperLink&) = delete;
-
   Accessible* Intl();
 };
 

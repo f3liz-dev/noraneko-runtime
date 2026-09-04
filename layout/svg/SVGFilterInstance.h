@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "gfxMatrix.h"
 #include "gfxRect.h"
 #include "mozilla/ServoStyleConsts.h"
+#include "mozilla/dom/SVGUnitTypesBinding.h"
 
 namespace mozilla {
 class SVGFilterFrame;
@@ -247,7 +246,8 @@ class SVGFilterInstance {
   /**
    * The 'primitiveUnits' attribute value (objectBoundingBox or userSpaceOnUse).
    */
-  uint16_t mPrimitiveUnits;
+  uint16_t mPrimitiveUnits =
+      dom::SVGUnitTypes_Binding::SVG_UNIT_TYPE_USERSPACEONUSE;
 
   /**
    * The index of the FilterPrimitiveDescription that this SVG filter should use

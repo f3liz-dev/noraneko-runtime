@@ -48,7 +48,7 @@ add_task(async function () {
     await inspector.sidebar.select("computedview");
 
     await selectNodeInFrames(
-      ['browser[remote="true"][test-tab]', "#my-div"],
+      ["browser[remote][test-tab]", "#my-div"],
       inspector
     );
 
@@ -190,8 +190,8 @@ async function pickNodeInContentPage(
     _selector => {
       const rect = content.document
         .querySelector(_selector)
-        .getBoundingClientRect();
-      return { x: rect.x, y: rect.y };
+        .getClientRects()[0];
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     }
   );
 
@@ -199,10 +199,10 @@ async function pickNodeInContentPage(
   // element containing the tab we're looking at, at the position where should be the
   // content element.
   // We need to do this to mimick what's actually done in node-picker.js
-  await EventUtils.synthesizeMouse(
+  EventUtils.synthesizeMouse(
     document.querySelector(browserElementSelector),
-    x + 5,
-    y + 5,
+    x,
+    y,
     {}
   );
 

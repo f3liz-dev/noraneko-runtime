@@ -8,7 +8,7 @@
   --image-size-large: 120px;
 
   background-color: var(--background-color-canvas);
-  border: 2px solid var(--border-color-card);
+  border: 2px solid var(--card-border-color);
   color: var(--text-color);
   padding: var(--space-large);
   border-radius: var(--border-radius-medium);
@@ -61,7 +61,7 @@
     h2 {
       margin: 0;
       font-size: var(--font-size-large);
-      font-weight: var(--heading-font-weight);
+      font-weight: var(--font-weight-heading);
     }
 
     p {
@@ -102,5 +102,19 @@
 
   moz-button {
     min-width: fit-content;
+  }
+
+  // @nova-cleanup(remove-conditional)
+  .nova-enabled & {
+    background-color: var(--background-color-box);
+    border-radius: var(--border-radius-large);
+
+    .activation-window-message-inner h2 {
+      font-weight: var(--font-weight-semibold);
+    }
+
+    moz-button {
+      min-width: auto;
+    }
   }
 }

@@ -254,7 +254,7 @@ definitions:
 
           A list of bug URLs (e.g. Bugzilla and Github) that are relevant to
           this metric, e.g., tracking its original implementation or later
-          changes to it.
+          changes to it, including renewals.
 
           Prior to version 2.0.0 of the schema, bugs could also be integers.
         type: array
@@ -268,7 +268,8 @@ definitions:
         description: |
           **Required.**
 
-          A list of URIs to any data collection reviews relevant to the metric.
+          A list of URLs to any data collection reviews relevant to the metric.
+          This should also include links to data reviews for renewals.
         type: array
         items:
           type: string
@@ -626,6 +627,19 @@ definitions:
           so glean_parser can find it.
         type: string
 
+      in_session:
+        title: In session
+        description: |
+          Whether this metric participates in session sampling.
+          When `true`, the metric is subject to session-level sampling and
+          session metadata is attached to it.
+          When `false`, the metric bypasses session sampling entirely.
+
+          Only valid when `type`_ is `event`.
+          Defaults to `true` when `type`_ is `event`, `false` otherwise.
+        type: boolean
+        default: false
+
       structure:
         title: A subset of a JSON schema definition
         description: |
@@ -772,6 +786,18 @@ additionalProperties:
               description: |
                 `denominator_metric` is only allowed for `rate`.
               maxLength: 0
+      - if:
+          not:
+            properties:
+              type:
+                const: event
+        then:
+          properties:
+            in_session:
+              description: |
+                `in_session: true` is only allowed for `event` metrics.
+                Only event metrics support session sampling.
+              const: false
       -
         if:
           properties:

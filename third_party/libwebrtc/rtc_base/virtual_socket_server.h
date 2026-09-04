@@ -27,16 +27,14 @@
 #include "api/scoped_refptr.h"
 #include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
+#include "rtc_base/callback_list.h"
 #include "rtc_base/event.h"
-#include "rtc_base/fake_clock.h"
 #include "rtc_base/ip_address.h"
-#include "rtc_base/sigslot_trampoline.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_address_pair.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -46,7 +44,7 @@ class VirtualSocketServer;
 
 // Implements the socket interface using the virtual network. Packets are
 // passed in tasks using the thread of the socket server.
-class VirtualSocket : public Socket, public sigslot::has_slots<> {
+class VirtualSocket : public Socket {
  public:
   VirtualSocket(VirtualSocketServer* server, int family, int type);
   ~VirtualSocket() override;
@@ -233,14 +231,11 @@ class VirtualSocket : public Socket, public sigslot::has_slots<> {
 class VirtualSocketServer : public SocketServer {
  public:
   VirtualSocketServer();
-  // This constructor needs to be used if the test uses a fake clock and
-  // ProcessMessagesUntilIdle, since ProcessMessagesUntilIdle needs a way of
-  // advancing time.
-  explicit VirtualSocketServer(ThreadProcessingFakeClock* fake_clock);
-  ~VirtualSocketServer() override;
 
   VirtualSocketServer(const VirtualSocketServer&) = delete;
   VirtualSocketServer& operator=(const VirtualSocketServer&) = delete;
+
+  ~VirtualSocketServer() override;
 
   // The default source address specifies which local address to use when a
   // socket is bound to the 'any' address, e.g. 0.0.0.0. (If not set, the 'any'
@@ -387,13 +382,10 @@ class VirtualSocketServer : public SocketServer {
   uint32_t SendDelay(uint32_t size) RTC_LOCKS_EXCLUDED(mutex_);
 
   // Sending was previously blocked, but now isn't.
-  // Deprecated interface
-  sigslot::signal0<> SignalReadyToSend;
-  // New interface
-  void NotifyReadyToSend() { SignalReadyToSend(); }
-  void SubscribeReadyToSend(absl::AnyInvocable<void()> callback) {
-    ready_to_send_trampoline_.Subscribe(std::move(callback));
+  void SubscribeReadyToSend(void* tag, absl::AnyInvocable<void()> callback) {
+    ready_to_send_callbacks_.AddReceiver(tag, std::move(callback));
   }
+  void NotifyReadyToSend() { ready_to_send_callbacks_.Send(); }
 
  protected:
   // Returns a new IP not used before in this network.
@@ -458,10 +450,6 @@ class VirtualSocketServer : public SocketServer {
   typedef std::map<SocketAddress, VirtualSocket*> AddressMap;
   typedef std::map<SocketAddressPair, VirtualSocket*> ConnectionMap;
 
-  // May be null if the test doesn't use a fake clock, or it does but doesn't
-  // use ProcessMessagesUntilIdle.
-  ThreadProcessingFakeClock* fake_clock_ = nullptr;
-
   // Used to implement Wait/WakeUp.
   Event wakeup_;
   Thread* msg_queue_;
@@ -499,8 +487,7 @@ class VirtualSocketServer : public SocketServer {
   size_t max_udp_payload_ RTC_GUARDED_BY(mutex_) = 65507;
 
   bool sending_blocked_ RTC_GUARDED_BY(mutex_) = false;
-  SignalTrampoline<VirtualSocketServer, &VirtualSocketServer::SignalReadyToSend>
-      ready_to_send_trampoline_;
+  CallbackList<> ready_to_send_callbacks_;
 };
 
 }  // namespace webrtc

@@ -1,49 +1,43 @@
-/* vim:set ts=2 sw=2 sts=2 cin et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIconChannel.h"
 
+#include <gio/gdesktopappinfo.h>
+#include <gio/gio.h>
+#include <gtk/gtk.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "ErrorList.h"
-#include "gdk/gdk.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "nsIIconURI.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/gfx/Swizzle.h"
-#include "mozilla/ipc/ByteBuf.h"
-#include "mozilla/GUniquePtr.h"
-#include "mozilla/GRefPtr.h"
 #include <algorithm>
 
-#include <gio/gio.h>
-#include <gio/gdesktopappinfo.h>
-
-#include <gtk/gtk.h>
-
-#include "nsMimeTypes.h"
-#include "nsIMIMEService.h"
-
-#include "nsServiceManagerUtils.h"
-
-#include "nsNetUtil.h"
+#include "ErrorList.h"
+#include "gdk/gdk.h"
+#include "gfxPlatform.h"
+#include "gfxUtils.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/GRefPtr.h"
+#include "mozilla/GUniquePtr.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/Swizzle.h"
+#include "mozilla/ipc/ByteBuf.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIStringStream.h"
-#include "nsServiceManagerUtils.h"
-#include "nsIURL.h"
-#include "nsIPipe.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsIIconURI.h"
+#include "nsIMIMEService.h"
+#include "nsIPipe.h"
+#include "nsIStringStream.h"
+#include "nsIURL.h"
+#include "nsMimeTypes.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
 #include "prlink.h"
-#include "gfxUtils.h"
-#include "gfxPlatform.h"
 
 using namespace mozilla;
 using mozilla::ipc::ByteBuf;
@@ -211,7 +205,12 @@ static nsresult GetIconWithGIO(nsIMozIconURI* aIconURI, ByteBuf* aDataOut) {
       if (ms) {
         nsAutoCString fileExt;
         aIconURI->GetFileExtension(fileExt);
-        ms->GetTypeFromExtension(fileExt, type);
+        // fileExt is a placeholder file name such as ".html", so a lone "."
+        // means there is no extension at all. The mime service wants a bare
+        // extension.
+        const uint32_t dotlessIndex =
+            !fileExt.IsEmpty() && fileExt.First() == '.' ? 1 : 0;
+        ms->GetTypeFromExtension(Substring(fileExt, dotlessIndex), type);
       }
     }
     mozilla::GUniquePtr<gchar> ctype;

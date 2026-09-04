@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "jsapi-tests/tests.h"
 
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "js/CompilationAndEvaluation.h"  // JS::Compile{,Utf8{File,Path}}
 #include "js/PropertyAndElement.h"        // JS_SetProperty
 #include "js/SourceText.h"                // JS::Source{Ownership,Text}
-#include "jsapi-tests/tests.h"
 
-struct ScriptObjectFixture : public JSAPIRuntimeTest {
+struct ScriptObjectFixture : public jsapitest::RuntimeTest {
   static const int code_size;
   static const char code[];
   static char16_t uc_code[];

@@ -27,6 +27,7 @@
   <string name="teaser">მხოლოდ თვალიერების პირადი რეჟიმი.\nმონახულება. წაშლა. თავიდან დაწყება.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">მონახულებული გვერდების ისტორია წაიშალა.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">დათვალიერების ისტორია გასუფთავდა</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">ჩანართებში მონახულებული გვერდების ისტორია გასუფთავებულია.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">გასუფთავდება და გაიხსნება %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">მოიძიეთ Klar-ით</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">მოიძიეთ Klar-ით</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">მოიძიეთ Focus Beta-თი</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">მოიძიეთ Focus Beta-თი</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">მოიძიეთ Focus Nightly-თ</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">მოიძიეთ Focus Nightly-თ</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s სრულად გიბრუნებთ მართვის სადავეებს.</p>\n<p>გამოიყენეთ პირად ბრაუზერად:\n<ul>\n<li>მოძებნეთ და დაათვალიერეთ გვერდები პროგრამაშივე</li>\n<li>შეზღუდეთ მეთვალყურეები (პარამეტრებიდან დაშვებაც შეიძლება)</li>\n<li>გაასუფთავეთ და წაშალეთ ფუნთუშები, ძიებისა და თვალიერების ისტორია</li>\n</ul> </p>\n<p>%1$s შექმნილია Mozilla-ს მიერ. ჩვენი მიზანი, ჯანსაღ და ღია ინტერნეტზე ზრუნვაა.<br/>\n<a href=\"%2$s\">ვრცლად</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s სრულად გიბრუნებთ მართვის სადავეებს.</p>\n<p>გამოიყენეთ პირად ბრაუზერად:\n<ul>\n<li>მოძებნეთ და დაათვალიერეთ გვერდები პროგრამაშივე</li>\n<li>შეზღუდეთ მეთვალყურეები (პარამეტრებიდან დაშვებაც შეიძლება)</li>\n<li>გაასუფთავეთ და წაშალეთ ფუნთუშები, ძიებისა და თვალიერების ისტორია</li>\n</ul> </p>\n<p>%1$s შექმნილია Mozilla-ს მიერ. ჩვენი მიზანი, ჯანსაღ და ღია ინტერნეტზე ზრუნვაა.<br/>\n<a href=\"%2$s\">ვრცლად</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">ვრცლად</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">ჩასვით ან შეიყვანეთ URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">მაგალითად: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">მაგალითად: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">მაგალითად: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s-ის ნაგულისხმევ ბრაუზერად მითითება</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">მონაცემების გაგზავნა</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">იხილეთ ვრცლად</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla აღრიცხავს მხოლოდ იმ მონაცემებს, რაც საჭიროა %1$s-ის გასაუმჯობესებლად.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla აღრიცხავს მხოლოდ იმ მონაცემებს, რაც საჭიროა %1$s-ის გასაუმჯობესებლად.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">დღიური გამოყენების უწყება</string>
-  <string name="preference_daily_usage_ping_description">ამით Mozilla მიახლოებით ითვლის მოქმედ მომხმარებლებს.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">ამით Mozilla მიახლოებით ითვლის მოქმედ მომხმარებლებს.</string>
   <string name="preference_daily_usage_ping_learn_more">ვრცლად</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">პირადი მონაცემების დაცვა</string>
@@ -584,6 +588,23 @@
   <string name="security_popup_security_verified">დამმოწმებელი: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">საიტის უსაფრთხოება</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">სერტიფიკატის მფლობელი %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">განსაზღრულია წესდებით (ᲔᲕ) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL უკვე არსებობს</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">პოვნა გვერდზე</string>
@@ -814,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ჩანართის დახურვა</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">გათიშვის მოხსენებას გაეცნოს Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">გათიშვის მოხსენებას გაეცნოს Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -879,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s ცდილობს გამოიყენოს HTTPS-კავშირი, როცა კი შესაძლებელია უსაფრთხოებისთვის. <a href=\"%2$s\">ვრცლად</a> <br/><br/> შესაცვლელად იხილეთ პარამეტრები > პირადულობა და უსაფრთხოება > უსაფრთხოება.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">დაუცველი კავშირი</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">დაუცველი კავშირი</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ამას შესაძლოა, საიტის გაუმართაობა ან სხვა საიტად გასაღების მცდელობა იწვევდეს. <br/><br/> თუ აღნიშნულ საიტს მანამდე წარმატებით უკავშირდებოდით, ხარვეზი შეიძლება დროებითი იყოს.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[ამას შესაძლოა, საიტის გაუმართაობა ან სხვა საიტად გასაღების მცდელობა იწვევდეს. <br/><br/> თუ აღნიშნულ საიტს მანამდე წარმატებით უკავშირდებოდით, ხარვეზი შეიძლება დროებითი იყოს.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>შესაძლოა, ვიღაც ამ საიტის სხვა საიტად გასაღებას ცდილობდეს და ჯობია, აღარ განაგრძოთ.</label> <br><br>\n<label>%1$s არ ენდობა <b>%2$s</b>-ს, რადგან მისი უსაფრთხოების სერტიფიკატის გამომცემი უცნობია, შეიძლება თავადვე აქვთ ხელმოწერილი ან სერვერი სათანადოდ არ აგზავნის შუალედურ სერტიფიკატებს.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>შესაძლოა, ვიღაც ამ საიტის სხვა საიტად გასაღებას ცდილობდეს და ჯობია, აღარ განაგრძოთ.</label> <br><br>\n<label>%1$s არ ენდობა <b>%2$s</b>-ს, რადგან მისი უსაფრთხოების სერტიფიკატის გამომცემი უცნობია, შეიძლება თავადვე აქვთ ხელმოწერილი ან სერვერი სათანადოდ არ აგზავნის შუალედურ სერტიფიკატებს.</label>]]></string>
   <!--
     Sessions List
 

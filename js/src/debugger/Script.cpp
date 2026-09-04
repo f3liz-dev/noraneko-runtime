@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "debugger/Script-inl.h"
 
 #include "mozilla/Maybe.h"   // for Some, Maybe
 #include "mozilla/Span.h"    // for Span
@@ -50,11 +46,12 @@
 #include "wasm/WasmJS.h"              // for WasmInstanceObject
 #include "wasm/WasmTypeDecls.h"       // for Bytes
 
+#include "debugger/Script-inl.h"
 #include "gc/Marking-inl.h"       // for MaybeForwardedObjectIs
 #include "vm/BytecodeUtil-inl.h"  // for BytecodeRangeWithPosition
 #include "vm/JSAtomUtils-inl.h"   // for PrimitiveValueToId
-#include "vm/JSObject-inl.h"  // for NewBuiltinClassInstance, NewObjectWithGivenProto, NewTenuredObjectWithGivenProto
-#include "vm/JSScript-inl.h"  // for JSScript::global
+#include "vm/JSObject-inl.h"  // for NewBuiltinClassInstance, NewObjectWithGivenProto
+#include "vm/JSScript-inl.h"          // for JSScript::global
 #include "vm/ObjectOperations-inl.h"  // for GetProperty
 #include "vm/Realm-inl.h"             // for AutoRealm::AutoRealm
 
@@ -64,16 +61,7 @@ using mozilla::Maybe;
 using mozilla::Some;
 
 const JSClassOps DebuggerScript::classOps_ = {
-    nullptr,                          // addProperty
-    nullptr,                          // delProperty
-    nullptr,                          // enumerate
-    nullptr,                          // newEnumerate
-    nullptr,                          // resolve
-    nullptr,                          // mayResolve
-    nullptr,                          // finalize
-    nullptr,                          // call
-    nullptr,                          // construct
-    CallTraceMethod<DebuggerScript>,  // trace
+    .trace = CallTraceMethod<DebuggerScript>,
 };
 
 const JSClass DebuggerScript::class_ = {
@@ -117,8 +105,8 @@ NativeObject* DebuggerScript::initClass(JSContext* cx,
 DebuggerScript* DebuggerScript::create(JSContext* cx, HandleObject proto,
                                        Handle<DebuggerScriptReferent> referent,
                                        Handle<NativeObject*> debugger) {
-  DebuggerScript* scriptobj =
-      NewTenuredObjectWithGivenProto<DebuggerScript>(cx, proto);
+  DebuggerScript* scriptobj = NewObjectWithGivenProto<DebuggerScript>(
+      cx, proto, {.newKind = TenuredObject});
   if (!scriptobj) {
     return nullptr;
   }
@@ -505,7 +493,6 @@ bool DebuggerScript::CallData::getFormat() {
 
 static bool PushFunctionScript(JSContext* cx, Debugger* dbg, HandleFunction fun,
                                HandleObject array) {
-  // Ignore asm.js natives.
   if (!IsInterpretedNonSelfHostedFunction(fun)) {
     return true;
   }
@@ -1218,6 +1205,11 @@ class FlowGraphSummary {
     // or Entry::Column_HasMultipleEdge.
 
     uint32_t prevLineno = script->lineno();
+    if (prevLineno == Entry::Line_HasNoEdge) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_BAD_LINE_NUMBER);
+      return false;
+    }
     uint32_t prevColumn = 1;
     JSOp prevOp = JSOp::Nop;
     for (BytecodeRangeWithPosition r(cx, script, SkipPrologueOps::Yes);
@@ -1243,6 +1235,15 @@ class FlowGraphSummary {
       if (r.frontIsEntryPoint()) {
         lineno = r.frontLineNumber();
         column = r.frontColumnNumber().oneOriginValue();
+        if (lineno == Entry::Line_HasNoEdge) {
+          JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                    JSMSG_BAD_LINE_NUMBER);
+          return false;
+        }
+        // NOTE: The column data types cannot represent Column_HasMultipleEdge,
+        //       and also the column number is limited in the frontend.
+        //       See GeneralTokenStreamChars::computeColumn.
+        MOZ_ASSERT(column != Entry::Column_HasMultipleEdge);
       }
 
       if (IsJumpOpcode(op)) {
@@ -1490,16 +1491,11 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::SetFunName:
     case JSOp::MutateProto:
     case JSOp::DynamicImport:
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-    case JSOp::DynamicImportSource:
-#endif
     case JSOp::InitialYield:
     case JSOp::Yield:
     case JSOp::Await:
     case JSOp::CanSkipAwait:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSOp::AddDisposable:
-#endif
       return true;
 
     case JSOp::Nop:
@@ -1519,10 +1515,8 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Try:
     case JSOp::Throw:
     case JSOp::ThrowWithStack:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSOp::TakeDisposeCapability:
     case JSOp::CreateSuppressedError:
-#endif
     case JSOp::Goto:
     case JSOp::TableSwitch:
     case JSOp::Case:
@@ -1714,7 +1708,6 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Finally:
     case JSOp::GetRval:
     case JSOp::ThrowMsg:
-    case JSOp::ForceInterpreter:
       return false;
 
     case JSOp::InitAliasedLexical: {

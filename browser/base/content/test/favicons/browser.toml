@@ -63,6 +63,9 @@ support-files = [
   "file_favicon_empty.html",
 ]
 
+["browser_favicon_force_reload.js"]
+support-files = ["file_force_reload_page.html"]
+
 ["browser_favicon_load.js"]
 https_first_disabled = true
 support-files = [
@@ -95,6 +98,9 @@ support-files = [
 support-files = [
   "file_favicon_svg.html",
   "file_favicon.svg"
+]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 2019466
 ]
 
 ["browser_icon_discovery.js"]

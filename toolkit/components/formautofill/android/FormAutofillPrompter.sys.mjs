@@ -7,9 +7,12 @@
  * the doorhager UI for formautofill related features.
  */
 
+import { AutofillDataTypes } from "resource://gre/modules/shared/AutofillDataTypes.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  Address: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
   CreditCard: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
   GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
   GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
@@ -33,37 +36,44 @@ export let FormAutofillPrompter = {
     };
   },
 
-  async promptToSaveAddress(
-    _browser,
-    _storage,
-    _flowId,
-    { _oldRecord, _newRecord }
-  ) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+  _createAddressMessage(addresses) {
+    return {
+      // Sync with PromptController
+      type: "Autocomplete:Save:Address",
+      addresses,
+    };
   },
 
-  async promptToSaveCreditCard(
-    browser,
-    storage,
-    flowId,
-    { oldRecord, newRecord }
-  ) {
+  async promptToSave(type, browser, storage, flowId, { oldRecord, newRecord }) {
+    const config = {
+      [AutofillDataTypes.ADDRESS]: {
+        message: record =>
+          this._createAddressMessage([lazy.Address.fromGecko(record)]),
+        onSave: value => lazy.GeckoViewAutocomplete.onAddressSave(value),
+      },
+      [AutofillDataTypes.CREDIT_CARD]: {
+        message: record =>
+          this._createMessage([lazy.CreditCard.fromGecko(record)]),
+        onSave: value => lazy.GeckoViewAutocomplete.onCreditCardSave(value),
+      },
+    }[type];
+
+    // Android only supports capturing addresses and credit cards.
+    if (!config) {
+      return;
+    }
+
     if (oldRecord) {
       newRecord = { ...oldRecord, ...newRecord };
     }
 
-    const prompt = new lazy.GeckoViewPrompter(browser.ownerGlobal);
-    prompt.asyncShowPrompt(
-      this._createMessage([lazy.CreditCard.fromGecko(newRecord)]),
-      result => {
-        const selectedCreditCard = result?.selection?.value;
-
-        if (!selectedCreditCard) {
-          return;
-        }
-
-        lazy.GeckoViewAutocomplete.onCreditCardSave(selectedCreditCard);
+    const prompt = new lazy.GeckoViewPrompter(browser.documentGlobal);
+    prompt.asyncShowPrompt(config.message(newRecord), result => {
+      const selected = result?.selection?.value;
+      if (!selected) {
+        return;
       }
-    );
+      config.onSave(selected);
+    });
   },
 };

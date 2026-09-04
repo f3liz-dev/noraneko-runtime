@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,26 +5,28 @@
 #ifndef js_loader_ModuleLoaderBase_h
 #define js_loader_ModuleLoaderBase_h
 
-#include "LoadedScript.h"
-#include "ScriptLoadRequestList.h"
-
-#include "ImportMap.h"
-#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
-#include "js/TypeDecls.h"     // JS::MutableHandle, JS::Handle, JS::Root
-#include "js/Modules.h"
-#include "nsRefPtrHashtable.h"
-#include "nsCOMArray.h"
-#include "nsCOMPtr.h"
-#include "nsILoadInfo.h"    // nsSecurityFlags
-#include "nsThreadUtils.h"  // GetMainThreadSerialEventTarget
-#include "nsURIHashKey.h"
 #include "mozilla/Attributes.h"  // MOZ_RAII
 #include "mozilla/CORSMode.h"
-#include "mozilla/MaybeOneOf.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
+#include "mozilla/MaybeOneOf.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/UniquePtr.h"
+
+#include "ImportMap.h"
+#include "LoadedScript.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsILoadInfo.h"  // nsSecurityFlags
+#include "nsRefPtrHashtable.h"
+#include "nsThreadUtils.h"  // GetMainThreadSerialEventTarget
+#include "nsURIHashKey.h"
+#include "ResolvedModuleSet.h"
 #include "ResolveResult.h"
+#include "ScriptLoadRequestList.h"
+
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+#include "js/Modules.h"
+#include "js/TypeDecls.h"  // JS::MutableHandle, JS::Handle, JS::Root
 
 class nsIConsoleReportCollector;
 class nsIURI;
@@ -55,68 +55,7 @@ class LoadContextBase;
 class ModuleLoaderBase;
 class ModuleLoadRequest;
 class ModuleScript;
-
-/*
- * [DOMDOC] Shared Classic/Module Script Methods
- *
- * The ScriptLoaderInterface defines the shared methods needed by both
- * ScriptLoaders (loading classic scripts) and ModuleLoaders (loading module
- * scripts). These include:
- *
- *     * Error Logging
- *     * Generating the compile options
- *     * Optional: Caching
- *
- * ScriptLoaderInterface does not provide any implementations.
- * It enables the ModuleLoaderBase to reference back to the behavior implemented
- * by a given ScriptLoader.
- *
- * Not all methods will be used by all ModuleLoaders. For example, caching
- * does not apply to workers, as we only work with source text there.
- * Fully virtual methods are implemented by all.
- *
- */
-
-class ScriptLoaderInterface : public nsISupports {
- public:
-  // Alias common classes.
-  using ScriptFetchOptions = JS::loader::ScriptFetchOptions;
-  using ScriptKind = JS::loader::ScriptKind;
-  using ScriptLoadRequest = JS::loader::ScriptLoadRequest;
-  using ScriptLoadRequestList = JS::loader::ScriptLoadRequestList;
-  using ModuleLoadRequest = JS::loader::ModuleLoadRequest;
-
-  virtual ~ScriptLoaderInterface() = default;
-
-  // In some environments, we will need to default to a base URI
-  virtual nsIURI* GetBaseURI() const = 0;
-
-  virtual void ReportErrorToConsole(ScriptLoadRequest* aRequest,
-                                    nsresult aResult) const = 0;
-
-  virtual void ReportWarningToConsole(
-      ScriptLoadRequest* aRequest, const char* aMessageName,
-      const nsTArray<nsString>& aParams = nsTArray<nsString>()) const = 0;
-
-  // Similar to Report*ToConsole(), only non-null in dom/script/ScriptLoader
-  // as we currently only load importmaps there.
-  virtual nsIConsoleReportCollector* GetConsoleReportCollector() const {
-    return nullptr;
-  }
-
-  // Fill in CompileOptions, as well as produce the introducer script for
-  // subsequent calls to UpdateDebuggerMetadata
-  virtual nsresult FillCompileOptionsForRequest(
-      JSContext* cx, ScriptLoadRequest* aRequest, CompileOptions* aOptions,
-      MutableHandle<JSScript*> aIntroductionScript) = 0;
-
-  virtual nsresult MaybePrepareModuleForDiskCacheAfterExecute(
-      ModuleLoadRequest* aRequest, nsresult aRv) {
-    return NS_OK;
-  }
-
-  virtual void MaybeUpdateDiskCache() {}
-};
+class ScriptLoaderInterface;
 
 class ModuleMapKey : public PLDHashEntryHdr {
  public:
@@ -280,6 +219,8 @@ class ModuleLoaderBase : public nsISupports {
 
   mozilla::UniquePtr<ImportMap> mImportMap;
 
+  mozilla::UniquePtr<ResolvedModuleSet> mResolvedModuleSet;
+
   virtual ~ModuleLoaderBase();
 
 #ifdef DEBUG
@@ -299,7 +240,7 @@ class ModuleLoaderBase : public nsISupports {
   // Called to break cycles during shutdown to prevent memory leaks.
   void Shutdown();
 
-  virtual nsIURI* GetBaseURI() const { return mLoader->GetBaseURI(); };
+  virtual nsIURI* GetBaseURI() const;
 
   using MaybeSourceText =
       mozilla::MaybeOneOf<SourceText<char16_t>, SourceText<Utf8Unit>>;
@@ -412,7 +353,8 @@ class ModuleLoaderBase : public nsISupports {
 
   // Implements
   // https://html.spec.whatwg.org/multipage/webappapis.html#register-an-import-map
-  void RegisterImportMap(mozilla::UniquePtr<ImportMap> aImportMap);
+  void RegisterImportMap(mozilla::UniquePtr<ImportMap> aImportMap,
+                         ScriptLoadRequest* aRequest);
 
   bool HasImportMapRegistered() const { return bool(mImportMap); }
 
@@ -434,11 +376,19 @@ class ModuleLoaderBase : public nsISupports {
     return true;
   }
 
+  ImportMap* GetImportMap() { return mImportMap.get(); }
+
   // Returns whether there has been an entry in the import map
   // for the given aURI.
   bool GetImportMapSRI(nsIURI* aURI, nsIURI* aSourceURI,
                        nsIConsoleReportCollector* aReporter,
                        mozilla::dom::SRIMetadata* aMetadataOut);
+
+  ResolvedModuleSet* GetResolvedModuleSet();
+
+  void MovePreloadedSetToResolvedSet(ModuleLoadRequest* aRootRequest);
+
+  void ClearPreloadedModuleGraph(ModuleLoadRequest* aRootRequest);
 
   // Returns true if the module for given module key is already fetched.
   bool IsModuleFetched(const ModuleMapKey& key) const;
@@ -480,9 +430,10 @@ class ModuleLoaderBase : public nsISupports {
 
  private:
   friend class JS::loader::ModuleLoadRequest;
+  friend class JS::loader::ImportMap;
 
   static ModuleLoaderBase* GetCurrentModuleLoader(JSContext* aCx);
-  static LoadedScript* GetLoadedScriptOrNull(Handle<JSScript*> aReferrer);
+  static ScriptFetchInfo* GetScriptFetchInfoOrNull(Handle<JSScript*> aReferrer);
 
   static void EnsureModuleHooksInitialized();
 
@@ -497,17 +448,17 @@ class ModuleLoaderBase : public nsISupports {
                                           ModuleLoadRequest* aRequest);
 
   static bool HostPopulateImportMeta(JSContext* aCx,
-                                     Handle<Value> aReferencingPrivate,
+                                     Handle<JSObject*> aModuleRecord,
                                      Handle<JSObject*> aMetaObject);
   static bool ImportMetaResolve(JSContext* cx, unsigned argc, Value* vp);
   static JSString* ImportMetaResolveImpl(JSContext* aCx,
                                          Handle<Value> aReferencingPrivate,
                                          Handle<JSString*> aSpecifier);
 
-  ResolveResult ResolveModuleSpecifier(LoadedScript* aScript,
+  ResolveResult ResolveModuleSpecifier(ScriptFetchInfo* aFetchInfo,
                                        const nsAString& aSpecifier);
 
-  nsresult HandleResolveFailure(JSContext* aCx, LoadedScript* aScript,
+  nsresult HandleResolveFailure(JSContext* aCx, ScriptFetchInfo* aFetchInfo,
                                 const nsAString& aSpecifier,
                                 ResolveError aError, uint32_t aLineNumber,
                                 ColumnNumberOneOrigin aColumnNumber,
@@ -520,6 +471,23 @@ class ModuleLoaderBase : public nsISupports {
   bool ModuleMapContainsURL(const ModuleMapKey& key) const;
   bool IsModuleFetching(const ModuleMapKey& key) const;
   void WaitForModuleFetch(ModuleLoadRequest* aRequest);
+
+  void AddToPreloadedResolvedSet(
+      ModuleLoadRequest* aRootRequest,
+      mozilla::UniquePtr<SpecifierResolutionRecord> aRecord);
+
+  void AddToGlobalResolvedSet(
+      mozilla::UniquePtr<SpecifierResolutionRecord> aRecord);
+
+  // https://html.spec.whatwg.org/#add-module-to-resolved-module-set
+  // The aHostDefined argument is for determining if this is resolved during
+  // preloading.
+  void AddToResolvedModuleSet(
+      mozilla::UniquePtr<SpecifierResolutionRecord> aRecord,
+      Handle<Value> aHostDefined = UndefinedHandleValue);
+
+  void ResetPreloadFlag(nsIURI* aURI);
+  void ResetPreloadedModule(nsIURI* aURI);
 
  protected:
   void SetModuleFetchStarted(ModuleLoadRequest* aRequest);
@@ -560,7 +528,7 @@ class ModuleLoaderBase : public nsISupports {
   void Cancel(ModuleLoadRequest* aRequest);
 
   // The slot stored in ImportMetaResolve function.
-  enum class ImportMetaSlots : uint32_t { ModulePrivateSlot = 0, SlotCount };
+  enum class ImportMetaSlots : uint32_t { ModuleRecordSlot = 0, SlotCount };
 
   // The number of args in ImportMetaResolve.
   static const uint32_t ImportMetaResolveNumArgs = 1;

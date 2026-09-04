@@ -1,24 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsLocalFile.h"  // includes platform-specific headers
+#include "nsLocalFileCommon.h"
 
 #include "mozilla/Try.h"
-#include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsReadableUtils.h"
-#include "nsPrintfCString.h"
-#include "nsCRT.h"
-#include "nsNativeCharsetUtils.h"
-#include "nsUTF8Utils.h"
+#include "mozilla/Utf16.h"
 #include "nsArray.h"
-#include "nsLocalFileCommon.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsLocalFile.h"  // includes platform-specific headers
+#include "nsNativeCharsetUtils.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsUTF8Utils.h"
 
 #ifdef XP_WIN
 #  include <string.h>
+#else
+#  include <limits.h>
 #endif
 
 // Extensions that should be considered 'executable', ie will not allow users
@@ -53,6 +54,7 @@ const char* const sExecutableExts[] = {
   ".chm",
   ".cmd",
   ".com",
+  ".command",     // Mac script
   ".cpl",
   ".crt",
   ".der",
@@ -115,6 +117,7 @@ const char* const sExecutableExts[] = {
   ".scf",         // Windows explorer command
   ".scr",
   ".sct",
+  ".search-ms",  // Windows Saved Search
   ".settingcontent-ms",
   ".shb",
   ".shs",
@@ -187,27 +190,20 @@ nsLocalFile::InitWithFile(nsIFile* aFile) {
 }
 #endif
 
-#define kMaxFilenameLength 255
-#define kMaxExtensionLength 100
-#define kMaxSequenceNumberLength 5  // "-9999"
-// requirement: kMaxExtensionLength <
-//                kMaxFilenameLength - kMaxSequenceNumberLength
+// Maximum path and filename lengths, leaving space for a terminating null
+// character, a dash, and a four-digit sequence, e.g. "-9999\0"
+#ifdef XP_WIN
+static constexpr int32_t kMaxUniquePathLength = MAX_PATH - 6;
+#else
+static constexpr int32_t kMaxUniquePathLength = PATH_MAX - 6;
+#endif
+
+// 255 - "-NNNN"
+static constexpr int32_t kMaxUniqueFilenameLength = 250;
 
 NS_IMETHODIMP
 nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
   nsresult rv;
-  bool longName;
-
-#ifdef XP_WIN
-  nsAutoString pathName, leafName, rootName, suffix;
-  rv = GetPath(pathName);
-#else
-  nsAutoCString pathName, leafName, rootName, suffix;
-  rv = GetNativePath(pathName);
-#endif
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
 
   auto FailedBecauseExists = [&](nsresult aRv) {
     if (aRv == NS_ERROR_FILE_ACCESS_DENIED) {
@@ -217,13 +213,15 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
     return aRv == NS_ERROR_FILE_ALREADY_EXISTS;
   };
 
-  longName =
-      (pathName.Length() + kMaxSequenceNumberLength > kMaxFilenameLength);
-  if (!longName) {
-    rv = Create(aType, aAttributes);
-    if (!FailedBecauseExists(rv)) {
-      return rv;
-    }
+#ifdef XP_WIN
+  nsAutoString path, leafName, rootName, suffix;
+  rv = GetPath(path);
+#else
+  nsAutoCString path, leafName, rootName, suffix;
+  rv = GetNativePath(path);
+#endif
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
 #ifdef XP_WIN
@@ -242,6 +240,19 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
   const int32_t lastDot = leafName.RFindChar('.');
 #endif
 
+  int32_t pathHeadroom =
+      kMaxUniquePathLength - static_cast<int32_t>(path.Length());
+  int32_t leafHeadroom =
+      kMaxUniqueFilenameLength - static_cast<int32_t>(leafName.Length());
+
+  // If there is no need for truncation see if we can just create the file as is
+  if (pathHeadroom >= 0 && leafHeadroom >= 0) {
+    rv = Create(aType, aAttributes);
+    if (!FailedBecauseExists(rv)) {
+      return rv;
+    }
+  }
+
   if (lastDot == kNotFound) {
     rootName = leafName;
   } else {
@@ -249,10 +260,15 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
     rootName = Substring(leafName, 0, lastDot);  // strip suffix and dot
   }
 
-  if (longName) {
-    int32_t maxRootLength =
-        (kMaxFilenameLength - (pathName.Length() - leafName.Length()) -
-         suffix.Length() - kMaxSequenceNumberLength);
+  // A negative number means it's already over the limit so we need to trim
+  // characters from the root to make room.
+  if (pathHeadroom < 0 || leafHeadroom < 0) {
+    int32_t maxRootPerPathLimit =
+        static_cast<int32_t>(rootName.Length()) + pathHeadroom;
+    int32_t maxRootPerLeafLimit =
+        static_cast<int32_t>(rootName.Length()) + leafHeadroom;
+
+    int32_t maxRootLength = std::min(maxRootPerPathLimit, maxRootPerLeafLimit);
 
     // We cannot create an item inside a directory whose name is too long.
     // Also, ensure that at least one character remains after we truncate
@@ -263,7 +279,7 @@ nsLocalFile::CreateUnique(uint32_t aType, uint32_t aAttributes) {
 
 #ifdef XP_WIN
     // ensure that we don't cut the name in mid-UTF16-character
-    rootName.SetLength(NS_IS_LOW_SURROGATE(rootName[maxRootLength])
+    rootName.SetLength(mozilla::IsLowSurrogate(rootName[maxRootLength])
                            ? maxRootLength - 1
                            : maxRootLength);
     SetLeafName(rootName + suffix);
@@ -362,6 +378,18 @@ nsLocalFile::GetRelativeDescriptor(nsIFile* aFromFile, nsACString& aResult) {
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+#ifdef XP_WIN
+  // Ignore string parsing disable prefix on Windows
+  // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#short-vs-long-names
+  static constexpr nsLiteralString kPrefix = u"\\\\?\\"_ns;
+  if (StringBeginsWith(thisPath, kPrefix)) {
+    thisPath.Cut(0, kPrefix.Length());
+  }
+  if (StringBeginsWith(fromPath, kPrefix)) {
+    fromPath.Cut(0, kPrefix.Length());
+  }
+#endif
 
   // get raw pointer to mutable string buffer
   char16_t* thisPathPtr = thisPath.BeginWriting();

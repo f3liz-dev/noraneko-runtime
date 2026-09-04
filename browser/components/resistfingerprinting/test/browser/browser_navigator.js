@@ -7,14 +7,12 @@
 
 const CC = Components.Constructor;
 
-ChromeUtils.defineESModuleGetters(this, {
-  WindowsVersionInfo:
-    "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
-});
-
 let expectedResults;
 
 const osVersion = Services.sysinfo.get("version");
+
+// If this test fails in the future, know that in Bug 2043401 we began
+// intentionall stripping the minor version from the Android version
 
 const DEFAULT_APPVERSION = {
   linux: "5.0 (X11)",
@@ -47,7 +45,7 @@ const WindowsOscpuPromise = (async () => {
   let WindowsOscpu = null;
   if (AppConstants.platform == "win") {
     let cpuArch = Services.sysinfo.get("arch");
-    let isWin11 = WindowsVersionInfo.get().buildNumber >= 22000;
+    let isWin11 = Services.sysinfo.isWindows10BuildOrLater(22000);
     let isWow64 = (await Services.sysinfo.processInfo).isWow64;
     WindowsOscpu =
       cpuArch == "x86-64" || isWow64 || (cpuArch == "aarch64" && isWin11)
@@ -120,6 +118,14 @@ const SPOOFED_UA_GECKO_TRAIL = {
   other: LEGACY_UA_GECKO_TRAIL,
 };
 
+const SPOOFED_MAX_TOUCH_POINTS = {
+  linux: 5,
+  win: 10,
+  macosx: 0,
+  android: 5,
+  other: 5,
+};
+
 add_setup(async () => {
   DEFAULT_OSCPU.win = DEFAULT_UA_OS.win = await WindowsOscpuPromise;
 
@@ -158,7 +164,7 @@ async function testNavigator() {
   );
 
   let result = await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
-    return content.document.getElementById("result").innerHTML;
+    return content.document.getElementById("result").textContent;
   });
 
   result = JSON.parse(result);
@@ -237,6 +243,16 @@ async function testNavigator() {
     "Navigator.vendorSub reports correct constant value."
   );
 
+  // We do not make assumption on the test environment, but when spoofing we
+  // want to be sure we are spoofing also this value.
+  if (expectedResults.maxTouchPoints !== undefined) {
+    is(
+      result.maxTouchPoints,
+      expectedResults.maxTouchPoints,
+      `Checking ${testDesc} navigator.maxTouchPoints.`
+    );
+  }
+
   BrowserTestUtils.removeTab(tab);
 }
 
@@ -305,6 +321,12 @@ async function testWorkerNavigator() {
     result.product,
     CONST_PRODUCT,
     "worker Navigator.product reports correct constant value."
+  );
+
+  is(
+    result.maxTouchPoints,
+    undefined,
+    "Navigator.maxTouchPoints is undefined on workers, no need to spoof it."
   );
 
   BrowserTestUtils.removeTab(tab);
@@ -466,6 +488,7 @@ add_task(async function setupResistFingerprinting() {
     platform: DEFAULT_PLATFORM[AppConstants.platform],
     pluginsLength: 5,
     userAgent: spoofedUserAgent,
+    maxTouchPoints: SPOOFED_MAX_TOUCH_POINTS[AppConstants.platform],
   };
 
   await testNavigator();

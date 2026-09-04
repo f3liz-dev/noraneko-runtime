@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,35 +5,34 @@
 #include "APZCCallbackHelper.h"
 
 #include "APZEventState.h"  // for PrecedingPointerDown
-
-#include "gfxPlatform.h"  // For gfxPlatform::UseTiling
-
+#include "gfxPlatform.h"    // For gfxPlatform::UseTiling
+#include "jsapi.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/EventForwards.h"
-#include "mozilla/dom/CustomEvent.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/layers/RepaintRequest.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/DisplayPortUtils.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ToString.h"
 #include "mozilla/ViewportUtils.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/layers/RepaintRequest.h"
+#include "mozilla/layers/WebRenderBridgeChild.h"
+#include "mozilla/layers/WebRenderLayerManager.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIDOMWindowUtils.h"
-#include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsMenuPopupFrame.h"
-#include "nsPrintfCString.h"
 #include "nsPIDOMWindow.h"
+#include "nsPrintfCString.h"
 #include "nsRefreshDriver.h"
 #include "nsString.h"
 
@@ -132,7 +129,8 @@ static CSSPoint ScrollFrameTo(ScrollContainerFrame* aFrame,
   if (!scrollInProgress) {
     ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
     aFrame->ScrollToCSSPixelsForApz(targetScrollPosition,
-                                    std::move(snapTargetIds));
+                                    std::move(snapTargetIds),
+                                    aRequest.GetScrollGenerationOnApz());
     geckoScrollPosition = CSSPoint::FromAppUnits(aFrame->GetScrollPosition());
     aSuccessOut = true;
   }
@@ -158,7 +156,6 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
       nsLayoutUtils::FindScrollContainerFrameFor(aRequest.GetScrollId());
   if (sf) {
     sf->ResetScrollInfoIfNeeded(aRequest.GetScrollGeneration(),
-                                aRequest.GetScrollGenerationOnApz(),
                                 aRequest.GetScrollAnimationType(),
                                 ScrollContainerFrame::InScrollingGesture(
                                     aRequest.IsInScrollingGesture()));
@@ -212,7 +209,7 @@ static DisplayPortMargins ScrollFrame(nsIContent* aContent,
     // We need to force a display port adjustment in the following paint to
     // account for a difference between the requested and actual scroll
     // offsets in repaints requested by
-    // AsyncPanZoomController::NotifyLayersUpdated.
+    // AsyncPanZoomController::NotifyMainThreadTransaction.
     displayPortMargins = DisplayPortMargins::FromAPZ(
         aRequest.GetDisplayPortMargins(), apzScrollOffset, actualScrollOffset);
   } else {
@@ -390,8 +387,8 @@ void APZCCallbackHelper::UpdateRootFrame(const RepaintRequest& aRequest) {
     CSSPoint currentScrollPosition =
         CSSPoint::FromAppUnits(sf->GetScrollPosition());
     ScrollSnapTargetIds snapTargetIds = aRequest.GetLastSnapTargetIds();
-    sf->ScrollToCSSPixelsForApz(currentScrollPosition,
-                                std::move(snapTargetIds));
+    sf->ScrollToCSSPixelsForApz(currentScrollPosition, std::move(snapTargetIds),
+                                sf->ScrollGenerationOnApz());
   }
 
   // Do this as late as possible since scrolling can flush layout. It also
@@ -987,7 +984,7 @@ void APZCCallbackHelper::NotifyScaleGestureComplete(
     return;
   }
   JSContext* cx = jsapi.cx();
-  JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
+  JS::Rooted<JS::Value> detail(cx, JS::NumberValue(aScale));
   RefPtr<dom::CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
   event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
                          /* CanBubble */ true,

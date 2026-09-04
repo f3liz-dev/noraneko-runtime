@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,38 +8,35 @@
 
 #define CreateEvent CreateEventA
 
-#include "LocalAccessible-inl.h"
 #include "DocAccessible-inl.h"
-#include "mozilla/a11y/DocAccessibleParent.h"
-#include "nsAccessibilityService.h"
-#include "nsAccUtils.h"
-#include "nsCoreUtils.h"
-#include "nsEventShell.h"
+#include "LocalAccessible-inl.h"
 #include "Relation.h"
-#include "mozilla/a11y/Role.h"
 #include "States.h"
 #include "XULTreeAccessible.h"
-
+#include "mozilla/a11y/DocAccessibleParent.h"
+#include "mozilla/a11y/Role.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/CustomEvent.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/BrowserHost.h"
-#include "mozilla/dom/VisualViewport.h"
-
-#include "nsIDocShellTreeOwner.h"
+#include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/VisualViewport.h"
+#include "nsAccUtils.h"
+#include "nsAccessibilityService.h"
+#include "nsCoreUtils.h"
+#include "nsEventShell.h"
+#include "nsFocusManager.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIAppWindow.h"
 #include "nsIDOMXULMultSelectCntrlEl.h"
-#include "mozilla/dom/Document.h"
+#include "nsIDocShellTreeOwner.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPropertyBag2.h"
-#include "nsPIDOMWindow.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsFocusManager.h"
-
-#include "nsIAppWindow.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -59,7 +55,7 @@ RootAccessible::RootAccessible(Document* aDocument, PresShell* aPresShell)
   mType = eRootType;
 }
 
-RootAccessible::~RootAccessible() {}
+RootAccessible::~RootAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible
@@ -320,8 +316,8 @@ void RootAccessible::ProcessDOMEvent(Event* aDOMEvent, nsINode* aTarget) {
     uint64_t state = accessible->State();
     bool isEnabled = (state & states::EXPANDED) != 0;
 
-    RefPtr<AccEvent> accEvent =
-        new AccStateChangeEvent(accessible, states::EXPANDED, isEnabled);
+    auto accEvent = MakeRefPtr<AccStateChangeEvent>(
+        accessible, states::EXPANDED, isEnabled);
     nsEventShell::FireEvent(accEvent);
     return;
   }
@@ -355,7 +351,7 @@ void RootAccessible::ProcessDOMEvent(Event* aDOMEvent, nsINode* aTarget) {
         return;
       }
 
-      RefPtr<AccSelChangeEvent> selChangeEvent = new AccSelChangeEvent(
+      auto selChangeEvent = MakeRefPtr<AccSelChangeEvent>(
           treeAcc, treeItemAcc, AccSelChangeEvent::eSelectionAdd);
       nsEventShell::FireEvent(selChangeEvent);
       return;
@@ -395,8 +391,8 @@ void RootAccessible::ProcessDOMEvent(Event* aDOMEvent, nsINode* aTarget) {
       }
     }
   } else if (eventType.EqualsLiteral("DOMMenuItemActive")) {
-    RefPtr<AccEvent> event =
-        new AccStateChangeEvent(accessible, states::ACTIVE, true);
+    auto event =
+        MakeRefPtr<AccStateChangeEvent>(accessible, states::ACTIVE, true);
     nsEventShell::FireEvent(event);
     FocusMgr()->ActiveItemChanged(accessible);
 #ifdef A11Y_LOG
@@ -405,8 +401,8 @@ void RootAccessible::ProcessDOMEvent(Event* aDOMEvent, nsINode* aTarget) {
     }
 #endif
   } else if (eventType.EqualsLiteral("DOMMenuItemInactive")) {
-    RefPtr<AccEvent> event =
-        new AccStateChangeEvent(accessible, states::ACTIVE, false);
+    auto event =
+        MakeRefPtr<AccStateChangeEvent>(accessible, states::ACTIVE, false);
     nsEventShell::FireEvent(event);
 
     // Process DOMMenuItemInactive event for autocomplete only because this is
@@ -523,9 +519,11 @@ void RootAccessible::HandlePopupShownEvent(LocalAccessible* aAccessible) {
     if (!combobox) return;
 
     if (combobox->IsCombobox()) {
-      RefPtr<AccEvent> event =
-          new AccStateChangeEvent(combobox, states::EXPANDED, true);
-      nsEventShell::FireEvent(event);
+      auto event =
+          MakeRefPtr<AccStateChangeEvent>(combobox, states::EXPANDED, true);
+      if (DocAccessible* doc = event->Document()) {
+        doc->FireDelayedEvent(event);
+      }
     }
 
     // If aria-activedescendant is present, redirect focus.
@@ -608,8 +606,8 @@ void RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode) {
 
   // Fire expanded state change event.
   if (widget->IsCombobox()) {
-    RefPtr<AccEvent> event =
-        new AccStateChangeEvent(widget, states::EXPANDED, false);
+    auto event =
+        MakeRefPtr<AccStateChangeEvent>(widget, states::EXPANDED, false);
     document->FireDelayedEvent(event);
   }
 }

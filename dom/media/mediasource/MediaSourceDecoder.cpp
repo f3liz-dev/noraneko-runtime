@@ -1,5 +1,3 @@
-/* -*- mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,12 +20,12 @@
 
 extern mozilla::LogModule* GetMediaSourceLog();
 
-#define MSE_DEBUG(arg, ...)                                              \
-  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, "::%s: " arg, \
-            __func__, ##__VA_ARGS__)
-#define MSE_DEBUGV(arg, ...)                                               \
-  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Verbose, "::%s: " arg, \
-            __func__, ##__VA_ARGS__)
+#define MSE_DEBUG(arg, ...)                                                  \
+  DDMOZ_LOG_FMT(GetMediaSourceLog(), mozilla::LogLevel::Debug, "::{}: " arg, \
+                __func__, ##__VA_ARGS__)
+#define MSE_DEBUGV(arg, ...)                                                   \
+  DDMOZ_LOG_FMT(GetMediaSourceLog(), mozilla::LogLevel::Verbose, "::{}: " arg, \
+                __func__, ##__VA_ARGS__)
 
 using namespace mozilla::media;
 
@@ -38,8 +36,8 @@ MediaSourceDecoder::MediaSourceDecoder(MediaDecoderInit& aInit)
   mExplicitDuration.emplace(UnspecifiedNaN<double>());
 }
 
-MediaDecoderStateMachineBase* MediaSourceDecoder::CreateStateMachine(
-    bool aDisableExternalEngine) {
+already_AddRefed<MediaDecoderStateMachineBase>
+MediaSourceDecoder::CreateStateMachine(bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
   // if `mDemuxer` already exists, that means we're in the process of recreating
   // the state machine. The track buffers are tied to the demuxer so we would
@@ -85,10 +83,10 @@ MediaDecoderStateMachineBase* MediaSourceDecoder::CreateStateMachine(
       !!mOwner->GetCDMProxy() && !mOwner->GetCDMProxy()->AsWMFCDMProxy();
   if (StaticPrefs::media_wmf_media_engine_enabled() && !isCDMNotSupported &&
       !aDisableExternalEngine) {
-    return new ExternalEngineStateMachine(this, mReader);
+    return MakeAndAddRef<ExternalEngineStateMachine>(this, mReader);
   }
 #endif
-  return new MediaDecoderStateMachine(this, mReader);
+  return MakeAndAddRef<MediaDecoderStateMachine>(this, mReader);
 }
 
 nsresult MediaSourceDecoder::Load(nsIPrincipal* aPrincipal) {
@@ -128,7 +126,7 @@ IntervalType MediaSourceDecoder::GetSeekableImpl() {
       // 2. Return a single range with a start time equal to the earliest start
       // time in union ranges and an end time equal to the highest end time in
       // union ranges and abort these steps.
-      if constexpr (std::is_same<IntervalType, TimeRanges>::value) {
+      if constexpr (std::is_same_v<IntervalType, TimeRanges>) {
         TimeRanges seekableRange = media::TimeRanges(
             TimeRange(unionRanges.GetStart(), unionRanges.GetEnd()));
         return seekableRange;
@@ -141,18 +139,18 @@ IntervalType MediaSourceDecoder::GetSeekableImpl() {
       seekable += media::TimeInterval(TimeUnit::Zero(), buffered.GetEnd());
     }
   } else {
-    if constexpr (std::is_same<IntervalType, TimeRanges>::value) {
+    if constexpr (std::is_same_v<IntervalType, TimeRanges>) {
       // Common case: seekable in entire range of the media.
       return TimeRanges(TimeRange(0, duration));
-    } else if constexpr (std::is_same<IntervalType, TimeIntervals>::value) {
+    } else if constexpr (std::is_same_v<IntervalType, TimeIntervals>) {
       seekable += media::TimeInterval(TimeUnit::Zero(),
                                       mDuration.match(DurationToTimeUnit()));
     } else {
       MOZ_RELEASE_ASSERT(false);
     }
   }
-  MSE_DEBUG("ranges=%s", DumpTimeRanges(seekable).get());
-  return IntervalType(seekable);
+  MSE_DEBUG("ranges={}", DumpTimeRanges(seekable).get());
+  return IntervalType(std::move(seekable));
 }
 
 media::TimeIntervals MediaSourceDecoder::GetSeekable() {
@@ -201,7 +199,7 @@ media::TimeIntervals MediaSourceDecoder::GetBuffered() {
     buffered.Intersection(range);
   }
 
-  MSE_DEBUG("ranges=%s", DumpTimeRanges(buffered).get());
+  MSE_DEBUG("ranges={}", DumpTimeRanges(buffered).get());
   return buffered;
 }
 

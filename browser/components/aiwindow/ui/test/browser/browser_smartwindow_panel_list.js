@@ -244,6 +244,166 @@ add_task(async function test_icons_rendered() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_panel_clamped_to_viewport_in_sidebar_mode() {
+  const { tab, browser } = await openTestPage(TEST_PAGE);
+
+  await setPanelPropsInContent(browser, "test-panel", {
+    groups: [
+      {
+        items: [{ id: "tab1", label: "Tab 1" }],
+      },
+    ],
+    sidebarMode: true,
+  });
+
+  await SpecialPowers.spawn(browser, [], async () => {
+    const panelEl = content.document.getElementById("test-panel");
+    const panelList = panelEl.shadowRoot.querySelector("panel-list");
+
+    // Register before showing so we can't miss the event.
+    // #clampToViewport() is registered in firstUpdated() and fires first,
+    // so by the time this resolves the position has already been corrected.
+    const shownPromise = new Promise(resolve =>
+      panelList.addEventListener("shown", resolve, { once: true })
+    );
+
+    await panelEl.show();
+    await shownPromise;
+
+    // getBoundingClientRect() forces a synchronous layout flush, reflecting
+    // the corrected style.left / style.top / maxWidth set by #clampToViewport().
+    const rect = panelList.getBoundingClientRect();
+    Assert.greaterOrEqual(rect.left, 0, "Panel left edge within viewport");
+    Assert.greaterOrEqual(rect.top, 0, "Panel top edge within viewport");
+    Assert.lessOrEqual(
+      rect.right,
+      content.innerWidth,
+      "Panel right edge within viewport"
+    );
+    Assert.lessOrEqual(
+      rect.bottom,
+      content.innerHeight,
+      "Panel bottom edge within viewport"
+    );
+  });
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(
+  async function test_panel_repositions_when_groups_change_in_sidebar_mode() {
+    const { tab, browser } = await openTestPage(TEST_PAGE);
+
+    await SpecialPowers.spawn(browser, [], async () => {
+      const panelEl = content.document.getElementById("test-panel");
+      const panelList = panelEl.shadowRoot.querySelector("panel-list");
+
+      // Position near the bottom so setAlign() picks valign=top (panel opens
+      // above anchor). This is the condition where repositioning is necessary.
+      panelEl.style.position = "fixed";
+      panelEl.style.bottom = "10px";
+      panelEl.style.left = "10px";
+
+      panelEl.sidebarMode = true;
+      panelEl.anchor = panelEl;
+      panelEl.groups = [
+        {
+          items: [
+            { id: "tab1", label: "Tab 1" },
+            { id: "tab2", label: "Tab 2" },
+            { id: "tab3", label: "Tab 3" },
+            { id: "tab4", label: "Tab 4" },
+          ],
+        },
+      ];
+      await panelEl.updateComplete;
+
+      const shownPromise = new Promise(resolve =>
+        panelList.addEventListener("shown", resolve, { once: true })
+      );
+      await panelEl.show();
+      await shownPromise;
+
+      const topBefore = parseFloat(panelList.style.top);
+
+      panelEl.groups = [{ items: [{ id: "tab1", label: "Tab 1" }] }];
+      await panelEl.updateComplete;
+
+      await new Promise(resolve => content.requestAnimationFrame(resolve));
+
+      const topAfter = parseFloat(panelList.style.top);
+      Assert.notEqual(
+        topAfter,
+        topBefore,
+        "Panel should reposition when groups shrink in sidebar mode"
+      );
+    });
+
+    BrowserTestUtils.removeTab(tab);
+  }
+);
+
+add_task(async function test_active_selection_and_navigation() {
+  const { tab, browser } = await openTestPage(TEST_PAGE);
+
+  await SpecialPowers.spawn(browser, [], async () => {
+    const panel = content.document.getElementById("test-panel");
+    // The persistent highlight only renders in command mode
+    panel.setAttribute("data-triggered-by", "inline-command");
+    panel.groups = [
+      {
+        items: [
+          { id: "a", label: "A" },
+          { id: "b", label: "B" },
+          { id: "c", label: "C" },
+        ],
+      },
+    ];
+    await panel.updateComplete;
+
+    Assert.equal(panel.selectedItemId, "a", "First item selected by default");
+    Assert.equal(
+      panel.getSelectedItem().id,
+      "a",
+      "getSelectedItem is the first"
+    );
+
+    panel.moveSelection(1);
+    await panel.updateComplete;
+    Assert.equal(panel.selectedItemId, "b", "Moves to the second item");
+
+    panel.moveSelection(1);
+    panel.moveSelection(1);
+    await panel.updateComplete;
+    Assert.equal(panel.selectedItemId, "a", "Wraps to the first past the end");
+
+    panel.moveSelection(-1);
+    await panel.updateComplete;
+    Assert.equal(panel.selectedItemId, "c", "Wraps to the last from the first");
+
+    const selected = panel.shadowRoot.querySelector("panel-item.selected");
+    Assert.ok(selected, "The active item carries the selected class");
+    Assert.equal(selected.itemId, "c", "Selected class is on the active item");
+
+    panel.groups = [
+      {
+        items: [
+          { id: "x", label: "X" },
+          { id: "y", label: "Y" },
+        ],
+      },
+    ];
+    await panel.updateComplete;
+    Assert.equal(
+      panel.selectedItemId,
+      "x",
+      "Selection resets to the first item when the item set changes"
+    );
+  });
+
+  BrowserTestUtils.removeTab(tab);
+});
+
 add_task(async function test_keyboard_events() {
   const { tab, browser } = await openTestPage(TEST_PAGE);
 

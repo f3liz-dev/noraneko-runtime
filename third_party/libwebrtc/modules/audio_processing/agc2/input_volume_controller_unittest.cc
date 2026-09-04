@@ -26,6 +26,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/file_utils.h"
@@ -82,8 +83,9 @@ std::unique_ptr<InputVolumeController> CreateInputVolumeController(
       .speech_ratio_threshold = kSpeechRatioThreshold,
   };
 
-  return std::make_unique<InputVolumeController>(/*num_capture_channels=*/1,
-                                                 config);
+  return std::make_unique<InputVolumeController>(
+      /*num_capture_channels=*/1, config,
+      CreateTestEnvironment().field_trials());
 }
 
 // (Over)writes `samples_value` for the samples in `audio_buffer`.
@@ -249,7 +251,9 @@ class InputVolumeControllerTestHelper {
                      kNumChannels,
                      kSampleRateHz,
                      kNumChannels),
-        controller(/*num_capture_channels=*/1, config) {
+        controller(/*num_capture_channels=*/1,
+                   config,
+                   CreateTestEnvironment().field_trials()) {
     controller.Initialize();
     WriteAudioBufferSamples(/*samples_value=*/0.0f, /*clipped_ratio=*/0.0f,
                             audio_buffer);
@@ -343,7 +347,8 @@ TEST_P(InputVolumeControllerChannelSampleRateTest, CheckIsAlive) {
 
   constexpr InputVolumeController::Config kConfig{.enable_clipping_predictor =
                                                       true};
-  InputVolumeController controller(num_channels, kConfig);
+  InputVolumeController controller(num_channels, kConfig,
+                                   CreateTestEnvironment().field_trials());
   controller.Initialize();
   AudioBuffer buffer(sample_rate_hz, num_channels, sample_rate_hz, num_channels,
                      sample_rate_hz, num_channels);
@@ -1185,7 +1190,8 @@ TEST_P(InputVolumeControllerParametrizedTest,
 // Checks that passing an empty speech level has no effect on the input volume.
 TEST_P(InputVolumeControllerParametrizedTest, EmptyRmsErrorHasNoEffect) {
   InputVolumeController controller(kNumChannels,
-                                   GetInputVolumeControllerTestConfig());
+                                   GetInputVolumeControllerTestConfig(),
+                                   CreateTestEnvironment().field_trials());
   controller.Initialize();
 
   // Feed speech with low energy that would trigger an upward adapation of

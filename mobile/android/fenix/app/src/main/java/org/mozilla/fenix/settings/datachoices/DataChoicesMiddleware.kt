@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.Engine
+import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
@@ -17,15 +18,18 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.metrics.MetricServiceType
 import org.mozilla.fenix.crashes.SettingsCrashReportCache
+import org.mozilla.fenix.debugsettings.gleandebugtools.DefaultGleanDebugToolsStorage
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.utils.Settings
 
+@Suppress("LongParameterList")
 internal class DataChoicesMiddleware(
     private val settings: Settings,
     private val nimbusSdk: NimbusApi,
     private val engine: Engine,
     private val metrics: MetricController,
+    private val crashReporter: CrashReporter,
     private val learnMoreClicked: (sumoTopic: SupportUtils.SumoTopic) -> Unit,
     private val navController: NavController?,
     private val crashReportCache: SettingsCrashReportCache = SettingsCrashReportCache(settings),
@@ -84,6 +88,7 @@ internal class DataChoicesMiddleware(
             }
             is StudiesLoaded -> {}
             is SettingsLoaded -> {}
+            is ChoiceAction.ScrolledToItem -> {}
         }
     }
 
@@ -102,6 +107,7 @@ internal class DataChoicesMiddleware(
         settings.isTelemetryEnabled = newValue
         if (newValue) {
             metrics.start(MetricServiceType.Data)
+            crashReporter.setTelemetryEnabled(true)
             if (!settings.hasUserDisabledExperimentation) {
                 settings.isExperimentationEnabled = true
                 nimbusSdk.experimentParticipation = true
@@ -109,9 +115,11 @@ internal class DataChoicesMiddleware(
             engine.notifyTelemetryPrefChanged(true)
         } else {
             metrics.stop(MetricServiceType.Data)
+            crashReporter.setTelemetryEnabled(false)
             settings.isExperimentationEnabled = false
             nimbusSdk.experimentParticipation = false
             engine.notifyTelemetryPrefChanged(false)
+            DefaultGleanDebugToolsStorage(settings).clearPersistedDebugViewTag()
         }
         // Reset experiment identifiers on both opt-in and opt-out; it's likely
         // that in future we will need to pass in the new telemetry client_id

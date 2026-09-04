@@ -1,8 +1,9 @@
+add_setup(function () {
+  registerCleanupFunction(clearSiteTestData);
+});
+
 const allBlocked = Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_ALL;
 const foreignBlocked = Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_FOREIGN;
-
-const APS_PREF =
-  "privacy.partition.always_partition_third_party_non_cookie_storage";
 
 AntiTracking._createTask({
   name: "Test that after a storage access grant we have full first-party access",
@@ -40,7 +41,7 @@ AntiTracking._createTask({
 
     await runChecks("image");
   },
-  extraPrefs: [[APS_PREF, true]],
+  extraPrefs: [],
   expectedBlockingNotifications:
     Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER,
   runInPrivateWindow: false,
@@ -57,13 +58,7 @@ AntiTracking._createTask({
   ],
 });
 
-add_task(async _ => {
-  await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      resolve()
-    );
-  });
-});
+add_task(clearSiteTestData);
 
 AntiTracking._createTask({
   name: "Test that we never grant access to cookieBehavior=2",
@@ -75,7 +70,7 @@ AntiTracking._createTask({
 
     await callRequestStorageAccess(null, true);
   },
-  extraPrefs: [[APS_PREF, true]],
+  extraPrefs: [],
   expectedBlockingNotifications: allBlocked,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -85,13 +80,7 @@ AntiTracking._createTask({
   errorMessageDomains: ["http://example.net", "https://tracking.example.org"],
 });
 
-add_task(async _ => {
-  await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      resolve()
-    );
-  });
-});
+add_task(clearSiteTestData);
 
 AntiTracking._createTask({
   name: "Test that we never grant access to cookieBehavior=3",
@@ -103,7 +92,7 @@ AntiTracking._createTask({
 
     await callRequestStorageAccess(null, true);
   },
-  extraPrefs: [[APS_PREF, true]],
+  extraPrefs: [],
   expectedBlockingNotifications: foreignBlocked,
   runInPrivateWindow: false,
   iframeSandbox: null,
@@ -111,12 +100,4 @@ AntiTracking._createTask({
   callbackAfterRemoval: null,
   thirdPartyPage: TEST_3RD_PARTY_PAGE,
   errorMessageDomains: ["https://tracking.example.org"],
-});
-
-add_task(async _ => {
-  await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      resolve()
-    );
-  });
 });

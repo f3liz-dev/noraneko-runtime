@@ -18,7 +18,9 @@
 #include "api/environment/environment.h"
 #include "api/ref_counted_base.h"
 #include "api/scoped_refptr.h"
+#include "api/video/color_space.h"
 #include "api/video/encoded_image.h"
+#include "api/video/video_codec_constants.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_buffer.h"
 #include "api/video_codecs/video_decoder.h"
@@ -81,9 +83,6 @@ class ScopedDav1dPicture : public RefCountedNonVirtual<ScopedDav1dPicture> {
 
 constexpr char kDav1dName[] = "dav1d";
 
-// Calling `dav1d_data_wrap` requires a `free_callback` to be registered.
-void NullFreeCallback(const uint8_t* /* buffer */, void* /* opaque */) {}
-
 Dav1dDecoder::Dav1dDecoder() = default;
 
 Dav1dDecoder::Dav1dDecoder(const Environment& env)
@@ -102,7 +101,7 @@ bool Dav1dDecoder::Configure(const Settings& settings) {
   s.max_frame_delay = 1;  // For low latency decoding.
   s.all_layers = 0;       // Don't output a frame for every spatial layer.
   // Limit max frame size to avoid OOM'ing fuzzers. crbug.com/325284120.
-  s.frame_size_limit = 16384 * 16384;
+  s.frame_size_limit = kMaxFrameSizePixels;
   s.operating_point = 31;  // Decode all operating points.
 
   return dav1d_open(&context_, &s) == 0;
@@ -141,9 +140,25 @@ int32_t Dav1dDecoder::Decode(const EncodedImage& encoded_image,
 
   ScopedDav1dData scoped_dav1d_data;
   Dav1dData& dav1d_data = scoped_dav1d_data.Data();
-  dav1d_data_wrap(&dav1d_data, encoded_image.data(), encoded_image.size(),
-                  /*free_callback=*/&NullFreeCallback,
-                  /*user_data=*/nullptr);
+
+  // Calling GetEncodedData will create a new `scoped_refptr` and increment the
+  // ref count. By simply releasing we are now responsible for decrementing
+  // the ref count when appropriate, which is when dav1d calls the
+  // `free_callback` to indicate that the buffer is no longer needed.
+  EncodedImageBufferInterface* bitstream_buffer =
+      encoded_image.GetEncodedData().release();
+
+  // Note that the `bitstream_buffer` can have a higher capacity than what is
+  // actually being used, so `encoded_image.size()` should be used to get the
+  // actual size of the bitstream.
+  dav1d_data_wrap(
+      &dav1d_data, encoded_image.data(), encoded_image.size(),
+      /*free_callback=*/
+      [](const uint8_t* /* buffer */, void* user_data) {
+        auto* bb = static_cast<EncodedImageBufferInterface*>(user_data);
+        bb->Release();
+      },
+      /*user_data=*/bitstream_buffer);
 
   if (int decode_res = dav1d_send_data(context_, &dav1d_data)) {
     RTC_LOG(LS_WARNING)
@@ -214,12 +229,23 @@ int32_t Dav1dDecoder::Decode(const EncodedImage& encoded_image,
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
+  ColorSpace color_space(
+      ColorSpace::PrimaryID::kUnspecified, ColorSpace::TransferID::kUnspecified,
+      ColorSpace::MatrixID::kUnspecified,
+      dav1d_picture.seq_hdr->color_range ? ColorSpace::RangeID::kFull
+                                         : ColorSpace::RangeID::kLimited);
+  // AV1 color space defines match ISO 23001-8:2016 via ISO/IEC 23091-4/ITU-T
+  // H.273. https://aomediacodec.github.io/av1-spec/#color-config-semantics
+  color_space.set_primaries_from_uint8(dav1d_picture.seq_hdr->pri);
+  color_space.set_transfer_from_uint8(dav1d_picture.seq_hdr->trc);
+  color_space.set_matrix_from_uint8(dav1d_picture.seq_hdr->mtrx);
+
   VideoFrame decoded_frame =
       VideoFrame::Builder()
           .set_video_frame_buffer(wrapped_buffer)
           .set_rtp_timestamp(encoded_image.RtpTimestamp())
           .set_ntp_time_ms(encoded_image.ntp_time_ms_)
-          .set_color_space(encoded_image.ColorSpace())
+          .set_color_space(color_space)
           .build();
 
   // Corresponds to QP_base in

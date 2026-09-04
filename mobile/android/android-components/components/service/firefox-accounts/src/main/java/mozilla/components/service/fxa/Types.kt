@@ -18,9 +18,8 @@ import mozilla.components.concept.sync.Avatar
 import mozilla.components.concept.sync.DeviceCapability
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.OAuthScopedKey
-import mozilla.components.concept.sync.SyncAuthInfo
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.concept.sync.TabPrivacy
-import mozilla.components.concept.sync.UserData
 import mozilla.appservices.fxaclient.DeviceCapability as RustDeviceCapability
 import mozilla.appservices.fxaclient.DevicePushSubscription as RustDevicePushSubscription
 import mozilla.appservices.sync15.DeviceType as RustDeviceType
@@ -45,7 +44,8 @@ fun String?.toAuthType(): AuthType {
  * @property authType Type of authentication which caused this object to be created.
  * @property code OAuth code.
  * @property state OAuth state.
- * @property declinedEngines An optional list of [SyncEngine]s that user declined to sync.
+ * @property declinedEngines An optional list of [mozilla.components.concept.sync.SyncEngine]s
+ * that user declined to sync.
  */
 data class FxaAuthData(
     val authType: AuthType,
@@ -88,25 +88,6 @@ fun AttachedClient.into(): mozilla.components.concept.sync.AttachedClient {
     )
 }
 
-/**
- * Converts a generic [AccessTokenInfo] into a Firefox Sync-friendly [SyncAuthInfo] instance which
- * may be used for data synchronization.
- *
- * @return An [SyncAuthInfo] which is guaranteed to have a sync key.
- * @throws IllegalStateException if [AccessTokenInfo] didn't have key information.
- */
-fun mozilla.components.concept.sync.AccessTokenInfo.asSyncAuthInfo(tokenServerUrl: String): SyncAuthInfo {
-    val keyInfo = this.key ?: throw AccessTokenUnexpectedlyWithoutKey()
-
-    return SyncAuthInfo(
-        kid = keyInfo.kid,
-        fxaAccessToken = this.token,
-        fxaAccessTokenExpiresAt = this.expiresAt,
-        syncKey = keyInfo.k,
-        tokenServerUrl = tokenServerUrl,
-    )
-}
-
 fun ScopedKey.into(): OAuthScopedKey {
     return OAuthScopedKey(kid = this.kid, k = this.k, kty = this.kty, scope = this.scope)
 }
@@ -122,20 +103,6 @@ fun Profile.into(): mozilla.components.concept.sync.Profile {
             )
         },
         displayName = this.displayName,
-    )
-}
-
-/**
- * Converts the android-components defined [UserData] type into
- * the application-services one, so consumers of android-components
- * do not have to know about application services.
- */
-fun UserData.into(): mozilla.appservices.fxaclient.UserData {
-    return mozilla.appservices.fxaclient.UserData(
-        sessionToken,
-        uid,
-        email,
-        verified,
     )
 }
 

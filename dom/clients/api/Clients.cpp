@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,7 @@ already_AddRefed<Promise> Clients::Get(const nsAString& aClientID,
   // forbid strings that start with "{" to avoid inconsistency and bugs like
   // bug 1446225.
   if (aClientID.IsEmpty() || aClientID.CharAt(0) == '{' ||
-      !id.Parse(NS_ConvertUTF16toUTF8(aClientID).get())) {
+      !id.Parse(NS_ConvertUTF16toUTF8(aClientID))) {
     // Invalid ID means we will definitely not find a match, so just
     // resolve with undefined indicating "not found".
     outerPromise->MaybeResolveWithUndefined();
@@ -85,7 +83,8 @@ already_AddRefed<Promise> Clients::Get(const nsAString& aClientID,
   innerPromise
       ->Then(
           target, __func__,
-          [outerPromise, holder, scope](const ClientOpResult& aResult) {
+          [outerPromise, holder,
+           scope = std::move(scope)](const ClientOpResult& aResult) {
             holder->Complete();
             NS_ENSURE_TRUE_VOID(holder->GetParentObject());
             if (ServiceWorkersStorageAllowedForClient(
@@ -165,7 +164,8 @@ already_AddRefed<Promise> Clients::MatchAll(const ClientQueryOptions& aOptions,
                           aOptions.mType, aOptions.mIncludeUncontrolled);
   StartClientManagerOp(
       &ClientManager::MatchAll, args, mGlobal,
-      [outerPromise, global, scope](const ClientOpResult& aResult) {
+      [outerPromise, global,
+       scope = std::move(scope)](const ClientOpResult& aResult) {
         nsTArray<RefPtr<Client>> clientList;
         bool storageDenied = false;
         for (const ClientInfoAndState& value :

@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -15,7 +12,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
@@ -29,10 +27,10 @@ const DEFAULT_SUGGESTION_SCORE = 0.2;
  */
 export class UrlbarProviderQuickSuggest extends UrlbarProvider {
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.NETWORK;
+    return lazy.UrlbarShared.PROVIDER_TYPE.NETWORK;
   }
 
   /**
@@ -56,9 +54,9 @@ export class UrlbarProviderQuickSuggest extends UrlbarProvider {
     // If the sources don't include search or the user used a restriction
     // character other than search, don't allow any suggestions.
     if (
-      !queryContext.sources.includes(UrlbarUtils.RESULT_SOURCE.SEARCH) ||
+      !queryContext.sources.includes(lazy.UrlbarShared.RESULT_SOURCE.SEARCH) ||
       (queryContext.restrictSource &&
-        queryContext.restrictSource != UrlbarUtils.RESULT_SOURCE.SEARCH)
+        queryContext.restrictSource != lazy.UrlbarShared.RESULT_SOURCE.SEARCH)
     ) {
       return false;
     }
@@ -66,7 +64,7 @@ export class UrlbarProviderQuickSuggest extends UrlbarProvider {
     if (
       !lazy.UrlbarPrefs.get("quickSuggestEnabled") ||
       queryContext.isPrivate ||
-      queryContext.searchMode
+      queryContext.restrictInSearchMode()
     ) {
       return false;
     }
@@ -475,7 +473,7 @@ export class UrlbarProviderQuickSuggest extends UrlbarProvider {
       let { value, highlights } =
         lazy.QuickSuggest.getFullKeywordTitleAndHighlights({
           tokens: queryContext.tokens,
-          highlightType: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+          highlightType: lazy.UrlbarShared.HIGHLIGHT.SUGGESTED,
           fullKeyword: suggestion.full_keyword,
           title: suggestion.title,
         });
@@ -483,13 +481,13 @@ export class UrlbarProviderQuickSuggest extends UrlbarProvider {
       titleHighlights = highlights;
     } else {
       payload.title = suggestion.title;
-      titleHighlights = UrlbarUtils.HIGHLIGHT.TYPED;
+      titleHighlights = lazy.UrlbarShared.HIGHLIGHT.TYPED;
       payload.shouldShowUrl = true;
     }
 
     return new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.URL,
-      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.URL,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       isBestMatch: !!suggestion.is_top_pick,
       payload,
       highlights: {

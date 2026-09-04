@@ -77,6 +77,10 @@ export const kAllBufferUsageBits = kBufferUsages.reduce(
   0
 );
 
+/** An arbitrary invalid buffer usage bit. */
+export const kSomeBogusBufferUsage = 0x4000_0000;
+assert((kSomeBogusBufferUsage & kAllBufferUsageBits) === 0);
+
 // Errors
 
 /** Per-GPUErrorFilter info. */
@@ -225,7 +229,7 @@ const kTextureUsageInfo =
 /** List of all GPUTextureUsage values. */
 export const kTextureUsages = numericKeysOf(kTextureUsageInfo);
 /** Bitmask of all known texture usages. */
-const kAllTextureUsages = kTextureUsages.reduce((acc, usage) => acc | usage, 0);
+export const kAllTextureUsages = kTextureUsages.reduce((acc, usage) => acc | usage, 0);
 
 /** An arbitrary invalid texture usage bit. */
 export const kSomeBogusTextureUsage = 0x4000_0000;
@@ -965,7 +969,10 @@ export const kFeatureNameInfo =
   'texture-formats-tier1': {},
   'texture-formats-tier2': {},
   'primitive-index': {},
-  'texture-component-swizzle': {}
+  'texture-component-swizzle': {},
+  'subgroup-size-control': {},
+  ['atomic-vec2u-min-max']: {},
+  ['texture-compression-unaligned']: {}
 };
 /** List of all GPUFeatureName values. */
 export const kFeatureNames = keysOf(kFeatureNameInfo);
@@ -980,4 +987,8 @@ export const kKnownWGSLLanguageFeatures = [
 'texture_and_sampler_let',
 'subgroup_id',
 'subgroup_uniformity',
-'swizzle_assignment'];
+'swizzle_assignment',
+'linear_indexing',
+'texture_formats_tier1',
+'immediate_address_space',
+'buffer_view'];

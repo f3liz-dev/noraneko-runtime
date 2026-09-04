@@ -1,47 +1,36 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef nsStyleUtil_h_
 #define nsStyleUtil_h_
 
-#include "NonCustomCSSPropertyId.h"
-#include "nsCRT.h"
+#include "nsAtom.h"
+#include "nsCaseTreatment.h"
 #include "nsColor.h"
 #include "nsCoord.h"
-#include "nsGkAtoms.h"
-#include "nsStringFwd.h"
-#include "nsTArrayForwardDeclare.h"
+#include "nsString.h"
 
-class nsCSSValue;
 class nsIContent;
 class nsIPrincipal;
-class nsIURI;
-struct nsCSSKTableEntry;
-struct nsCSSValueList;
 struct nsStylePosition;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 class Document;
 class Element;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 // Style utility functions
 class nsStyleUtil {
  public:
   static bool DashMatchCompare(const nsAString& aAttributeValue,
                                const nsAString& aSelectorValue,
-                               const nsStringComparator& aComparator);
+                               nsCaseTreatment);
 
   static bool LangTagCompare(const nsACString& aAttributeValue,
                              const nsACString& aSelectorValue);
 
   static bool ValueIncludes(const nsAString& aValueList,
-                            const nsAString& aValue,
-                            const nsStringComparator& aComparator);
+                            const nsAString& aValue, nsCaseTreatment);
 
   // Append a quoted (with 'quoteChar') version of aString to aResult.
   // 'aQuoteChar' must be ' or ".

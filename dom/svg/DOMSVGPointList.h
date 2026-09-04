@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -91,7 +89,7 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
 
  public:
   NS_INLINE_DECL_STATIC_IID(MOZILLA_DOMSVGPOINTLIST_IID)
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGPointList)
 
   JSObject* WrapObject(JSContext* cx,
@@ -127,13 +125,13 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
   static DOMSVGPointList* GetDOMWrapperIfExists(void* aList);
 
   /**
-   * This will normally be the same as InternalList().Length(), except if
-   * we've hit OOM, in which case our length will be zero.
+   * This will normally be the same as InternalList().Length(), except if we've
+   * hit OOM in which case our length will be zero or we've hit the maximum
+   * list length for the DOM list at some point in which case it may be smaller.
    */
   uint32_t LengthNoFlush() const {
-    MOZ_ASSERT(
-        mItems.Length() == 0 || mItems.Length() == InternalList().Length(),
-        "DOM wrapper's list length is out of sync");
+    MOZ_ASSERT(mItems.IsEmpty() || mItems.Length() <= InternalList().Length(),
+               "DOM wrapper's list length is out of sync");
     return mItems.Length();
   }
 
@@ -172,12 +170,6 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
    */
   bool AnimListMirrorsBaseList() const;
 
-  uint32_t NumberOfItems() const {
-    if (IsAnimValList()) {
-      Element()->FlushAnimations();
-    }
-    return LengthNoFlush();
-  }
   void Clear(ErrorResult& aRv);
   already_AddRefed<DOMSVGPoint> Initialize(DOMSVGPoint& aNewItem,
                                            ErrorResult& aRv);
@@ -194,7 +186,13 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
                                            ErrorResult& aRv) {
     return InsertItemBefore(aNewItem, LengthNoFlush(), aRv);
   }
-  uint32_t Length() const { return NumberOfItems(); }
+  void IndexedSetter(uint32_t aIndex, DOMSVGPoint& aNewValue, ErrorResult& aRv);
+  uint32_t Length() const {
+    if (IsAnimValList()) {
+      Element()->FlushAnimations();
+    }
+    return LengthNoFlush();
+  }
 
  private:
   /**
@@ -228,7 +226,7 @@ class DOMSVGPointList final : public nsISupports, public nsWrapperCache {
   /// Returns the DOMSVGPoint at aIndex, creating it if necessary.
   already_AddRefed<DOMSVGPoint> GetItemAt(uint32_t aIndex);
 
-  void MaybeInsertNullInAnimValListAt(uint32_t aIndex);
+  bool MaybeInsertNullInAnimValListAt(uint32_t aIndex);
   void MaybeRemoveItemFromAnimValListAt(uint32_t aIndex);
 
   void RemoveFromTearoffTable();

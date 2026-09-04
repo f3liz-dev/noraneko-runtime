@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -259,6 +257,10 @@ class FullParseHandler {
       return newUnary(ParseNodeKind::DeletePropExpr, begin, expr);
     }
 
+    if (expr->isKind(ParseNodeKind::ArgumentsLength)) {
+      return newUnary(ParseNodeKind::DeletePropExpr, begin, expr);
+    }
+
     if (expr->isKind(ParseNodeKind::ElemExpr)) {
       return newUnary(ParseNodeKind::DeleteElemExpr, begin, expr);
     }
@@ -273,6 +275,9 @@ class FullParseHandler {
           kid->isKind(ParseNodeKind::OptionalElemExpr)) {
         return newUnary(ParseNodeKind::DeleteOptionalChainExpr, begin, kid);
       }
+
+      // ArgumentsLength shouldn't be used for optional chain.
+      MOZ_ASSERT(!kid->isKind(ParseNodeKind::ArgumentsLength));
     }
 
     return newUnary(ParseNodeKind::DeleteExpr, begin, expr);
@@ -686,20 +691,12 @@ class FullParseHandler {
                                  moduleSpec, importAttributeList);
   }
 
-  BinaryNodeResult newImportDeclaration(Node importSpecSet, Node moduleRequest,
+  BinaryNodeResult newImportDeclaration(Node importClause, Node moduleRequest,
+                                        ImportPhase phase,
                                         const TokenPos& pos) {
-    return newResult<BinaryNode>(ParseNodeKind::ImportDecl, pos, importSpecSet,
-                                 moduleRequest);
+    return newResult<ImportDeclarationNode>(pos, importClause, moduleRequest,
+                                            phase);
   }
-
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  BinaryNodeResult newImportSourceDeclaration(Node importedBinding,
-                                              Node moduleRequest,
-                                              const TokenPos& pos) {
-    return newResult<BinaryNode>(ParseNodeKind::ImportSourceDecl, pos,
-                                 importedBinding, moduleRequest);
-  }
-#endif
 
   BinaryNodeResult newImportSpec(Node importNameNode, Node bindingName) {
     return newBinary(ParseNodeKind::ImportSpec, importNameNode, bindingName);
@@ -752,18 +749,10 @@ class FullParseHandler {
                                  metaHolder);
   }
 
-  BinaryNodeResult newCallImport(NullaryNodeType importHolder, Node singleArg) {
-    return newResult<BinaryNode>(ParseNodeKind::CallImportExpr, importHolder,
-                                 singleArg);
+  BinaryNodeResult newCallImport(NullaryNodeType importHolder, Node singleArg,
+                                 ImportPhase phase) {
+    return newResult<CallImportNode>(importHolder, singleArg, phase);
   }
-
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  BinaryNodeResult newCallImportSource(NullaryNodeType importHolder,
-                                       Node singleArg) {
-    return newResult<BinaryNode>(ParseNodeKind::CallImportSourceExpr,
-                                 importHolder, singleArg);
-  }
-#endif
 
   BinaryNodeResult newCallImportSpec(Node specifierArg, Node optionalArg) {
     return newResult<BinaryNode>(ParseNodeKind::CallImportSpec, specifierArg,
@@ -961,7 +950,6 @@ class FullParseHandler {
   }
   void setFunctionBox(FunctionNodeType funNode, FunctionBox* funbox) {
     funNode->setFunbox(funbox);
-    funbox->functionNode = funNode;
   }
   void addFunctionFormalParameter(FunctionNodeType funNode, Node argpn) {
     addList(/* list = */ funNode->body(), /* kid = */ argpn);

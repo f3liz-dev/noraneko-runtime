@@ -39,7 +39,7 @@ export const MenuMessage = {
       return;
     }
 
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     if (!win || lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
       return;
@@ -122,7 +122,7 @@ export const MenuMessage = {
   },
 
   async showAppMenuMessage(browser, message, force) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const msgContainer = this.hideAppMenuMessage(browser);
     const type = message?.content?.messageType;
 
@@ -159,6 +159,10 @@ export const MenuMessage = {
       win.PanelUI.hide();
     });
 
+    if (message.content.layout === "simple") {
+      msgContainer.style.display = "flex";
+      msgElement.style.flex = "1";
+    }
     msgContainer.appendChild(msgElement);
 
     if (force) {
@@ -167,7 +171,7 @@ export const MenuMessage = {
   },
 
   hideAppMenuMessage(browser) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const document = browser.ownerDocument;
     const msgContainer = lazy.PanelMultiView.getViewNode(
       document,
@@ -185,7 +189,7 @@ export const MenuMessage = {
   },
 
   async showPxiMenuMessage(browser, message, force) {
-    const win = browser.ownerGlobal;
+    const win = browser.documentGlobal;
     const { document } = win;
     const msgContainer = this.hidePxiMenuMessage(browser);
 
@@ -218,6 +222,10 @@ export const MenuMessage = {
       }
     });
 
+    if (message.content.layout === "simple") {
+      msgContainer.style.display = "flex";
+      msgElement.style.flex = "1";
+    }
     msgContainer.appendChild(msgElement);
 
     if (force) {
@@ -247,7 +255,16 @@ export const MenuMessage = {
 
     const msgElement = document.createElement("menu-message");
     msgElement.layout = message.content.layout ?? "column";
+    if (message.content.imagePosition !== undefined) {
+      msgElement.imagePosition = message.content.imagePosition;
+    }
+    if (message.content.directionalImage) {
+      msgElement.directionalImage = true;
+    }
     msgElement.imageURL = message.content.imageURL;
+    if (message.content.rtlImageURL !== undefined) {
+      msgElement.rtlImageURL = message.content.rtlImageURL;
+    }
     msgElement.logoURL = message.content.logoURL;
     msgElement.primaryButtonSize =
       message.content.primaryButtonSize ?? "default";
@@ -268,6 +285,12 @@ export const MenuMessage = {
       msgElement.style.setProperty(
         "--image-width",
         `${message.content.imageWidth}px`
+      );
+    }
+    if (message.content.imageHeight !== undefined) {
+      msgElement.style.setProperty(
+        "--image-height",
+        `${message.content.imageHeight}px`
       );
     }
     if (message.content.logoWidth !== undefined) {

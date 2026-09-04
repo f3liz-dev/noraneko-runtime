@@ -1,28 +1,25 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPrintSettingsService.h"
 
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_print.h"
 #include "mozilla/embedding/PPrintingTypes.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
+#include "nsArray.h"
 #include "nsCoord.h"
 #include "nsIPrinterList.h"
-#include "nsReadableUtils.h"
+#include "nsIStringEnumerator.h"
 #include "nsPrintSettingsImpl.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSize.h"
-
-#include "nsArray.h"
 #include "nsXPCOM.h"
 #include "nsXULAppAPI.h"
-
-#include "nsIStringEnumerator.h"
 #include "stdlib.h"
-#include "mozilla/StaticPrefs_print.h"
-#include "mozilla/Preferences.h"
-#include "nsPrintfCString.h"
 
 using namespace mozilla;
 using namespace mozilla::embedding;

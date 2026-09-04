@@ -8,13 +8,12 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.content.res.Resources
+import android.net.Uri
 import android.provider.Settings
 import android.view.ContextThemeWrapper
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
-import androidx.annotation.DimenRes
 import androidx.annotation.StringRes
 import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import mozilla.components.support.base.log.logger.Logger
@@ -22,7 +21,6 @@ import mozilla.components.support.locale.LocaleManager
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.settings.advanced.getSelectedLocale
 import org.mozilla.fenix.utils.isLargeScreenSize
@@ -41,12 +39,6 @@ val Context.application: FenixApplication
 val Context.components: Components
     get() = application.components
 
-/**
- * Helper function to get the MetricController off of context.
- */
-val Context.metrics: MetricController
-    get() = this.components.analytics.metrics
-
 fun Context.asActivity() = (this as? ContextThemeWrapper)?.baseContext as? Activity
     ?: this as? Activity
 
@@ -62,8 +54,6 @@ fun Context.getPreferenceKey(
  */
 fun Context.getRootView(): View? =
     asActivity()?.window?.decorView?.findViewById<View>(android.R.id.content) as? ViewGroup
-
-fun Context.settings() = components.settings
 
 /**
  * Used to catch IllegalArgumentException that is thrown when
@@ -115,6 +105,21 @@ fun Context.navigateToNotificationsSettings(
 }
 
 /**
+ * Used to navigate to the system's "App Info" or "App Details" settings page for this application.
+ *
+ * @param onError Invoked when the activity described by the intent is not present on the device.
+ */
+fun Context.navigateToAppDetailsSettings(
+    onError: () -> Unit,
+) {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+        data = Uri.fromParts("package", packageName, null)
+    }
+
+    startExternalActivitySafe(intent, onError)
+}
+
+/**
  * Checks for the presence of an activity before starting it. In case it's not present,
  * [onActivityNotPresent] is invoked, preventing ActivityNotFoundException from being thrown.
  * This is useful when navigating to external activities like device permission settings,
@@ -152,13 +157,13 @@ fun Context.tabClosedUndoMessage(private: Boolean): String =
 
 /**
  * Returns the message to be shown when multiple tabs are closed based on whether the tabs were all private or not.
- * @param private true if the tab was private, false otherwise.
+ * @param count The number of tabs that were closed.
  */
-fun Context.tabsClosedUndoMessage(private: Boolean): String =
-    if (private) {
-        getString(R.string.snackbar_private_data_deleted)
+fun Context.tabsClosedUndoMessage(count: Int): String =
+    if (count > 1) {
+        getString(R.string.snackbar_num_tabs_closed, count.toString())
     } else {
-        getString(R.string.snackbar_tabs_closed)
+        getString(R.string.snackbar_tab_closed)
     }
 
 /**
@@ -209,16 +214,3 @@ fun Context.recordEventInNimbus(eventId: String) = components.nimbus.events.reco
  */
 fun Context.isToolbarAtBottom() =
     components.settings.toolbarPosition == ToolbarPosition.BOTTOM
-
-/**
- * Returns the pixel size for the given dimension resource ID.
- *
- * This is a wrapper around [Resources.getDimensionPixelSize], reducing verbosity when accessing
- * dimension values from a [Context].
- *
- * @param resId Resource ID of the dimension.
- * @return The pixel size corresponding to the given dimension resource.
- */
-fun Context.pixelSizeFor(
-    @DimenRes resId: Int,
-) = resources.getDimensionPixelSize(resId)

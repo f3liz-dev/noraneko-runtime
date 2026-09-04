@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -61,7 +59,7 @@ using namespace js;
 using namespace js::temporal;
 
 void js::temporal::TimeZoneValue::trace(JSTracer* trc) {
-  TraceNullableRoot(trc, &object_, "TimeZoneValue::object");
+  TraceRoot(trc, &object_, "TimeZoneValue::object");
 }
 
 /**
@@ -103,13 +101,14 @@ TimeZoneObject* js::temporal::CreateTimeZoneObject(
     return nullptr;
   }
 
-  object->initFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
-                        StringValue(identifier));
+  object->initFixedSlotTyped(TimeZoneObject::IDENTIFIER_SLOT,
+                             StringValue(identifier));
 
-  object->initFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
-                        StringValue(primaryIdentifier));
+  object->initFixedSlotTyped(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
+                             StringValue(primaryIdentifier));
 
-  object->initFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT, UndefinedValue());
+  object->initFixedSlotTyped(TimeZoneObject::OFFSET_MINUTES_SLOT,
+                             UndefinedValue());
 
   return object;
 }
@@ -139,14 +138,14 @@ static TimeZoneObject* CreateTimeZoneObject(JSContext* cx,
     return nullptr;
   }
 
-  object->initFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
-                        StringValue(identifier));
+  object->initFixedSlotTyped(TimeZoneObject::IDENTIFIER_SLOT,
+                             StringValue(identifier));
 
-  object->initFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
-                        UndefinedValue());
+  object->initFixedSlotTyped(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
+                             UndefinedValue());
 
-  object->initFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT,
-                        Int32Value(offsetMinutes));
+  object->initFixedSlotTyped(TimeZoneObject::OFFSET_MINUTES_SLOT,
+                             Int32Value(offsetMinutes));
 
   return object;
 }
@@ -1194,16 +1193,7 @@ void js::temporal::TimeZoneObject::finalize(JS::GCContext* gcx, JSObject* obj) {
 }
 
 const JSClassOps TimeZoneObject::classOps_ = {
-    nullptr,                   // addProperty
-    nullptr,                   // delProperty
-    nullptr,                   // enumerate
-    nullptr,                   // newEnumerate
-    nullptr,                   // resolve
-    nullptr,                   // mayResolve
-    TimeZoneObject::finalize,  // finalize
-    nullptr,                   // call
-    nullptr,                   // construct
-    nullptr,                   // trace
+    .finalize = TimeZoneObject::finalize,
 };
 
 const JSClass TimeZoneObject::class_ = {

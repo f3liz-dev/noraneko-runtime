@@ -25,7 +25,7 @@ function col(text, className) {
 function link(text) {
   let column = document.createElement("td");
   let a = document.createElement("a");
-  a.href = "https://mozilla.github.io/policy-templates/#" + text.toLowerCase();
+  a.href = `https://firefox-admin-docs.mozilla.org/reference/policies/${text.toLowerCase()}/`;
   a.target = "_blank";
   let content = document.createTextNode(text);
   a.appendChild(content);
@@ -249,7 +249,7 @@ function generateErrors() {
   const consoleEvents = storage.getEvents();
   const prefixes = [
     "Enterprise Policies",
-    "JsonSchemaValidator",
+    "PolicySchemaValidator",
     "Policies",
     "WindowsGPOParser",
     "Enterprise Policies Child",
@@ -275,6 +275,91 @@ function generateErrors() {
     let errors_tab = document.getElementById("category-errors");
     errors_tab.hidden = true;
   }
+}
+
+// about:policies shows the policy schema to administrators. The schema is
+// standard JSON Schema, but a few constructs (format/pattern for URLs and
+// origins, contentMediaType for JSON-string fields) are verbose. This rewrites
+// a fragment into the shorter, friendlier presentation used historically
+// (URL, origin, JSON, ...) so the documentation view stays readable.
+//
+// This is a display-only transform. Consumers that need machine-readable
+// metadata (e.g. a policy editor) should use the canonical schema instead.
+function legacyType(node) {
+  if (node.format === "uri") {
+    return node.pattern ? "origin" : "URL";
+  }
+  if (node.contentMediaType === "application/json") {
+    if (Array.isArray(node.type)) {
+      return "JSON";
+    }
+    if (node.type === "array") {
+      return ["array", "JSON"];
+    }
+    if (node.type === "object") {
+      return ["object", "JSON"];
+    }
+  }
+  return node.type;
+}
+
+// Enums should be expressed as "oneOf" of "const"s. This returns the
+// permitted values for oneOf nodes.
+function constValues(node) {
+  return node.oneOf?.every(branch => "const" in branch)
+    ? node.oneOf.map(branch => branch.const)
+    : null;
+}
+
+function legacySchemaForDisplay(node) {
+  if (Array.isArray(node)) {
+    return node.map(legacySchemaForDisplay);
+  }
+  if (!node || typeof node != "object") {
+    return node;
+  }
+
+  if (node.anyOf) {
+    // A string that is a uri or empty -> "URLorEmpty".
+    if (node.anyOf.some(branch => branch.format === "uri")) {
+      return { type: "URLorEmpty" };
+    }
+    // A "boolean or enumerated string" policy -> {type: [...], enum: [...]}.
+    let types = [];
+    let result = {};
+    for (let branch of node.anyOf) {
+      if (Array.isArray(branch.type)) {
+        types.push(...branch.type);
+      } else if (branch.type) {
+        types.push(branch.type);
+      }
+      let branchValues = constValues(branch) ?? branch.enum;
+      if (branchValues) {
+        result.enum = branchValues;
+      }
+    }
+    return { type: types, ...result };
+  }
+
+  let values = constValues(node);
+  if (values) {
+    let rest = { ...node };
+    delete rest.oneOf;
+    return { ...legacySchemaForDisplay(rest), enum: values };
+  }
+
+  let result = {};
+  for (let [key, value] of Object.entries(node)) {
+    if (key === "format" || key === "pattern" || key === "contentMediaType") {
+      continue;
+    }
+    if (key === "type") {
+      result.type = legacyType(node);
+    } else {
+      result[key] = legacySchemaForDisplay(value);
+    }
+  }
+  return result;
 }
 
 function generateDocumentation() {
@@ -321,32 +406,29 @@ function generateDocumentation() {
     sec_tbody.classList.add("content");
     sec_tbody.classList.add("content-style");
     let schema_row = document.createElement("tr");
-    if (schema.properties[policyName].properties) {
+    let policySchema = legacySchemaForDisplay(schema.properties[policyName]);
+    if (policySchema.properties) {
       let column = col(
-        JSON.stringify(schema.properties[policyName].properties, null, 1),
+        JSON.stringify(policySchema.properties, null, 1),
         "schema"
       );
       column.colSpan = "2";
       schema_row.appendChild(column);
       sec_tbody.appendChild(schema_row);
-    } else if (schema.properties[policyName].items) {
-      let column = col(
-        JSON.stringify(schema.properties[policyName], null, 1),
-        "schema"
-      );
+    } else if (policySchema.items) {
+      let column = col(JSON.stringify(policySchema, null, 1), "schema");
       column.colSpan = "2";
       schema_row.appendChild(column);
       sec_tbody.appendChild(schema_row);
     } else {
-      let column = col("type: " + schema.properties[policyName].type, "schema");
+      let column = col("type: " + policySchema.type, "schema");
       column.colSpan = "2";
       schema_row.appendChild(column);
       sec_tbody.appendChild(schema_row);
-      if (schema.properties[policyName].enum) {
+      if (policySchema.enum) {
         let enum_row = document.createElement("tr");
         column = col(
-          "enum: " +
-            JSON.stringify(schema.properties[policyName].enum, null, 1),
+          "enum: " + JSON.stringify(policySchema.enum, null, 1),
           "schema"
         );
         column.colSpan = "2";
@@ -373,28 +455,27 @@ window.onload = function () {
 
   // Event delegation on #categories-nav element
   let menu = document.getElementById("categories-nav");
-  menu.addEventListener("change-view", e => show(e.target));
+  menu.addEventListener("change-view", e => onChangeView(e.target));
 
-  if (location.hash) {
-    let sectionButton = document.getElementById(
-      "category-" + location.hash.substring(1)
-    );
-    if (sectionButton) {
-      sectionButton.click();
-    }
-  }
-
-  window.addEventListener("hashchange", function () {
+  function onHashChange() {
     if (location.hash) {
       let sectionButton = document.getElementById(
         "category-" + location.hash.substring(1)
       );
-      sectionButton.click();
+      if (sectionButton) {
+        sectionButton.activate();
+      }
     }
+  }
+
+  window.addEventListener("hashchange", function () {
+    onHashChange();
   });
+
+  onHashChange();
 };
 
-function show(button) {
+function onChangeView(button) {
   let current_tab = document.querySelector(".active");
   let category = button.getAttribute("id").substring("category-".length);
   let content = document.getElementById(category);
@@ -408,7 +489,7 @@ function show(button) {
   content.hidden = false;
 
   let title = document.getElementById("sectionTitle");
-  title.textContent = button.textContent;
+  title.textContent = button.textContent.trim();
   location.hash = category;
   restoreScrollPosition(category);
 }

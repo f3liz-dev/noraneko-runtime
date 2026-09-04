@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 // Copyright 2011 the V8 project authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -1951,7 +1948,8 @@ int Decoder::InstructionDecode(uint8_t* instr_ptr) {
   int instruction_bits = *(reinterpret_cast<int*>(instr_ptr));
   if ((instruction_bits & kConstantPoolMarkerMask) == kConstantPoolMarker) {
     out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
-                                "constant pool begin (length %d)",
+                                "constant pool begin (length %d) "
+                                "[undefined insn]",
                                 DecodeConstantPoolLength(instruction_bits));
     return Instruction::kInstrSize;
   } else if (instruction_bits == kCodeAgeJumpInstruction) {

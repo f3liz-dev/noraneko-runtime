@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,7 +15,6 @@
 #include "mozilla/CDMProxy.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/dom/MFCDMSerializers.h"
 #include "mozilla/dom/MediaKeysBinding.h"
 #include "mozilla/gfx/Rect.h"
@@ -43,33 +40,29 @@ struct ParamTraits<mozilla::VideoInfo> {
     WriteParam(aWriter, aParam.mColorSpace);
     WriteParam(aWriter, aParam.mColorPrimaries);
     WriteParam(aWriter, aParam.mTransferFunction);
+    WriteParam(aWriter, aParam.mHDRMetadata);
     WriteParam(aWriter, aParam.mColorRange);
-    WriteParam(aWriter, aParam.HasAlpha());
+    WriteParam(aWriter, aParam.mAlphaPresent);
     WriteParam(aWriter, aParam.mCrypto);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
-    mozilla::gfx::IntRect imageRect;
-    bool alphaPresent;
-    if (ReadParam(aReader, &aResult->mMimeType) &&
-        ReadParam(aReader, &aResult->mDisplay) &&
-        ReadParam(aReader, &aResult->mStereoMode) &&
-        ReadParam(aReader, &aResult->mImage) &&
-        ReadParam(aReader, &aResult->mImageRect) &&
-        ReadParam(aReader, aResult->mCodecSpecificConfig.get()) &&
-        ReadParam(aReader, aResult->mExtraData.get()) &&
-        ReadParam(aReader, &aResult->mRotation) &&
-        ReadParam(aReader, &aResult->mColorDepth) &&
-        ReadParam(aReader, &aResult->mColorSpace) &&
-        ReadParam(aReader, &aResult->mColorPrimaries) &&
-        ReadParam(aReader, &aResult->mTransferFunction) &&
-        ReadParam(aReader, &aResult->mColorRange) &&
-        ReadParam(aReader, &alphaPresent) &&
-        ReadParam(aReader, &aResult->mCrypto)) {
-      aResult->SetAlpha(alphaPresent);
-      return true;
-    }
-    return false;
+    return ReadParam(aReader, &aResult->mMimeType) &&
+           ReadParam(aReader, &aResult->mDisplay) &&
+           ReadParam(aReader, &aResult->mStereoMode) &&
+           ReadParam(aReader, &aResult->mImage) &&
+           ReadParam(aReader, &aResult->mImageRect) &&
+           ReadParam(aReader, aResult->mCodecSpecificConfig.get()) &&
+           ReadParam(aReader, aResult->mExtraData.get()) &&
+           ReadParam(aReader, &aResult->mRotation) &&
+           ReadParam(aReader, &aResult->mColorDepth) &&
+           ReadParam(aReader, &aResult->mColorSpace) &&
+           ReadParam(aReader, &aResult->mColorPrimaries) &&
+           ReadParam(aReader, &aResult->mTransferFunction) &&
+           ReadParam(aReader, &aResult->mHDRMetadata) &&
+           ReadParam(aReader, &aResult->mColorRange) &&
+           ReadParam(aReader, &aResult->mAlphaPresent) &&
+           ReadParam(aReader, &aResult->mCrypto);
   }
 };
 
@@ -80,11 +73,20 @@ struct ParamTraits<mozilla::TrackInfo::TrackType>
           mozilla::TrackInfo::TrackType::kUndefinedTrack,
           mozilla::TrackInfo::TrackType::kTextTrack> {};
 
+struct VideoRotationValidator {
+  using IntegralType = std::underlying_type_t<mozilla::VideoRotation>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e == IntegralType(mozilla::VideoRotation::kDegree_0) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_90) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_180) ||
+           e == IntegralType(mozilla::VideoRotation::kDegree_270);
+  }
+};
+
 template <>
 struct ParamTraits<mozilla::VideoRotation>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::VideoRotation, mozilla::VideoRotation::kDegree_0,
-          mozilla::VideoRotation::kDegree_270> {};
+    : EnumSerializer<mozilla::VideoRotation, VideoRotationValidator> {};
 
 template <>
 struct ParamTraits<mozilla::MediaByteBuffer>
@@ -177,40 +179,10 @@ struct ParamTraits<mozilla::WaveCodecSpecificData>
 
 // End traits for AudioCodecSpecificVariant types.
 
-template <>
-struct ParamTraits<mozilla::AudioInfo> {
-  typedef mozilla::AudioInfo paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    // TrackInfo
-    WriteParam(aWriter, aParam.mMimeType);
-
-    // AudioInfo
-    WriteParam(aWriter, aParam.mRate);
-    WriteParam(aWriter, aParam.mChannels);
-    WriteParam(aWriter, aParam.mChannelMap);
-    WriteParam(aWriter, aParam.mBitDepth);
-    WriteParam(aWriter, aParam.mProfile);
-    WriteParam(aWriter, aParam.mExtendedProfile);
-    WriteParam(aWriter, aParam.mCodecSpecificConfig);
-    WriteParam(aWriter, aParam.mCrypto);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (ReadParam(aReader, &aResult->mMimeType) &&
-        ReadParam(aReader, &aResult->mRate) &&
-        ReadParam(aReader, &aResult->mChannels) &&
-        ReadParam(aReader, &aResult->mChannelMap) &&
-        ReadParam(aReader, &aResult->mBitDepth) &&
-        ReadParam(aReader, &aResult->mProfile) &&
-        ReadParam(aReader, &aResult->mExtendedProfile) &&
-        ReadParam(aReader, &aResult->mCodecSpecificConfig) &&
-        ReadParam(aReader, &aResult->mCrypto)) {
-      return true;
-    }
-    return false;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::AudioInfo, mMimeType, mRate,
+                                  mChannels, mChannelMap, mBitDepth, mProfile,
+                                  mExtendedProfile, mCodecSpecificConfig,
+                                  mCrypto);
 
 template <>
 struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
@@ -221,7 +193,8 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
               mozilla::MediaDataDecoder::ConversionRequired::kNeedHVCC)> {};
 
 template <>
-struct ParamTraits<mozilla::MediaDataDecoder::PropertyName>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::MediaDataDecoder::PropertyName>
     : public ContiguousEnumSerializerInclusive<
           mozilla::MediaDataDecoder::PropertyName,
           mozilla::MediaDataDecoder::PropertyName(0),
@@ -245,6 +218,10 @@ struct ParamTraits<mozilla::media::TimeUnit> {
     if (ReadParam(aReader, &valid) && ReadParam(aReader, &ticks) &&
         ReadParam(aReader, &base)) {
       if (valid) {
+        if (base <= 0 || base > int64_t(UINT32_MAX)) {
+          return false;
+        }
+
         *aResult = mozilla::media::TimeUnit(ticks, base);
       } else {
         *aResult = mozilla::media::TimeUnit::Invalid();
@@ -255,25 +232,8 @@ struct ParamTraits<mozilla::media::TimeUnit> {
   };
 };
 
-template <>
-struct ParamTraits<mozilla::media::TimeInterval> {
-  typedef mozilla::media::TimeInterval paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mStart);
-    WriteParam(aWriter, aParam.mEnd);
-    WriteParam(aWriter, aParam.mFuzz);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (ReadParam(aReader, &aResult->mStart) &&
-        ReadParam(aReader, &aResult->mEnd) &&
-        ReadParam(aReader, &aResult->mFuzz)) {
-      return true;
-    }
-    return false;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::media::TimeInterval, mStart, mEnd,
+                                  mFuzz);
 
 template <>
 struct ParamTraits<mozilla::MediaResult> {
@@ -298,27 +258,8 @@ struct ParamTraits<mozilla::MediaResult> {
   };
 };
 
-template <>
-struct ParamTraits<mozilla::DecoderDoctorDiagnostics> {
-  typedef mozilla::DecoderDoctorDiagnostics paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mDiagnosticsType);
-    WriteParam(aWriter, aParam.mFormat);
-    WriteParam(aWriter, aParam.mFlags);
-    WriteParam(aWriter, aParam.mEvent);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (ReadParam(aReader, &aResult->mDiagnosticsType) &&
-        ReadParam(aReader, &aResult->mFormat) &&
-        ReadParam(aReader, &aResult->mFlags) &&
-        ReadParam(aReader, &aResult->mEvent)) {
-      return true;
-    }
-    return false;
-  };
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::DecoderDoctorDiagnostics,
+                                  mDiagnosticsType, mFormat, mFlags, mEvent);
 
 template <>
 struct ParamTraits<mozilla::DecoderDoctorDiagnostics::DiagnosticsType>
@@ -329,24 +270,14 @@ struct ParamTraits<mozilla::DecoderDoctorDiagnostics::DiagnosticsType>
 };
 
 template <>
-struct ParamTraits<mozilla::DecoderDoctorEvent> {
-  typedef mozilla::DecoderDoctorEvent paramType;
+struct ParamTraits<mozilla::DecoderDoctorEvent::Domain>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::DecoderDoctorEvent::Domain,
+          mozilla::DecoderDoctorEvent::Domain::eAudioSinkStartup,
+          mozilla::DecoderDoctorEvent::Domain::eAudioSinkStartup> {};
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    int domain = aParam.mDomain;
-    WriteParam(aWriter, domain);
-    WriteParam(aWriter, aParam.mResult);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    int domain = 0;
-    if (ReadParam(aReader, &domain) && ReadParam(aReader, &aResult->mResult)) {
-      aResult->mDomain = paramType::Domain(domain);
-      return true;
-    }
-    return false;
-  };
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::DecoderDoctorEvent, mDomain,
+                                  mResult);
 
 template <>
 struct ParamTraits<mozilla::TrackingId::Source>
@@ -355,35 +286,10 @@ struct ParamTraits<mozilla::TrackingId::Source>
           mozilla::TrackingId::Source::Unimplemented,
           mozilla::TrackingId::Source::LAST> {};
 
-template <>
-struct ParamTraits<mozilla::TrackingId> {
-  typedef mozilla::TrackingId paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::TrackingId, mSource, mProcId,
+                                  mUniqueInProcId);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mSource);
-    WriteParam(aWriter, aParam.mProcId);
-    WriteParam(aWriter, aParam.mUniqueInProcId);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mSource) &&
-           ReadParam(aReader, &aResult->mProcId) &&
-           ReadParam(aReader, &aResult->mUniqueInProcId);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::CryptoTrack> {
-  typedef mozilla::CryptoTrack paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mCryptoScheme);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mCryptoScheme);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::CryptoTrack, mCryptoScheme);
 
 template <>
 struct ParamTraits<mozilla::dom::ImageBitmapFormat>
@@ -429,17 +335,53 @@ struct ParamTraits<mozilla::Usage>
     : public ContiguousEnumSerializerInclusive<
           mozilla::Usage, mozilla::Usage::Realtime, mozilla::Usage::Record> {};
 
+struct H264ProfileValidator {
+  using IntegralType = std::underlying_type_t<mozilla::H264_PROFILE>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    return e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_UNKNOWN) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_BASE) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_MAIN) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_EXTENDED) ||
+           e == IntegralType(mozilla::H264_PROFILE::H264_PROFILE_HIGH);
+  }
+};
+
 template <>
 struct ParamTraits<mozilla::H264_PROFILE>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::H264_PROFILE, mozilla::H264_PROFILE::H264_PROFILE_UNKNOWN,
-          mozilla::H264_PROFILE::H264_PROFILE_HIGH> {};
+    : EnumSerializer<mozilla::H264_PROFILE, H264ProfileValidator> {};
+
+struct H264LevelValidator {
+  using IntegralType = std::underlying_type_t<mozilla::H264_LEVEL>;
+
+  static bool IsLegalValue(const IntegralType e) {
+    static_assert(mozilla::H264_LEVEL::H264_LEVEL_1_b ==
+                  mozilla::H264_LEVEL::H264_LEVEL_1_1);
+    return e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_1_3) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_2_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_3_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_4_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_5_2) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6_1) ||
+           e == IntegralType(mozilla::H264_LEVEL::H264_LEVEL_6_2);
+  }
+};
 
 template <>
 struct ParamTraits<mozilla::H264_LEVEL>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::H264_LEVEL, mozilla::H264_LEVEL::H264_LEVEL_1,
-          mozilla::H264_LEVEL::H264_LEVEL_6_2> {};
+    : EnumSerializer<mozilla::H264_LEVEL, H264LevelValidator> {};
 
 template <>
 struct ParamTraits<mozilla::OpusBitstreamFormat>
@@ -455,182 +397,45 @@ struct ParamTraits<mozilla::OpusSpecific::Application>
           mozilla::OpusSpecific::Application::RestricedLowDelay> {};
 
 template <>
-struct ParamTraits<mozilla::VPXComplexity>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::VPXComplexity>
     : public ContiguousEnumSerializerInclusive<mozilla::VPXComplexity,
                                                mozilla::VPXComplexity::Normal,
                                                mozilla::VPXComplexity::Max> {};
 
-template <>
-struct ParamTraits<struct mozilla::H264Specific> {
-  typedef mozilla::H264Specific paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(struct mozilla::H264Specific, mProfile,
+                                  mLevel, mFormat);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mProfile);
-    WriteParam(aWriter, aParam.mLevel);
-    WriteParam(aWriter, aParam.mFormat);
-  }
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(struct mozilla::OpusSpecific, mApplication,
+                                  mFrameDuration, mComplexity, mFormat,
+                                  mPacketLossPerc, mUseInBandFEC, mUseDTX);
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mProfile) &&
-           ReadParam(aReader, &aResult->mLevel) &&
-           ReadParam(aReader, &aResult->mFormat);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(struct mozilla::VP8Specific, mComplexity,
+                                  mResilience, mNumTemporalLayers, mDenoising,
+                                  mAutoResize, mFrameDropping);
 
-template <>
-struct ParamTraits<struct mozilla::OpusSpecific> {
-  typedef mozilla::OpusSpecific paramType;
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(struct mozilla::VP9Specific,
+                                                  mozilla::VP8Specific,
+                                                  mAdaptiveQp,
+                                                  mNumSpatialLayers, mFlexible);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mApplication);
-    WriteParam(aWriter, aParam.mFrameDuration);
-    WriteParam(aWriter, aParam.mComplexity);
-    WriteParam(aWriter, aParam.mFormat);
-    WriteParam(aWriter, aParam.mPacketLossPerc);
-    WriteParam(aWriter, aParam.mUseInBandFEC);
-    WriteParam(aWriter, aParam.mUseDTX);
-  }
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(
+    struct mozilla::EncoderConfig::VideoColorSpace, mRange, mMatrix, mPrimaries,
+    mTransferFunction);
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mApplication) &&
-           ReadParam(aReader, &aResult->mFrameDuration) &&
-           ReadParam(aReader, &aResult->mComplexity) &&
-           ReadParam(aReader, &aResult->mFormat) &&
-           ReadParam(aReader, &aResult->mPacketLossPerc) &&
-           ReadParam(aReader, &aResult->mUseInBandFEC) &&
-           ReadParam(aReader, &aResult->mUseDTX);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(struct mozilla::EncoderConfig::SampleFormat,
+                                  mPixelFormat, mColorSpace);
 
-template <>
-struct ParamTraits<struct mozilla::VP8Specific> {
-  typedef mozilla::VP8Specific paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mComplexity);
-    WriteParam(aWriter, aParam.mResilience);
-    WriteParam(aWriter, aParam.mNumTemporalLayers);
-    WriteParam(aWriter, aParam.mDenoising);
-    WriteParam(aWriter, aParam.mAutoResize);
-    WriteParam(aWriter, aParam.mFrameDropping);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mComplexity) &&
-           ReadParam(aReader, &aResult->mResilience) &&
-           ReadParam(aReader, &aResult->mNumTemporalLayers) &&
-           ReadParam(aReader, &aResult->mDenoising) &&
-           ReadParam(aReader, &aResult->mAutoResize) &&
-           ReadParam(aReader, &aResult->mFrameDropping);
-  }
-};
-
-template <>
-struct ParamTraits<struct mozilla::VP9Specific> {
-  typedef mozilla::VP9Specific paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    ParamTraits<mozilla::VP8Specific>::Write(aWriter, aParam);
-    WriteParam(aWriter, aParam.mAdaptiveQp);
-    WriteParam(aWriter, aParam.mNumSpatialLayers);
-    WriteParam(aWriter, aParam.mFlexible);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ParamTraits<mozilla::VP8Specific>::Read(aReader, aResult) &&
-           ReadParam(aReader, &aResult->mAdaptiveQp) &&
-           ReadParam(aReader, &aResult->mNumSpatialLayers) &&
-           ReadParam(aReader, &aResult->mFlexible);
-  }
-};
-
-template <>
-struct ParamTraits<struct mozilla::EncoderConfig::VideoColorSpace> {
-  typedef mozilla::EncoderConfig::VideoColorSpace paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mRange);
-    WriteParam(aWriter, aParam.mMatrix);
-    WriteParam(aWriter, aParam.mPrimaries);
-    WriteParam(aWriter, aParam.mTransferFunction);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mRange) &&
-           ReadParam(aReader, &aResult->mMatrix) &&
-           ReadParam(aReader, &aResult->mPrimaries) &&
-           ReadParam(aReader, &aResult->mTransferFunction);
-  }
-};
-
-template <>
-struct ParamTraits<struct mozilla::EncoderConfig::SampleFormat> {
-  typedef mozilla::EncoderConfig::SampleFormat paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mPixelFormat);
-    WriteParam(aWriter, aParam.mColorSpace);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mPixelFormat) &&
-           ReadParam(aReader, &aResult->mColorSpace);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::EncoderConfig> {
-  typedef mozilla::EncoderConfig paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mCodec);
-    WriteParam(aWriter, aParam.mSize);
-    WriteParam(aWriter, aParam.mBitrateMode);
-    WriteParam(aWriter, aParam.mBitrate);
-    WriteParam(aWriter, aParam.mMinBitrate);
-    WriteParam(aWriter, aParam.mMaxBitrate);
-    WriteParam(aWriter, aParam.mUsage);
-    WriteParam(aWriter, aParam.mHardwarePreference);
-    WriteParam(aWriter, aParam.mFormat);
-    WriteParam(aWriter, aParam.mScalabilityMode);
-    WriteParam(aWriter, aParam.mFramerate);
-    WriteParam(aWriter, aParam.mKeyframeInterval);
-    WriteParam(aWriter, aParam.mNumberOfChannels);
-    WriteParam(aWriter, aParam.mSampleRate);
-    WriteParam(aWriter, aParam.mCodecSpecific);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mCodec) &&
-           ReadParam(aReader, &aResult->mSize) &&
-           ReadParam(aReader, &aResult->mBitrateMode) &&
-           ReadParam(aReader, &aResult->mBitrate) &&
-           ReadParam(aReader, &aResult->mMinBitrate) &&
-           ReadParam(aReader, &aResult->mMaxBitrate) &&
-           ReadParam(aReader, &aResult->mUsage) &&
-           ReadParam(aReader, &aResult->mHardwarePreference) &&
-           ReadParam(aReader, &aResult->mFormat) &&
-           ReadParam(aReader, &aResult->mScalabilityMode) &&
-           ReadParam(aReader, &aResult->mFramerate) &&
-           ReadParam(aReader, &aResult->mKeyframeInterval) &&
-           ReadParam(aReader, &aResult->mNumberOfChannels) &&
-           ReadParam(aReader, &aResult->mSampleRate) &&
-           ReadParam(aReader, &aResult->mCodecSpecific);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::EncoderConfig, mCodec, mSize,
+                                  mBitrateMode, mBitrate, mMinBitrate,
+                                  mMaxBitrate, mUsage, mHardwarePreference,
+                                  mFormat, mScalabilityMode, mFramerate,
+                                  mKeyframeInterval, mNumberOfChannels,
+                                  mSampleRate, mCodecSpecific);
 
 template <typename T, typename Phantom>
-struct ParamTraits<struct mozilla::StrongTypedef<T, Phantom>> {
-  typedef mozilla::StrongTypedef<T, Phantom> paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mValue);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mValue);
-  }
-};
+struct ParamTraits<mozilla::StrongTypedef<T, Phantom>>
+    : ParamTraits_TiedFields<mozilla::StrongTypedef<T, Phantom>> {};
 
 // [RefCounted] typed
 template <>
@@ -658,33 +463,21 @@ struct ParamTraits<mozilla::dom::MediaKeySessionType>
           mozilla::dom::MediaKeySessionType::Temporary,
           mozilla::dom::MediaKeySessionType::Persistent_license> {};
 
-template <>
-struct ParamTraits<mozilla::CDMKeyInfo> {
-  typedef mozilla::CDMKeyInfo paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mKeyId);
-    WriteParam(aWriter, aParam.mStatus);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->mKeyId) &&
-           ReadParam(aReader, &aResult->mStatus);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::CDMKeyInfo, mKeyId, mStatus);
 
 template <typename T>
 struct ParamTraits<mozilla::NormalizedConstraintSet::Range<T>> {
-  using paramType = mozilla::NormalizedConstraintSet::Range<T>;
+  typedef mozilla::NormalizedConstraintSet::Range<T> paramType;
+
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
     WriteParams(aWriter, aParam.mMin, aParam.mMax, aParam.mIdeal);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
-    paramType& aParam = *aResult;
-    return ReadParams(aReader, aParam.mMin, aParam.mMax, aParam.mIdeal);
+    return ReadParams(aReader, aResult->mMin, aResult->mMax, aResult->mIdeal);
   }
 };
+
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
     mozilla::NormalizedConstraintSet::LongRange,
     mozilla::NormalizedConstraintSet::Range<int32_t>);

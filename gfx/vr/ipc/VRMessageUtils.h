@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,11 @@
 #ifndef mozilla_gfx_vr_VRMessageUtils_h
 #define mozilla_gfx_vr_VRMessageUtils_h
 
+#include "gfxVR.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/dom/GamepadMessageUtils.h"
-#include "mozilla/ParamTraits_IsEnumCase.h"
-#include "mozilla/ParamTraits_STL.h"
-#include "mozilla/ParamTraits_TiedFields.h"
-
-#include "gfxVR.h"
 
 namespace IPC {
 
@@ -51,43 +45,35 @@ struct ParamTraits<mozilla::gfx::VRPose> final
 
 template <>
 struct ParamTraits<mozilla::gfx::VRControllerType>
-    : ParamTraits_IsEnumCase<mozilla::gfx::VRControllerType> {};
+    : public ContiguousEnumSerializer<mozilla::gfx::VRControllerType,
+                                      mozilla::gfx::VRControllerType::_empty,
+                                      mozilla::gfx::VRControllerType::_end> {};
+
 template <>
 struct ParamTraits<mozilla::gfx::TargetRayMode>
-    : ParamTraits_IsEnumCase<mozilla::gfx::TargetRayMode> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::TargetRayMode, mozilla::gfx::TargetRayMode::Gaze,
+          mozilla::gfx::TargetRayMode::Screen> {};
+
 template <>
 struct ParamTraits<mozilla::gfx::GamepadMappingType>
-    : ParamTraits_IsEnumCase<mozilla::gfx::GamepadMappingType> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::GamepadMappingType,
+          mozilla::gfx::GamepadMappingType::_empty,
+          mozilla::gfx::GamepadMappingType::XRStandard> {};
+
 template <>
 struct ParamTraits<mozilla::gfx::VRDisplayBlendMode>
-    : ParamTraits_IsEnumCase<mozilla::gfx::VRDisplayBlendMode> {};
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::VRDisplayBlendMode,
+          mozilla::gfx::VRDisplayBlendMode::Opaque,
+          mozilla::gfx::VRDisplayBlendMode::AlphaBlend> {};
 
 // -
 
-template <>
-struct ParamTraits<mozilla::gfx::VRSubmitFrameResultInfo> {
-  typedef mozilla::gfx::VRSubmitFrameResultInfo paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mBase64Image);
-    WriteParam(aWriter, aParam.mFormat);
-    WriteParam(aWriter, aParam.mWidth);
-    WriteParam(aWriter, aParam.mHeight);
-    WriteParam(aWriter, aParam.mFrameNum);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &(aResult->mBase64Image)) ||
-        !ReadParam(aReader, &(aResult->mFormat)) ||
-        !ReadParam(aReader, &(aResult->mWidth)) ||
-        !ReadParam(aReader, &(aResult->mHeight)) ||
-        !ReadParam(aReader, &(aResult->mFrameNum))) {
-      return false;
-    }
-
-    return true;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::gfx::VRSubmitFrameResultInfo,
+                                  mBase64Image, mFormat, mWidth, mHeight,
+                                  mFrameNum);
 
 template <>
 struct ParamTraits<mozilla::gfx::VRDisplayCapabilityFlags>

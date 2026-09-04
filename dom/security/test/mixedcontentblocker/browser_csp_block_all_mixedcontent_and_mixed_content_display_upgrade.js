@@ -46,7 +46,7 @@ add_task(async function () {
       waitForLoad: true,
     },
     async function (browser) {
-      let loadedElements = await ContentTask.spawn(
+      let loadedElements = await SpecialPowers.spawn(
         browser,
         [],
         async function () {
@@ -70,7 +70,7 @@ add_task(async function () {
     }
   );
 
-  await BrowserTestUtils.waitForCondition(() => gExpectedMessages === 0);
+  await TestUtils.waitForCondition(() => gExpectedMessages === 0);
 
   // Clean up
   Services.console.unregisterListener(onConsoleMessage);

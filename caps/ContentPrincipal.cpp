@@ -1,45 +1,41 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ContentPrincipal.h"
 
-#include "mozIThirdPartyUtil.h"
-#include "nsContentUtils.h"
-#include "nscore.h"
-#include "nsScriptSecurityManager.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "pratom.h"
-#include "nsIURI.h"
-#include "nsIURL.h"
-#include "nsIStandardURL.h"
-#include "nsIURIWithSpecialOrigin.h"
-#include "nsIURIMutator.h"
-#include "nsJSPrincipals.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIClassInfoImpl.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIProtocolHandler.h"
-#include "nsError.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsNetCID.h"
+#include "ContentPrincipalJSONHandler.h"
+#include "js/JSON.h"
 #include "js/RealmIterators.h"
 #include "js/Wrapper.h"
-
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/ScriptSettings.h"
+#include "mozIThirdPartyUtil.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Preferences.h"
-
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "nsAboutProtocolUtils.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIContentSecurityPolicy.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIProtocolHandler.h"
+#include "nsIStandardURL.h"
+#include "nsIURI.h"
+#include "nsIURIMutator.h"
+#include "nsIURIWithSpecialOrigin.h"
+#include "nsIURL.h"
+#include "nsJSPrincipals.h"
+#include "nsNetCID.h"
+#include "nsReadableUtils.h"
+#include "nsScriptSecurityManager.h"
 #include "nsSerializationHelper.h"
-
-#include "js/JSON.h"
-#include "ContentPrincipalJSONHandler.h"
+#include "nsString.h"
+#include "nscore.h"
+#include "pratom.h"
 
 using namespace mozilla;
 
@@ -133,14 +129,12 @@ nsresult ContentPrincipal::GenerateOriginNoSuffixFromURI(
   // These constraints can generally be achieved by restricting .origin to
   // nsIStandardURL-based URIs, but there are a few other URI schemes that we
   // need to handle.
-  if (origin->SchemeIs("about") ||
-      (origin->SchemeIs("moz-safe-about") &&
-       // We generally consider two about:foo origins to be same-origin, but
-       // about:blank is special since it can be generated from different
-       // sources. We check for moz-safe-about:blank since origin is an
-       // innermost URI.
-       !StringBeginsWith(origin->GetSpecOrDefault(),
-                         "moz-safe-about:blank"_ns))) {
+  if (origin->SchemeIs("about")) {
+    MOZ_ASSERT(!NS_IsContentAccessibleAboutURI(origin),
+               "about:blank and about:srcdoc should appear as "
+               "moz-safe-about:{blank,srcdoc} in this method, "
+               "and should not get an origin");
+
     rv = origin->GetAsciiSpec(aOriginNoSuffix);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -161,15 +155,6 @@ nsresult ContentPrincipal::GenerateOriginNoSuffixFromURI(
       return NS_ERROR_FAILURE;
     }
     return NS_OK;
-  }
-
-  // This URL can be a blobURL. In this case, we should use the 'parent'
-  // principal instead.
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          origin, getter_AddRefs(blobPrincipal))) {
-    MOZ_ASSERT(blobPrincipal);
-    return blobPrincipal->GetOriginNoSuffix(aOriginNoSuffix);
   }
 
   // If we reached this branch, we can only create an origin if we have a
@@ -289,7 +274,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
 
   nsCOMPtr<nsIPrincipal> blobPrincipal;
   if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
+          aURI, OriginAttributesRef(), getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
     return nsIPrincipal::Subsumes(blobPrincipal);
   }

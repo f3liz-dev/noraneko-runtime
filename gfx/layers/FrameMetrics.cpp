@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,8 @@
 #include <ostream>
 
 #include "gfxUtils.h"
-#include "nsStyleConsts.h"
 #include "mozilla/gfx/Types.h"
+#include "nsStyleConsts.h"
 
 namespace mozilla {
 namespace layers {
@@ -21,7 +19,7 @@ std::ostream& operator<<(std::ostream& aStream, const FrameMetrics& aMetrics) {
   aStream << "{ [cb=" << aMetrics.GetCompositionBounds()
           << "] [sr=" << aMetrics.GetScrollableRect()
           << "] [s=" << aMetrics.GetVisualScrollOffset();
-  if (aMetrics.GetVisualScrollUpdateType() != FrameMetrics::eNone) {
+  if (aMetrics.GetVisualScrollUpdateType() != ScrollOffsetUpdateType::None) {
     aStream << "] [vd=" << aMetrics.GetVisualDestination();
   }
   if (aMetrics.IsScrollInfoLayer()) {
@@ -243,7 +241,22 @@ void FrameMetrics::UpdatePendingScrollInfo(const ScrollPositionUpdate& aInfo) {
 
   SetLayoutScrollOffset(aInfo.GetDestination());
   ClampAndSetVisualScrollOffset(aInfo.GetDestination() + relativeOffset);
+  // The layout offset was set to the raw destination while the visual offset
+  // was clamped independently, so the two are no longer guaranteed to be in
+  // their proper relationship: equal for non-root content, the layout viewport
+  // enclosing the visual viewport for root content. (The independent clamps can
+  // also disagree at sub-pixel precision, since the main thread clamps the
+  // destination in app units while this clamps in CSS pixels.) Re-establish
+  // that relationship the same way every other visual-offset mutator does, e.g.
+  // AsyncPanZoomController::SetVisualScrollOffset.
+  RecalculateLayoutViewportOffset();
   mScrollGeneration = aInfo.GetGeneration();
+
+  // This mutates metadata retained from an earlier paint; a visual scroll
+  // update baked in by that paint is still set here. The scroll update we just
+  // applied supersedes it, so clear it.
+  SetVisualScrollUpdateType(ScrollOffsetUpdateType::None);
+  SetVisualDestination(GetVisualScrollOffset());
 }
 
 std::ostream& operator<<(std::ostream& aStream,

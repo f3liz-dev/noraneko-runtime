@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -240,7 +238,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
                    MathMLEmbellishFlag::AccentUnder)) {
       AutoTArray<nsString, 1> params;
       params.AppendElement(mContent->NodeInfo()->NodeName());
-      PresContext()->Document()->WarnOnceAbout(
+      PresContext()->Document()->WarnOnceAndReportAbout(
           dom::DeprecatedOperations::
               eMathML_DeprecatedMunderNonExplicitAccentunder,
           false, params);
@@ -268,7 +266,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
     } else if (mEmbellishData.flags.contains(MathMLEmbellishFlag::AccentOver)) {
       AutoTArray<nsString, 1> params;
       params.AppendElement(mContent->NodeInfo()->NodeName());
-      PresContext()->Document()->WarnOnceAbout(
+      PresContext()->Document()->WarnOnceAndReportAbout(
           dom::DeprecatedOperations::eMathML_DeprecatedMoverNonExplicitAccent,
           false, params);
     }
@@ -298,11 +296,6 @@ XXX The winner is the outermost setting in conflicting settings like these:
      Within subscript and superscript it increments scriptlevel by 1, and
      sets displaystyle to "false", but leaves both attributes unchanged within
      base.
-
-     The TeXBook treats 'over' like a superscript, so p.141 or Rule 13a
-     say it shouldn't be compressed. However, The TeXBook says
-     that math accents and \overline change uncramped styles to their
-     cramped counterparts.
   */
   if (mContent->IsAnyOfMathMLElements(nsGkAtoms::mover,
                                       nsGkAtoms::munderover)) {
@@ -314,18 +307,7 @@ XXX The winner is the outermost setting in conflicting settings like these:
     if (mIncrementOver) {
       PropagateFrameFlagFor(overscriptFrame, NS_FRAME_MATHML_SCRIPT_DESCENDANT);
     }
-    if (!StaticPrefs::mathml_math_shift_enabled()) {
-      MathMLPresentationFlags flags;
-      if (mEmbellishData.flags.contains(MathMLEmbellishFlag::AccentOver)) {
-        flags += MathMLPresentationFlag::Compressed;
-      }
-      PropagatePresentationDataFor(overscriptFrame, flags, flags);
-    }
   }
-  /*
-     The TeXBook treats 'under' like a subscript, so p.141 or Rule 13a
-     say it should be compressed
-  */
   if (mContent->IsAnyOfMathMLElements(nsGkAtoms::munder,
                                       nsGkAtoms::munderover)) {
     mIncrementUnder =
@@ -335,11 +317,6 @@ XXX The winner is the outermost setting in conflicting settings like these:
     if (mIncrementUnder) {
       PropagateFrameFlagFor(underscriptFrame,
                             NS_FRAME_MATHML_SCRIPT_DESCENDANT);
-    }
-    if (!StaticPrefs::mathml_math_shift_enabled()) {
-      PropagatePresentationDataFor(underscriptFrame,
-                                   MathMLPresentationFlag::Compressed,
-                                   MathMLPresentationFlag::Compressed);
     }
   }
 

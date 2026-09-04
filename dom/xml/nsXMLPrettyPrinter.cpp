@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +15,7 @@
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/txMozillaXSLTProcessor.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsICSSDeclaration.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
@@ -35,6 +35,7 @@ nsXMLPrettyPrinter::~nsXMLPrettyPrinter() {
 }
 
 nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
+                                         bool aShowXSLTDisabledMessage,
                                          bool* aDidPrettyPrint) {
   *aDidPrettyPrint = false;
 
@@ -88,7 +89,7 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   }
 
   // Attach an UA Widget Shadow Root on it.
-  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidgetSetup::No);
+  rootElement->AttachAndSetUAShadowRoot(Element::NotifyUAWidget::No);
   RefPtr<ShadowRoot> shadowRoot = rootElement->GetShadowRoot();
   MOZ_RELEASE_ASSERT(shadowRoot && shadowRoot->IsUAWidget(),
                      "There should be a UA Shadow Root here.");
@@ -97,6 +98,13 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   shadowRoot->AppendChild(*resultFragment, err);
   if (NS_WARN_IF(err.Failed())) {
     return err.StealNSResult();
+  }
+
+  if (aShowXSLTDisabledMessage) {
+    if (Element* message = shadowRoot->GetElementById(u"nostylesheet"_ns)) {
+      message->SetAttr(nsGkAtoms::datal10nid,
+                       u"xml-nostylesheet-xslt-disabled"_ns, IgnoreErrors());
+    }
   }
 
   // Create a DocumentL10n, as the XML document is not allowed to have one.
@@ -188,6 +196,8 @@ void nsXMLPrettyPrinter::ContentWillBeRemoved(nsIContent* aChild,
 }
 
 void nsXMLPrettyPrinter::NodeWillBeDestroyed(nsINode* aNode) {
+  MOZ_DIAGNOSTIC_ASSERT(mDocument == aNode);
+  mDocument->RemoveMutationObserver(this);
   mDocument = nullptr;
   NS_RELEASE_THIS();
 }

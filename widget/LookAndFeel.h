@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,13 +9,13 @@
 #  error "This header is only usable from within libxul (MOZILLA_INTERNAL_API)."
 #endif
 
-#include "nsDebug.h"
-#include "nsColor.h"
-#include "nsString.h"
-#include "nsTArray.h"
+#include "mozilla/ColorScheme.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/widget/ThemeChangeKind.h"
-#include "mozilla/ColorScheme.h"
+#include "nsColor.h"
+#include "nsDebug.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 struct gfxFontStyle;
 

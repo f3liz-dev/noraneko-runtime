@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -12,7 +10,7 @@ const ROOT_URI = getRootDirectory(gTestPath).replace(
   "https://example.com"
 );
 const SECURE_TEST_URI = ROOT_URI + "iframe_navigation.html";
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const INSECURE_TEST_URI = SECURE_TEST_URI.replace("https://", "http://");
 
 const NOT_SECURE_LABEL = Services.prefs.getBoolPref(

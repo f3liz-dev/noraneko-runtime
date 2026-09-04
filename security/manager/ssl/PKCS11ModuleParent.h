@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,16 +9,19 @@
 #  error This file should only be used under NIGHTLY_BUILD and when MOZ_NO_SMART_CARDS is not defined.
 #endif  // !NIGHTLY_BUILD || MOZ_NO_SMART_CARDS
 
+#include "mozilla/Maybe.h"
 #include "mozilla/ProcInfo.h"
-
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/psm/PPKCS11ModuleParent.h"
+#include "nsIObserverService.h"
 
 namespace mozilla::psm {
 
-class PKCS11ModuleParent final : public PPKCS11ModuleParent {
+class PKCS11ModuleParent final : public PPKCS11ModuleParent,
+                                 public nsIObserver {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PKCS11ModuleParent, override);
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIOBSERVER
 
   explicit PKCS11ModuleParent() = default;
 
@@ -28,8 +30,16 @@ class PKCS11ModuleParent final : public PPKCS11ModuleParent {
   nsresult BindToUtilityProcess(
       const RefPtr<ipc::UtilityProcessParent>& aUtilityParent);
 
+  ipc::IPCResult RecvPromptPassword(nsCString&& aTokenName,
+                                    PromptPasswordResolver&& aResolver);
+  ipc::IPCResult RecvShowProtectedAuthPrompt(nsCString&& aTokenName,
+                                             uint64_t id);
+  ipc::IPCResult RecvDismissProtectedAuthPrompt(uint64_t id);
+
  private:
   ~PKCS11ModuleParent() = default;
+
+  mozilla::Maybe<uint64_t> mMaybePromptId;
 };
 
 }  // namespace mozilla::psm

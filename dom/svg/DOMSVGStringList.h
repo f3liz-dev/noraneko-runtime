@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,14 +46,13 @@ class DOMSVGStringList final : public nsISupports, public nsWrapperCache {
   friend class AutoChangeStringListNotifier;
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGStringList)
 
   dom::SVGElement* GetParentObject() const { return mElement; }
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  uint32_t NumberOfItems() const;
   uint32_t Length() const;
   void Clear();
   void Initialize(const nsAString& aNewItem, nsAString& aRetval,
@@ -69,6 +66,8 @@ class DOMSVGStringList final : public nsISupports, public nsWrapperCache {
   void RemoveItem(uint32_t aIndex, nsAString& aRetval, ErrorResult& aRv);
   void AppendItem(const nsAString& aNewItem, nsAString& aRetval,
                   ErrorResult& aRv);
+  void IndexedSetter(uint32_t aIndex, const nsAString& aNewValue,
+                     ErrorResult& aRv);
 
   /**
    * Factory method to create and return a DOMSVGStringList wrapper

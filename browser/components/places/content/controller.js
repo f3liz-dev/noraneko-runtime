@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,7 +77,8 @@ function PlacesController(aView) {
   });
 
   ChromeUtils.defineESModuleGetters(this, {
-    ForgetAboutSite: "resource://gre/modules/ForgetAboutSite.sys.mjs",
+    ForgetAboutSite:
+      "moz-src:///toolkit/components/forgetaboutsite/ForgetAboutSite.sys.mjs",
   });
 }
 
@@ -557,6 +557,8 @@ PlacesController.prototype = {
    *     hide a menuitem if containers are disabled.
    * 12) The boolean `hide-if-single-click-opens` attribute may be set to hide a
    *     menuitem in views opening entries with a single click.
+   * 13) The boolean `hide-if-no-URI-children` attribute may be set to hide a menuitem
+   *     if the selected folder is empty or has no links with content.
    *
    * @param {object} aPopup
    *        The menupopup to build children into.
@@ -570,6 +572,19 @@ PlacesController.prototype = {
     var separator = null;
     var visibleItemsBeforeSep = false;
     var usableItemCount = 0;
+
+    var hasURIChildren = false;
+    var selectedNode = this._view.selectedNodes[0];
+    if (
+      Services.prefs.getBoolPref("browser.contentsharing.enabled") &&
+      selectedNode
+    ) {
+      const regex = /^https?:\/\//;
+      var checkIsHttp = uri => regex.test(uri);
+      var container = PlacesUtils.asContainer(selectedNode);
+      hasURIChildren = PlacesUtils.hasChildURIs(container, checkIsHttp);
+    }
+
     for (var i = 0; i < aPopup.children.length; ++i) {
       var item = aPopup.children[i];
       if (item.getAttribute("ignore-item") == "true") {
@@ -592,11 +607,15 @@ PlacesController.prototype = {
           (!this._view.selectedNode ||
             !this._view.selectedNode.parent ||
             !PlacesUtils.nodeIsQuery(this._view.selectedNode.parent));
+        let hideIfNoURIChildren =
+          item.getAttribute("hide-if-no-URI-children") == "true" &&
+          !hasURIChildren;
 
         let shouldHideItem =
           hideIfNoIP ||
           hideIfSingleClickOpens ||
           hideIfNotSearch ||
+          hideIfNoURIChildren ||
           !this._shouldShowMenuItem(item, metadata);
         item.hidden = shouldHideItem;
         item.disabled =
@@ -1428,15 +1447,23 @@ PlacesController.prototype = {
     // Open containing folder in left pane/sidebar bookmark tree
     let documentUrl = document.documentURI.toLowerCase();
     if (documentUrl.endsWith("browser.xhtml")) {
-      // We're in a menu or a panel.
+      // Invoked from the main browser window (e.g. the bookmarks menu or
+      // panel), so open the bookmarks sidebar and reveal the bookmark there.
       window.SidebarController._show("viewBookmarksSidebar").then(() => {
-        let theSidebar = document.getElementById("sidebar");
-        theSidebar.contentDocument
-          .getElementById("bookmarks-view")
-          .selectItems([aBookmarkGuid]);
-      });
+        let sidebar = document.getElementById("sidebar");
+        let updatedPanel =
+          sidebar.contentDocument.querySelector("sidebar-bookmarks");
+        if (updatedPanel) {
+          updatedPanel.showInFolder(aBookmarkGuid).catch(console.error);
+        } else {
+          sidebar.contentDocument
+            .getElementById("bookmarks-view")
+            .selectItems([aBookmarkGuid]);
+        }
+      }, console.error);
     } else if (documentUrl.includes("sidebar")) {
-      // We're in the sidebar - clear the search box first
+      // Invoked from within the bookmarks sidebar itself - clear the
+      // search box first
       let searchBox = document.getElementById("search-box");
       searchBox.clear();
 
@@ -1454,7 +1481,8 @@ PlacesController.prototype = {
           containers.splice(0, 0, "AllBookmarks");
           PlacesOrganizer.selectLeftPaneContainerByHierarchy(containers);
           this._view.selectItems([aBookmarkGuid], false);
-        });
+        })
+        .catch(e => console.error("showInFolder failed:", e));
     }
   },
 };
@@ -1666,7 +1694,7 @@ var PlacesControllerDragHelper = {
       } else if (
         XULElement.isInstance(data) &&
         data.localName == "tab" &&
-        data.ownerGlobal.isChromeWindow
+        data.documentGlobal.isChromeWindow
       ) {
         let uri = data.linkedBrowser.currentURI;
         let spec = uri ? uri.spec : "about:blank";
@@ -1678,7 +1706,7 @@ var PlacesControllerDragHelper = {
       } else if (
         XULElement.isInstance(data) &&
         data.localName == "tab-split-view-wrapper" &&
-        data.ownerGlobal.isChromeWindow
+        data.documentGlobal.isChromeWindow
       ) {
         // Splitview tabs are dragged together via tab-split-view-wrapper, so that means
         // mozItemCount/dropCount is 1, which is why we unpack its tabs to bookmark here.

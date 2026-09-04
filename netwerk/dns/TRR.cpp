@@ -1,47 +1,45 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "TRR.h"
+
 #include "DNS.h"
 #include "DNSUtils.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"
-#include "nsHttpHandler.h"
-#include "nsHttpChannel.h"
-#include "nsHostResolver.h"
-#include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIIOService.h"
-#include "nsIInputStream.h"
-#include "nsIObliviousHttp.h"
-#include "nsIOService.h"
-#include "nsISupports.h"
-#include "nsISupportsUtils.h"
-#include "nsITimedChannel.h"
-#include "nsIUploadChannel2.h"
-#include "nsIURIMutator.h"
-#include "nsNetUtil.h"
-#include "nsQueryObject.h"
-#include "nsStringStream.h"
-#include "nsThreadUtils.h"
-#include "nsURLHelper.h"
 #include "ObliviousHttpChannel.h"
-#include "TRR.h"
+#include "TRRLoadInfo.h"
 #include "TRRService.h"
 #include "TRRServiceChannel.h"
-#include "TRRLoadInfo.h"
-
 #include "mozilla/Base64.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/glean/NetwerkDnsMetrics.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
+#include "nsHostResolver.h"
+#include "nsHttpChannel.h"
+#include "nsHttpHandler.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIIOService.h"
+#include "nsIInputStream.h"
+#include "nsIOService.h"
+#include "nsIObliviousHttp.h"
+#include "nsISupports.h"
+#include "nsISupportsUtils.h"
+#include "nsITimedChannel.h"
+#include "nsIURIMutator.h"
+#include "nsIUploadChannel2.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsStringStream.h"
+#include "nsThreadUtils.h"
+#include "nsURLHelper.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 #include "mozilla/glean/NetwerkMetrics.h"
@@ -191,7 +189,7 @@ bool TRR::MaybeBlockRequest() {
       return true;
     }
 
-    if (TRRService::Get()->IsExcludedFromTRR(mHost)) {
+    if (TRRService::Get()->IsExcludedFromTRR(mHost, mRec->mEffectiveTRRMode)) {
       RecordReason(TRRSkippedReason::TRR_EXCLUDED);
       return true;
     }
@@ -379,7 +377,7 @@ nsresult TRR::SendHTTPRequest() {
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = uploadChannel->ExplicitSetUploadStream(uploadStream, contentType,
-                                                streamLength, "POST"_ns, false);
+                                                streamLength, "POST"_ns);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -519,7 +517,7 @@ void TRR::SaveAdditionalRecords(
         mRec->originSuffix, getter_AddRefs(hostRecord));
     if (NS_FAILED(rv)) {
       LOG(("Failed to get host record for additional record %s",
-           nsCString(recordEntry.GetKey()).get()));
+           PromiseFlatCString(recordEntry.GetKey()).get()));
       continue;
     }
     RefPtr<AddrInfo> ai(
@@ -536,7 +534,7 @@ void TRR::SaveAdditionalRecords(
     hostRecord->mEffectiveTRRMode =
         static_cast<nsIRequest::TRRMode>(mRec->mEffectiveTRRMode);
     LOG(("Completing lookup for additional: %s",
-         nsCString(recordEntry.GetKey()).get()));
+         PromiseFlatCString(recordEntry.GetKey()).get()));
     (void)mHostResolver->CompleteLookup(hostRecord, NS_OK, ai, mPB,
                                         mOriginSuffix, TRRSkippedReason::TRR_OK,
                                         this);
@@ -632,28 +630,6 @@ nsresult TRR::ReturnData(nsIChannel* aChannel) {
                                               mTRRSkippedReason, mTTL, mPB);
   }
 
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  if (httpChannel) {
-    nsAutoCString version;
-    if (NS_SUCCEEDED(httpChannel->GetProtocolVersion(version))) {
-      nsAutoCString key("h1"_ns);
-      if (version.Equals("h3"_ns)) {
-        key.Assign("h3"_ns);
-      } else if (version.Equals("h2"_ns)) {
-        key.Assign("h2"_ns);
-      }
-
-      if (trrFetchDuration) {
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDuration);
-      }
-      if (trrFetchDurationNetworkOnly) {
-        key.Append("_network_only"_ns);
-        glean::networking::trr_fetch_duration.Get(key).AccumulateRawDuration(
-            *trrFetchDurationNetworkOnly);
-      }
-    }
-  }
   return NS_OK;
 }
 
@@ -738,7 +714,7 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
   }
 
   // restore mCname as DohDecode() change it
-  mCname = cname;
+  mCname = std::move(cname);
   if (NS_SUCCEEDED(rv) && HasUsableResponse()) {
     ReturnData(aChannel);
     return NS_OK;
@@ -746,9 +722,13 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
 
   bool ra = mPacket && mPacket->RecursionAvailable().unwrapOr(false);
   LOG(("ra = %d", ra));
-  if (rv == NS_ERROR_UNKNOWN_HOST && ra) {
+  if (rv == NS_ERROR_UNKNOWN_HOST && ra && mType != TRRTYPE_HTTPSSVC) {
     // If recursion is available, but no addresses have been returned,
     // we can just return a failure here.
+    // This optimization is only valid for A/AAAA CNAME chains: a recursive
+    // resolver that follows a CNAME already inlines the target's addresses.
+    // It does not hold for HTTPS AliasMode, since recursive resolvers do not
+    // chase the SVCB/HTTPS alias, so we must query the TargetName ourselves.
     LOG(("TRR::FollowCname not sending another request as RA flag is set."));
     FailData(NS_ERROR_UNKNOWN_HOST);
     return NS_OK;
@@ -764,6 +744,12 @@ nsresult TRR::FollowCname(nsIChannel* aChannel) {
   RefPtr<TRR> trr =
       new TRR(mHostResolver, mRec, mCname, mType, mCnameLoop, mPB);
   trr->SetPurpose(mPurpose);
+  // Recursive resolvers do not chase HTTPS AliasMode targets, so following the
+  // TargetName is an HTTPS alias follow. Remember this so that a target with no
+  // HTTPS record still yields an AliasMode record instead of failing.
+  if (mType == TRRTYPE_HTTPSSVC) {
+    trr->mHTTPSAliasFollow = true;
+  }
   if (!TRRService::Get()) {
     return NS_ERROR_FAILURE;
   }
@@ -783,6 +769,31 @@ nsresult TRR::On200Response(nsIChannel* aChannel) {
       mHost, mType, mCname, StaticPrefs::network_trr_allow_rfc1918(), mDNS,
       mResult, additionalRecords, mTTL);
   if (NS_FAILED(rv)) {
+    // We followed an HTTPS AliasMode record to this TargetName. If the target
+    // resolved successfully (NOERROR) but simply has no HTTPS record of its
+    // own, RFC 9460 still requires connecting to the TargetName, so synthesize
+    // an AliasMode record carrying it. The connection layer then routes to the
+    // target and Happy Eyeballs issues A/AAAA/HTTPS queries for it. A SERVFAIL
+    // or NXDOMAIN is a genuine failure and is left to propagate.
+    if (mType == TRRTYPE_HTTPSSVC && mHTTPSAliasFollow &&
+        rv == NS_ERROR_UNKNOWN_HOST) {
+      auto rcode = mPacket->GetRCode();
+      if (rcode.isOk() && rcode.unwrap() == 0) {
+        LOG(("TRR::On200Response synthesizing AliasMode record for %s\n",
+             mHost.get()));
+        SVCB alias;
+        alias.mSvcFieldPriority = 0;
+        alias.mSvcDomainName = mHost;
+        CopyableTArray<SVCB> records;
+        records.AppendElement(std::move(alias));
+        mResult = AsVariant(std::move(records));
+        if (mTTL == UINT32_MAX) {
+          mTTL = 60;
+        }
+        ReturnData(aChannel);
+        return NS_OK;
+      }
+    }
     LOG(("TRR::On200Response DohDecode %x\n", (int)rv));
     HandleDecodeError(rv);
     return rv;

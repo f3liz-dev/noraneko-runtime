@@ -1,17 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
+#include <deque>
+#include <list>
 
 #include "BSPTree.h"
 #include "Polygon.h"
 #include "PolygonTestUtils.h"
-
-#include <deque>
-#include <list>
+#include "gtest/gtest.h"
 
 using namespace mozilla::gfx;
 using namespace mozilla::layers;

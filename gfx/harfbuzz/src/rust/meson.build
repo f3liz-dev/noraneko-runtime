@@ -42,7 +42,7 @@ if buildtype == 'release' or buildtype == 'debugoptimized'
 endif
 
 opt_level = get_option('optimization')
-rust_flags += ' -C opt-level=' + opt_level
+rust_flags += ' -C force-frame-pointers=yes -C force-unwind-tables=no -C opt-level=' + opt_level
 
 sources = [
   'lib.rs',
@@ -55,6 +55,7 @@ harfbuzz_rust = custom_target(
   input: sources + ['Cargo.toml'],
   output: ['libharfbuzz_rust.a'],
   depends: [hb_rs],
+  build_always_stale: true,
   env: ['OUT_DIR=' + meson.current_build_dir(),
         'RUSTFLAGS=' + rust_flags,
   ],

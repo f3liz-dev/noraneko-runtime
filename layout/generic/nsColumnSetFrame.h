@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,6 +76,12 @@ class nsColumnSetFrame final : public nsContainerFrame {
   Maybe<nscoord> GetNaturalBaselineBOffset(
       mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
       BaselineExportContext aExportContext) const override;
+
+  // Returns true if this column set contains only empty column boxes. For
+  // example, this occurs when a multi-column container starts/ends with a
+  // column spanner, as the wrapper still constructs an empty column set as
+  // the first/last child (see nsCSSFrameConstructor::ConstructBlock).
+  bool IsEmpty() override;
 
  protected:
   nscoord mLastBalanceBSize;

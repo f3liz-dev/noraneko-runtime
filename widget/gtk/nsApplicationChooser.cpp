@@ -1,22 +1,22 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsApplicationChooser.h"
+
+#include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
 
-#include "nsApplicationChooser.h"
 #include "WidgetUtils.h"
-#include "nsIMIMEInfo.h"
-#include "nsIWidget.h"
-#include "nsIFile.h"
+#include "mozilla/GRefPtr.h"
 #include "nsCExternalHandlerService.h"
 #include "nsComponentManagerUtils.h"
 #include "nsGtkUtils.h"
-#include "nsPIDOMWindow.h"
+#include "nsIFile.h"
 #include "nsIGIOService.h"
-#include <gio/gdesktopappinfo.h>
-#include "mozilla/GRefPtr.h"
+#include "nsIMIMEInfo.h"
+#include "nsIWidget.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla;
 
@@ -54,7 +54,7 @@ nsApplicationChooser::Open(const nsACString& aContentType,
       (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
       PromiseFlatCString(aContentType).get());
   gtk_app_chooser_dialog_set_heading(GTK_APP_CHOOSER_DIALOG(chooser),
-                                     mWindowTitle.BeginReading());
+                                     mWindowTitle.get());
   NS_ADDREF_THIS();
   g_signal_connect(chooser, "response", G_CALLBACK(OnResponse), this);
   g_signal_connect(chooser, "destroy", G_CALLBACK(OnDestroy), this);

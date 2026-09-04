@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80 filetype=javascript: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,6 +83,11 @@ const kDownloadsStringsRequiringFormatting = {
 };
 
 const kMaxHistoryResultsForLimitedView = 42;
+
+// On download completion, data URIs longer than this threshold have their body
+// stripped from the download source object to avoid retaining large strings in
+// memory.
+const kLargeDataUriLengthThreshold = 10 * 1024 * 1024;
 
 const kPrefBranch = Services.prefs.getBranch("browser.download.");
 
@@ -327,28 +330,20 @@ export var DownloadsCommon = {
    * Removes a Download object from both session and history downloads.
    */
   async deleteDownload(download) {
-    // Check hasBlockedData to avoid double counting if you click the X button
-    // in the Library view and then delete the download from the history.
-    if (
-      download.error?.becauseBlockedByReputationCheck &&
-      download.hasBlockedData
-    ) {
-      Glean.downloads.userActionOnBlockedDownload[
-        download.error.reputationCheckVerdict
-      ].accumulateSingleSample(1); // confirm block
-    }
-
     // Remove the associated history element first, if any, so that the views
     // that combine history and session downloads won't resurrect the history
     // download into the view just before it is deleted permanently.
-    try {
-      await lazy.PlacesUtils.history.remove(download.source.url);
-    } catch (ex) {
-      console.error(ex);
+    let sourceURI = URL.parse(download.source.url)?.URI;
+    if (sourceURI && lazy.PlacesUtils.history.canAddURI(sourceURI)) {
+      await lazy.PlacesUtils.history.remove(sourceURI).catch(console.error);
     }
     let list = await lazy.Downloads.getList(lazy.Downloads.ALL);
     await list.remove(download);
-    if (download.error?.becauseBlockedByContentAnalysis) {
+    if (download.hasBlockedData) {
+      // confirmBlock handles telemetry, content analysis response,
+      // file removal, and sets `deleted`.
+      await download.confirmBlock();
+    } else if (download.error?.becauseBlockedByContentAnalysis) {
       await download.respondToContentAnalysisWarnWithBlock();
     }
     await download.finalize(true);
@@ -360,21 +355,20 @@ export var DownloadsCommon = {
    *
    * @param download
    *        The download to delete and/or forget.
-   * @param clearHistory
+   * @param clearHistoryOnDelete
    *        Optional. Removes history from session downloads list or history.
    *        0 - Don't remove the download from session list or history.
    *        1 - Remove the download from session list, but not history.
    *        2 - Remove the download from both session list and history.
    */
-  async deleteDownloadFiles(download, clearHistory = 0) {
-    if (clearHistory > 1) {
-      try {
-        await lazy.PlacesUtils.history.remove(download.source.url);
-      } catch (ex) {
-        console.error(ex);
+  async deleteDownloadFiles(download, clearHistoryOnDelete = 0) {
+    if (clearHistoryOnDelete > 1) {
+      let sourceURI = URL.parse(download.source.url)?.URI;
+      if (sourceURI && lazy.PlacesUtils.history.canAddURI(sourceURI)) {
+        await lazy.PlacesUtils.history.remove(sourceURI).catch(console.error);
       }
     }
-    if (clearHistory > 0) {
+    if (clearHistoryOnDelete > 0) {
       let list = await lazy.Downloads.getList(lazy.Downloads.ALL);
       await list.remove(download);
     }
@@ -382,7 +376,7 @@ export var DownloadsCommon = {
     if (download.error?.becauseBlockedByContentAnalysis) {
       await download.respondToContentAnalysisWarnWithBlock();
     }
-    if (clearHistory < 2) {
+    if (clearHistoryOnDelete < 2) {
       lazy.DownloadHistory.updateMetaData(download).catch(console.error);
     }
   },
@@ -921,6 +915,20 @@ DownloadsDataCtor.prototype = {
         // This state transition code should actually be located in a Downloads
         // API module (bug 941009).
         lazy.DownloadHistory.updateMetaData(download).catch(console.error);
+
+        // Data URIs are not recorded in global history. Keeping them in
+        // memory mainly supports features like "Copy Download Link", which
+        // are not especially useful here. For large data URIs, save memory by
+        // stripping the payload and marking that in `isDataURICleared`.
+        if (
+          download.succeeded &&
+          download.source.url?.startsWith("data:") &&
+          download.source.url.length > kLargeDataUriLengthThreshold
+        ) {
+          const commaIndex = download.source.url.indexOf(",");
+          download.source.url = download.source.url.slice(0, commaIndex + 1);
+          download.source.isDataURICleared = true;
+        }
       }
 
       if (

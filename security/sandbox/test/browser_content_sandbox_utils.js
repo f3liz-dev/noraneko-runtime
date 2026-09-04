@@ -59,7 +59,7 @@ function isXdgEnabled() {
 // Creates file at |path| and returns a promise that resolves with an object
 // with .ok boolean to indicate true if the file was successfully created,
 // otherwise false. Include imports so this can be safely serialized and run
-// remotely by ContentTask.spawn.
+// remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 function createFile(path) {
@@ -99,7 +99,7 @@ function createFile(path) {
 // Creates a symlink at |path| and returns a promise that resolves with an
 // object with .ok boolean to indicate true if the symlink was successfully
 // created, otherwise false. Include imports so this can be safely serialized
-// and run remotely by ContentTask.spawn.
+// and run remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 // Report errno in .code if syscall returns -1.
@@ -139,7 +139,7 @@ function createSymlink(path) {
 // Deletes file at |path| and returns a promise that resolves with an object
 // with .ok boolean to indicate true if the file was successfully deleted,
 // otherwise false. Include imports so this can be safely serialized and run
-// remotely by ContentTask.spawn.
+// remotely by SpecialPowers.spawn.
 //
 // Report the exception's error code in .code as well.
 function deleteFile(path) {
@@ -155,6 +155,50 @@ function deleteFile(path) {
   }
 
   return { ok: true };
+}
+
+// Calls unlink(NULL) and unlinkat(AT_FDCWD, NULL, 0) via libc to check that the
+// sandbox syscall traps reject a null path instead of crashing the content
+// process. Returns the errno reported by each call. Include imports so this can
+// be safely serialized and run remotely by SpecialPowers.spawn.
+function unlinkNullPath() {
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
+
+  // AT_FDCWD on Linux.
+  const AT_FDCWD = -100;
+
+  try {
+    const libc = ctypes.open("libc.so.6");
+
+    const unlink = libc.declare(
+      "unlink",
+      ctypes.default_abi,
+      ctypes.int, // return value
+      ctypes.char.ptr // pathname
+    );
+    const unlinkat = libc.declare(
+      "unlinkat",
+      ctypes.default_abi,
+      ctypes.int, // return value
+      ctypes.int, // dirfd
+      ctypes.char.ptr, // pathname
+      ctypes.int // flags
+    );
+
+    ctypes.errno = 0;
+    unlink(null);
+    const unlinkErrno = ctypes.errno;
+
+    ctypes.errno = 0;
+    unlinkat(AT_FDCWD, null, 0);
+    const unlinkatErrno = ctypes.errno;
+
+    return { ok: true, unlinkErrno, unlinkatErrno };
+  } catch (e) {
+    return { ok: false, code: e.result };
+  }
 }
 
 // Reads the directory at |path| and returns a promise that resolves when
@@ -472,9 +516,9 @@ async function runTestsList(tests) {
       ok(test.file.exists(), `${test.file.path} exists`);
     }
 
-    let result = await ContentTask.spawn(
+    let result = await SpecialPowers.spawn(
       test.browser,
-      test.file.path,
+      [test.file.path],
       test.func
     );
 

@@ -1,0 +1,64 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+#ifndef mozilla_dom_TextFormat_h_
+#define mozilla_dom_TextFormat_h_
+
+#include "mozilla/dom/TextFormatBinding.h"
+#include "nsWrapperCache.h"
+
+class nsIGlobalObject;
+
+namespace mozilla::dom {
+
+class TextFormat final : public nsISupports, public nsWrapperCache {
+ public:
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
+  NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(TextFormat)
+
+  TextFormat(nsIGlobalObject* aGlobal, const TextFormatInit& aOptions);
+
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
+
+  JSObject* WrapObject(JSContext* aCx,
+                       JS::Handle<JSObject*> aGivenProto) override;
+
+  static already_AddRefed<TextFormat> Constructor(
+      const GlobalObject& aGlobal, const TextFormatInit& aOptions);
+
+  uint32_t RangeStart() const { return mRangeStart; }
+
+  uint32_t RangeEnd() const { return mRangeEnd; }
+
+  enum UnderlineStyle UnderlineStyle() const { return mUnderlineStyle; }
+
+  enum UnderlineThickness UnderlineThickness() const {
+    return mUnderlineThickness;
+  }
+
+ private:
+  ~TextFormat() = default;
+
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  uint32_t mRangeStart;
+  uint32_t mRangeEnd;
+  enum UnderlineStyle mUnderlineStyle;
+  enum UnderlineThickness mUnderlineThickness;
+};
+
+std::ostream& operator<<(std::ostream& aStream, UnderlineStyle aStyle);
+std::ostream& operator<<(std::ostream& aStream, UnderlineThickness aThickness);
+std::ostream& operator<<(std::ostream& aStream, const TextFormat& aFormat);
+
+}  // namespace mozilla::dom
+
+template <>
+struct fmt::formatter<mozilla::dom::TextFormat> : fmt::ostream_formatter {};
+template <>
+struct fmt::formatter<mozilla::dom::UnderlineStyle> : fmt::ostream_formatter {};
+template <>
+struct fmt::formatter<mozilla::dom::UnderlineThickness>
+    : fmt::ostream_formatter {};
+
+#endif  // DOM_TEXTFORMAT_H_

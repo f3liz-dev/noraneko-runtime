@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -167,6 +165,7 @@ already_AddRefed<Exception> CreateException(nsresult aRv,
     case NS_ERROR_MODULE_DOM_ANIM:
     case NS_ERROR_MODULE_DOM_PUSH:
     case NS_ERROR_MODULE_DOM_MEDIA:
+    case NS_ERROR_MODULE_DOM_SERIAL:
       if (aMessage.IsEmpty()) {
         return DOMException::Create(aRv);
       }
@@ -205,7 +204,7 @@ namespace exceptions {
 
 class JSStackFrame final : public nsIStackFrame, public xpc::JSStackFrameBase {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(JSStackFrame)
   NS_DECL_NSISTACKFRAME
 

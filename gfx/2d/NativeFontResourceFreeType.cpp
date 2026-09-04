@@ -1,22 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NativeFontResourceFreeType.h"
-#include "UnscaledFontFreeType.h"
 
-#include "mozilla/fallible.h"
+#include "UnscaledFontFreeType.h"
 
 namespace mozilla::gfx {
 
 NativeFontResourceFreeType::NativeFontResourceFreeType(
-    UniquePtr<uint8_t[]>&& aFontData, uint32_t aDataLength,
-    FT_Library aFTLibrary)
+    const uint8_t*&& aFontData, uint32_t aDataLength, FT_Library aFTLibrary)
     : NativeFontResource(aDataLength),
-      mFontData(std::move(aFontData)),
-      mDataLength(aDataLength),
+      mFontData(MakeRefPtr<FontData>(std::move(aFontData), aDataLength)),
       mFTLibrary(aFTLibrary) {}
 
 NativeFontResourceFreeType::~NativeFontResourceFreeType() = default;
@@ -27,13 +22,14 @@ already_AddRefed<T> NativeFontResourceFreeType::CreateInternal(
   if (!aFontData || !aDataLength) {
     return nullptr;
   }
-  UniquePtr<uint8_t[]> fontData(new (fallible) uint8_t[aDataLength]);
+  auto* fontData = static_cast<uint8_t*>(malloc(aDataLength));
   if (!fontData) {
     return nullptr;
   }
-  memcpy(fontData.get(), aFontData, aDataLength);
+  memcpy(fontData, aFontData, aDataLength);
 
-  RefPtr<T> resource = new T(std::move(fontData), aDataLength, aFTLibrary);
+  RefPtr<T> resource = new T(std::move(static_cast<const uint8_t*>(fontData)),
+                             aDataLength, aFTLibrary);
   return resource.forget();
 }
 
@@ -56,8 +52,8 @@ already_AddRefed<UnscaledFont> NativeFontResourceFreeType::CreateUnscaledFont(
 
 already_AddRefed<SharedFTFace> NativeFontResourceFreeType::CloneFace(
     int aFaceIndex) {
-  RefPtr<SharedFTFace> face = Factory::NewSharedFTFaceFromData(
-      mFTLibrary, mFontData.get(), mDataLength, aFaceIndex, this);
+  RefPtr<SharedFTFace> face =
+      Factory::NewSharedFTFaceFromData(mFTLibrary, mFontData, aFaceIndex, this);
   if (!face ||
       (FT_Select_Charmap(face->GetFace(), FT_ENCODING_UNICODE) != FT_Err_Ok &&
        FT_Select_Charmap(face->GetFace(), FT_ENCODING_MS_SYMBOL) !=
@@ -69,8 +65,7 @@ already_AddRefed<SharedFTFace> NativeFontResourceFreeType::CloneFace(
 
 #ifdef MOZ_WIDGET_GTK
 NativeFontResourceFontconfig::NativeFontResourceFontconfig(
-    UniquePtr<uint8_t[]>&& aFontData, uint32_t aDataLength,
-    FT_Library aFTLibrary)
+    const uint8_t*&& aFontData, uint32_t aDataLength, FT_Library aFTLibrary)
     : NativeFontResourceFreeType(std::move(aFontData), aDataLength,
                                  aFTLibrary) {}
 

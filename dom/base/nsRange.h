@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +25,8 @@ class nsIPrincipal;
 
 namespace mozilla {
 class RectCallback;
-namespace dom {
+}
+namespace mozilla::dom {
 struct ClientRectsAndTexts;
 class DocGroup;
 class DocumentFragment;
@@ -48,16 +47,13 @@ enum class RangeBehaviour : uint8_t {
   CollapseDefaultRangeAndCrossShadowBoundaryRanges
 
 };
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 class nsRange final : public mozilla::dom::AbstractRange,
                       public nsStubMutationObserver {
   using ErrorResult = mozilla::ErrorResult;
   using AbstractRange = mozilla::dom::AbstractRange;
   using DocGroup = mozilla::dom::DocGroup;
-  using DOMRect = mozilla::dom::DOMRect;
-  using DOMRectList = mozilla::dom::DOMRectList;
   using RangeBoundary = mozilla::RangeBoundary;
   using RangeBoundarySetBy = mozilla::RangeBoundarySetBy;
   using RawRangeBoundary = mozilla::RawRangeBoundary;
@@ -68,6 +64,9 @@ class nsRange final : public mozilla::dom::AbstractRange,
   explicit nsRange(nsINode* aNode);
 
  public:
+  nsRange(const nsRange&) = delete;
+  nsRange& operator=(const nsRange&) = delete;
+
   /**
    * The following Create() returns `nsRange` instance which is initialized
    * only with aNode.  The result is never positioned.
@@ -165,6 +164,14 @@ class nsRange final : public mozilla::dom::AbstractRange,
   }
 
   already_AddRefed<nsRange> CloneRange() const;
+
+  /**
+   * Return this if the both start/end containers of mCrossShadowBoundaryRange
+   * are in the flattened containers in the flattened tree. Otherwise, return
+   * a clone but mCrossShadowBoundaryRange is adjusted to end of the closest
+   * flattened ancestor node.
+   */
+  already_AddRefed<nsRange> GetRangeInFlatTree() const;
 
   /**
    * SetStartAndEnd() works similar to call both SetStart() and SetEnd().
@@ -304,16 +311,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
                                       ErrorResult& aErr);
 
   void SurroundContents(nsINode& aNode, ErrorResult& aErr);
-  already_AddRefed<DOMRect> GetBoundingClientRect(bool aClampToEdge = true,
-                                                  bool aFlushLayout = true);
-  already_AddRefed<DOMRectList> GetClientRects(bool aClampToEdge = true,
-                                               bool aFlushLayout = true);
-  // ChromeOnly
-  already_AddRefed<DOMRectList> GetAllowCrossShadowBoundaryClientRects(
-      bool aClampToEdge = true, bool aFlushLayout = true);
-
-  void GetClientRectsAndTexts(mozilla::dom::ClientRectsAndTexts& aResult,
-                              ErrorResult& aErr);
 
   // Following methods should be used for internal use instead of *JS().
   void SelectNode(nsINode& aNode, ErrorResult& aErr);
@@ -368,7 +365,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
                           AllowRangeCrossShadowBoundary::No);
   void Collapse(bool aToStart);
 
-  static void GetInnerTextNoFlush(mozilla::dom::DOMString& aValue,
+  static void GetInnerTextNoFlush(nsAString& aValue,
                                   mozilla::ErrorResult& aError,
                                   nsIContent* aContainer);
 
@@ -382,10 +379,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
       const CharacterDataChangeInfo& aInfo, const RawRangeBoundary& aBoundary);
 
  private:
-  // no copy's or assigns
-  nsRange(const nsRange&);
-  nsRange& operator=(const nsRange&);
-
   void SetStartInternal(const RawRangeBoundary& aPoint,
                         AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary,
                         ErrorResult& aRv);
@@ -465,21 +458,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
    */
   bool IsPartOfOneSelectionOnly() const { return mSelections.Length() == 1; };
 
-  already_AddRefed<DOMRectList> GetClientRectsInner(
-      AllowRangeCrossShadowBoundary = AllowRangeCrossShadowBoundary::No,
-      bool aClampToEdge = true, bool aFlushLayout = true);
-
  public:
-  /**
-   * This helper function gets rects and correlated text for the given range.
-   * @param aTextList optional where nullptr = don't retrieve text
-   */
-  static void CollectClientRectsAndText(
-      mozilla::RectCallback* aCollector,
-      mozilla::dom::Sequence<nsString>* aTextList, nsRange* aRange,
-      nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
-      uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout);
-
   /**
    * Scan this range for -moz-user-select:none nodes and split it up into
    * multiple ranges to exclude those nodes.  The resulting ranges are put

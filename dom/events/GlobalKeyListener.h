@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -69,9 +67,9 @@ class GlobalKeyListener : public nsIDOMEventListener {
     bool mReservedHandlerForChromeFound = false;
     // Set to true if found handler is disabled.
     bool mDisabledHandlerFound = false;
-    // Set to true if a command is found but may correspond to a different type
-    // of keyboard event.
-    bool mRelevantHandlerFound = false;
+    // Set to a Command that is found but may correspond to a different type
+    // of keyboard event, this is set only for LookForCommand purpose.
+    Maybe<Command> mRelevantCommand;
   };
 
   // walk the handlers, looking for one to handle the event

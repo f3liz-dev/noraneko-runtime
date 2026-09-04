@@ -11,6 +11,8 @@ support-files = [
 
 ["test_3rdparty.js"]
 
+["test_PolicySchemaValidator.js"]
+
 ["test_addon_update.js"]
 
 ["test_appupdatepin.js"]
@@ -35,9 +37,15 @@ support-files = [
 
 ["test_extensionsettings.js"]
 
+["test_extensionsettings_blocked_permissions.js"]
+
+["test_extensionsettings_install_without_url.js"]
+
 ["test_import_enterprise_roots.js"]
 
 ["test_local_network_access.js"]
+
+["test_macos_policy_validation.js"]
 
 ["test_macosparser_unflatten.js"]
 run-if = [
@@ -45,6 +53,14 @@ run-if = [
 ]
 
 ["test_permissions.js"]
+
+["test_policies_schema.js"]
+support-files = [
+  "../../schemas/policies-schema.json",
+  "../../schemas/policies-schema.meta.json",
+]
+
+["test_policy_descriptions.js"]
 
 ["test_policy_search_engine.js"]
 
@@ -63,6 +79,12 @@ support-files = ["config_popups_cookies_addons.json"]
 
 ["test_simple_pref_policies.js"]
 
+["test_sitepolicies.js"]
+
 ["test_sorted_alphabetically.js"]
 
 ["test_telemetry.js"]
+
+["test_webserial.js"]
+
+["test_websitefilter.js"]

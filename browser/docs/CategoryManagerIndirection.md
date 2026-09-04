@@ -10,7 +10,7 @@ There are 2 parts to this:
 1. Consumers registering with the category manager
 2. Publishers/actors invoking consumers via the category manager.
 
-## Consumer registration with the category manager.
+## Consumer registration with the category manager
 
 The category manager is used for various purposes within Firefox; it is more or
 less an arbitrary double string-keyed data store.
@@ -26,7 +26,7 @@ The "value" part is an `Object.method` notation, where the expectation is that
 and `method` is some method on that object.
 
 At compile-time, registration can happen with an entry in a `.manifest` file
-like [BrowserComponents.manifest](https://searchfox.org/mozilla-central/source/browser/components/BrowserComponents.manifest).
+like [BrowserComponents.manifest](https://searchfox.org/firefox-main/source/browser/components/BrowserComponents.manifest).
 Note that any manifest successfully processed by the build system would do,
 we don't need to use `BrowserComponents.manifest` specifically. In fact, it
 would be preferable if components used their own manifest files.
@@ -90,7 +90,7 @@ logic. Note that it may be invoked asynchronously if the consumers are async.
 ## Caveats
 
 Any errors thrown by consumers are automatically caught and reported via the
-[Browser Console](/devtools-user/browser_console/index.rst).
+[Browser Console](/devtools-user/browser_console/index.md).
 
 Async functions are not awaited before invoking other consumers. Note that
 rejections (exceptions from async code) are still caught and reported to the

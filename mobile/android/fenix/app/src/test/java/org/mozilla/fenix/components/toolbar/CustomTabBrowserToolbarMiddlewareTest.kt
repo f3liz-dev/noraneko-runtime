@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@file:OptIn(ExperimentalAndroidComponentsApi::class)
+
 package org.mozilla.fenix.components.toolbar
 
 import android.graphics.Bitmap
@@ -10,7 +12,6 @@ import android.util.Patterns
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.drawable.toDrawable
-import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavController
 import io.mockk.every
 import io.mockk.mockk
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.state.action.ContentAction.UpdateProgressAction
 import mozilla.components.browser.state.action.ContentAction.UpdateSecurityInfoAction
 import mozilla.components.browser.state.action.ContentAction.UpdateTitleAction
@@ -33,14 +35,20 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
 import mozilla.components.compose.browser.toolbar.concept.Action.ActionButtonRes
+import mozilla.components.compose.browser.toolbar.concept.Action.AnimatedPillActionRes
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.ContextualMenuOption
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.PageOriginContextualMenuInteractions.CopyToClipboardClicked
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
+import mozilla.components.concept.engine.ipprotection.IPProtectionHandler.StateInfo
+import mozilla.components.concept.engine.ipprotection.ServiceState
 import mozilla.components.concept.engine.permission.SitePermissionsStorage
+import mozilla.components.feature.ipprotection.store.IPProtectionAction
+import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.Authorized
+import mozilla.components.feature.ipprotection.store.state.IPProtectionState
 import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.feature.tabs.CustomTabsUseCases
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
@@ -49,7 +57,6 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.ClipboardHandler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -63,19 +70,26 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.URLCopiedToClipboard
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.DisplayActions.MenuClicked
+import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.DisplayActions.ShareClicked
 import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.EndPageActions.CustomButtonClicked
 import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.StartBrowserActions.CloseClicked
 import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.StartPageActions.SiteInfoClicked
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.lifecycle.TestLifecycleOwner
+import org.mozilla.fenix.telemetry.ACTION_CLOSE_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_MENU_CLICKED
 import org.mozilla.fenix.telemetry.ACTION_SECURITY_INDICATOR_CLICKED
-import org.mozilla.fenix.telemetry.SOURCE_CUSTOM_BAR
+import org.mozilla.fenix.telemetry.ACTION_SHARE_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_SITE_CUSTOM_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
+import org.mozilla.fenix.telemetry.SURFACE_CUSTOM_TAB
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import mozilla.components.browser.toolbar.R as toolbarR
 import mozilla.components.feature.customtabs.R as customtabsR
 import mozilla.components.ui.icons.R as iconsR
@@ -102,15 +116,14 @@ class CustomTabBrowserToolbarMiddlewareTest {
         ),
     )
     private val appStore: AppStore = mockk()
+    private val ipProtectionStore = IPProtectionStore()
     private val permissionsStorage: SitePermissionsStorage = mockk()
-    private val cookieBannersStorage: CookieBannersStorage = mockk()
     private val useCases: CustomTabsUseCases = mockk()
     private val trackingProtectionUseCases: TrackingProtectionUseCases = mockk()
     private val publicSuffixList: PublicSuffixList = mockk {
         every { getPublicSuffixPlusOne(any()) } returns CompletableDeferred(null)
     }
     private val clipboard: ClipboardHandler = mockk()
-    private val lifecycleOwner = TestLifecycleOwner(Lifecycle.State.RESUMED)
     private val navController: NavController = mockk()
     private val closeTabDelegate: () -> Unit = {}
     private val settings: Settings = mockk {
@@ -378,7 +391,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -406,7 +419,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -446,7 +459,7 @@ class CustomTabBrowserToolbarMiddlewareTest {
         )
         val middleware = buildMiddleware(browserStore)
         val expectedInsecureIndicator = ActionButtonRes(
-            drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+            drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
             contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
             onClick = SiteInfoClicked,
         )
@@ -471,6 +484,263 @@ class CustomTabBrowserToolbarMiddlewareTest {
     }
 
     @Test
+    fun `GIVEN ip protection is active WHEN the pill is built THEN proxyActiveShown is not dispatched until the animation starts`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(enabled = true, ignoredOnTrackingProtection = false),
+            securityInfo = SecurityInfo.Secure(),
+        )
+        val browserStore = BrowserStore(BrowserState(customTabs = listOf(customTab)))
+        val middleware = buildMiddleware(browserStore = browserStore, ipProtectionStore = ipProtectionStore)
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val siteInfo = toolbarStore.state.displayState.pageActionsStart[0] as AnimatedPillActionRes
+        assertFalse(ipProtectionStore.state.proxyActiveShown)
+
+        siteInfo.onAnimationStarted?.invoke()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(ipProtectionStore.state.proxyActiveShown)
+    }
+
+    @Test
+    fun `GIVEN ip protection is active WHEN initializing the toolbar THEN show animated pill action`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(
+                enabled = true,
+                ignoredOnTrackingProtection = false,
+            ),
+            securityInfo = SecurityInfo.Secure(),
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        val siteInfo = toolbarPageActions[0] as AnimatedPillActionRes
+        assertEquals(iconsR.drawable.mozac_ic_shield_checkmark_24, siteInfo.iconResId)
+        assertEquals(iconsR.drawable.mozac_ic_globe_24, siteInfo.overlayResId)
+        assertEquals(R.string.ip_protection_toolbar_pill_label, siteInfo.textResId)
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN ip protection is not active WHEN it becomes active THEN update site info to animated pill`() = runTest {
+        val ipProtectionStore = IPProtectionStore()
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(
+                enabled = true,
+                ignoredOnTrackingProtection = false,
+            ),
+            securityInfo = SecurityInfo.Secure(),
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        assertIs<ActionButtonRes>(toolbarPageActions[0])
+
+        ipProtectionStore.dispatch(
+            IPProtectionAction.EngineStateChanged(
+                StateInfo(
+                    serviceState = ServiceState.Ready,
+                    proxyState = StateInfo.PROXY_STATE_ACTIVE,
+                ),
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        assertIs<AnimatedPillActionRes>(toolbarPageActions[0])
+    }
+
+    @OptIn(ExperimentalAndroidComponentsApi::class)
+    @Test
+    fun `GIVEN ip protection is active WHEN it becomes inactive THEN update site info to regular button`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(
+                enabled = true,
+                ignoredOnTrackingProtection = false,
+            ),
+            securityInfo = SecurityInfo.Secure(),
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        assertIs<AnimatedPillActionRes>(toolbarPageActions[0])
+
+        ipProtectionStore.dispatch(
+            IPProtectionAction.EngineStateChanged(
+                StateInfo(
+                    serviceState = ServiceState.Ready,
+                    proxyState = StateInfo.PROXY_STATE_READY,
+                ),
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        assertIs<ActionButtonRes>(toolbarPageActions[0])
+    }
+
+    @Test
+    fun `GIVEN ip protection is active and security is unknown WHEN initializing THEN show animated pill with globe icon`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            securityInfo = SecurityInfo.Unknown,
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        val siteInfo = toolbarPageActions[0] as AnimatedPillActionRes
+        assertEquals(iconsR.drawable.mozac_ic_globe_24, siteInfo.iconResId)
+    }
+
+    @Test
+    fun `GIVEN ip protection is active and site is insecure WHEN initializing THEN show animated pill with shield slash icon`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            securityInfo = SecurityInfo.Insecure(),
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        val siteInfo = toolbarPageActions[0] as AnimatedPillActionRes
+        assertEquals(iconsR.drawable.mozac_ic_shield_slash_24, siteInfo.iconResId)
+    }
+
+    @Test
+    fun `GIVEN ip protection is active and url is content WHEN initializing THEN show regular button without pill`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "content://test",
+            id = customTabId,
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        assertIs<ActionButtonRes>(toolbarPageActions[0])
+    }
+
+    @Test
+    fun `GIVEN ip protection is active WHEN security changes from insecure to secure THEN pill remains with updated icon`() = runTest {
+        val ipProtectionStore = IPProtectionStore(
+            initialState = IPProtectionState(proxyStatus = Authorized.Active),
+        )
+        val customTab = createCustomTab(
+            url = "URL",
+            id = customTabId,
+            trackingProtection = TrackingProtectionState(
+                enabled = true,
+                ignoredOnTrackingProtection = false,
+            ),
+            securityInfo = SecurityInfo.Insecure(),
+        )
+        val browserStore = BrowserStore(
+            BrowserState(customTabs = listOf(customTab)),
+        )
+        val middleware = buildMiddleware(
+            browserStore = browserStore,
+            ipProtectionStore = ipProtectionStore,
+        )
+        val toolbarStore = buildStore(middleware)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        var toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        var siteInfo = toolbarPageActions[0] as AnimatedPillActionRes
+        assertEquals(iconsR.drawable.mozac_ic_shield_slash_24, siteInfo.iconResId)
+
+        browserStore.dispatch(UpdateSecurityInfoAction(customTabId, SecurityInfo.Secure()))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        toolbarPageActions = toolbarStore.state.displayState.pageActionsStart
+        assertEquals(1, toolbarPageActions.size)
+        siteInfo = toolbarPageActions[0] as AnimatedPillActionRes
+        assertEquals(iconsR.drawable.mozac_ic_shield_checkmark_24, siteInfo.iconResId)
+    }
+
+    @Test
     fun `GIVEN current custom tab WHEN the security indicator button is clicked THEN record telemetry`() {
         val trackingProtectionUseCases: TrackingProtectionUseCases = mockk(relaxed = true)
         val navController: NavController = mockk(relaxed = true)
@@ -485,10 +755,11 @@ class CustomTabBrowserToolbarMiddlewareTest {
 
         val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
         assertNotNull(telemetry)
-        assertEquals("toolbar", telemetry?.category)
-        assertEquals("button_tapped", telemetry?.name)
-        assertEquals(SOURCE_CUSTOM_BAR, telemetry?.extra?.get("source"))
-        assertEquals(ACTION_SECURITY_INDICATOR_CLICKED, telemetry?.extra?.get("item"))
+        assertEquals("toolbar", telemetry.category)
+        assertEquals("button_tapped", telemetry.name)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_SECURITY_INDICATOR_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
     }
 
     @Test
@@ -501,10 +772,63 @@ class CustomTabBrowserToolbarMiddlewareTest {
 
         val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
         assertNotNull(telemetry)
-        assertEquals("toolbar", telemetry?.category)
-        assertEquals("button_tapped", telemetry?.name)
-        assertEquals(SOURCE_CUSTOM_BAR, telemetry?.extra?.get("source"))
-        assertEquals(ACTION_SECURITY_INDICATOR_CLICKED, telemetry?.extra?.get("item"))
+        assertEquals("toolbar", telemetry.category)
+        assertEquals("button_tapped", telemetry.name)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_SECURITY_INDICATOR_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
+    }
+
+    @Test
+    fun `GIVEN current custom tab WHEN the close button is clicked THEN record telemetry`() {
+        val useCases: CustomTabsUseCases = mockk(relaxed = true)
+        val middleware = buildMiddleware(useCases = useCases)
+        val toolbarStore = buildStore(middleware)
+
+        toolbarStore.dispatch(CloseClicked)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
+        assertNotNull(telemetry)
+        assertEquals("toolbar", telemetry.category)
+        assertEquals("button_tapped", telemetry.name)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_CLOSE_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
+    }
+
+    @Test
+    fun `GIVEN current custom tab WHEN the share button is clicked THEN record telemetry`() {
+        val navController: NavController = mockk(relaxed = true)
+        val middleware = buildMiddleware(navController = navController)
+        val toolbarStore = buildStore(middleware)
+
+        toolbarStore.dispatch(ShareClicked)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
+        assertNotNull(telemetry)
+        assertEquals("toolbar", telemetry.category)
+        assertEquals("button_tapped", telemetry.name)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_SHARE_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
+    }
+
+    @Test
+    fun `GIVEN current custom tab WHEN the custom action button is clicked THEN record telemetry`() {
+        val toolbarStore = buildStore()
+
+        toolbarStore.dispatch(CustomButtonClicked)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
+        assertNotNull(telemetry)
+        assertEquals("toolbar", telemetry.category)
+        assertEquals("button_tapped", telemetry.name)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_SITE_CUSTOM_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
     }
 
     @Test
@@ -728,6 +1052,12 @@ class CustomTabBrowserToolbarMiddlewareTest {
                 ),
             )
         }
+
+        val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
+        assertNotNull(telemetry)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_MENU_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
     }
 
     @Test
@@ -749,6 +1079,12 @@ class CustomTabBrowserToolbarMiddlewareTest {
                 ),
             )
         }
+
+        val telemetry = Toolbar.buttonTapped.testGetValue()?.get(0)
+        assertNotNull(telemetry)
+        assertEquals(SOURCE_ADDRESS_BAR, telemetry.extra?.get("source"))
+        assertEquals(ACTION_MENU_CLICKED, telemetry.extra?.get("item"))
+        assertEquals(SURFACE_CUSTOM_TAB, telemetry.extra?.get("surface"))
     }
 
     @Test
@@ -820,30 +1156,28 @@ class CustomTabBrowserToolbarMiddlewareTest {
     private fun buildMiddleware(
         browserStore: BrowserStore = this.browserStore,
         appStore: AppStore = this.appStore,
+        ipProtectionStore: IPProtectionStore = this.ipProtectionStore,
         permissionsStorage: SitePermissionsStorage = this.permissionsStorage,
-        cookieBannersStorage: CookieBannersStorage = this.cookieBannersStorage,
         useCases: CustomTabsUseCases = this.useCases,
         trackingProtectionUseCases: TrackingProtectionUseCases = this.trackingProtectionUseCases,
         publicSuffixList: PublicSuffixList = this.publicSuffixList,
         clipboard: ClipboardHandler = this.clipboard,
         navController: NavController = this.navController,
         closeTabDelegate: () -> Unit = this.closeTabDelegate,
-        settings: Settings = this.settings,
         isSandboxCustomTab: Boolean = false,
     ) = CustomTabBrowserToolbarMiddleware(
         uiContext = testContext,
         customTabId = this.customTabId,
         browserStore = browserStore,
         appStore = appStore,
+        ipProtectionStore = ipProtectionStore,
         permissionsStorage = permissionsStorage,
-        cookieBannersStorage = cookieBannersStorage,
         useCases = useCases,
         trackingProtectionUseCases = trackingProtectionUseCases,
         publicSuffixList = publicSuffixList,
         clipboard = clipboard,
         navController = navController,
         closeTabDelegate = closeTabDelegate,
-        settings = settings,
         scope = testScope,
         isSandboxCustomTab = isSandboxCustomTab,
     )

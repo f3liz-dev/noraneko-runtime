@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -57,7 +55,7 @@ add_task(async function () {
       let blob = new Blob([JSON.stringify(debug, null, 2)], {
         type: "application/json",
       });
-      let blobUri = URL.createObjectURL(blob);
+      let blobUri = content.URL.createObjectURL(blob);
       content.document.location = blobUri;
     });
     await BrowserTestUtils.browserLoaded(browser);
@@ -181,7 +179,7 @@ add_task(async function () {
   // the "proxy" we just started. Even though our connection to the proxy is
   // secure, in a real situation the connection from the proxy to
   // http://example.com won't be secure, so we treat it as not secure.
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     let identityMode = window.document.getElementById("identity-box").className;
     is(
@@ -190,7 +188,7 @@ add_task(async function () {
       `identity should be '${NOT_SECURE_LABEL}'`
     );
 
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     await testPageInfoNotEncrypted("http://example.com");
   });
 });

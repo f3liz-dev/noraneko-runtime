@@ -15,6 +15,10 @@ import {
 import { TippyTopProvider } from "resource:///modules/topsites/TippyTopProvider.sys.mjs";
 import { insertPinned } from "resource:///modules/topsites/TopSites.sys.mjs";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "resource:///modules/topsites/constants.mjs";
+// @backward-compat { version 154 }
+// Sourced from Reducers for its fallback shim. When 154 hits Release, import
+// TOP_SITES_MAX_ROWS from the constants.mjs import above instead.
+import { TOP_SITES_MAX_ROWS } from "resource://newtab/common/Reducers.sys.mjs";
 import { Dedupe } from "resource:///modules/Dedupe.sys.mjs";
 
 import {
@@ -29,9 +33,12 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AdsClient: "resource://newtab/lib/AdsClient.sys.mjs",
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   FilterAdult: "resource:///modules/FilterAdult.sys.mjs",
   LinksCache: "resource:///modules/LinksCache.sys.mjs",
+  MozAdsPlacementRequest:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
@@ -65,7 +72,9 @@ const PINNED_FAVICON_PROPS_TO_MIGRATE = [
 
 const CACHE_KEY = "contile";
 const ROWS_PREF = "topSitesRows";
+const PREF_MAX_SITES_PER_ROW = "topSitesMaxSitesPerRow";
 const SHOW_SPONSORED_PREF = "showSponsoredTopSites";
+const GROUPED_PINS_PREF = "topSitesGroupedPins";
 // The default total number of sponsored top sites to fetch from Contile
 // and Pocket.
 const MAX_NUM_SPONSORED = 3;
@@ -145,6 +154,15 @@ ChromeUtils.defineLazyGetter(lazy, "userAgent", () => {
   ).userAgent;
 });
 
+function getTopSitesCount(prefValues) {
+  return (
+    prefValues[ROWS_PREF] *
+    (prefValues.trainhopConfig?.topSites?.maxSitesPerRow ??
+      prefValues[PREF_MAX_SITES_PER_ROW] ??
+      TOP_SITES_MAX_SITES_PER_ROW)
+  );
+}
+
 // Smart shortcuts
 import { RankShortcutsProvider } from "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs";
 import { FrecencyBoostProvider } from "resource://newtab/lib/FrecencyBoostProvider/FrecencyBoostProvider.mjs";
@@ -153,18 +171,18 @@ const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
   "discoverystream.shortcuts.personalization.enabled";
 
 function smartshortcutsEnabled(values) {
-  const systemPref = values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
+  // if nimbus pref is valid we use it, otherwise fall back to local pref
   const experimentVariable = values.trainhopConfig?.smartShortcuts?.enabled;
-  return systemPref || experimentVariable;
+  if (typeof experimentVariable === "boolean") {
+    return experimentVariable;
+  }
+  return !!values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
 }
 const OVERSAMPLE_MULTIPLIER = 2;
 
 function getShortHostnameForCurrentSearch() {
-  // @backward-compat { version 149 }
-  // SearchService replaces Services.search in 149.
   return lazy.NewTabUtils.shortHostname(
-    // eslint-disable-next-line mozilla/valid-services
-    (Services.search ?? lazy.SearchService).defaultEngine.searchUrlDomain
+    lazy.SearchService.defaultEngine.searchUrlDomain
   );
 }
 
@@ -406,12 +424,29 @@ export class ContileIntegration {
    *   An array of the tile objects
    */
   _filterBlockedSponsors(tiles) {
-    const blocklist = JSON.parse(
-      Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
-    );
-    return tiles.filter(
-      tile => !blocklist.includes(lazy.NewTabUtils.shortURL(tile))
-    );
+    let blocklist;
+    try {
+      blocklist = JSON.parse(
+        Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+      );
+    } catch (e) {
+      blocklist = [];
+    }
+    const currentSearchHostname = this._topSitesFeed._currentSearchHostname;
+    return tiles.filter(tile => {
+      const shortURL = lazy.NewTabUtils.shortURL(tile);
+      if (blocklist.includes(shortURL)) {
+        return false;
+      }
+      // Drop a sponsored tile that matches the user's current default
+      // search engine so it doesn't duplicate the search bar. Maintained
+      // tile count relies on the source (MARS via `blocks`, or Contile
+      // over-returning) supplying a substitute.
+      if (currentSearchHostname && shortURL === currentSearchHostname) {
+        return false;
+      }
+      return true;
+    });
   }
 
   /**
@@ -597,6 +632,16 @@ export class ContileIntegration {
       return false;
     }
 
+    // Sponsored tile filtering consults the current default search engine
+    // (via _currentSearchHostname), so wait for the search service before any
+    // fetch/cache path reads it. Continue on failure as getLinksWithDefaults
+    // does, so tiles still load when search engines are unavailable.
+    try {
+      await lazy.SearchService.init();
+    } catch {
+      // Search engines unavailable; the search-hostname filter is skipped.
+    }
+
     let response;
     let body;
 
@@ -614,55 +659,7 @@ export class ContileIntegration {
       if (!adsFeedEnabled) {
         // Fetch tiles via UAPI service directly from TopSitesFeed.sys.mjs
         if (unifiedAdsTilesEnabled) {
-          let fetchPromise;
-          const marsOhttpEnabled = Services.prefs.getBoolPref(
-            "browser.newtabpage.activity-stream.unifiedAds.ohttp.enabled",
-            false
-          );
-          const ohttpRelayURL = Services.prefs.getStringPref(
-            "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
-            ""
-          );
-          const ohttpConfigURL = Services.prefs.getStringPref(
-            "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
-            ""
-          );
-          const headers = new Headers();
-          headers.append("content-type", "application/json");
-
-          const endpointBaseUrl = state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
-
-          // We need some basic data that we can pass along to the ohttp request.
-          // We purposefully don't use ohttp on this request. We also expect to
-          // mostly hit the HTTP cache rather than the network with these requests.
-          if (marsOhttpEnabled) {
-            const preflightResponse = await this._topSitesFeed.fetch(
-              `${endpointBaseUrl}v1/ads-preflight`,
-              {
-                method: "GET",
-              }
-            );
-            const preFlight = await preflightResponse.json();
-
-            if (preFlight) {
-              // If we don't get a normalized_ua, it means it matched the default userAgent.
-              headers.append(
-                "X-User-Agent",
-                preFlight.normalized_ua || lazy.userAgent
-              );
-              headers.append("X-Geoname-ID", preFlight.geoname_id);
-              headers.append("X-Geo-Location", preFlight.geo_location);
-            }
-          }
-
-          let blockedSponsors =
-            this._topSitesFeed.store.getState().Prefs.values[
-              PREF_UNIFIED_ADS_BLOCKED_LIST
-            ];
-
-          // Overwrite URL to Unified Ads endpoint
-          const fetchUrl = `${endpointBaseUrl}v1/ads`;
-
+          // Shared set up for manual MARS call and ads-client calls
           const placementsArray = state.Prefs.values[
             PREF_UNIFIED_ADS_PLACEMENTS
           ]?.split(`,`)
@@ -675,57 +672,125 @@ export class ContileIntegration {
             .filter(item => item)
             .map(item => parseInt(item, 10));
 
-          const controller = new AbortController();
-          const { signal } = controller;
-
-          const options = {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              context_id: await lazy.ContextId.request(),
-              placements: placementsArray.map((placement, index) => ({
-                placement,
-                count: countsArray[index],
-              })),
-              blocks: blockedSponsors.split(","),
-            }),
-            credentials: "omit",
-            signal,
-          };
-
-          if (marsOhttpEnabled && ohttpConfigURL && ohttpRelayURL) {
-            const config =
-              await lazy.ObliviousHTTP.getOHTTPConfig(ohttpConfigURL);
-            if (!config) {
-              console.error(
-                new Error(
-                  `OHTTP was configured for ${fetchUrl} but we couldn't fetch a valid config`
-                )
-              );
-              return null;
-            }
-
-            // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
-            // a Headers instance. We normalize any headers to a key/value object.
-            //
-            // We use instanceof here since isInstance isn't available for
-            // Headers, it seems.
-            // eslint-disable-next-line mozilla/use-isInstance
-            if (options.headers && options.headers instanceof Headers) {
-              options.headers = Object.fromEntries(options.headers);
-            }
-
-            fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
-              ohttpRelayURL,
-              config,
-              fetchUrl,
-              options
-            );
+          if (this._topSitesFeed.adsClient) {
+            body = await this._fetchSitesWithAdsClient(placementsArray);
           } else {
-            fetchPromise = this._topSitesFeed.fetch(fetchUrl, options);
-          }
+            let fetchPromise;
+            const marsOhttpEnabled = Services.prefs.getBoolPref(
+              "browser.newtabpage.activity-stream.unifiedAds.ohttp.enabled",
+              false
+            );
+            const ohttpRelayURL = Services.prefs.getStringPref(
+              "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
+              ""
+            );
+            const ohttpConfigURL = Services.prefs.getStringPref(
+              "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
+              ""
+            );
+            const headers = new Headers();
+            headers.append("content-type", "application/json");
 
-          response = await fetchPromise;
+            const endpointBaseUrl =
+              state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
+
+            // We need some basic data that we can pass along to the ohttp request.
+            // We purposefully don't use ohttp on this request. We also expect to
+            // mostly hit the HTTP cache rather than the network with these requests.
+            if (marsOhttpEnabled) {
+              const preflightResponse = await this._topSitesFeed.fetch(
+                `${endpointBaseUrl}v1/ads-preflight`,
+                {
+                  method: "GET",
+                }
+              );
+              const preFlight = await preflightResponse.json();
+
+              if (preFlight) {
+                // If we don't get a normalized_ua, it means it matched the default userAgent.
+                headers.append(
+                  "X-User-Agent",
+                  preFlight.normalized_ua || lazy.userAgent
+                );
+                headers.append("X-Geoname-ID", preFlight.geoname_id);
+                headers.append("X-Geo-Location", preFlight.geo_location);
+              }
+            }
+
+            let blockedSponsors =
+              this._topSitesFeed.store.getState().Prefs.values[
+                PREF_UNIFIED_ADS_BLOCKED_LIST
+              ];
+
+            // Also block the user's current default search engine hostname so
+            // MARS returns a substitute sponsor instead of leaving us short.
+            const blocksList = Array.from(
+              new Set(
+                blockedSponsors
+                  .split(",")
+                  .concat(this._topSitesFeed._currentSearchHostname || [])
+                  .filter(item => item)
+              )
+            );
+
+            // Overwrite URL to Unified Ads endpoint
+            const fetchUrl = `${endpointBaseUrl}v1/ads`;
+
+            const controller = new AbortController();
+            const { signal } = controller;
+
+            const adsBackendConfig = state.Prefs.values?.adsBackendConfig || {};
+
+            const options = {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                context_id: await lazy.ContextId.request(),
+                flags: adsBackendConfig,
+                placements: placementsArray.map((placement, index) => ({
+                  placement,
+                  count: countsArray[index],
+                })),
+                blocks: blocksList,
+              }),
+              credentials: "omit",
+              signal,
+            };
+
+            if (marsOhttpEnabled && ohttpConfigURL && ohttpRelayURL) {
+              const config =
+                await lazy.ObliviousHTTP.getOHTTPConfig(ohttpConfigURL);
+              if (!config) {
+                console.error(
+                  new Error(
+                    `OHTTP was configured for ${fetchUrl} but we couldn't fetch a valid config`
+                  )
+                );
+                return null;
+              }
+
+              // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
+              // a Headers instance. We normalize any headers to a key/value object.
+              //
+              // We use instanceof here since isInstance isn't available for
+              // Headers, it seems.
+              // eslint-disable-next-line mozilla/use-isInstance
+              if (options.headers && options.headers instanceof Headers) {
+                options.headers = Object.fromEntries(options.headers);
+              }
+
+              fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
+                ohttpRelayURL,
+                config,
+                fetchUrl,
+                options
+              );
+            } else {
+              fetchPromise = this._topSitesFeed.fetch(fetchUrl, options);
+            }
+
+            response = await fetchPromise;
+          }
         } else {
           // (Default) Fetch tiles via Contile service from TopSitesFeed.sys.mjs
           const fetchUrl = Services.prefs.getStringPref(CONTILE_ENDPOINT_PREF);
@@ -851,6 +916,42 @@ export class ContileIntegration {
     }
     return false;
   }
+
+  async _fetchSitesWithAdsClient(placements) {
+    const options = lazy.AdsClient.requestOptions();
+
+    const requests = placements.map(
+      placementId =>
+        new lazy.MozAdsPlacementRequest({
+          placementId,
+          iabContent: null,
+        })
+    );
+
+    const tiles = await this._topSitesFeed.adsClient.requestTileAds(
+      requests,
+      options
+    );
+
+    return Object.fromEntries(
+      tiles.entries().map(([placementId, tile]) => [
+        placementId,
+        [
+          {
+            block_key: tile.blockKey,
+            name: tile.name,
+            url: tile.url,
+            image_url: tile.imageUrl,
+            callbacks: {
+              impression: tile.callbacks.impression,
+              click: tile.callbacks.click,
+            },
+            // Attributions are not returned from MAC
+          },
+        ],
+      ])
+    );
+  }
 }
 
 /**
@@ -866,12 +967,15 @@ export class TopSitesFeed {
     this._telemetryUtility = new TopSitesTelemetry();
     this._contile = new ContileIntegration(this);
     this._tippyTopProvider = new TippyTopProvider();
+    this._refreshGeneration = 0;
+    this._latestRefreshPromise = Promise.resolve();
     ChromeUtils.defineLazyGetter(
       this,
       "_currentSearchHostname",
       getShortHostnameForCurrentSearch
     );
     this.ranker = new RankShortcutsProvider();
+    this.adsClient = null;
 
     this.dedupe = new Dedupe(this._dedupeKey);
     this.frecentCache = new lazy.LinksCache(
@@ -944,6 +1048,10 @@ export class TopSitesFeed {
         ) {
           delete this._currentSearchHostname;
           this._currentSearchHostname = getShortHostnameForCurrentSearch();
+          // Re-fetch sponsored tiles so the new default search engine is
+          // sent to MARS as a block (and a substitute sponsor is returned),
+          // and the cached Contile slate is rebuilt.
+          this._contile.refresh();
         }
         this.refresh({ broadcast: true });
         break;
@@ -1073,9 +1181,14 @@ export class TopSitesFeed {
     this._useRemoteSetting = true;
     let remoteSettingData = await this._getRemoteConfig();
 
-    const sponsoredBlocklist = JSON.parse(
-      Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
-    );
+    let sponsoredBlocklist;
+    try {
+      sponsoredBlocklist = JSON.parse(
+        Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+      );
+    } catch (e) {
+      sponsoredBlocklist = [];
+    }
 
     for (let siteData of remoteSettingData) {
       let hostname = lazy.NewTabUtils.shortURL(siteData);
@@ -1305,9 +1418,9 @@ export class TopSitesFeed {
         return false;
       }
 
-      const numberOfSlots =
-        this.store.getState().Prefs.values[ROWS_PREF] *
-        TOP_SITES_MAX_SITES_PER_ROW;
+      const numberOfSlots = getTopSitesCount(
+        this.store.getState().Prefs.values
+      );
 
       // The plainPinnedSites array is populated with pinned sites at their
       // respective indices, and null everywhere else, but is not always the
@@ -1501,7 +1614,7 @@ export class TopSitesFeed {
   }
 
   // eslint-disable-next-line max-statements
-  async getLinksWithDefaults(isStartup = false) {
+  async getLinksWithDefaults(isStartup = false, refreshId = null) {
     const prefValues = this.store.getState().Prefs.values;
     // switch on top_sites thompson sampling experiment
     const overSampleMultiplier =
@@ -1510,17 +1623,13 @@ export class TopSitesFeed {
     const numFetch =
       (smartshortcutsEnabled(this.store.getState().Prefs.values)
         ? overSampleMultiplier
-        : 1) *
-      (prefValues[ROWS_PREF] * TOP_SITES_MAX_SITES_PER_ROW);
-    const numItems = prefValues[ROWS_PREF] * TOP_SITES_MAX_SITES_PER_ROW;
+        : 1) * getTopSitesCount(prefValues);
+    const numItems = getTopSitesCount(prefValues);
     const searchShortcutsExperiment = prefValues[SEARCH_SHORTCUTS_EXPERIMENT];
     // We must wait for search services to initialize in order to access default
     // search engine properties without triggering a synchronous initialization
     try {
-      // @backward-compat { version 149 }
-      // SearchService replaces Services.search in 149.
-      // eslint-disable-next-line mozilla/valid-services
-      await (Services.search ?? lazy.SearchService).init();
+      await lazy.SearchService.init();
     } catch {
       // We continue anyway because we want the user to see their sponsored,
       // saved, or visited shortcut tiles even if search engines are not
@@ -1571,7 +1680,10 @@ export class TopSitesFeed {
         if (link.hostname !== this._currentSearchHostname) {
           continue;
         }
-      } else if (this.shouldFilterSearchTile(link.hostname)) {
+      } else if (
+        !link.sponsored_position &&
+        this.shouldFilterSearchTile(link.hostname)
+      ) {
         continue;
       }
       // Drop blocked default sites.
@@ -1683,6 +1795,8 @@ export class TopSitesFeed {
       })
     );
 
+    Glean.topsites.pinnedCount.set(pinned.filter(Boolean).length);
+
     // Remove any duplicates from frecent and default sites
     const [
       ,
@@ -1721,18 +1835,30 @@ export class TopSitesFeed {
     // Sample topsites via thompson sampling, if in experiment
     let sampledSites;
     if (smartshortcutsEnabled(this.store.getState().Prefs.values)) {
-      sampledSites = await this.ranker.rankTopSites(
-        checkedAdult,
-        prefValues,
-        isStartup,
-        dedupedSponsored.length
-      );
+      try {
+        sampledSites = await this.ranker.rankTopSites(
+          checkedAdult,
+          prefValues,
+          isStartup
+        );
+      } catch (error) {
+        lazy.log.warn(`Smart shortcuts ranking failed: ${error.message}`);
+        sampledSites = checkedAdult;
+      }
     } else {
       sampledSites = checkedAdult;
     }
 
     // Insert the original pinned sites into the deduped frecent and defaults.
     let withPinned = insertPinned(sampledSites, pinned);
+    if (this._groupedPinsEnabled) {
+      // Grouped: pinned tiles form a contiguous block at the front, ahead of
+      // the sampled frecent/default sites.
+      withPinned = [
+        ...pinned.filter(Boolean).map(link => ({ ...link, isPinned: true })),
+        ...sampledSites,
+      ];
+    }
 
     // Insert sponsored sites at their desired position.
     dedupedSponsored.forEach(link => {
@@ -1772,9 +1898,10 @@ export class TopSitesFeed {
       }
     }
 
-    this._linksWithDefaults = withPinned;
-
-    this._telemetryUtility.finalizeNewtabPingFields(dedupedSponsored);
+    if (refreshId === null || refreshId === this._refreshGeneration) {
+      this._linksWithDefaults = withPinned;
+      this._telemetryUtility.finalizeNewtabPingFields(dedupedSponsored);
+    }
     return withPinned;
   }
 
@@ -1901,28 +2028,41 @@ export class TopSitesFeed {
     }
     this._startedUp = true;
 
-    if (!this._tippyTopProvider.initialized) {
-      await this._tippyTopProvider.init();
-    }
+    const refreshId = ++this._refreshGeneration;
+    const refreshPromise = (async () => {
+      if (!this._tippyTopProvider.initialized) {
+        await this._tippyTopProvider.init();
+      }
 
-    const links = await this.getLinksWithDefaults({
-      isStartup: options.isStartup,
-    });
-    const newAction = { type: at.TOP_SITES_UPDATED, data: { links } };
+      const links = await this.getLinksWithDefaults(
+        {
+          isStartup: options.isStartup,
+        },
+        refreshId
+      );
+      if (refreshId !== this._refreshGeneration) {
+        return;
+      }
 
-    if (options.isStartup) {
-      newAction.meta = {
-        isStartup: true,
-      };
-    }
+      const newAction = { type: at.TOP_SITES_UPDATED, data: { links } };
 
-    if (options.broadcast) {
-      // Broadcast an update to all open content pages
-      this.store.dispatch(ac.BroadcastToContent(newAction));
-    } else {
-      // Don't broadcast only update the state and update the preloaded tab.
-      this.store.dispatch(ac.AlsoToPreloaded(newAction));
-    }
+      if (options.isStartup) {
+        newAction.meta = {
+          isStartup: true,
+        };
+      }
+
+      if (options.broadcast) {
+        // Broadcast an update to all open content pages
+        this.store.dispatch(ac.BroadcastToContent(newAction));
+      } else {
+        // Don't broadcast only update the state and update the preloaded tab.
+        this.store.dispatch(ac.AlsoToPreloaded(newAction));
+      }
+    })();
+
+    this._latestRefreshPromise = refreshPromise.catch(() => {});
+    await refreshPromise;
   }
 
   // Allocate ad positions to partners based on SOV via stable randomization.
@@ -1973,10 +2113,7 @@ export class TopSitesFeed {
 
     // Populate the state with available search shortcuts
     let searchShortcuts = [];
-    // @backward-compat { version 149 }
-    // SearchService replaces Services.search in 149.
-    for (const engine of await (Services.search ?? lazy.SearchService) // eslint-disable-line mozilla/valid-services
-      .getAppProvidedEngines()) {
+    for (const engine of await lazy.SearchService.getAppProvidedEngines()) {
       const shortcut = CUSTOM_SEARCH_SHORTCUTS.find(s =>
         engine.aliases.includes(s.keyword)
       );
@@ -2104,6 +2241,41 @@ export class TopSitesFeed {
     this.refresh({ broadcast: true });
   }
 
+  get _groupedPins() {
+    // Drop the gaps so the group is dense.
+    return lazy.NewTabUtils.pinnedLinks.links.filter(Boolean);
+  }
+
+  /**
+   * Whether grouped-pin display + restricted drag-and-drop is on. Read live so a
+   * pref flip takes effect immediately, and so this and the content process
+   * (which reads the same pref from Redux) agree on what a drop index means.
+   */
+  get _groupedPinsEnabled() {
+    return !!this.store.getState().Prefs.values[GROUPED_PINS_PREF];
+  }
+
+  _saveGroupedPins(pins) {
+    const { pinnedLinks } = lazy.NewTabUtils;
+    // Lay the group order back onto the existing hole pattern: the k-th pin takes
+    // the k-th occupied slot, so the sparse layout's gaps stay put for the
+    // classic renderer and other pinnedLinks consumers. Extra pins append
+    // densely; trailing holes are trimmed.
+    // PinnedLinks has no public "set whole array" method (only pin/unpin/replace),
+    // so we write _links directly to lay down this exact sparse layout in one shot
+    // rather than thrashing through per-item pin/unpin calls.
+    const occupied = pinnedLinks.links.flatMap((v, i) => (v ? [i] : []));
+    const next = [];
+    pins.forEach((pin, k) => {
+      next[k < occupied.length ? occupied[k] : next.length] = pin;
+    });
+    while (next.length && !next[next.length - 1]) {
+      next.length -= 1;
+    }
+    pinnedLinks._links = next;
+    pinnedLinks.save();
+  }
+
   /**
    * Pin a site at a specific position saving only the desired keys.
    *
@@ -2111,6 +2283,17 @@ export class TopSitesFeed {
    * @param label {string} User set string of custom site name
    */
   async _pinSiteAt({ customScreenshotURL, label, url, searchTopSite }, index) {
+    if (this._groupedPinsEnabled) {
+      // A context-menu / search pin appends to the group; the slot index only
+      // applies to the classic scattered layout.
+      await this._pinSiteAtGrouped({
+        customScreenshotURL,
+        label,
+        url,
+        searchTopSite,
+      });
+      return;
+    }
     const toPin = { url };
     if (label) {
       toPin.label = label;
@@ -2122,6 +2305,59 @@ export class TopSitesFeed {
       toPin.searchTopSite = searchTopSite;
     }
     lazy.NewTabUtils.pinnedLinks.pin(toPin, index);
+
+    await this._clearLinkCustomScreenshot({ customScreenshotURL, url });
+  }
+
+  /**
+   * Grouped variant of `_pinSiteAt`: `index` is a position within the pinned
+   * group (the k-th pin), not an absolute slot. Removes any existing entry for
+   * the site and splices it back in at the group position. Omitting `index`
+   * keeps an already-pinned site's position (e.g. an edit) and appends an
+   * otherwise-new pin.
+   */
+  async _pinSiteAtGrouped(
+    { customScreenshotURL, label, url, searchTopSite },
+    index
+  ) {
+    const toPin = { url };
+    if (label) {
+      toPin.label = label;
+    }
+    if (customScreenshotURL) {
+      toPin.customScreenshotURL = customScreenshotURL;
+    }
+    if (searchTopSite) {
+      toPin.searchTopSite = searchTopSite;
+    }
+
+    const existingIndex = this._groupedPins.findIndex(p => p.url === url);
+    const pins = this._groupedPins.filter(p => p.url !== url);
+    if (index !== undefined) {
+      // `index` is the group position to drop at. The dragged tile is already
+      // removed above, and the frontend sends the slot in that post-removal
+      // space, so it splices straight in.
+      pins.splice(Math.min(index, pins.length), 0, toPin);
+    } else if (existingIndex !== -1) {
+      // Re-pinning a site already in the group (e.g. an edit) keeps its
+      // position instead of jumping to the end.
+      pins.splice(existingIndex, 0, toPin);
+    } else {
+      // A fresh pin (context-menu / search / add button) appends to the group.
+      pins.push(toPin);
+      // Grouped-pins growth (classic mode grows in pin() instead). Adding to the
+      // group pushes the last frecency tile off the visible grid. If the grid is
+      // already full of pins there's nothing to push off, so grow by a row instead.
+      const prefs = this.store.getState().Prefs.values;
+      const { rows } = this.store.getState().TopSites;
+      if (
+        rows[getTopSitesCount(prefs) - 1]?.isPinned &&
+        prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS
+      ) {
+        this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+      }
+    }
+    this._saveGroupedPins(pins);
 
     await this._clearLinkCustomScreenshot({ customScreenshotURL, url });
   }
@@ -2142,10 +2378,39 @@ export class TopSitesFeed {
    */
   async pin(action) {
     let { site, index } = action.data;
+    // Grow keys on the requested slot, not the sponsor-adjusted pin position.
+    const requestedIndex = index;
     index = this._adjustPinIndexForSponsoredLinks(site, index);
     // If valid index provided, pin at that position
     if (index >= 0) {
-      await this._pinSiteAt(site, index);
+      const prefs = this.store.getState().Prefs.values;
+      // Classic add button on a full row: replace the last visible frecency tile,
+      // matching how a grouped pin pushes the trailing frecency tile off the grid.
+      // Fall back to growing a row only when there's no organic tile to replace.
+      const count = getTopSitesCount(prefs);
+      const pinsPastGrid = !this._groupedPinsEnabled && requestedIndex >= count;
+      let evictIndex = -1;
+      if (pinsPastGrid) {
+        const { rows } = this.store.getState().TopSites;
+        for (let i = count - 1; i >= 0; i--) {
+          const link = rows[i];
+          if (link && !link.isPinned && !link.sponsored_position) {
+            evictIndex = i;
+            break;
+          }
+        }
+      }
+      if (evictIndex >= 0) {
+        await this._pinSiteAt(
+          site,
+          this._adjustPinIndexForSponsoredLinks(site, evictIndex)
+        );
+      } else {
+        await this._pinSiteAt(site, index);
+        if (pinsPastGrid && prefs[ROWS_PREF] < TOP_SITES_MAX_ROWS) {
+          this.store.dispatch(ac.SetPref(ROWS_PREF, prefs[ROWS_PREF] + 1));
+        }
+      }
       this._broadcastPinnedSitesUpdated();
     } else {
       // Bug 1458658. If the top site is being pinned from an 'Add a Top Site' option,
@@ -2233,6 +2498,10 @@ export class TopSitesFeed {
    * Insert a site to pin at a position shifting over any other pinned sites.
    */
   _insertPin(site, originalIndex, draggedFromIndex) {
+    if (this._groupedPinsEnabled) {
+      this._insertPinGrouped(site, originalIndex);
+      return;
+    }
     let index = this._adjustPinIndexForSponsoredLinks(site, originalIndex);
     let adjustedDraggedFromIndex = this._adjustPinIndexForSponsoredLinks(
       site,
@@ -2242,9 +2511,7 @@ export class TopSitesFeed {
     // Don't insert any pins past the end of the visible top sites. Otherwise,
     // we can end up with a bunch of pinned sites that can never be unpinned again
     // from the UI.
-    const topSitesCount =
-      this.store.getState().Prefs.values[ROWS_PREF] *
-      TOP_SITES_MAX_SITES_PER_ROW;
+    const topSitesCount = getTopSitesCount(this.store.getState().Prefs.values);
     if (index >= topSitesCount) {
       return;
     }
@@ -2280,6 +2547,20 @@ export class TopSitesFeed {
   }
 
   /**
+   * Grouped variant of `_insertPin`: `originalIndex` is a group position, and
+   * `_pinSiteAtGrouped` removes any existing entry for the site, so there's no
+   * hole-shifting (`draggedFromIndex` is unused).
+   */
+  _insertPinGrouped(site, originalIndex) {
+    const index = this._adjustPinIndexForSponsoredLinks(site, originalIndex);
+    const topSitesCount = getTopSitesCount(this.store.getState().Prefs.values);
+    if (index >= topSitesCount) {
+      return;
+    }
+    this._pinSiteAtGrouped(site, index);
+  }
+
+  /**
    * Handle an insert (drop/add) action of a site.
    */
   async insert(action) {
@@ -2289,6 +2570,11 @@ export class TopSitesFeed {
       index = 0;
     }
 
+    if (this._groupedPinsEnabled) {
+      await this._insertGrouped(action, index);
+      return;
+    }
+
     // Inserting a top site pins it in the specified slot, pushing over any link already
     // pinned in the slot (unless it's the last slot, then it replaces).
     this._insertPin(
@@ -2296,24 +2582,44 @@ export class TopSitesFeed {
       index,
       action.data.draggedFromIndex !== undefined
         ? action.data.draggedFromIndex
-        : this.store.getState().Prefs.values[ROWS_PREF] *
-            TOP_SITES_MAX_SITES_PER_ROW
+        : getTopSitesCount(this.store.getState().Prefs.values)
     );
 
     await this._clearLinkCustomScreenshot(action.data.site);
     this._broadcastPinnedSitesUpdated();
   }
 
+  /**
+   * Grouped variant of `insert`: a dragged tile reorders within / joins the
+   * group at the drop's group position; a brand-new add (no drag source)
+   * appends to the group.
+   */
+  async _insertGrouped(action, index) {
+    const { site, draggedFromIndex } = action.data;
+    if (draggedFromIndex !== undefined) {
+      this._insertPinGrouped(site, index);
+    } else {
+      await this._pinSiteAtGrouped(site);
+    }
+    await this._clearLinkCustomScreenshot(site);
+    this._broadcastPinnedSitesUpdated();
+  }
+
   updatePinnedSearchShortcuts({ addedShortcuts, deletedShortcuts }) {
+    if (this._groupedPinsEnabled) {
+      this._updatePinnedSearchShortcutsGrouped({
+        addedShortcuts,
+        deletedShortcuts,
+      });
+      return;
+    }
     // Unpin the deletedShortcuts.
     deletedShortcuts.forEach(({ url }) => {
       lazy.NewTabUtils.pinnedLinks.unpin({ url });
     });
 
     // Pin the addedShortcuts.
-    const numberOfSlots =
-      this.store.getState().Prefs.values[ROWS_PREF] *
-      TOP_SITES_MAX_SITES_PER_ROW;
+    const numberOfSlots = getTopSitesCount(this.store.getState().Prefs.values);
     addedShortcuts.forEach(shortcut => {
       // Find first hole in pinnedLinks.
       let index = lazy.NewTabUtils.pinnedLinks.links.findIndex(link => !link);
@@ -2335,11 +2641,31 @@ export class TopSitesFeed {
     this._broadcastPinnedSitesUpdated();
   }
 
+  /**
+   * Grouped variant of `updatePinnedSearchShortcuts`: removed shortcuts drop out
+   * of the group and added ones append to it, up to the slot budget.
+   */
+  _updatePinnedSearchShortcutsGrouped({ addedShortcuts, deletedShortcuts }) {
+    const numberOfSlots = getTopSitesCount(this.store.getState().Prefs.values);
+    const deletedUrls = new Set(deletedShortcuts.map(({ url }) => url));
+    let pins = this._groupedPins.filter(p => !deletedUrls.has(p.url));
+    for (const shortcut of addedShortcuts) {
+      if (pins.length < numberOfSlots) {
+        pins.push(shortcut);
+      }
+    }
+    this._saveGroupedPins(pins);
+    this._broadcastPinnedSitesUpdated();
+  }
+
   onAction(action) {
     switch (action.type) {
       case at.INIT:
         this.init();
         this.updateCustomSearchShortcuts(true /* isStartup */);
+        if (lazy.AdsClient.isEnabled(this.store.getState().Prefs.values)) {
+          this.adsClient = lazy.AdsClient.getClient();
+        }
         break;
       case at.DISCOVERY_STREAM_DEV_SYSTEM_TICK:
       case at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE:
@@ -2375,6 +2701,7 @@ export class TopSitesFeed {
           case ROWS_PREF:
           case FILTER_DEFAULT_SEARCH_PREF:
           case SEARCH_SHORTCUTS_SEARCH_ENGINES_PREF:
+          case GROUPED_PINS_PREF:
             this.refresh({ broadcast: true });
             break;
           case SHOW_SPONSORED_PREF:

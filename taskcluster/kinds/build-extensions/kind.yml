@@ -40,16 +40,19 @@ tasks:
                 - name: public/browser-extensions/webcompat.xpi
                   path: /builds/worker/workspace/obj-build/dist/xpi-stage/webcompat@mozilla.org.xpi
                   type: file
-                - name: public/browser-extensions/data-leak-blocker.xpi
-                  path: /builds/worker/workspace/obj-build/dist/xpi-stage/data-leak-blocker@mozilla.com.xpi
+                - name: public/browser-extensions/ipp-activator.xpi
+                  path: /builds/worker/workspace/obj-build/dist/xpi-stage/ipp-activator@mozilla.com.xpi
                   type: file
             docker-image: {in-tree: debian12-amd64-build}
             env:
                 MOZ_OBJDIR: ../../workspace/obj-build
                 MOZCONFIG: browser/config/mozconfigs/linux64/browser-extensions
                 PERFHERDER_EXTRA_OPTIONS: browser-extensions
+                MOZ_BROWSER_NEWTAB_METRICS_FETCH: "1"
+                MOZ_BROWSER_NEWTAB_LOCALES_ALL: "1"
             max-run-time: 1800
         run:
+            clone-with: hg
             using: mach
             mach: build
         run-on-projects: ['mozilla-central']

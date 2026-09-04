@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -43,7 +42,6 @@ class nsContentTreeOwner final : public nsIDocShellTreeOwner,
   /* nsIWebBrowserChrome (Get/SetDimensions overlap with nsIBaseWindow) */
   NS_IMETHOD SetLinkStatus(const nsAString& status) override;
   NS_IMETHOD GetChromeFlags(uint32_t* aChromeFlags) override;
-  NS_IMETHOD SetChromeFlags(uint32_t aChromeFlags) override;
   NS_IMETHOD ShowAsModal() override;
   NS_IMETHOD IsWindowModal(bool* _retval) override;
   NS_IMETHOD Blur() override;

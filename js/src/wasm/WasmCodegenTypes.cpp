@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +17,7 @@
 #include "wasm/WasmCodegenTypes.h"
 
 #include "mozilla/PodOperations.h"
+
 #include "wasm/WasmExprType.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmSummarizeInsn.h"
@@ -88,6 +87,12 @@ const char* wasm::ToString(Trap trap) {
       return "StackOverflow";
     case Trap::CheckInterrupt:
       return "CheckInterrupt";
+#  ifdef ENABLE_WASM_JSPI
+    case Trap::ThrowSuspendError:
+      return "ThrowSuspendError";
+#  endif
+    case Trap::Unimplemented:
+      return "Unimplemented";
     case Trap::ThrowReported:
       return "ThrowReported";
     case Trap::Limit:
@@ -140,14 +145,18 @@ void TrapSitesForKind::checkInvariants(const uint8_t* codeBase) const {
     last = pcOffset;
   }
 
-#  if (defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) ||   \
-       defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_ARM) || \
-       defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64))
-  // Check that each trapsite is associated with a plausible instruction.  The
-  // required instruction kind depends on the trapsite kind.
+#  if (defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) ||        \
+       defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_ARM) ||      \
+       defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64) || \
+       defined(JS_CODEGEN_RISCV64))
+  // Check that each trapsite is associated with an instruction that
+  // SummarizeTrapInstruction can identify and can determine the length of.
+  // The required instruction kind depends on the trapsite kind.
   //
-  // NOTE: currently enabled on x86_{32,64}, arm{32,64}, loongson64 and mips64.
-  // Ideally it should be extended to riscv64 too.
+  // NOTE: this functionality used to be optional (DEBUG-only), but that is no
+  // longer the case.  SummarizeTrapInstruction now needs to be able to compute
+  // the length of all trapping instructions on all targets, even for release
+  // builds.  Without it, the trap-handling machinery will not work correctly.
   //
   for (uint32_t i = 0; i < length(); i++) {
     uint32_t pcOffset = pcOffsets_[i];
@@ -156,8 +165,8 @@ void TrapSitesForKind::checkInvariants(const uint8_t* codeBase) const {
     const uint8_t* insnAddr = codeBase + uintptr_t(pcOffset);
     // `expected` describes the kind of instruction we expect to see at
     // `insnAddr`.  Find out what is actually there and check it matches.
-    mozilla::Maybe<TrapMachineInsn> actual = SummarizeTrapInstruction(insnAddr);
-    bool valid = actual.isSome() && actual.value() == expected;
+    SummarizeResult actual = SummarizeTrapInstruction(insnAddr);
+    bool valid = actual.identified() && actual.kind() == expected;
     // This is useful for diagnosing validation failures.
     // if (!valid) {
     //   fprintf(stderr,
@@ -165,11 +174,9 @@ void TrapSitesForKind::checkInvariants(const uint8_t* codeBase) const {
     //           "pcOffset=%-5u  addr= %p\n",
     //           ToString(trap), ToString(expected),
     //           pcOffset, insnAddr);
-    //   if (actual.isSome()) {
-    //     fprintf(stderr, "FAIL: identified as %s\n",
-    //             actual.isSome() ? ToString(actual.value())
-    //                             : "(insn not identified)");
-    //   }
+    //   fprintf(stderr, "FAIL: identified as %s\n",
+    //           actual.identified() ? ToString(actual.kind())
+    //                               : "(insn not identified)");
     // }
     MOZ_ASSERT(valid, "wasm trapsite does not reference a valid insn");
   }
@@ -191,6 +198,9 @@ CodeRange::CodeRange(Kind kind, Offsets offsets)
     case FarJumpIsland:
     case TrapExit:
     case Throw:
+#  ifdef ENABLE_WASM_JSPI
+    case ContBaseFrame:
+#  endif
       break;
     default:
       MOZ_CRASH("should use more specific constructor");
@@ -292,17 +302,8 @@ bool CallSites::lookup(uint32_t returnAddressOffset,
   return false;
 }
 
-CallIndirectId CallIndirectId::forAsmJSFunc() {
-  return CallIndirectId(CallIndirectIdKind::AsmJS);
-}
-
 CallIndirectId CallIndirectId::forFunc(const CodeMetadata& codeMeta,
                                        uint32_t funcIndex) {
-  // asm.js tables are homogenous and don't require a signature check
-  if (codeMeta.isAsmJS()) {
-    return CallIndirectId::forAsmJSFunc();
-  }
-
   FuncDesc func = codeMeta.funcs[funcIndex];
   if (!func.canRefFunc()) {
     return CallIndirectId();
@@ -313,11 +314,6 @@ CallIndirectId CallIndirectId::forFunc(const CodeMetadata& codeMeta,
 
 CallIndirectId CallIndirectId::forFuncType(const CodeMetadata& codeMeta,
                                            uint32_t funcTypeIndex) {
-  // asm.js tables are homogenous and don't require a signature check
-  if (codeMeta.isAsmJS()) {
-    return CallIndirectId::forAsmJSFunc();
-  }
-
   const TypeDef& typeDef = codeMeta.types->type(funcTypeIndex);
   const FuncType& funcType = typeDef.funcType();
   CallIndirectId callIndirectId;
@@ -355,14 +351,6 @@ CalleeDesc CalleeDesc::wasmTable(const CodeMetadata& codeMeta,
   c.u.table.minLength_ = desc.initialLength();
   c.u.table.maxLength_ = desc.maximumLength();
   c.u.table.callIndirectId_ = callIndirectId;
-  return c;
-}
-CalleeDesc CalleeDesc::asmJSTable(const CodeMetadata& codeMeta,
-                                  uint32_t tableIndex) {
-  CalleeDesc c;
-  c.which_ = AsmJSTable;
-  c.u.table.instanceDataOffset_ =
-      codeMeta.offsetOfTableInstanceData(tableIndex);
   return c;
 }
 CalleeDesc CalleeDesc::builtin(SymbolicAddress callee) {

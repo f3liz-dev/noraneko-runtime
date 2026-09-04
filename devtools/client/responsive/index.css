@@ -88,6 +88,12 @@ body,
   grid-template-columns: auto min-content;
   width: 100%;
   user-select: none;
+
+  /* Add some inline padding in Nova so the close icon isn't clipped by
+     the browser  container border radius */
+  @media -moz-pref("browser.nova.enabled") {
+    padding-inline: 8px;
+  }
 }
 
 #toolbar :is(select, button):focus-visible {
@@ -211,8 +217,8 @@ body,
 @media (max-width: 800px) {
   /* When room becomes scarce, no need to constrain the selectors with a minmax like we
      do in larger viewports, here they can occupy 1fr. We should also make sure to keep
-     the max-width value of the media-query in sync with the resizeToolbarObserver
-     in devtools/client/responsive/ui.js */
+     the max-width value of the media-query in sync with the MediaQueryList
+     in devtools/client/responsive/index.js */
   #toolbar.user-agent #toolbar-center-controls {
     grid-template-columns:
       [device-selector]
@@ -320,6 +326,15 @@ body,
   fill: var(--theme-icon-dimmed-color);
 }
 
+@media -moz-pref("browser.nova.enabled") {
+  /* In Nova, remove the inline-end padding and margin so the close button aligns with
+     the ones in .notificationBox */
+  #toolbar #exit-button {
+    margin-inline-end: 0;
+    padding-inline-end: 0;
+  }
+}
+
 /**
  * Viewport Dimension Input
  */
@@ -386,7 +401,7 @@ body,
   max-width: 750px;
   max-height: 730px;
   z-index: 1;
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* Handles the opening/closing of the modal */
@@ -427,7 +442,7 @@ body,
 
   #device-form-name input,
   #device-form-user-agent input {
-    width: 350px;
+    width: 29em;
   }
 
   .device-modal-content {
@@ -519,7 +534,7 @@ body,
 .device-header {
   font-size: 17px;
   margin-bottom: 7px;
-  height: 20px;
+  height: 1.2em;
   text-transform: capitalize;
 }
 
@@ -632,8 +647,7 @@ body,
   border: 1px solid var(--theme-splitter-color);
   border-radius: 2px;
   cursor: pointer;
-  width: 167px;
-  height: 32px;
+  height: 2.7em;
 }
 
 #device-edit-button::before {
@@ -700,7 +714,7 @@ body,
 #device-form-pixel-ratio input,
 #device-form-user-agent input,
 #device-form-size input {
-  height: 35px;
+  height: 2.7em;
 }
 
 #device-form #device-form-touch {
@@ -717,7 +731,6 @@ body,
   background-color: #0060df;
   color: #fff;
   border: 1px solid #0060df;
-  width: 60px;
 
   &:focus-visible {
     /* Adjust outline so it's separated from the background color */
@@ -725,31 +738,33 @@ body,
   }
 }
 
+#device-form-save,
+#device-form-cancel {
+  margin-inline-start: 5px;
+  margin-inline-end: 3px;
+  min-width: 45%;
+  align-self: center;
+}
+
 #device-form-size {
   grid-area: size;
 }
 
-#device-form-size input,
-#device-form #device-form-cancel {
-  width: 60px;
-}
-
-#device-form-save,
-#device-form-cancel {
-  align-self: center;
+#device-form-size input {
+  width: 5em;
 }
 
 .device-form-buttons {
   display: flex;
   grid-area: buttons;
-  justify-content: space-evenly;
-  width: 154px;
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .device-form-label {
   display: inline-block;
   margin: 0 5px 5px 0;
-  min-width: 35px;
+  min-width: 3em;
   font-size: 13px;
 }
 

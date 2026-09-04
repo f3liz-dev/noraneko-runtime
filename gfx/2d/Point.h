@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,18 +5,18 @@
 #ifndef MOZILLA_GFX_POINT_H_
 #define MOZILLA_GFX_POINT_H_
 
-#include "mozilla/Attributes.h"
-#include "Types.h"
-#include "Coord.h"
+#include <cmath>
+#include <type_traits>
+
 #include "BaseCoord.h"
 #include "BasePoint.h"
 #include "BasePoint3D.h"
 #include "BasePoint4D.h"
 #include "BaseSize.h"
+#include "Coord.h"
+#include "Types.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/gfx/NumericTools.h"
-
-#include <cmath>
-#include <type_traits>
 
 namespace mozilla {
 

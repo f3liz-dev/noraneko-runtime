@@ -1,29 +1,26 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DecoderFactory.h"
 
-#include "ImageUtils.h"
-#include "nsMimeTypes.h"
-#include "mozilla/RefPtr.h"
-
 #include "AnimationSurfaceProvider.h"
-#include "Decoder.h"
 #include "DecodedSurfaceProvider.h"
+#include "Decoder.h"
 #include "IDecodingTask.h"
 #include "ImageOps.h"
-#include "nsPNGDecoder.h"
-#include "nsGIFDecoder2.h"
-#include "nsJPEGDecoder.h"
+#include "ImageUtils.h"
+#include "mozilla/RefPtr.h"
+#include "nsAVIFDecoder.h"
 #include "nsBMPDecoder.h"
+#include "nsGIFDecoder2.h"
 #include "nsICODecoder.h"
 #include "nsIconDecoder.h"
+#include "nsJPEGDecoder.h"
+#include "nsMimeTypes.h"
+#include "nsPNGDecoder.h"
 #include "nsWebPDecoder.h"
-#ifdef MOZ_AV1
-#  include "nsAVIFDecoder.h"
-#endif
+
 #ifdef MOZ_JXL
 #  include "nsJXLDecoder.h"
 #endif
@@ -86,12 +83,9 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
     type = DecoderType::WEBP;
 
     // AVIF
-  }
-#ifdef MOZ_AV1
-  else if (!strcmp(aMimeType, IMAGE_AVIF)) {
+  } else if (!strcmp(aMimeType, IMAGE_AVIF)) {
     type = DecoderType::AVIF;
   }
-#endif
 #ifdef MOZ_JXL
   else if (!strcmp(aMimeType, IMAGE_JXL) && StaticPrefs::image_jxl_enabled()) {
     type = DecoderType::JXL;
@@ -137,11 +131,9 @@ already_AddRefed<Decoder> DecoderFactory::GetDecoder(DecoderType aType,
     case DecoderType::WEBP:
       decoder = new nsWebPDecoder(aImage);
       break;
-#ifdef MOZ_AV1
     case DecoderType::AVIF:
       decoder = new nsAVIFDecoder(aImage);
       break;
-#endif
 #ifdef MOZ_JXL
     case DecoderType::JXL:
       decoder = new nsJXLDecoder(aImage);
@@ -360,7 +352,7 @@ already_AddRefed<IDecodingTask> DecoderFactory::CreateMetadataDecoder(
     return nullptr;
   }
 
-  RefPtr<IDecodingTask> task = new MetadataDecodingTask(WrapNotNull(decoder));
+  auto task = MakeRefPtr<MetadataDecodingTask>(WrapNotNull(decoder));
   return task.forget();
 }
 

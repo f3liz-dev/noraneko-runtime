@@ -77,6 +77,11 @@ smartblock-placeholder-title = { $trackername } trackers and content blocked
 smartblock-placeholder-desc = Your { -brand-short-name } settings blocked this content from tracking you across sites or being used for ads.
 #  $websitehost (String): host of website with blocked content.
 smartblock-placeholder-button-text = Allow on { $websitehost }
+# Caption shown above the original text and links extracted from a blocked
+# third-party embed (e.g. a Twitter/X or Instagram post) that SmartBlock has
+# replaced with a placeholder. The caption sits above a bordered content box
+# containing the extracted text.
+smartblock-placeholder-content-header = Content from blocked embed
 
 ##
 
@@ -97,28 +102,6 @@ protections-panel-shim-allowed-indicator =
 protections-panel-content-blocking-manage-settings =
   .label = Manage protection settings
   .accesskey = M
-
-# Cookie Banner Handling
-
-protections-panel-cookie-banner-blocker-header = Cookie Banner Blocker
-protections-panel-cookie-banner-handling-enabled = On for this site
-protections-panel-cookie-banner-handling-disabled = Off for this site
-protections-panel-cookie-banner-handling-undetected = Site currently not supported
-
-protections-panel-cookie-banner-blocker-view-title =
-  .title = Cookie Banner Blocker
-# Variables
-#  $host (String): the hostname of the site that is being displayed.
-protections-panel-cookie-banner-blocker-view-turn-off-for-site = Turn off Cookie Banner Blocker for { $host }?
-protections-panel-cookie-banner-blocker-view-turn-on-for-site = Turn on Cookie Banner Blocker for this site?
-protections-panel-cookie-banner-view-cookie-clear-warning = { -brand-short-name } will clear this site’s cookies and refresh the page. Clearing all cookies may sign you out or empty shopping carts.
-protections-panel-cookie-banner-blocker-view-turn-on-description = Turn on and { -brand-short-name } will try to automatically refuse cookie banners on this site.
-protections-panel-cookie-banner-view-cancel-label =
-  .label = Cancel
-protections-panel-cookie-banner-view-turn-off-label =
-  .label = Turn Off
-protections-panel-cookie-banner-view-turn-on-label =
-  .label = Turn On
 
 protections-panel-report-broken-site =
   .label = Report broken site

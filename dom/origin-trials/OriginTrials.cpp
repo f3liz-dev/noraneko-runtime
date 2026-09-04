@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -214,8 +212,6 @@ static int32_t PrefState(OriginTrial aTrial) {
       return StaticPrefs::dom_origin_trials_test_trial_state();
     case OriginTrial::CoepCredentialless:
       return StaticPrefs::dom_origin_trials_coep_credentialless_state();
-    case OriginTrial::PrivateAttributionV2:
-      return StaticPrefs::dom_origin_trials_private_attribution_state();
     case OriginTrial::MLS:
       return StaticPrefs::dom_origin_trials_mls_state();
     case OriginTrial::MAX:

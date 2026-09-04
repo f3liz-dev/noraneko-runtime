@@ -27,6 +27,8 @@ import { MozBaseInputElement, MozLitElement } from "../lit-utils.mjs";
  *
  * @tagname moz-select
  * @property {string} label - The text of the label element
+ * @property {string} size - The select size.
+ *   Options: default, small.
  * @property {string} name - The name of the input control
  * @property {string} value - The value of the selected option
  * @property {boolean} disabled - The disabled state of the input control
@@ -43,6 +45,7 @@ import { MozBaseInputElement, MozLitElement } from "../lit-utils.mjs";
  */
 export default class MozSelect extends MozBaseInputElement {
   static properties = {
+    size: { type: String, reflect: true },
     options: { type: Array, state: true },
     selectedOption: { type: Object, state: true },
     selectedIndex: { type: Number, state: true },
@@ -57,6 +60,7 @@ export default class MozSelect extends MozBaseInputElement {
 
   constructor() {
     super();
+    this.size = "default";
     this.value = "";
     this.options = [];
     this.usePanelList = false;
@@ -92,6 +96,16 @@ export default class MozSelect extends MozBaseInputElement {
         opt => opt.value === this.value
       );
       this.selectedOption = this.options[this.selectedIndex] ?? this.options[0];
+    }
+  }
+
+  updated() {
+    if (
+      this.panelTrigger &&
+      this.panelList &&
+      this.panelTrigger.popoverTargetElement !== this.panelList
+    ) {
+      this.panelTrigger.popoverTargetElement = this.panelList;
     }
   }
 
@@ -165,11 +179,55 @@ export default class MozSelect extends MozBaseInputElement {
    * Handles the panel being hidden and returns focus to the trigger button.
    */
   handlePanelHidden() {
-    this.panelTrigger?.focus();
+    let active = document.activeElement;
+    if (!active || active === document.body || active === this) {
+      this.panelTrigger?.focus();
+    }
+  }
+
+  /**
+   * Handles mousedown events to open the panel for mouse clicks.
+   * Note: panel-list's handleEvent() ignores the triggeringEvent by
+   * reference, preventing the panel from immediately closing.
+   *
+   * @param {MouseEvent} event - The mousedown event.
+   */
+  handlePanelMousedown(event) {
+    if (event.button !== 0) {
+      return;
+    }
+    /**
+     * Bug 2017668 - This is required for the "Default search engine"
+     * and private search engine moz-selects. Otherwise, clicking on one
+     * of the select elements, using arrow keys to navigate, and then clicking
+     * on the other select element will cause focus to jump between the two
+     * moz-select elements while toggling their respective panels.
+     */
+    if (navigator.platform.includes("Mac")) {
+      this.panelTrigger?.focus();
+    }
+    this.panelList?.toggle(event, this.panelTrigger);
+  }
+
+  /**
+   * Handles click events from keyboard activation (Space/Enter from button).
+   * Mouse clicks are handled by mousedown, so we filter those out here.
+   *
+   * @param {MouseEvent} event - The click event.
+   */
+  handlePanelClick(event) {
+    // Only handle keyboard-initiated clicks. Mouse clicks are handled
+    // by mousedown. event.detail is 0 for keyboard clicks, >0 for
+    // mouse clicks.
+    event.preventDefault();
+    if (event.detail === 0) {
+      this.panelList?.toggle(event);
+    }
   }
 
   /**
    * Toggles the panel-list open/closed state.
+   * Called by keyboard handlers and potentially other event handlers.
    *
    * @param {Event} event - The triggering event.
    */
@@ -178,20 +236,9 @@ export default class MozSelect extends MozBaseInputElement {
   }
 
   /**
-   * Prevents mousedown on the trigger from propagating to panel-list's document
-   * listener, which would close the panel before the click handler can toggle
-   * it.
-   *
-   * @param {MouseEvent} event - The mousedown event.
-   */
-  handlePanelMousedown(event) {
-    event.stopPropagation();
-  }
-
-  /**
    * Handles keyboard events on the panel trigger button.
    * Arrow keys change selection (Windows/Linux) or open the panel (Mac).
-   * Space opens the panel. Enter is prevented to match native select behavior.
+   * Space and Enter open the panel.
    *
    * @param {KeyboardEvent} event - The keyboard event.
    */
@@ -205,17 +252,12 @@ export default class MozSelect extends MozBaseInputElement {
       case "ArrowUp":
         event.preventDefault();
         if (navigator.platform.includes("Mac")) {
-          // Mac - open the menu
           this.togglePanel(event);
         } else {
-          // Windows/Linux - select the next option
           this.selectNextOption(event.key === "ArrowDown" ? 1 : -1);
         }
         break;
       case "Enter":
-        event.preventDefault();
-        break;
-      case " ":
         event.preventDefault();
         this.togglePanel(event);
         break;
@@ -236,7 +278,12 @@ export default class MozSelect extends MozBaseInputElement {
     for (let i = 1; i < options.length; i++) {
       let nextIndex = currentIndex + direction * i;
       let nextOption = options[nextIndex];
-      if (nextOption && !nextOption.disabled && !nextOption.hidden) {
+      if (
+        nextOption &&
+        !nextOption.disabled &&
+        !nextOption.hidden &&
+        !nextOption.separator
+      ) {
         this.value = nextOption.value;
         this.redispatchEvent(new Event("change", { bubbles: true }));
         return;
@@ -284,6 +331,7 @@ export default class MozSelect extends MozBaseInputElement {
       @input=${this.handleStateChange}
       @change=${this.redispatchEvent}
       ?disabled=${this.disabled || this.parentDisabled}
+      size=${this.size}
       aria-label=${ifDefined(this.ariaLabel ?? undefined)}
       aria-describedby="description"
       aria-description=${ifDefined(
@@ -315,15 +363,27 @@ export default class MozSelect extends MozBaseInputElement {
    */
   panelTargetTemplate() {
     return html`<button
+      id="input"
+      name=${this.name}
+      .value=${this.value}
       class="panel-trigger"
+      type="button"
+      role="combobox"
+      aria-label=${ifDefined(this.ariaLabel)}
+      aria-description=${ifDefined(
+        this.hasDescription ? undefined : this.ariaDescription
+      )}
+      aria-describedby="description"
       aria-haspopup="menu"
       aria-expanded=${this.panelList?.open ? "true" : "false"}
-      @click=${this.togglePanel}
-      @keydown=${this.handlePanelKeydown}
+      accesskey=${ifDefined(this.accessKey)}
       @mousedown=${this.handlePanelMousedown}
+      @click=${this.handlePanelClick}
+      @keydown=${this.handlePanelKeydown}
       ?disabled=${this.disabled || this.parentDisabled}
+      size=${this.size}
     >
-      ${this.selectedOption?.label}
+      <span class="panel-trigger-text">${this.selectedOption?.label}</span>
     </button>`;
   }
 
@@ -336,7 +396,6 @@ export default class MozSelect extends MozBaseInputElement {
     return html`<panel-list
       .value=${this.value}
       min-width-from-anchor
-      id="input"
       @click=${this.handlePanelChange}
       @hidden=${this.handlePanelHidden}
     >

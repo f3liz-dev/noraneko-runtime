@@ -14,9 +14,18 @@ use style_traits::{CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo,
 
 /// Constants shared by multiple CSS Box Alignment properties
 #[derive(
-    Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem,
+    Clone,
+    Copy,
+    Debug,
+    Deserialize,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    Serialize,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct AlignFlags(u8);
 bitflags! {
@@ -157,17 +166,19 @@ pub enum AxisDirection {
     Clone,
     Copy,
     Debug,
+    Deserialize,
     Eq,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
     ToTyped,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct ContentDistribution {
     primary: AlignFlags,
     // FIXME(https://github.com/w3c/csswg-drafts/issues/1002): This will need to
@@ -291,17 +302,19 @@ impl SpecifiedValueInfo for ContentDistribution {
     Copy,
     Debug,
     Deref,
+    Deserialize,
     Eq,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
     ToTyped,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct SelfAlignment(pub AlignFlags);
 
 impl SelfAlignment {
@@ -428,17 +441,19 @@ impl SpecifiedValueInfo for SelfAlignment {
     Copy,
     Debug,
     Deref,
+    Deserialize,
     Eq,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
     ToTyped,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct ItemPlacement(pub AlignFlags);
 
 impl ItemPlacement {
@@ -512,9 +527,20 @@ impl SpecifiedValueInfo for ItemPlacement {
 ///
 /// <https://drafts.csswg.org/css-align/#justify-items-property>
 #[derive(
-    Clone, Copy, Debug, Deref, Eq, MallocSizeOf, PartialEq, ToCss, ToResolvedValue, ToShmem, ToTyped,
+    Clone,
+    Copy,
+    Debug,
+    Deref,
+    Deserialize,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    Serialize,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct JustifyItems(pub ItemPlacement);
 
@@ -651,7 +677,7 @@ fn parse_self_position<'i, 't>(
         "self-end" => AlignFlags::SELF_END,
         "left" if axis == AxisDirection::Inline => AlignFlags::LEFT,
         "right" if axis == AxisDirection::Inline => AlignFlags::RIGHT,
-        "anchor-center" if static_prefs::pref!("layout.css.anchor-positioning.enabled") => AlignFlags::ANCHOR_CENTER,
+        "anchor-center" => AlignFlags::ANCHOR_CENTER,
     })
 }
 
@@ -664,11 +690,8 @@ fn list_self_position_keywords(f: KeywordsCollectFn, axis: AxisDirection) {
         "center",
         "self-start",
         "self-end",
+        "anchor-center",
     ]);
-
-    if static_prefs::pref!("layout.css.anchor-positioning.enabled") {
-        f(&["anchor-center"]);
-    }
 
     if axis == AxisDirection::Inline {
         f(&["left", "right"]);

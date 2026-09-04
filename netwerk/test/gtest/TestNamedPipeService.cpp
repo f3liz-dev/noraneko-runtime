@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TestCommon.h"
-#include "gtest/gtest.h"
-
 #include <windows.h>
 
+#include "TestCommon.h"
+#include "gtest/gtest.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "nsNamedPipeService.h"
 #include "nsNetCID.h"
 
@@ -44,8 +42,8 @@ class Event {
   }
 
  private:
-  Monitor mMonitor MOZ_UNANNOTATED;
-  bool mSignaled = false;
+  Monitor mMonitor;
+  bool mSignaled MOZ_GUARDED_BY(mMonitor) = false;
 };
 
 class nsNamedPipeDataObserver final : public nsINamedPipeDataObserver {

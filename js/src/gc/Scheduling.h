@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,7 +9,7 @@
  * ======================
  *
  * See also GC scheduling from Firefox's perspective here:
- * https://searchfox.org/mozilla-central/source/dom/base/CCGCScheduler.cpp
+ * https://searchfox.org/firefox-main/source/dom/base/CCGCScheduler.cpp
  *
  * Scheduling GC's in SpiderMonkey/Firefox is tremendously complicated because
  * of the large number of subtle, cross-cutting, and widely dispersed factors
@@ -611,10 +609,10 @@ class GCSchedulingState {
    * growth factor is a measure of how large (as a percentage of the last GC)
    * the heap is allowed to grow before we try to schedule another GC.
    */
-  mozilla::Atomic<bool, mozilla::Relaxed> inHighFrequencyGCMode_;
+  mozilla::Atomic<bool, mozilla::Relaxed> inHighFrequencyGCMode_{false};
 
  public:
-  GCSchedulingState() : inHighFrequencyGCMode_(false) {}
+  GCSchedulingState() = default;
 
   bool inHighFrequencyGCMode() const { return inHighFrequencyGCMode_; }
 
@@ -746,24 +744,21 @@ class PerZoneGCHeapSize : public HeapSizeChild {
 // GC heap and malloc thresholds defined below.
 class HeapThreshold {
  protected:
-  HeapThreshold()
-      : startBytes_(SIZE_MAX),
-        incrementalLimitBytes_(SIZE_MAX),
-        sliceBytes_(SIZE_MAX) {}
+  HeapThreshold() = default;
 
   // The threshold at which to start a new incremental collection.
   //
   // This can be read off main thread during collection, for example by sweep
   // tasks that resize tables.
-  MainThreadOrGCTaskData<size_t> startBytes_;
+  MainThreadOrGCTaskData<size_t> startBytes_{SIZE_MAX};
 
   // The threshold at which start a new non-incremental collection or finish an
   // ongoing collection non-incrementally.
-  MainThreadData<size_t> incrementalLimitBytes_;
+  MainThreadData<size_t> incrementalLimitBytes_{SIZE_MAX};
 
   // The threshold at which to trigger a slice during an ongoing incremental
   // collection.
-  MainThreadData<size_t> sliceBytes_;
+  MainThreadData<size_t> sliceBytes_{SIZE_MAX};
 
  public:
   size_t startBytes() const { return startBytes_; }

@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -77,6 +76,10 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 
 - (id)representedView {
   return nil;
+}
+
+- (BOOL)hasMozAccessible {
+  return YES;
 }
 
 - (BOOL)isRoot {
@@ -392,6 +395,10 @@ mozilla::LogModule* GetMacAccessibilityLog() {
 
 - (id)accessibilityCustomActions {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+  if ([self isExpired]) {
+    return nil;
+  }
+
   return [self moxCustomActions];
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
@@ -490,6 +497,14 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   NSArray* allChildren = [self moxChildren];
 
   for (MOXAccessibleBase* nativeChild in allChildren) {
+    if ([nativeChild hasRepresentedView]) {
+      // If the child has a represented view, we want to skip it in the
+      // accessibility hierarchy since the represented view will be a native
+      // accessible that represents this child and will be connected to the
+      // native parent directly.
+      continue;
+    }
+
     if ([nativeChild moxIgnoreWithParent:self]) {
       // If this child should be ignored get its unignored children.
       // This will in turn recurse to any unignored descendants if the
@@ -504,11 +519,24 @@ mozilla::LogModule* GetMacAccessibilityLog() {
   return unignoredChildren;
 }
 
+- (NSArray*)moxChildrenInNavigationOrder {
+  // Match WebKit's behaviour and expose this attribute
+  // on every acc as a mirror of AXChildren
+  return [self moxUnignoredChildren];
+}
+
 - (id<mozAccessible>)moxParent {
   return nil;
 }
 
 - (id<mozAccessible>)moxUnignoredParent {
+  if ([self hasRepresentedView]) {
+    // If this accessible has a represented NSView, use it to climb up to the
+    // native parent.
+    return [[self representedView]
+        accessibilityAttributeValue:NSAccessibilityParentAttribute];
+  }
+
   id<mozAccessible> nativeParent = [self moxParent];
   if (!nativeParent) {
     return nil;

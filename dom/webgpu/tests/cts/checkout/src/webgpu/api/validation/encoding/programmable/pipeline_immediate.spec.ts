@@ -67,7 +67,7 @@ g.test('required_slots_set')
         When a struct variable is statically used, all non-padding bytes of the entire struct must be set,
         even if only one member is accessed. In this test, data.b.v is accessed, but both data.a and data.b
         must be set (excluding padding).
-      - dynamic_indexing: Array with dynamic indexing.
+      - dynamic_indexing: Vector with dynamic indexing.
     - Usage:
       - full: Set all declared bytes.
       - split: Set all declared bytes in multiple calls.
@@ -99,7 +99,8 @@ g.test('required_slots_set')
     const { encoderType, scenario, usage, stage } = t.params;
 
     let code = '';
-    let kRequiredSize = 0;
+    let layoutImmediateSize = 0;
+    let trailingPaddingBytes = 0;
 
     const use_vertex = stage === 'vertex' || stage === 'both';
     const use_fragment = stage === 'fragment' || stage === 'both';
@@ -117,17 +118,18 @@ g.test('required_slots_set')
 
     switch (scenario) {
       case 'scalar':
-        kRequiredSize = 4;
+        layoutImmediateSize = 4;
         declarations = 'var<immediate> data: u32;';
         helpers = 'fn use_data() { _ = data; }';
         break;
       case 'vector':
-        kRequiredSize = 16;
+        layoutImmediateSize = 16;
         declarations = 'var<immediate> data: vec4<u32>;';
         helpers = 'fn use_data() { _ = data; }';
         break;
       case 'struct_padding':
-        kRequiredSize = 40;
+        layoutImmediateSize = 64;
+        trailingPaddingBytes = 24;
         declarations = `
           struct A { v: vec3<u32> }
           struct B { v: vec2<u32> }
@@ -141,7 +143,7 @@ g.test('required_slots_set')
         callFragment = 'use_b();';
         break;
       case 'mixed_types':
-        kRequiredSize = 32;
+        layoutImmediateSize = 32;
         declarations = `
           struct Mixed { v: u32, f: vec4<u32> }
           var<immediate> data: Mixed;`;
@@ -153,8 +155,8 @@ g.test('required_slots_set')
         callFragment = 'use_f();';
         break;
       case 'dynamic_indexing':
-        kRequiredSize = 16;
-        declarations = 'var<immediate> data: array<u32, 4>;';
+        layoutImmediateSize = 16;
+        declarations = 'var<immediate> data: vec4u;';
         helpers = 'fn use_data(i: u32) { _ = data[i]; }';
         computeArgs = '@builtin(local_invocation_index) i: u32';
         callCompute = 'use_data(i);';
@@ -165,7 +167,7 @@ g.test('required_slots_set')
         callFragment = 'use_data(i);';
         break;
       case 'multiple_variables':
-        kRequiredSize = 32;
+        layoutImmediateSize = 32;
         declarations = `
           struct S1 { a: u32, x: u32 }
           struct S2 { a: u32, y: vec4<u32> }
@@ -197,8 +199,15 @@ g.test('required_slots_set')
       }
     `;
 
-    const layoutSize = usage === 'overprovision' ? kRequiredSize + 4 : kRequiredSize;
-    if (layoutSize > t.device.limits.maxImmediateSize!) {
+    const kRequiredSize = layoutImmediateSize - trailingPaddingBytes;
+    // When overprovisioning: if the struct already has trailing padding, the layout
+    // size is already larger than what the shader uses, so no extra bytes are needed.
+    // Only when there's no trailing padding do we need to increase the layout size.
+    const layoutSize =
+      usage === 'overprovision' && trailingPaddingBytes === 0
+        ? layoutImmediateSize + 4
+        : layoutImmediateSize;
+    if (layoutSize > t.device.limits.maxImmediateSize) {
       t.skip('maxImmediateSize not large enough for overprovision test');
     }
 
@@ -206,11 +215,14 @@ g.test('required_slots_set')
 
     const setImmediates = (offset: number, size: number) => {
       const data = new Uint8Array(size);
-      encoder.setImmediates!(offset, data, 0, size);
+      encoder.setImmediates(offset, data, 0, size);
     };
 
     if (usage === 'overprovision') {
-      setImmediates(0, kRequiredSize + 4);
+      // When trailingPaddingBytes > 0, the layout already overprovisions beyond
+      // shader usage, so set the full layoutImmediateSize. When trailingPaddingBytes
+      // is 0, we added +4 to the layout, so set kRequiredSize + 4.
+      setImmediates(0, trailingPaddingBytes > 0 ? layoutImmediateSize : kRequiredSize + 4);
     } else if (usage === 'full') {
       setImmediates(0, kRequiredSize);
     } else if (usage === 'partial') {
@@ -328,7 +340,7 @@ g.test('unused_variable')
 
     if (usage === 'partial_start') {
       const data = new Uint8Array(8);
-      encoder.setImmediates!(0, data, 0, 8);
+      encoder.setImmediates(0, data, 0, 8);
     }
 
     t.runPass(encoder, code, kImmediateSize);
@@ -367,7 +379,7 @@ g.test('overprovisioned_immediate_data')
     const kSetSize = scenario === 'larger_than_layout' ? kLayoutSize + 4 : kLayoutSize;
 
     const data = new Uint8Array(kSetSize);
-    encoder.setImmediates!(0, data, 0, kSetSize);
+    encoder.setImmediates(0, data, 0, kSetSize);
 
     t.runPass(encoder, code, kLayoutSize);
 
@@ -416,7 +428,7 @@ g.test('render_bundle_execution_state_invalidation')
     });
     bundleEncoder.setPipeline(pipeline);
     const immediateData = new Uint8Array(16);
-    bundleEncoder.setImmediates!(0, immediateData, 0, 16);
+    bundleEncoder.setImmediates(0, immediateData, 0, 16);
     bundleEncoder.draw(3);
     const bundle = bundleEncoder.finish();
 
@@ -425,7 +437,7 @@ g.test('render_bundle_execution_state_invalidation')
 
     // Initial setup
     pass.setPipeline(pipeline);
-    pass.setImmediates!(0, immediateData, 0, 16);
+    pass.setImmediates(0, immediateData, 0, 16);
 
     // Execute bundle - this should invalidate state
     pass.executeBundles([bundle]);
@@ -433,7 +445,7 @@ g.test('render_bundle_execution_state_invalidation')
     // Try to draw
     pass.setPipeline(pipeline);
     if (resetImmediates) {
-      pass.setImmediates!(0, immediateData, 0, 16);
+      pass.setImmediates(0, immediateData, 0, 16);
     }
     pass.draw(3);
 

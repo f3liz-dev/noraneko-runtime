@@ -6,6 +6,7 @@ package mozilla.components.browser.state.engine.middleware
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.InitAction
 import mozilla.components.browser.state.action.LocaleAction
@@ -16,6 +17,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.ai.AIFeaturesRuntime
 import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.LanguageModel
 import mozilla.components.concept.engine.translate.LanguageModel.Companion.areModelsProcessing
@@ -33,17 +35,21 @@ import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 /**
  * This middleware is for use with managing any states or resources required for translating a
  * webpage.
+ *
+ * @param automaticallyInitialize If true, translations state will be initialized automatically
+ * when [InitAction] is dispatched.
+ * @param isTranslationsEnabled The user preference for whether we should enable translations or not.
  */
 @Suppress("LargeClass")
 class TranslationsMiddleware(
     private val engine: Engine,
     private val scope: CoroutineScope,
     private val automaticallyInitialize: Boolean = true,
+    private val isTranslationsEnabled: suspend () -> Boolean,
 ) : Middleware<BrowserState, BrowserAction> {
     private val logger = Logger("TranslationsMiddleware")
 
@@ -70,8 +76,34 @@ class TranslationsMiddleware(
             is TranslationsAction.InitTranslationsBrowserState -> {
                 scope.launch {
                     val engineIsSupported = requestEngineSupport(store)
-                    if (engineIsSupported == true) {
+                    val translationsIsEnabled = isTranslationsEnabled()
+
+                    // The default of [TranslationsBrowserState.isTranslationsEnabled] is true,
+                    // only set when false to prevent an initialization cycle.
+                    if (!translationsIsEnabled) {
+                        store.dispatch(TranslationsAction.SetTranslationsEnabledAction(false))
+                    }
+                    if (engineIsSupported == true && translationsIsEnabled) {
                         initializeBrowserStore(store)
+                    }
+                }
+            }
+
+            is TranslationsAction.SetTranslationsEnabledAction -> {
+                scope.launch {
+                    // Notify the browser translations engine to enable or disable translations on that level.
+                    val browserError = setBrowserTranslationsEnabled(action.isTranslationsEnabled)
+
+                    if (action.isTranslationsEnabled) {
+                        store.dispatch(TranslationsAction.InitTranslationsBrowserState)
+                    }
+
+                    if (browserError != null) {
+                        store.dispatch(
+                            TranslationsAction.EngineExceptionAction(
+                                error = TranslationError.CouldNotSetBrowserEnabledError(browserError),
+                            ),
+                        )
                     }
                 }
             }
@@ -262,7 +294,7 @@ class TranslationsMiddleware(
     private suspend fun requestEngineSupport(
         store: Store<BrowserState, BrowserAction>,
     ): Boolean? {
-        return suspendCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             engine.isTranslationsEngineSupported(
                 onSuccess = { isEngineSupported ->
                     store.dispatch(
@@ -283,6 +315,10 @@ class TranslationsMiddleware(
                     continuation.resume(null)
                 },
             )
+            continuation.invokeOnCancellation {
+                // cancel the engine support check if the Engine exposes a cancellation API
+                // see https://bugzilla.mozilla.org/show_bug.cgi?id=2056546
+            }
         }
     }
 
@@ -572,7 +608,7 @@ class TranslationsMiddleware(
      * @return The page translate language setting or null.
      */
     private suspend fun getLanguageSetting(pageLanguage: String): LanguageSetting? {
-        return suspendCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             engine.getLanguageSetting(
                 languageCode = pageLanguage,
                 onSuccess = { setting ->
@@ -584,6 +620,10 @@ class TranslationsMiddleware(
                     continuation.resume(null)
                 },
             )
+            continuation.invokeOnCancellation {
+                // cancel the language setting request when the Engine exposes a cancellation API.
+                // see https://bugzilla.mozilla.org/show_bug.cgi?id=2056546
+            }
         }
     }
 
@@ -648,7 +688,7 @@ class TranslationsMiddleware(
      * @return The never translate site setting from the [EngineSession] or null.
      */
     private suspend fun getNeverTranslateSiteSetting(engineSession: EngineSession): Boolean? {
-        return suspendCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             engineSession.getNeverTranslateSiteSetting(
                 onResult = { setting ->
                     logger.info("Success requesting never translate site settings.")
@@ -659,6 +699,10 @@ class TranslationsMiddleware(
                     continuation.resume(null)
                 },
             )
+            continuation.invokeOnCancellation {
+                // cancel the never-translate-site request when the EngineSession exposes a cancellation API
+                // see https://bugzilla.mozilla.org/show_bug.cgi?id=2056546
+            }
         }
     }
 
@@ -1032,5 +1076,33 @@ class TranslationsMiddleware(
                 )
             },
         )
+    }
+
+    /**
+     * Notifies the browser engine to enable or disable the translations feature via
+     * [AIFeaturesRuntime].
+     *
+     * @param isEnabled Whether translations should be enabled.
+     * @return Null on success, or the [Throwable] reported by the engine on failure.
+     */
+    private suspend fun setBrowserTranslationsEnabled(isEnabled: Boolean): Throwable? {
+        return suspendCancellableCoroutine { continuation ->
+            engine.aiFeatures.setFeatureEnablement(
+                featureId = "translations",
+                isEnabled = isEnabled,
+                onSuccess = {
+                    logger.info("Successfully set browser translations enabled to $isEnabled.")
+                    continuation.resume(null)
+                },
+                onError = { error ->
+                    logger.error("Error setting browser translations enabled.")
+                    continuation.resume(error)
+                },
+            )
+            continuation.invokeOnCancellation {
+                // cancel the feature enablement request when the AIFeaturesRuntime exposes a cancellation API
+                // see https://bugzilla.mozilla.org/show_bug.cgi?id=2056546
+            }
+        }
     }
 }

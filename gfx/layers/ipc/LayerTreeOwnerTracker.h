@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef mozilla_layers_LayerTreeOwnerTracker_h
 #define mozilla_layers_LayerTreeOwnerTracker_h
 
-#include "base/process.h"   // for base::ProcessId
-#include "LayersTypes.h"    // for LayersId
-#include "mozilla/Mutex.h"  // for mozilla::Mutex
-
 #include <functional>
 #include <map>
+
+#include "LayersTypes.h"    // for LayersId
+#include "base/process.h"   // for base::ProcessId
+#include "mozilla/Mutex.h"  // for mozilla::Mutex
 
 namespace mozilla {
 

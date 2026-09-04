@@ -5,23 +5,17 @@
 package org.mozilla.fenix.settings.settingssearch
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.R
 import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -97,5 +91,20 @@ class DefaultFenixSettingsIndexerTest {
 
         assertEquals(lowerResults, upperResults)
         assertEquals(lowerResults, mixedResults)
+    }
+
+    @Test
+    fun `GIVEN a preference key is excluded WHEN indexing THEN that item is absent from results`() = runTest {
+        val privacyReportKey = context.getString(R.string.pref_key_privacy_report)
+        val privacyReportTitle = context.getString(R.string.customize_toggle_privacy_report)
+        val excludingIndexer = DefaultFenixSettingsIndexer(
+            context = context,
+            excludedPreferenceKeys = { setOf(privacyReportKey) },
+        )
+
+        excludingIndexer.indexAllSettings()
+
+        val results = excludingIndexer.getSettingsWithQuery(privacyReportTitle)
+        assertFalse(results.any { it.preferenceKey == privacyReportKey })
     }
 }

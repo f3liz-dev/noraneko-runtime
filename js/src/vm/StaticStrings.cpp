@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -40,7 +38,7 @@ bool StaticStrings::init(JSContext* cx) {
 
   for (uint32_t i = 0; i < UNIT_STATIC_LIMIT; i++) {
     Latin1Char ch = Latin1Char(i);
-    HashNumber hash = mozilla::HashString(&ch, 1);
+    HashNumber hash = mozilla::HashLatin1AsUTF16(&ch, 1);
     JSAtom* a = NewInlineAtom(cx, &ch, 1, hash);
     if (!a) {
       return false;
@@ -51,7 +49,7 @@ bool StaticStrings::init(JSContext* cx) {
 
   for (uint32_t i = 0; i < NUM_LENGTH2_ENTRIES; i++) {
     Latin1Char buffer[] = {firstCharOfLength2(i), secondCharOfLength2(i)};
-    HashNumber hash = mozilla::HashString(buffer, 2);
+    HashNumber hash = mozilla::HashLatin1AsUTF16(buffer, 2);
     JSAtom* a = NewInlineAtom(cx, buffer, 2, hash);
     if (!a) {
       return false;
@@ -71,7 +69,7 @@ bool StaticStrings::init(JSContext* cx) {
       Latin1Char buffer[] = {Latin1Char(firstCharOfLength3(i)),
                              Latin1Char(secondCharOfLength3(i)),
                              Latin1Char(thirdCharOfLength3(i))};
-      HashNumber hash = mozilla::HashString(buffer, 3);
+      HashNumber hash = mozilla::HashLatin1AsUTF16(buffer, 3);
       JSAtom* a = NewInlineAtom(cx, buffer, 3, hash);
       if (!a) {
         return false;

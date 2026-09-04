@@ -390,7 +390,7 @@ PK11_HPKE_ImportContext(const SECItem *serialized, PK11SymKey *wrapKey)
 
     /* Import sender public key (serialized). */
     walker = decodeNumber(&tmpn, walker, 2);
-    CHECK_FAIL_ERR(tmpn >= REMAINING_BYTES(walker, serialized),
+    CHECK_FAIL_ERR(tmpn + 2 > REMAINING_BYTES(walker, serialized),
                    SEC_ERROR_BAD_DATA);
     tmpItem.data = walker;
     tmpItem.len = tmpn;
@@ -401,7 +401,7 @@ PK11_HPKE_ImportContext(const SECItem *serialized, PK11SymKey *wrapKey)
     /* Import base_nonce. */
     walker = decodeNumber(&tmpn, walker, 2);
     CHECK_FAIL_ERR(tmpn != cx->aeadParams->Nn, SEC_ERROR_BAD_DATA);
-    CHECK_FAIL_ERR(tmpn >= REMAINING_BYTES(walker, serialized),
+    CHECK_FAIL_ERR(tmpn + 2 > REMAINING_BYTES(walker, serialized),
                    SEC_ERROR_BAD_DATA);
     tmpItem.data = walker;
     tmpItem.len = tmpn;
@@ -411,7 +411,7 @@ PK11_HPKE_ImportContext(const SECItem *serialized, PK11SymKey *wrapKey)
 
     /* Import key */
     walker = decodeNumber(&tmpn, walker, 2);
-    CHECK_FAIL_ERR(tmpn >= REMAINING_BYTES(walker, serialized),
+    CHECK_FAIL_ERR(tmpn + 2 > REMAINING_BYTES(walker, serialized),
                    SEC_ERROR_BAD_DATA);
     tmpItem.data = walker;
     tmpItem.len = tmpn;
@@ -1085,7 +1085,8 @@ PK11_HPKE_SetupR(HpkeContext *cx, const SECKEYPublicKey *pkR, SECKEYPrivateKey *
     SECStatus rv;
     SECItem empty = { siBuffer, NULL, 0 };
 
-    CHECK_FAIL_ERR((!cx || !skR || !info || !enc || !enc->data || !enc->len),
+    CHECK_FAIL_ERR((!cx || !skR || !info || !enc || !enc->data || !enc->len ||
+                    info->len > 0xFFFF),
                    SEC_ERROR_INVALID_ARGS);
     /* Already setup */
     CHECK_FAIL_ERR((cx->aeadContext), SEC_ERROR_INVALID_STATE);
@@ -1119,7 +1120,8 @@ PK11_HPKE_SetupS(HpkeContext *cx, const SECKEYPublicKey *pkE, SECKEYPrivateKey *
     SECItem empty = { siBuffer, NULL, 0 };
     SECKEYPublicKey *tmpPkE = NULL;
     SECKEYPrivateKey *tmpSkE = NULL;
-    CHECK_FAIL_ERR((!cx || !pkR || !info || (!!skE != !!pkE)), SEC_ERROR_INVALID_ARGS);
+    CHECK_FAIL_ERR((!cx || !pkR || !info || (!!skE != !!pkE) || info->len > 0xFFFF),
+                   SEC_ERROR_INVALID_ARGS);
     /* Already setup */
     CHECK_FAIL_ERR((cx->aeadContext), SEC_ERROR_INVALID_STATE);
 

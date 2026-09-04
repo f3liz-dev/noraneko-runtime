@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -111,9 +109,11 @@ struct Extractor {
 
 [[nodiscard]] RefPtr<WinFileDialogParent::ShowFileDialogPromise>
 WinFileDialogParent::ShowFileDialogImpl(HWND parent, const FileDialogType& type,
-                                        mozilla::Span<Command const> commands) {
+                                        mozilla::Span<Command const> commands,
+                                        bool aNeedsInputProtection) {
   auto inner_promise = PWinFileDialogParent::SendShowFileDialog(
-      reinterpret_cast<WindowsHandle>(parent), type, std::move(commands));
+      reinterpret_cast<WindowsHandle>(parent), type, std::move(commands),
+      aNeedsInputProtection);
 
   return ConvertToFDPromise(
       __func__,
@@ -123,10 +123,12 @@ WinFileDialogParent::ShowFileDialogImpl(HWND parent, const FileDialogType& type,
 }
 
 [[nodiscard]] RefPtr<WinFileDialogParent::ShowFolderDialogPromise>
-WinFileDialogParent::ShowFolderDialogImpl(
-    HWND parent, mozilla::Span<Command const> commands) {
+WinFileDialogParent::ShowFolderDialogImpl(HWND parent,
+                                          mozilla::Span<Command const> commands,
+                                          bool aNeedsInputProtection) {
   auto inner_promise = PWinFileDialogParent::SendShowFolderDialog(
-      reinterpret_cast<WindowsHandle>(parent), std::move(commands));
+      reinterpret_cast<WindowsHandle>(parent), std::move(commands),
+      aNeedsInputProtection);
 
   return ConvertToFDPromise(
       __func__,

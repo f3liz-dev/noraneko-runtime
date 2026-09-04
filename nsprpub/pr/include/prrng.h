@@ -1,8 +1,6 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 /*
 ** prrng.h -- NSPR Random Number Generator
@@ -64,10 +62,8 @@ PR_BEGIN_EXTERN_C
 **   component.
 **
 */
-NSPR_API(PRSize) PR_GetRandomNoise(
-    void    *buf,
-    PRSize  size
-);
+NSPR_API(PRSize)
+PR_GetRandomNoise(void* buf, PRSize size);
 
 PR_END_EXTERN_C
 

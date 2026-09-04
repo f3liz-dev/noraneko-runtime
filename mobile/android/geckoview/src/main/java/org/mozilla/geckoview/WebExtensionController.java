@@ -712,7 +712,8 @@ public class WebExtensionController {
   @StringDef({
     INSTALLATION_METHOD_MANAGER,
     INSTALLATION_METHOD_FROM_FILE,
-    INSTALLATION_METHOD_ONBOARDING
+    INSTALLATION_METHOD_ONBOARDING,
+    INSTALLATION_METHOD_RTAMO
   })
   public @interface InstallationMethod {};
 
@@ -724,6 +725,13 @@ public class WebExtensionController {
 
   /** Indicates the {@link WebExtension} was installed from the embedder's onboarding feature. */
   public static final String INSTALLATION_METHOD_ONBOARDING = "onboarding";
+
+  /**
+   * Indicates the {@link WebExtension} was installed via the Return To AMO (RTAMO) flow, which
+   * allows a user to install an add-on from addons.mozilla.org (AMO) (during onboarding typically),
+   * after having downloaded/installed the embedding app from that same web page.
+   */
+  public static final String INSTALLATION_METHOD_RTAMO = "rtamo";
 
   /**
    * Set whether an extension should be allowed to run in private browsing or not.
@@ -1056,6 +1064,9 @@ public class WebExtensionController {
     return webExtension;
   }
 
+  // ThreadConstraint false positive: runs in a GeckoResult continuation on the UI thread, which
+  // lint cannot model.
+  @SuppressLint("ThreadConstraint")
   /* package */ void handleMessage(
       final String event,
       final GeckoBundle bundle,
@@ -1489,6 +1500,9 @@ public class WebExtensionController {
     message.callback.resolveTo(response);
   }
 
+  // ThreadConstraint false positive: runs in a GeckoResult continuation on the UI thread, which
+  // lint cannot model.
+  @SuppressLint("ThreadConstraint")
   /* package */ void download(final Message message, final WebExtension extension) {
     final WebExtension.DownloadDelegate delegate = mListener.getDownloadDelegate(extension);
     if (delegate == null) {

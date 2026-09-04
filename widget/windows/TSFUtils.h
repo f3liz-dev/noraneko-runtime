@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef TSFUtils_h
 #define TSFUtils_h
 
-#include <ostream>
-
 #include <msctf.h>
 #include <textstor.h>
+
+#include <ostream>
 
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
@@ -41,9 +40,6 @@ namespace mozilla::widget {
 class TSFEmptyTextStore;
 class TSFTextStore;
 class TSFTextStoreBase;
-struct IMENotificationRequests;
-struct InputContext;
-struct InputContextAction;
 
 class TSFUtils final {
  public:
@@ -143,6 +139,11 @@ class TSFUtils final {
       0x4308,
       {0xbc, 0xbf, 0x2e, 0x73, 0x93, 0x98, 0xe2, 0x34}};
 
+  // To avoid the include hell of the SDK, we should use the following static
+  // referrers to refer some GUIDs defined in <tsattrs.h>.
+  static const GUID& TSATTRID_Text_VerticalWriting_Ref();
+  static const GUID& TSATTRID_Text_Orientation_Ref();
+
   constexpr static TsViewCookie sDefaultView = 1;
 
   /**
@@ -186,38 +187,6 @@ class TSFUtils final {
    */
   [[nodiscard]] static bool ShouldSetInputScopeOfURLBarToDefault();
 
-  // Support retrieving attributes.
-  // TODO: We should support RightToLeft, perhaps.
-  enum AttrIndex {
-    // Used for result of GetRequestedAttrIndex()
-    NotSupported = -1,
-
-    // Supported attributes even in TSFEmptyTextStore.
-    InputScope = 0,
-    DocumentURL,
-
-    // Count of the supported attrs in empty text store
-    NUM_OF_SUPPORTED_ATTRS_IN_EMPTY_TEXT_STORE,
-
-    // Supported attributes in any TextStores.
-    TextVerticalWriting = NUM_OF_SUPPORTED_ATTRS_IN_EMPTY_TEXT_STORE,
-    TextOrientation,
-
-    // Count of the supported attributes
-    NUM_OF_SUPPORTED_ATTRS,
-  };
-
-  /**
-   * Return AttrIndex fo aAttrID.
-   */
-  [[nodiscard]] static AttrIndex GetRequestedAttrIndex(
-      const TS_ATTRID& aAttrID);
-
-  /**
-   * Return TS_ATTRID for aIndex.
-   */
-  [[nodiscard]] static TS_ATTRID GetAttrID(AttrIndex aIndex);
-
   /**
    * Get compartment instance.
    */
@@ -250,6 +219,12 @@ class TSFUtils final {
         .acpStart = 0,
         .acpEnd = 0,
         .style = {.ase = TS_AE_NONE, .fInterimChar = FALSE}};
+  }
+
+  static TS_SELECTION_ACP SelectionACPCollapsedAtStart() {
+    return TS_SELECTION_ACP{.acpStart = 0,
+                            .acpEnd = 0,
+                            .style = {.ase = TS_AE_END, .fInterimChar = FALSE}};
   }
 
  private:

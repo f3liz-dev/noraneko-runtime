@@ -59,15 +59,17 @@ function expectNoData(marker) {
   );
 }
 
-function expectText(marker) {
+function expectText(marker, thread) {
   Assert.equal(
     typeof marker.data,
     "object",
     "The data property should be an object"
   );
   Assert.equal(marker.data.type, "Text", "Should be a Text marker");
+  // The Text marker's "name" field is a unique string, so the payload holds
+  // an index into the thread's string table.
   Assert.equal(
-    marker.data.name,
+    thread.stringTable[marker.data.name],
     markerText,
     "The payload should contain the expected text"
   );
@@ -151,13 +153,13 @@ add_task(async () => {
     expectDuration(m);
     expectNoData(m);
   });
-  testMarker([undefined, markerText], m => {
+  testMarker([undefined, markerText], (m, thread) => {
     expectNoDuration(m);
-    expectText(m);
+    expectText(m, thread);
   });
-  testMarker([startTime, markerText], m => {
+  testMarker([startTime, markerText], (m, thread) => {
     expectDuration(m);
-    expectText(m);
+    expectText(m, thread);
   });
 
   info("Record markers providing the duration as the startTime property.");
@@ -165,13 +167,13 @@ add_task(async () => {
     expectDuration(m);
     expectNoData(m);
   });
-  testMarker([{}, markerText], m => {
+  testMarker([{}, markerText], (m, thread) => {
     expectNoDuration(m);
-    expectText(m);
+    expectText(m, thread);
   });
-  testMarker([{ startTime }, markerText], m => {
+  testMarker([{ startTime }, markerText], (m, thread) => {
     expectDuration(m);
-    expectText(m);
+    expectText(m, thread);
   });
 
   info("Record markers to test the captureStack property.");
@@ -277,4 +279,66 @@ add_task(async function test_addMarkerWithObject() {
   const schemas = profile.meta.markerSchema;
   const customSchema = schemas.find(s => s.name === "CustomMarker");
   Assert.ok(customSchema, "Custom schema found in profile");
+});
+
+add_task(async function test_addMarkerWithCrossRealmPlainObject() {
+  // A plain object coming from a different realm reaches AddProfilerMarker as
+  // a cross-compartment wrapper. JS::GetBuiltinClass unwraps proxies, but
+  // JS::ToJSONMaybeSafely's assertion checks the wrapper directly, so we need
+  // to unwrap before calling it.
+  await ProfilerTestUtils.startProfilerForMarkerTests();
+
+  const sandbox = Cu.Sandbox(Cu.getGlobalForObject(Services), {
+    wantGlobalProperties: ["ChromeUtils"],
+  });
+  const wrappedObject = Cu.evalInSandbox(
+    "({ type: 'CustomMarker', field1: 'crossrealm', field2: 7 })",
+    sandbox
+  );
+
+  ChromeUtils.addProfilerMarker("CrossRealmMarker", {}, wrappedObject);
+
+  const profile = await ProfilerTestUtils.stopNowAndGetProfile();
+  const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
+  const markers = ProfilerTestUtils.getInflatedMarkerData(mainThread);
+
+  const marker = markers.find(m => m.name === "CrossRealmMarker");
+  Assert.ok(marker, "Marker with cross-realm object data was recorded");
+  Assert.deepEqual(
+    marker.data,
+    { type: "CustomMarker", field1: "crossrealm", field2: 7 },
+    "Marker data should match the cross-realm plain object"
+  );
+});
+
+add_task(async function test_addMarkerWithNonPlainObject() {
+  // Non-plain objects (e.g. Error, Array) passed as the data argument should
+  // be recorded as text markers using the object's string form.
+  await ProfilerTestUtils.startProfilerForMarkerTests();
+
+  const err = new TypeError("boom");
+  ChromeUtils.addProfilerMarker("NonPlainObjectMarker", {}, err);
+  ChromeUtils.addProfilerMarker("ArrayMarker", {}, [1, 2, 3]);
+
+  const profile = await ProfilerTestUtils.stopNowAndGetProfile();
+  const mainThread = profile.threads.find(({ name }) => name === "GeckoMain");
+  const markers = ProfilerTestUtils.getInflatedMarkerData(mainThread);
+
+  const errMarker = markers.find(m => m.name === "NonPlainObjectMarker");
+  Assert.ok(errMarker, "Marker with Error data was recorded");
+  Assert.equal(errMarker.data.type, "Text", "Should fall back to Text marker");
+  Assert.equal(
+    mainThread.stringTable[errMarker.data.name],
+    String(err),
+    "Text payload should be the Error's string form"
+  );
+
+  const arrMarker = markers.find(m => m.name === "ArrayMarker");
+  Assert.ok(arrMarker, "Marker with Array data was recorded");
+  Assert.equal(arrMarker.data.type, "Text", "Should fall back to Text marker");
+  Assert.equal(
+    mainThread.stringTable[arrMarker.data.name],
+    "1,2,3",
+    "Text payload should be the Array's string form"
+  );
 });

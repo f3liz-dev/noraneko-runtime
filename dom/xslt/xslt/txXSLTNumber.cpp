@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -54,7 +53,7 @@ nsresult txXSLTNumber::createNumber(Expr* aValueExpr, txPattern* aCountPattern,
   txListIterator counterIter(&counters);
   valueIter.resetToEnd();
   int32_t value;
-  txFormattedCounter* counter = 0;
+  txFormattedCounter* counter = nullptr;
   while ((value = NS_PTR_TO_INT32(valueIter.previous()))) {
     if (counterIter.hasNext()) {
       counter = (txFormattedCounter*)counterIter.next();
@@ -106,7 +105,7 @@ nsresult txXSLTNumber::getValueList(Expr* aValueExpr, txPattern* aCountPattern,
 
   txPattern* countPattern = aCountPattern;
   UniquePtr<txPattern> newCountPattern;
-  const txXPathNode& currNode = aContext->getContextNode();
+  txXPathNode currNode(aContext->getContextNode());
 
   // Parse count- and from-attributes
 
@@ -117,7 +116,7 @@ nsresult txXSLTNumber::getValueList(Expr* aValueExpr, txPattern* aCountPattern,
       case txXPathNodeType::ELEMENT_NODE: {
         RefPtr<nsAtom> localName = txXPathNodeUtils::getLocalName(currNode);
         int32_t namespaceID = txXPathNodeUtils::getNamespaceID(currNode);
-        nodeTest = new txNameTest(0, localName, namespaceID,
+        nodeTest = new txNameTest(nullptr, localName, namespaceID,
                                   txXPathNodeType::ELEMENT_NODE);
         break;
       }
@@ -144,7 +143,7 @@ nsresult txXSLTNumber::getValueList(Expr* aValueExpr, txPattern* aCountPattern,
       default: {
         // this won't match anything as we walk up the tree
         // but it's what the spec says to do
-        nodeTest = new txNameTest(0, nsGkAtoms::_asterisk, 0, nodeType);
+        nodeTest = new txNameTest(nullptr, nsGkAtoms::_asterisk, 0, nodeType);
         break;
       }
     }
@@ -375,7 +374,7 @@ nsresult txXSLTNumber::getCounters(Expr* aGroupSize, Expr* aGroupSeparator,
       ++formatPos;
     }
 
-    txFormattedCounter* counter = 0;
+    txFormattedCounter* counter = nullptr;
     rv = txFormattedCounter::getCounterFor(numToken, groupSize, groupSeparator,
                                            counter);
     if (NS_FAILED(rv)) {

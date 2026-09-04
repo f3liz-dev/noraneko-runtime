@@ -7,7 +7,7 @@ add_task(async function test_click_return_to_opener_button() {
   // Open PiP and switch to another tab in the same window
   // Request a small window to avoid timeouts from the other window not getting visible.
   const [tab, chromePiP] = await newTabWithPiP({ width: 100, height: 100 });
-  const win = tab.ownerGlobal;
+  const win = tab.documentGlobal;
   const tab2 = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: "https://example.org",
@@ -18,7 +18,7 @@ add_task(async function test_click_return_to_opener_button() {
   // Focus a different window
   const otherWin = await BrowserTestUtils.openNewBrowserWindow();
   otherWin.focus();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => Services.focus.activeWindow === otherWin,
     "Wait for other window to be focused"
   );
@@ -34,7 +34,7 @@ add_task(async function test_click_return_to_opener_button() {
 
   // PiP should be closed, tab switched, window focused
   await closedPromise;
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => gBrowser.selectedTab === tab && Services.focus.activeWindow === win,
     "Waiting for opener to be switched to and focused"
   );

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,20 +6,18 @@
 #define mozilla_net_OpaqueResponseUtils_h
 
 #include "ipc/EnumSerializer.h"
+#include "mozilla/Logging.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
+#include "nsCOMPtr.h"
 #include "nsIContentPolicy.h"
 #include "nsIEncodedChannel.h"
-#include "nsIStreamListener.h"
-#include "nsUnknownDecoder.h"
-#include "nsMimeTypes.h"
 #include "nsIHttpChannel.h"
-
-#include "mozilla/Logging.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-
-#include "nsCOMPtr.h"
+#include "nsIStreamListener.h"
+#include "nsMimeTypes.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsUnknownDecoder.h"
 
 class nsIContentSniffer;
 

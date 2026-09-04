@@ -27,6 +27,7 @@
   <string name="teaser">ท่องเว็บแบบส่วนตัวโดยอัตโนมัติ\nท่องเว็บ ล้าง ทำซ้ำ</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">ล้างประวัติการท่องเว็บของคุณแล้ว</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">ล้างประวัติการท่องเว็บแล้ว</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">ล้างประวัติการท่องเว็บของแท็บแล้ว</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">ล้างแล้วเปิด %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">ค้นหาใน Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">ค้นหาใน Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">ค้นหาใน Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">ค้นหาใน Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">ค้นหาใน Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">ค้นหาใน Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ให้คุณควบคุมได้ทุกอย่าง</p>\n<p>ใช้เป็นเบราว์เซอร์ส่วนตัว:\n<ul>\n<li>ค้นหาและเรียกดูได้จากในแอปโดยตรง</li>\n<li>ปิดกั้นตัวติดตาม (หรืออัปเดตการตั้งค่าเพื่ออนุญาตตัวติดตาม)</li>\n<li>ล้างเพื่อลบคุกกี้รวมทั้งประวัติการค้นหาและการเรียกดู</li>\n</ul> </p>\n<p>%1$s ถูกสร้างขึ้นโดย Mozilla ภารกิจของเราคือส่งเสริมอินเทอร์เน็ตที่สมบูรณ์และเปิดกว้าง<br/>\n<a href=\"%2$s\">เรียนรู้เพิ่มเติม</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ให้คุณควบคุมได้ทุกอย่าง</p>\n<p>ใช้เป็นเบราว์เซอร์ส่วนตัว:\n<ul>\n<li>ค้นหาและเรียกดูได้จากในแอปโดยตรง</li>\n<li>ปิดกั้นตัวติดตาม (หรืออัปเดตการตั้งค่าเพื่ออนุญาตตัวติดตาม)</li>\n<li>ล้างเพื่อลบคุกกี้รวมทั้งประวัติการค้นหาและการเรียกดู</li>\n</ul> </p>\n<p>%1$s ถูกสร้างขึ้นโดย Mozilla ภารกิจของเราคือส่งเสริมอินเทอร์เน็ตที่สมบูรณ์และเปิดกว้าง<br/>\n<a href=\"%2$s\">เรียนรู้เพิ่มเติม</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">เรียนรู้เพิ่มเติม</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">วางหรือป้อน URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">ตัวอย่าง: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">ตัวอย่าง: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">ตัวอย่าง: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">ทำให้ %1$s เป็นเบราว์เซอร์เริ่มต้น</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">ส่งข้อมูลการใช้งาน</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">เรียนรู้เพิ่มเติม</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla มุ่งมั่นที่จะเก็บรวบรวมเฉพาะสิ่งที่เราจำเป็นต้องให้บริการและปรับปรุง %1$s สำหรับทุกคน</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla มุ่งมั่นที่จะเก็บรวบรวมเฉพาะสิ่งที่เราจำเป็นต้องให้บริการและปรับปรุง %1$s สำหรับทุกคน</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">พิงการใช้งานรายวัน</string>
-  <string name="preference_daily_usage_ping_description">ตัวเลือกนี้ช่วยให้ Mozilla ประเมินจำนวนผู้ใช้ที่มีความเคลื่อนไหวได้</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">ตัวเลือกนี้ช่วยให้ Mozilla ประเมินจำนวนผู้ใช้ที่มีความเคลื่อนไหวได้</string>
   <string name="preference_daily_usage_ping_learn_more">เรียนรู้เพิ่มเติม</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">ประกาศความเป็นส่วนตัว</string>
@@ -549,7 +553,7 @@
     * To understand what notification channels are, see: https://www.androidcentral.com/notification-channels
     * To see how this string will look like in Android's UI, see: https://github.com/mozilla-mobile/focus-android/issues/863#issuecomment-324105723
   -->
-  <string name="notification_browsing_session_channel_name">วาระการท่องเว็บแบบส่วนตัว</string>
+  <string name="notification_browsing_session_channel_name">เซสชันการท่องเว็บแบบส่วนตัว</string>
   <!--
     The user visible description of the "notification channel" (Android 8+ feature) for the ongoing notification shown while a browsing session is active.
     The recommended maximum length is 300 characters; the value may be truncated if it is too long. %1$s will be replaced with the name of the app (e.g. Firefox Focus).
@@ -557,7 +561,7 @@
     * To understand what notification channels are, see: https://www.androidcentral.com/notification-channels
     * To see how this string will look like in Android's UI, see: https://github.com/mozilla-mobile/focus-android/issues/863#issuecomment-324105723
   -->
-  <string name="notification_browsing_session_channel_description">การแจ้งเตือนช่วยให้คุณล้างวาระ %1$s ของคุณด้วยการแตะ คุณไม่จำเป็นต้องเปิดแอปหรือดูสิ่งที่กำลังทำงานในเบราว์เซอร์ของคุณ</string>
+  <string name="notification_browsing_session_channel_description">การแจ้งเตือนช่วยให้คุณล้างเซสชัน %1$s ของคุณด้วยการแตะ คุณไม่จำเป็นต้องเปิดแอปหรือดูสิ่งที่กำลังทำงานในเบราว์เซอร์ของคุณ</string>
   <!-- Label for a button in the "tabs tray" to erase the browsing history (closes all tabs and removes associated data). -->
   <string name="tabs_tray_action_erase">ล้างประวัติการท่องเว็บ</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
@@ -584,6 +588,23 @@
   <string name="security_popup_security_verified">ยืนยันโดย: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">ความปลอดภัยของไซต์</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">ออกใบรับรองให้กับ %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">มีคุณสมบัติตรงตามที่ระบุไว้ในระเบียบ (EU) 2024/1183</string>
   <string name="preference_autocomplete_duplicate_url_error">มี URL อยู่แล้ว</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">ค้นหาในหน้า</string>
@@ -721,7 +742,7 @@
     Button for the fingerprint authentication dialog box that is shown to the user when sharing a link to the app
     while the user has biometric authentication enabled. When pressed, the user's previous session is cleared, and the shared link is opened.
   -->
-  <string name="biometric_auth_open_link_new_session">เปิดลิงก์ในวาระใหม่</string>
+  <string name="biometric_auth_open_link_new_session">เปิดลิงก์ในเซสชันใหม่</string>
   <!-- Description for the fingerprint authentication image. Used for accessibility purposes. -->
   <string name="biometric_auth_image_description">ไอคอนลายนิ้วมือ</string>
   <!--
@@ -814,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ปิดแท็บ</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">ส่งรายงานข้อขัดข้องไปยัง Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">ส่งรายงานข้อขัดข้องไปยัง Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -879,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s พยายามใช้การเชื่อมต่อ HTTPS ทุกครั้งที่ทำได้เพื่อความปลอดภัยที่มากขึ้น <a href=\"%2$s\">เรียนรู้เพิ่มเติม</a> <br/><br/> โปรดเปลี่ยนการตั้งค่านี้ใน การตั้งค่า > ความเป็นส่วนตัวและความปลอดภัย > ความปลอดภัย]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">การเชื่อมต่อไม่ปลอดภัย</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">การเชื่อมต่อไม่ปลอดภัย</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[สิ่งนี้อาจเป็นปัญหาจากการกำหนดค่าของเซิร์ฟเวอร์ หรืออาจมีใครบางคนกำลังพยายามปลอมแปลงเซิร์ฟเวอร์ <br/><br/> หากคุณเคยเชื่อมต่อกับเซิร์ฟเวอร์นี้สำเร็จมาก่อน ข้อผิดพลาดอาจเกิดขึ้นเพียงชั่วคราว]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[สิ่งนี้อาจเป็นปัญหาจากการกำหนดค่าของเซิร์ฟเวอร์ หรืออาจมีใครบางคนกำลังพยายามปลอมแปลงเซิร์ฟเวอร์ <br/><br/> หากคุณเคยเชื่อมต่อกับเซิร์ฟเวอร์นี้สำเร็จมาก่อน ข้อผิดพลาดอาจเกิดขึ้นเพียงชั่วคราว]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>อาจมีใครบางคนกำลังพยายามปลอมแปลงไซต์นี้และคุณไม่ควรดำเนินการต่อ</label> <br><br>\n<label>%1$s ไม่เชื่อถือ <b>%2$s</b> เนื่องจากไม่ทราบผู้ออกใบรับรอง ใบรับรองถูกลงชื่อด้วยตนเอง หรือเซิร์ฟเวอร์ไม่ส่งใบรับรองระดับกลางที่ถูกต้องมาให้</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>อาจมีใครบางคนกำลังพยายามปลอมแปลงไซต์นี้และคุณไม่ควรดำเนินการต่อ</label> <br><br>\n<label>%1$s ไม่เชื่อถือ <b>%2$s</b> เนื่องจากไม่ทราบผู้ออกใบรับรอง ใบรับรองถูกลงชื่อด้วยตนเอง หรือเซิร์ฟเวอร์ไม่ส่งใบรับรองระดับกลางที่ถูกต้องมาให้</label>]]></string>
   <!--
     Sessions List
 
@@ -926,7 +951,7 @@
   <!-- This is the title of promote search widget dialog. -->
   <string name="promote_search_widget_dialog_title">ล้างประวัติการท่องเว็บแล้ว! 🎉</string>
   <!-- Banner Info Message than will appear when user first enters in the app. The location is at the toolbar. -->
-  <string name="cfr_for_start_browsing">เริ่มวาระการท่องเว็บแบบส่วนตัว แล้วเราจะปิดกั้นตัวติดตามและสิ่งไม่พึงประสงค์ในขณะที่คุณใช้งาน</string>
+  <string name="cfr_for_start_browsing">เริ่มเซสชันการท่องเว็บแบบส่วนตัว แล้วเราจะปิดกั้นตัวติดตามและสิ่งไม่พึงประสงค์ในขณะที่คุณใช้งาน</string>
   <!--
     This is the subtitle of promote search widget dialog. %1$s will get replaced with the name
     of the app (e.g. "Focus")

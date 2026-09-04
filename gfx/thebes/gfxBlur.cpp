@@ -1,21 +1,21 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxBlur.h"
 
+#include <cmath>
+
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
+#include "gfxUtils.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Blur.h"
 #include "mozilla/gfx/PathHelpers.h"
-#include "mozilla/Maybe.h"
-#include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
-#include "gfxUtils.h"
-#include <cmath>
+#include "nsExpirationTracker.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;

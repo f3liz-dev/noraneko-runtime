@@ -86,7 +86,7 @@ pub enum NameKey {
 
 /// This processor assigns names to all the things in a module
 /// that may need identifiers in a textual backend.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Namer {
     /// The last numeric suffix used for each base name. Zero means "no suffix".
     unique: FastHashMap<String, u32>,
@@ -262,7 +262,12 @@ impl Namer {
                         crate::ShaderStage::Vertex => "VertexOutput",
                         crate::ShaderStage::Fragment => "FragmentOutput",
                         crate::ShaderStage::Compute => "ComputeOutput",
-                        crate::ShaderStage::Task | crate::ShaderStage::Mesh => unreachable!(),
+                        crate::ShaderStage::Task
+                        | crate::ShaderStage::Mesh
+                        | crate::ShaderStage::RayGeneration
+                        | crate::ShaderStage::ClosestHit
+                        | crate::ShaderStage::AnyHit
+                        | crate::ShaderStage::Miss => unreachable!(),
                     };
                     entrypoint_type_fallbacks.insert(result.ty, label);
                 }

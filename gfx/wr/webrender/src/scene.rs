@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BuiltDisplayList, DisplayListWithCache, ColorF, DynamicProperties, Epoch, FontRenderMode};
+use api::{BuiltDisplayList, ColorF, DynamicProperties, Epoch, FontRenderMode, IdNamespace};
 use api::{PipelineId, PropertyBinding, PropertyBindingId, PropertyValue, MixBlendMode, StackingContext};
 use api::units::*;
 use api::channel::Sender;
@@ -13,8 +13,8 @@ use crate::clip::{ClipStore, ClipTree};
 use crate::spatial_tree::SpatialTree;
 use crate::frame_builder::FrameBuilderConfig;
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
-use crate::internal_types::FastHashMap;
-use crate::picture::SurfaceInfo;
+use crate::internal_types::{FastHashMap, FastHashSet};
+use crate::surface::SurfaceInfo;
 use crate::picture_graph::PictureGraph;
 use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex, PrimitiveInstance};
 use crate::tile_cache::TileCacheConfig;
@@ -29,6 +29,13 @@ pub struct SceneProperties {
     transform_properties: FastHashMap<PropertyBindingId, LayoutTransform>,
     float_properties: FastHashMap<PropertyBindingId, f32>,
     color_properties: FastHashMap<PropertyBindingId, ColorF>,
+    /// Transform binding ids observed to change value while the binding is
+    /// present, i.e. an actually-moving animation. A bound-but-static transform
+    /// (e.g. a CSS animation holding a constant value) is deliberately excluded,
+    /// so its text stays on the crisp device path rather than being rasterized
+    /// in local space (bug 2051166). The latch is monotonic while the binding
+    /// exists and is dropped once the binding disappears.
+    moved_transform_bindings: FastHashSet<PropertyBindingId>,
     current_properties: DynamicProperties,
     pending_properties: Option<DynamicProperties>,
 }
@@ -39,6 +46,7 @@ impl SceneProperties {
             transform_properties: FastHashMap::default(),
             float_properties: FastHashMap::default(),
             color_properties: FastHashMap::default(),
+            moved_transform_bindings: FastHashSet::default(),
             current_properties: DynamicProperties::default(),
             pending_properties: None,
         }
@@ -84,6 +92,23 @@ impl SceneProperties {
 
         if let Some(ref pending_properties) = self.pending_properties {
             if *pending_properties != self.current_properties {
+                // Latch which transform bindings are actually moving: a binding
+                // whose value differs from the previous flush, or one already
+                // latched and still present. Computed against the pre-clear
+                // values, and rebuilt from the pending set so a binding whose id
+                // has disappeared drops out of the latch (bug 2051166).
+                let mut moved = FastHashSet::default();
+                for property in &pending_properties.transforms {
+                    let id = property.key.id;
+                    let value_changed = self.transform_properties
+                        .get(&id)
+                        .map_or(false, |prev| *prev != property.value);
+                    if value_changed || self.moved_transform_bindings.contains(&id) {
+                        moved.insert(id);
+                    }
+                }
+                self.moved_transform_bindings = moved;
+
                 self.transform_properties.clear();
                 self.float_properties.clear();
                 self.color_properties.clear();
@@ -147,6 +172,13 @@ impl SceneProperties {
         &self.float_properties
     }
 
+    /// Returns true if the given transform binding has been observed to change
+    /// value while present, i.e. it is an actually-moving animation rather than
+    /// a bound-but-static transform (see `moved_transform_bindings`).
+    pub fn transform_binding_has_moved(&self, id: PropertyBindingId) -> bool {
+        self.moved_transform_bindings.contains(&id)
+    }
+
     /// Get the current value for a color property.
     pub fn resolve_color(
         &self,
@@ -174,7 +206,10 @@ impl SceneProperties {
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(Clone)]
 pub struct ScenePipeline {
-    pub display_list: DisplayListWithCache,
+    pub display_list: BuiltDisplayList,
+    /// The id namespace that owns the resources this display list is allowed to
+    /// reference.
+    pub namespace: IdNamespace,
 }
 
 /// A complete representation of the layout bundling visible pipelines together.
@@ -204,20 +239,12 @@ impl Scene {
         &mut self,
         pipeline_id: PipelineId,
         epoch: Epoch,
+        namespace: IdNamespace,
         display_list: BuiltDisplayList,
     ) {
-        // Adds a cache to the given display list. If this pipeline already had
-        // a display list before, that display list is updated and used instead.
-        let display_list = match self.pipelines.remove(&pipeline_id) {
-            Some(mut pipeline) => {
-                pipeline.display_list.update(display_list);
-                pipeline.display_list
-            }
-            None => DisplayListWithCache::new_from_list(display_list)
-        };
-
         let new_pipeline = ScenePipeline {
             display_list,
+            namespace,
         };
 
         self.pipelines.insert(pipeline_id, new_pipeline);
@@ -333,7 +360,6 @@ impl BuiltScene {
                 low_quality_pinch_zoom: false,
                 max_shared_surface_size: 2048,
                 enable_dithering: false,
-                precise_linear_gradients: false,
             },
         }
     }

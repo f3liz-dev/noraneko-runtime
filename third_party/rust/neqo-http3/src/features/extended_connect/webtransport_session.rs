@@ -5,22 +5,23 @@
 // except according to those terms.
 
 use std::{
-    collections::HashSet,
     fmt::{self, Display, Formatter},
     mem,
     time::Instant,
 };
 
-use neqo_common::{qtrace, Bytes, Encoder, Role};
-use neqo_transport::{Connection, StreamId};
+use neqo_common::{Bytes, Encoder, Header, Role, qtrace};
+use neqo_transport::{Connection, StreamId, streams::SendGroupId};
+use rustc_hash::FxHashSet as HashSet;
+use sfv::{BareItem, Item, Parser};
 
 use crate::{
+    Error, Http3StreamInfo, Http3StreamType, RecvStream, Res, SendStream,
     features::extended_connect::{
-        session::{DgramContextIdError, Protocol, State},
         CloseReason, ExtendedConnectEvents, ExtendedConnectType,
+        session::{DgramContextIdError, Protocol, State},
     },
     frames::{FrameReader, StreamReaderRecvStreamWrapper, WebTransportFrame},
-    Error, Http3StreamInfo, Http3StreamType, RecvStream, Res,
 };
 
 #[derive(Debug)]
@@ -34,6 +35,10 @@ pub struct Session {
     ///
     /// [`HashSet`] size limited by QUIC connection stream limit.
     pending_streams: HashSet<StreamId>,
+    /// The negotiated protocol from server response headers.
+    negotiated_protocol: Option<String>,
+    /// Send groups registered for this session.
+    send_groups: HashSet<SendGroupId>,
 }
 
 impl Display for Session {
@@ -52,7 +57,23 @@ impl Session {
             recv_streams: HashSet::default(),
             role,
             pending_streams: HashSet::default(),
+            negotiated_protocol: None,
+            send_groups: HashSet::default(),
         }
+    }
+    /// Register a send group with a caller-provided ID for this session.
+    ///
+    /// Returns an error if the ID is already in use.
+    pub(crate) fn register_send_group(&mut self, id: SendGroupId) -> Res<()> {
+        self.send_groups
+            .insert(id)
+            .then_some(())
+            .ok_or(Error::InvalidState)
+    }
+
+    /// Validate that a send group belongs to this session.
+    pub(crate) fn validate_send_group(&self, group_id: SendGroupId) -> bool {
+        self.send_groups.contains(&group_id)
     }
 }
 
@@ -201,6 +222,32 @@ impl Protocol for Session {
         )
     }
 
+    fn process_response_headers(&mut self, headers: &[Header]) {
+        self.negotiated_protocol = headers
+            .iter()
+            .find(|h| h.name().eq_ignore_ascii_case("wt-protocol"))
+            .and_then(|h| Parser::new(h.value()).parse::<Item>().ok())
+            .and_then(|item| {
+                if let BareItem::String(s) = item.bare_item {
+                    Some(s.into())
+                } else {
+                    None
+                }
+            });
+    }
+
+    fn protocol(&self) -> Option<&str> {
+        self.negotiated_protocol.as_deref()
+    }
+
+    fn register_send_group(&mut self, id: SendGroupId) -> Res<()> {
+        Self::register_send_group(self, id)
+    }
+
+    fn validate_send_group(&self, group_id: SendGroupId) -> bool {
+        Self::validate_send_group(self, group_id)
+    }
+
     fn write_datagram_prefix(&self, _encoder: &mut Encoder) {
         // WebTransport does not add prefix (i.e. context ID).
     }
@@ -208,5 +255,32 @@ impl Protocol for Session {
     fn dgram_context_id(&self, datagram: Bytes) -> Result<Bytes, DgramContextIdError> {
         // WebTransport does not use a prefix (i.e. context ID).
         Ok(datagram)
+    }
+
+    fn datagram_capsule_support(&self) -> bool {
+        // HTTP/3 WebTransport requires QUIC datagram support. In other words,
+        // HTTP/3 WebTransport never falls back to HTTP datagram capsules.
+        //
+        // > WebTransport over HTTP/3 also requires support for QUIC datagrams.
+        // > To indicate support, both the client and the server send a
+        // > max_datagram_frame_size transport parameter with a value greater than
+        // > 0 (see Section 3 of [QUIC-DATAGRAM]).
+        //
+        // <https://www.ietf.org/archive/id/draft-ietf-webtrans-http3-14.html#section-3.1>
+        false
+    }
+
+    fn write_datagram_capsule(
+        &self,
+        _control_stream_send: &mut Box<dyn SendStream>,
+        _conn: &mut Connection,
+        _buf: &[u8],
+        _now: Instant,
+    ) -> Res<()> {
+        debug_assert!(
+            false,
+            "[{self}] WebTransport does not support datagram capsules."
+        );
+        Ok(())
     }
 }

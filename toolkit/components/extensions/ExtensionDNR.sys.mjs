@@ -1486,6 +1486,8 @@ class RequestDetails {
       this.initiatorURI &&
       this.type !== "main_frame" &&
       this.type !== "sub_frame" &&
+      // The fourth parameter (aAllowFilePermission) being true is explained at
+      // ChannelWrapper::Matches, see bug 1887869 and bug 1621935 for context.
       !policy.canAccessURI(this.initiatorURI, false, true, true)
     ) {
       // Host permissions for the initiator is required except for navigation
@@ -1539,6 +1541,7 @@ class RequestDetails {
 // Domain lists in rule conditions (requestDomains, excludedRequestDomains,
 // initiatorDomains, excludedInitiatorDomains) could be really long, containing
 // thousands of entries. We convert them to Set for faster lookup.
+/** @type {WeakMap<string[], Set<string>>} */
 const gDomainsListToSet = new DefaultWeakMap(domains => new Set(domains));
 
 /**

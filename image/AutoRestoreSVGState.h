@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,16 @@
 #ifndef mozilla_image_AutoRestoreSVGState_h
 #define mozilla_image_AutoRestoreSVGState_h
 
+#include "SVGDocumentWrapper.h"
+#include "SVGDrawingParameters.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/SVGContextPaint.h"
-#include "mozilla/dom/SVGSVGElement.h"
-#include "nsPresContext.h"
-#include "SVGDrawingParameters.h"
-#include "SVGDocumentWrapper.h"
+#include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/SVGDocument.h"
-#include "mozilla/dom/BrowsingContextBinding.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "nsPresContext.h"
 
 namespace mozilla::image {
 
@@ -40,6 +39,8 @@ class MOZ_STACK_CLASS AutoRestoreSVGState final {
     MOZ_ASSERT(aSVGDocumentWrapper->GetDocument());
 
     if (auto* pc = aSVGDocumentWrapper->GetDocument()->GetPresContext()) {
+      pc->SetLinkParametersOverride(aSVGContext.GetLinkParameters());
+
       pc->SetColorSchemeOverride([&] {
         if (auto scheme = aSVGContext.GetColorScheme()) {
           return *scheme == ColorScheme::Light

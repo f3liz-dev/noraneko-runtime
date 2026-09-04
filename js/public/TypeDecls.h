@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -126,30 +124,10 @@ using MutableHandleVector = MutableHandle<StackGCVector<T>>;
 
 using jsid = JS::PropertyKey;
 
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-#  define IF_SOURCE_PHASE_IMPORTS(x, ...) x
-#else
-#  define IF_SOURCE_PHASE_IMPORTS(x, ...) __VA_ARGS__
-#endif
-
 #ifdef ENABLE_DECORATORS
 #  define IF_DECORATORS(x, ...) x
 #else
 #  define IF_DECORATORS(x, ...) __VA_ARGS__
-#endif
-
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  define IF_EXPLICIT_RESOURCE_MANAGEMENT(x, ...) x
-#else
-#  define IF_EXPLICIT_RESOURCE_MANAGEMENT(x, ...) __VA_ARGS__
-#endif
-
-// Helper macros to combine build flags
-// TODO: need to find more generalised way to combine build flags
-#if defined(ENABLE_EXPLICIT_RESOURCE_MANAGEMENT) || defined(ENABLE_DECORATORS)
-#  define IF_EXPLICIT_RESOURCE_MANAGEMENT_OR_DECORATORS(x, ...) x
-#else
-#  define IF_EXPLICIT_RESOURCE_MANAGEMENT_OR_DECORATORS(x, ...) __VA_ARGS__
 #endif
 
 #endif /* js_TypeDecls_h */

@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import traceback
 from collections import defaultdict
 from typing import (Any, Callable, Dict, IO, Iterable, List, Optional, Sequence, Set, Text, Tuple,
                     Type, TypeVar)
@@ -33,7 +34,8 @@ from ..manifest.sourcefile import SourceFile, js_meta_re, python_meta_re, space_
 
 from ..metadata.yaml.load import load_data_to_dict
 from ..metadata.meta.schema import META_YML_FILENAME, MetaFile
-from ..metadata.webfeatures.schema import WEB_FEATURES_YML_FILENAME, WebFeaturesFile
+from ..metadata.webfeatures.schema import (WEB_FEATURES_YML_FILENAME, WebFeaturesFile,
+                                          FeatureFile)
 
 # The Ignorelist is a two level dictionary. The top level is indexed by
 # error names (e.g. 'TRAILING WHITESPACE'). Each of those then has a map of
@@ -712,7 +714,7 @@ def check_script_metadata(repo_root: Text, path: Text, f: IO[bytes]) -> List[rul
                     errors.append(rules.MultipleTestharness.error(path, line_no=line_no))
                 elif value == b"/resources/testharnessreport.js":
                     errors.append(rules.MultipleTestharnessReport.error(path, line_no=line_no))
-            elif key not in (b"title", b"quic"):
+            elif key not in (b"title", b"quic", b"spec"):
                 errors.append(rules.UnknownMetadata.error(path, line_no=line_no))
         else:
             done = True
@@ -755,22 +757,46 @@ def check_meta_file(repo_root: Text, path: Text, f: IO[bytes]) -> List[rules.Err
     return []
 
 
+def check_web_features_file_path(repo_root: Text, path: Text) -> List[rules.Error]:
+    basename = os.path.basename(path)
+    if basename == "WEB_FEATURES.yaml":
+        return [rules.InvalidWebFeaturesFile.error(path, ("Use 'WEB_FEATURES.yml' instead of 'WEB_FEATURES.yaml'",))]
+    if basename != WEB_FEATURES_YML_FILENAME:
+        return []
+    source_file = SourceFile(repo_root, path, "/")
+    if source_file.in_non_test_dir():
+        dir_path = os.path.dirname(path)
+        return [rules.WebFeaturesFileInNonTestDirectory.error(path, (dir_path,))]
+    return []
+
+
 def check_web_features_file(repo_root: Text, path: Text, f: IO[bytes]) -> List[rules.Error]:
     if os.path.basename(path) != WEB_FEATURES_YML_FILENAME:
         return []
     try:
         web_features_file: WebFeaturesFile = WebFeaturesFile(load_data_to_dict(f))
-    except Exception:
-        return [rules.InvalidWebFeaturesFile.error(path)]
+    except Exception as e:
+        return [rules.InvalidWebFeaturesFile.error(path, (str(e),))]
     errors = []
     base_dir = os.path.join(repo_root, os.path.dirname(path))
     files_in_directory = [
         f for f in os.listdir(base_dir) if os.path.isfile(os.path.join(base_dir, f))]
-    for feature in web_features_file.features:
-        if isinstance(feature.files, list):
-            for file in feature.files:
-                if not file.match_files(files_in_directory):
-                    errors.append(rules.MissingTestInWebFeaturesFile.error(path, (file)))
+    for rule in web_features_file.rules:
+        if not isinstance(rule.file, FeatureFile):
+            continue
+        # Resolve inclusion patterns to files, then subtract exclusions.
+        dir_path = os.path.dirname(path)
+        matched = rule.file.match_files(files_in_directory)
+        if not matched:
+            errors.append(rules.MissingTestInWebFeaturesFile.error(path, (rule.file,)))
+        # Only check explicitly named files (no wildcards).
+        if "*" not in str(rule):
+            for filename in matched:
+                rel_path = os.path.join(dir_path, filename)
+                source_file = SourceFile(repo_root, rel_path, "/")
+                if source_file.possible_types == {"support"}:
+                    errors.append(rules.NonTestFileInWebFeaturesFile.error(path, (
+                        filename, rule)))
 
     return errors
 
@@ -983,7 +1009,8 @@ def main(venv: Any = None, **kwargs: Any) -> int:
 
     jobs = kwargs.get("jobs", 0)
 
-    return lint(repo_root, paths, output_format, ignore_glob, github_checks_outputter, jobs)
+    error_count = lint(repo_root, paths, output_format, ignore_glob, github_checks_outputter, jobs)
+    return 1 if error_count > 0 else 0
 
 
 # best experimental guess at a decent cut-off for using the parallel path
@@ -1094,7 +1121,8 @@ def lint(repo_root: Text,
 
 
 path_lints = [check_file_type, check_path_length, check_worker_collision, check_ahem_copy,
-              check_mojom_js, check_tentative_directories, check_gitignore_file]
+              check_mojom_js, check_tentative_directories, check_gitignore_file,
+              check_web_features_file_path]
 file_lints = [check_regexp_line, check_parsed, check_python_ast, check_script_metadata,
               check_ahem_system_font, check_meta_file, check_web_features_file]
 
@@ -1111,8 +1139,15 @@ def all_paths_lints() -> Any:
     return paths
 
 
+def _run_main(argv: List[Text]) -> None:
+    try:
+        sys.exit(main(**vars(create_parser().parse_args(argv))))
+    except SystemExit:
+        raise
+    except Exception:
+        traceback.print_exc()
+        sys.exit(getattr(os, "EX_SOFTWARE", 70))
+
+
 if __name__ == "__main__":
-    args = create_parser().parse_args()
-    error_count = main(**vars(args))
-    if error_count > 0:
-        sys.exit(1)
+    _run_main(sys.argv[1:])

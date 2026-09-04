@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,6 +14,7 @@ class DataPipeSender;
 namespace mozilla::dom {
 
 class WebTransport;
+class WebTransportSendGroup;
 
 class WebTransportSendStream final : public WritableStream {
  public:
@@ -27,17 +26,21 @@ class WebTransportSendStream final : public WritableStream {
 
   static already_AddRefed<WebTransportSendStream> Create(
       WebTransport* aWebTransport, nsIGlobalObject* aGlobal, uint64_t aStreamId,
-      mozilla::ipc::DataPipeSender* aSender, Maybe<int64_t> aSendOrder,
-      ErrorResult& aRv);
+      mozilla::ipc::DataPipeSender* aSender, int64_t aSendOrder,
+      WebTransportSendGroup* aSendGroup, ErrorResult& aRv);
 
   // WebIDL Boilerplate
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL Interface
-  Nullable<int64_t> GetSendOrder() { return mSendOrder; }
+  int64_t SendOrder() { return mSendOrder; }
 
-  void SetSendOrder(Nullable<int64_t> aSendOrder);
+  void SetSendOrder(int64_t aSendOrder);
+
+  WebTransportSendGroup* GetSendGroup() { return mSendGroup; }
+
+  void SetSendGroup(WebTransportSendGroup* aSendGroup, ErrorResult& aRv);
 
   already_AddRefed<Promise> GetStats();
 
@@ -49,8 +52,9 @@ class WebTransportSendStream final : public WritableStream {
   // CC runs.   WebTransport::CleanUp() will destroy all the send and receive
   // streams, breaking the cycle.
   RefPtr<WebTransport> mTransport;
+  RefPtr<WebTransportSendGroup> mSendGroup;
   uint64_t mStreamId;
-  Nullable<int64_t> mSendOrder;
+  int64_t mSendOrder;
 };
 }  // namespace mozilla::dom
 

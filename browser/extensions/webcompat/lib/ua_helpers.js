@@ -8,14 +8,55 @@
 
 var UAHelpers = {
   _deviceAppropriateChromeUAs: {},
+  changeBrowserVersion(ua, config = {}) {
+    const which = config.browser;
+    let new_ver = config.version;
+    if (
+      !which ||
+      !ua?.includes(`${which}/`) ||
+      new_ver == undefined ||
+      new_ver == null
+    ) {
+      return ua;
+    }
+    const cur_ver = ua.match(`${which}/(\\d.*?)( |$)`)?.[1];
+    if (!cur_ver) {
+      return ua;
+    }
+    if (typeof new_ver != "string") {
+      new_ver = String(new_ver);
+    }
+    if (new_ver.startsWith("+") || new_ver.startsWith("-")) {
+      const factor = new_ver.startsWith("-") ? -1 : 1;
+      const ver_segs = cur_ver.split(".").map(seg => parseInt(seg));
+      const new_ver_segs = new_ver
+        .substr(1)
+        .split(".")
+        .map(seg => parseInt(seg));
+      for (const [index, seg] of ver_segs.entries()) {
+        const new_val = seg + factor * (new_ver_segs[index] || 0);
+        ver_segs[index] = new_val < 0 ? 0 : new_val;
+      }
+      new_ver = ver_segs.join(".");
+    }
+    return ua.replaceAll(cur_ver, new_ver);
+  },
   getRunningFirefoxVersion() {
     return (navigator.userAgent.match(/Firefox\/([0-9.]+)/) || ["", "58.0"])[1];
   },
   getFxQuantumSegment() {
     return `FxQuantum/${UAHelpers.getRunningFirefoxVersion()} `;
   },
+  _defaultChromeVersion: "148.0.0.0",
   getDeviceAppropriateChromeUA(config = {}) {
-    let { androidVersion, version = "143.0.0.0", phone, tablet, OS } = config;
+    // see https://www.chromium.org/updates/ua-reduction/#reduced-user-agent-string-reference
+    let {
+      androidVersion = "10",
+      version = UAHelpers._defaultChromeVersion,
+      phone,
+      tablet,
+      OS,
+    } = config;
     const key = JSON.stringify(config);
     if (config.noCache || !UAHelpers._deviceAppropriateChromeUAs[key]) {
       const userAgent =
@@ -26,46 +67,36 @@ var UAHelpers = {
         : UAHelpers.getFxQuantumSegment();
       const noOSGiven = !OS || OS === "nonLinux";
       if (OS === "android" || (noOSGiven && userAgent.includes("Android"))) {
-        const AndroidVersion = androidVersion
-          ? `Android ${androidVersion}`
-          : userAgent.match(/Android [0-9.]+/) || "Android 6.0";
-        if (phone === undefined && tablet === undefined) {
-          phone = userAgent.includes("Mobile");
-          tablet = userAgent.includes("Tablet");
+        let device = "K";
+        if (typeof tablet === "string") {
+          device = tablet;
         }
-        if (phone === true) {
-          phone = "Nexus 5 Build/MRA58N";
+        if (typeof phone === "string") {
+          device = phone;
         }
-        if (tablet === true || (!tablet && !phone)) {
-          tablet = "Nexus 7 Build/JSS15Q";
-        }
-        if (phone) {
-          UAHelpers._deviceAppropriateChromeUAs[key] =
-            `Mozilla/5.0 (Linux; ${AndroidVersion}; ${phone}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Mobile Safari/537.36`;
-        } else {
-          UAHelpers._deviceAppropriateChromeUAs[key] =
-            `Mozilla/5.0 (Linux; ${AndroidVersion}; ${tablet}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
-        }
+        const deviceCompat =
+          phone || (!tablet && userAgent.includes("Mobile")) ? "Mobile " : "";
+        UAHelpers._deviceAppropriateChromeUAs[key] =
+          `Mozilla/5.0 (Linux; Android ${androidVersion}; ${device}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} ${deviceCompat}Safari/537.36`;
       } else {
-        const WIN_SEGMENT = "Windows NT 11.0; Win64; x64";
-        let osSegment;
+        const WIN_SEGMENT = "Windows NT 10.0; Win64; x64";
+        let unifiedPlatform;
         if (OS === "macOS" || (noOSGiven && userAgent.includes("Macintosh"))) {
-          osSegment = "Macintosh; Intel Mac OS X 10_15_7";
+          unifiedPlatform = "Macintosh; Intel Mac OS X 10_15_7";
         } else if (
           OS === "linux" ||
           (noOSGiven && userAgent.includes("Linux"))
         ) {
           if (OS !== "nonLinux") {
-            osSegment = "X11; Ubuntu; Linux x86_64";
+            unifiedPlatform = "X11; Linux x86_64";
           } else {
-            osSegment = WIN_SEGMENT;
+            unifiedPlatform = WIN_SEGMENT;
           }
         } else {
-          osSegment = WIN_SEGMENT;
+          unifiedPlatform = WIN_SEGMENT;
         }
-
         UAHelpers._deviceAppropriateChromeUAs[key] =
-          `Mozilla/5.0 (${osSegment}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
+          `Mozilla/5.0 (${unifiedPlatform}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
       }
     }
     return UAHelpers._deviceAppropriateChromeUAs[key];
@@ -76,7 +107,10 @@ var UAHelpers = {
   ) {
     return `${ua} Gecko/${version}`;
   },
-  addChrome(ua = navigator.userAgent, version = "143.0.0.0") {
+  addChrome(
+    ua = navigator.userAgent,
+    version = UAHelpers._defaultChromeVersion
+  ) {
     const isMobile =
       navigator.userAgent.includes("Mobile") ||
       navigator.userAgent.includes("Tablet");

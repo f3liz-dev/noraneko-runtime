@@ -1,42 +1,26 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Mon, 6 May 2024 07:28:00 +0000
-Subject: Bug 1892329 - Invert _captureThread check in
- VideoCaptureModuleV4L2::StartCapture. r=webrtc-reviewers,mjf
+From: Byron Campen <docfaraday@gmail.com>
+Date: Fri, 26 Jul 2024 09:26:00 -0500
+Subject: Bug 1909234 - (fix-a0d1a51217) Move this errant include where it
+ belongs. r?mjf
 
-Differential Revision: https://phabricator.services.mozilla.com/D208186
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6ed6737b8214bf664642eb17cbf66a8c8450e569
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6baf67202c67b27c6464cb8e4dbb419485aa6c4c
 ---
- .../video_capture/linux/video_capture_v4l2.cc | 19 +++++++++++--------
- 1 file changed, 11 insertions(+), 8 deletions(-)
+ api/test/network_emulation/BUILD.gn | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index 0693b96bea..7e4901b566 100644
---- a/modules/video_capture/linux/video_capture_v4l2.cc
-+++ b/modules/video_capture/linux/video_capture_v4l2.cc
-@@ -306,15 +306,18 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
-   }
+diff --git a/api/test/network_emulation/BUILD.gn b/api/test/network_emulation/BUILD.gn
+index d7cd5d7a71..84508a53c5 100644
+--- a/api/test/network_emulation/BUILD.gn
++++ b/api/test/network_emulation/BUILD.gn
+@@ -6,10 +6,10 @@
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
  
-   // start capture thread;
--  if (_captureThread.empty()) {
--    quit_ = false;
--    _captureThread = PlatformThread::SpawnJoinable(
--        [self = scoped_refptr(this)] {
--          while (self->CaptureProcess()) {
--          }
--        },
--        "CaptureThread", ThreadAttributes().SetPriority(ThreadPriority::kHigh));
-+  if (!_captureThread.empty()) {
-+    return 0;
-   }
-+
-+  quit_ = false;
-+
-+  _captureThread = PlatformThread::SpawnJoinable(
-+      [self = scoped_refptr(this)] {
-+        while (self->CaptureProcess()) {
-+        }
-+      },
-+      "CaptureThread", ThreadAttributes().SetPriority(ThreadPriority::kHigh));
-   return 0;
- }
+-import("//third_party/protobuf/proto_library.gni")
+ import("../../../webrtc.gni")
  
+ if (rtc_enable_protobuf) {
++  import("//third_party/protobuf/proto_library.gni")
+   proto_library("network_config_schedule_proto") {
+     visibility = [ "*" ]
+     sources = [ "network_config_schedule.proto" ]

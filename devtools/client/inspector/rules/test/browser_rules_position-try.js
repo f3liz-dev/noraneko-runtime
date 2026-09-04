@@ -56,7 +56,6 @@ const TEST_URI = `https://example.org/document-builder.sjs?html=${encodeURICompo
 `)}`;
 
 add_task(async function () {
-  await pushPref("layout.css.anchor-positioning.enabled", true);
   await addTab(TEST_URI);
   const { inspector, view } = await openRuleView();
 
@@ -202,8 +201,12 @@ add_task(async function () {
         {
           name: "position-try",
           value: "left, --custom-right,--custom-bottom",
-          highlighted: true,
         },
+      ],
+      highlighted: [
+        "position-try: left, --custom-right,--custom-bottom;",
+        // longhand property
+        "position-try-fallbacks: left, --custom-right, --custom-bottom;",
       ],
     },
     {
@@ -220,6 +223,7 @@ add_task(async function () {
         { name: "color", value: "tomato", inactiveCSS: true },
         { name: "--m", value: "10px", inactiveCSS: true },
       ],
+      highlighted: ["--custom-right"],
     },
   ]);
 

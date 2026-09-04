@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -8,6 +7,7 @@
  * https://drafts.csswg.org/web-animations/#dictdef-basepropertyindexedkeyframe
  * https://drafts.csswg.org/web-animations/#dictdef-basekeyframe
  * https://drafts.csswg.org/web-animations/#dictdef-basecomputedkeyframe
+ * https://drafts.csswg.org/web-animations-2/#keyframe-offset-type
  *
  * Copyright © 2016 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -28,16 +28,22 @@ enum CompositeOperationOrAuto { "replace", "add", "accumulate", "auto" };
 // but we use it for manual JS->IDL and IDL->JS conversions in KeyframeEffect's
 // implementation.
 
+// We use this only for the keyframe offset type below. Per the spec, the
+// reference type is: "(CSSNumberish? or TimelineRangeOffset or DOMString)".
+// However, we cannot put a nullable dictionary type in the union, so we make
+// the entire union nullable (see below).
+typedef (CSSNumberish or TimelineRangeOffset or UTF8String) KeyframeOffset;
+
 [GenerateInit]
 dictionary BasePropertyIndexedKeyframe {
-  (double? or sequence<double?>) offset = [];
+  (KeyframeOffset or sequence<KeyframeOffset?>)? offset = [];
   (UTF8String or sequence<UTF8String>) easing = [];
   (CompositeOperationOrAuto or sequence<CompositeOperationOrAuto>) composite = [];
 };
 
 [GenerateInit]
 dictionary BaseKeyframe {
-  double? offset = null;
+  KeyframeOffset? offset = null;
   UTF8String easing = "linear";
   CompositeOperationOrAuto composite = "auto";
 

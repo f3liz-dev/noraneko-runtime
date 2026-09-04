@@ -1,5 +1,5 @@
 import pytest
-from tests.support.asserts import assert_success
+from tests.support.classic.asserts import assert_success
 from tests.support.keys import Keys
 
 
@@ -23,6 +23,7 @@ def test_modifier_key_toggles(session, inline, modifier_key):
     assert element.property("value") == "cheese"
 
 
+@pytest.mark.geckodriver(allow_system_access=True)
 @pytest.mark.parametrize("dispatch_once_per_surrogate_pair", [False, True])
 def test_dispatch_once_per_surrogate_pair(
     session, use_pref, inline, dispatch_once_per_surrogate_pair

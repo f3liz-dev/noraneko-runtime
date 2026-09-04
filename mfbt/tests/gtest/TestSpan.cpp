@@ -17,16 +17,14 @@
 // Adapted from
 // https://github.com/Microsoft/GSL/blob/3819df6e378ffccf0e29465afe99c3b324c2aa70/tests/Span_tests.cpp
 
+#include <type_traits>
+
 #include "gtest/gtest.h"
-
 #include "mozilla/Array.h"
+#include "mozilla/Range.h"
 #include "mozilla/Span.h"
-
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/Range.h"
-
-#include <type_traits>
 
 #define SPAN_TEST(name) TEST(SpanTest, name)
 #define CHECK_THROW(a, b)
@@ -535,7 +533,7 @@ SPAN_TEST(from_array_constructor) {
 }
 
 SPAN_TEST(from_dynamic_array_constructor) {
-  double(*arr)[3][4] = new double[100][3][4];
+  double (*arr)[3][4] = new double[100][3][4];
 
   {
     Span<double> s(&arr[0][0][0], 10);
@@ -1510,6 +1508,14 @@ SPAN_TEST(Subspan) {
     CHECK_THROW(av.Subspan(6).Length(), fail_fast);
     auto av2 = av.Subspan(1);
     for (int i = 0; i < 4; ++i) ASSERT_EQ(av2[i], i + 2);
+  }
+
+  {
+    Span<int> av = arr;
+    ASSERT_GE(av.Length(), 4U);
+    CHECK_THROW(
+        av.Subspan(4, std::numeric_limits<Span<int>::index_type>::max() - 1),
+        fail_fast);
   }
 }
 

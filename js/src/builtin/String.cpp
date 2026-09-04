@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -44,12 +42,15 @@
 #if !JS_HAS_INTL_API
 #  include "js/LocaleSensitive.h"
 #endif
+#include "js/normalizer_glue.h"
 #include "js/Prefs.h"
 #include "js/Printer.h"
 #include "js/PropertyAndElement.h"  // JS_DefineFunctions
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "js/UniquePtr.h"
+#include "js/Utility.h"
+#include "util/LanguageId.h"
 #include "util/StringBuilder.h"
 #include "util/Unicode.h"
 #include "vm/GlobalObject.h"
@@ -425,10 +426,9 @@ static bool str_resolve(JSContext* cx, HandleObject obj, HandleId id,
 
   RootedString str(cx, obj->as<StringObject>().unbox());
 
-  int32_t slot = id.toInt();
-  if ((size_t)slot < str->length()) {
-    JSString* str1 =
-        cx->staticStrings().getUnitStringForElement(cx, str, size_t(slot));
+  uint32_t slot = id.toInt();
+  if (slot < str->length()) {
+    JSString* str1 = cx->staticStrings().getUnitStringForElement(cx, str, slot);
     if (!str1) {
       return false;
     }
@@ -443,16 +443,9 @@ static bool str_resolve(JSContext* cx, HandleObject obj, HandleId id,
 }
 
 static const JSClassOps StringObjectClassOps = {
-    nullptr,         // addProperty
-    nullptr,         // delProperty
-    str_enumerate,   // enumerate
-    nullptr,         // newEnumerate
-    str_resolve,     // resolve
-    str_mayResolve,  // mayResolve
-    nullptr,         // finalize
-    nullptr,         // call
-    nullptr,         // construct
-    nullptr,         // trace
+    .enumerate = str_enumerate,
+    .resolve = str_resolve,
+    .mayResolve = str_mayResolve,
 };
 
 const JSClass StringObject::class_ = {
@@ -945,39 +938,29 @@ static bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 #if JS_HAS_INTL_API
-// Lithuanian, Turkish, and Azeri have language dependent case mappings.
-static constexpr char LanguagesWithSpecialCasing[][3] = {"lt", "tr", "az"};
+static const char* CaseMappingLocale(std::string_view lang) {
+  MOZ_ASSERT(lang.length() >= 2, "lang is a valid language tag");
 
-bool js::LocaleHasDefaultCaseMapping(const char* locale) {
-  MOZ_ASSERT(locale);
+  // Lithuanian, Turkish, and Azeri have language dependent case mappings.
+  static constexpr std::string_view LanguagesWithSpecialCasing[] = {
+      "lt",
+      "tr",
+      "az",
+  };
 
-  size_t languageSubtagLength;
-  if (auto* sep = strchr(locale, '-')) {
-    languageSubtagLength = sep - locale;
-  } else {
-    languageSubtagLength = std::strlen(locale);
-  }
-
-  // Invalid locale identifiers default to the last-ditch locale "en-GB", which
-  // has default case mapping.
-  mozilla::Span<const char> span{locale, languageSubtagLength};
-  {
-    // Tell the analysis the |IsStructurallyValidLanguageTag| function can't GC.
-    JS::AutoSuppressGCAnalysis nogc;
-    if (!mozilla::intl::IsStructurallyValidLanguageTag(span)) {
-      return true;
+  for (const auto& language : LanguagesWithSpecialCasing) {
+    if (lang == language) {
+      return language.data();
     }
   }
+  return nullptr;
+}
 
-  mozilla::intl::LanguageSubtag subtag{span};
+bool js::LocaleHasDefaultCaseMapping(LanguageId locale) {
+  auto language = locale.language();
 
-  // Canonical case for the language subtag is lower-case
-  {
-    // Tell the analysis the |ToLowerCase| function can't GC.
-    JS::AutoSuppressGCAnalysis nogc;
-
-    subtag.ToLowerCase();
-  }
+  mozilla::intl::LanguageSubtag subtag{
+      mozilla::Span{language.data(), language.length()}};
 
   // Replace outdated language subtags. Skips complex language mappings, which
   // is okay because none of the languages with special casing are affected by
@@ -990,10 +973,9 @@ bool js::LocaleHasDefaultCaseMapping(const char* locale) {
   }
 
   // Check for languages which don't use the default case mapping algorithm.
-  for (const auto& language : LanguagesWithSpecialCasing) {
-    if (subtag.EqualTo(language)) {
-      return false;
-    }
+  auto tagSpan = subtag.Span();
+  if (CaseMappingLocale(std::string_view{tagSpan.data(), tagSpan.size()})) {
+    return false;
   }
 
   // Simple locale with default case mapping. (Or an invalid locale which
@@ -1008,12 +990,11 @@ static const char* CaseMappingLocale(JSLinearString* locale) {
   // only need to compare the first two characters to find a matching locale.
   // ES2017 Intl, §9.2.2 BestAvailableLocale
   if (locale->length() == 2 || locale->latin1OrTwoByteChar(2) == '-') {
-    for (const auto& language : LanguagesWithSpecialCasing) {
-      if (locale->latin1OrTwoByteChar(0) == language[0] &&
-          locale->latin1OrTwoByteChar(1) == language[1]) {
-        return language;
-      }
-    }
+    char chars[] = {
+        char(locale->latin1OrTwoByteChar(0)),
+        char(locale->latin1OrTwoByteChar(1)),
+    };
+    return CaseMappingLocale(std::string_view{chars, 2});
   }
 
   return nullptr;
@@ -1039,18 +1020,18 @@ static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
   }
 
   // Steps 2-3.
-  Rooted<JSLinearString*> requestedLocale(cx);
+  const char* locale;
   if (!requestedLocales.empty()) {
-    requestedLocale = requestedLocales[0];
+    locale = CaseMappingLocale(requestedLocales[0]);
   } else {
-    requestedLocale = cx->global()->globalIntlData().defaultLocale(cx);
-    if (!requestedLocale) {
+    auto defaultLocale = LanguageId::und();
+    if (!intl::DefaultLocale(cx, &defaultLocale)) {
       return nullptr;
     }
+    locale = CaseMappingLocale(defaultLocale.language());
   }
 
   // Steps 4-10.
-  const char* locale = CaseMappingLocale(requestedLocale);
   if (!locale) {
     // Call the default case conversion methods for language independent casing.
     return targetCase == TargetCase::Lower ? StringToLowerCase(cx, string)
@@ -1473,6 +1454,23 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 #endif
 }
 
+static JSString* NormalizeString(JSContext* cx, NormalizationForm form,
+                                 Handle<JSString*> str) {
+  // Empty strings are already normalized. Latin-1 strings are already in
+  // Normalization Form C.
+  if (str->empty() ||
+      (form == NormalizationForm::NFC && str->hasLatin1Chars())) {
+    return str;
+  }
+
+  JSLinearString* linear = str->ensureLinear(cx);
+  if (!linear) {
+    return nullptr;
+  }
+
+  return js_normalize(cx, form, linear, linear->hasLatin1Chars());
+}
+
 /**
  * String.prototype.localeCompare ( that [ , reserved1 [ , reserved2 ] ] )
  *
@@ -1527,8 +1525,26 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
+  // Normalize to NFD, as required in String.prototype.localeCompare:
+  //
+  // This method is also required to recognize and honour canonical equivalence
+  // according to the Unicode Standard, including returning +0𝔽 when comparing
+  // distinguishable Strings that are canonically equivalent.
+
+  Rooted<JSString*> normalizedStr(
+      cx, NormalizeString(cx, NormalizationForm::NFD, str));
+  if (!normalizedStr) {
+    return false;
+  }
+
+  Rooted<JSString*> normalizedThatStr(
+      cx, NormalizeString(cx, NormalizationForm::NFD, thatStr));
+  if (!normalizedThatStr) {
+    return false;
+  }
+
   int32_t result;
-  if (!CompareStrings(cx, str, thatStr, &result)) {
+  if (!CompareStrings(cx, normalizedStr, normalizedThatStr, &result)) {
     return false;
   }
 
@@ -1537,13 +1553,56 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
 #endif  // JS_HAS_INTL_API
 }
 
-#if JS_HAS_INTL_API
+// Start callbacks for normalizer_glue to call.
+
+extern "C" MOZ_EXPORT bool js_call_js_normalize_utf16(JSContext* cx,
+                                                      NormalizationForm form,
+                                                      JSLinearString* str,
+                                                      void* buffer) {
+  MOZ_ASSERT(str->hasTwoByteChars());
+  MOZ_ASSERT(!str->empty(), "empty string must be handled in caller");
+
+  AutoCheckCannotGC nogc;
+  if (!js_normalize_utf16(
+          form, reinterpret_cast<const uint16_t*>(str->twoByteChars(nogc)),
+          str->length(), buffer)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  return true;
+}
+
+extern "C" MOZ_EXPORT bool js_call_js_normalize_latin1(JSContext* cx,
+                                                       NormalizationForm form,
+                                                       JSLinearString* str,
+                                                       void* buffer) {
+  MOZ_ASSERT(str->hasLatin1Chars());
+  MOZ_ASSERT(!str->empty(), "empty string must be handled in caller");
+
+  AutoCheckCannotGC nogc;
+  if (!js_normalize_latin1(
+          form, reinterpret_cast<const uint8_t*>(str->latin1Chars(nogc)),
+          str->length(), buffer)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  return true;
+}
+
+extern "C" MOZ_EXPORT JSLinearString* js_new_ucstring_copy_n(
+    JSContext* cx, const char16_t* ptr, size_t len) {
+  return NewStringCopyN<CanGC>(cx, ptr, len);
+}
+
+extern "C" MOZ_EXPORT JSLinearString* js_new_ucstring_copy_n_dont_deflate(
+    JSContext* cx, const char16_t* ptr, size_t len) {
+  return NewStringCopyNDontDeflate<CanGC>(cx, ptr, len);
+}
+
+// End callbacks for normalizer_glue to call.
 
 // ES2017 draft rev 45e890512fd77add72cc0ee742785f9f6f6482de
 // 21.1.3.12 String.prototype.normalize ( [ form ] )
-//
-// String.prototype.normalize is only implementable if ICU's normalization
-// functionality is available.
 static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "normalize");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -1554,8 +1613,6 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   if (!str) {
     return false;
   }
-
-  using NormalizationForm = mozilla::intl::String::NormalizationForm;
 
   NormalizationForm form;
   if (!args.hasDefined(0)) {
@@ -1584,52 +1641,15 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  // Latin-1 strings are already in Normalization Form C.
-  if (form == NormalizationForm::NFC && str->hasLatin1Chars()) {
-    // Step 7.
-    args.rval().setString(str);
-    return true;
-  }
-
-  // Step 6.
-  AutoStableStringChars stableChars(cx);
-  if (!stableChars.initTwoByte(cx, str)) {
-    return false;
-  }
-
-  mozilla::Range<const char16_t> srcChars = stableChars.twoByteRange();
-
-  static const size_t INLINE_CAPACITY = js::intl::INITIAL_CHAR_BUFFER_SIZE;
-
-  intl::FormatBuffer<char16_t, INLINE_CAPACITY> buffer(cx);
-
-  auto alreadyNormalized =
-      mozilla::intl::String::Normalize(form, srcChars, buffer);
-  if (alreadyNormalized.isErr()) {
-    intl::ReportInternalError(cx, alreadyNormalized.unwrapErr());
-    return false;
-  }
-
-  using AlreadyNormalized = mozilla::intl::String::AlreadyNormalized;
-
-  // Return if the input string is already normalized.
-  if (alreadyNormalized.unwrap() == AlreadyNormalized::Yes) {
-    // Step 7.
-    args.rval().setString(str);
-    return true;
-  }
-
-  JSString* ns = buffer.toString(cx);
-  if (!ns) {
+  JSString* ret = NormalizeString(cx, form, str);
+  if (!ret) {
     return false;
   }
 
   // Step 7.
-  args.rval().setString(ns);
+  args.rval().setString(ret);
   return true;
 }
-
-#endif  // JS_HAS_INTL_API
 
 /**
  * IsStringWellFormedUnicode ( string )
@@ -1998,9 +2018,7 @@ static int BoyerMooreHorspool(const TextChar* text, uint32_t textLen,
   MOZ_ASSERT(0 < patLen && patLen <= sBMHPatLenMax);
 
   uint8_t skip[sBMHCharSetSize];
-  for (uint32_t i = 0; i < sBMHCharSetSize; i++) {
-    skip[i] = uint8_t(patLen);
-  }
+  std::fill(std::begin(skip), std::end(skip), uint8_t(patLen));
 
   uint32_t patLast = patLen - 1;
   for (uint32_t i = 0; i < patLast; i++) {
@@ -2913,9 +2931,6 @@ class RopeBuilder {
   JSContext* cx;
   RootedString res;
 
-  RopeBuilder(const RopeBuilder& other) = delete;
-  void operator=(const RopeBuilder& other) = delete;
-
  public:
   explicit RopeBuilder(JSContext* cx)
       : cx(cx), res(cx, cx->runtime()->emptyString) {}
@@ -2926,6 +2941,9 @@ class RopeBuilder {
   }
 
   inline JSString* result() { return res; }
+
+  RopeBuilder(const RopeBuilder& other) = delete;
+  void operator=(const RopeBuilder& other) = delete;
 };
 
 namespace {
@@ -3630,28 +3648,27 @@ static ArrayObject* SingleElementStringArray(JSContext* cx,
   return array;
 }
 
-// ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
+// https://tc39.es/ecma262/#sec-string.prototype.split
+// Steps 11-18
 static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
                                 uint32_t limit, Handle<JSLinearString*> sep) {
   size_t strLength = str->length();
   size_t sepLength = sep->length();
   MOZ_ASSERT(sepLength != 0);
 
-  // Step 12.
+  // Step 11.
   if (strLength == 0) {
-    // Step 12.a.
-    int match = StringMatch(str, sep, 0);
-
-    // Step 12.b.
-    if (match != -1) {
-      return NewDenseEmptyArray(cx);
-    }
-
-    // Steps 12.c-e.
     return SingleElementStringArray(cx, str);
   }
 
-  // Step 3 (reordered).
+  // Step 14 (reordered)
+  int matchIndex = StringMatch(str, sep, 0);
+  if (matchIndex == -1) {
+    // If there are no matches, we can exit early.
+    return SingleElementStringArray(cx, str);
+  }
+
+  // Step 12
   Rooted<ArrayObject*> substrings(cx, NewDenseEmptyArray(cx));
   if (!substrings) {
     return nullptr;
@@ -3660,75 +3677,46 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   // Switch to allocating in the tenured heap if we fill the nursery.
   AutoSelectGCHeap gcHeap(cx);
 
-  // Step 8 (reordered).
-  size_t lastEndIndex = 0;
-
   // Step 13.
-  size_t index = 0;
+  size_t searchStart = 0;
 
-  // Step 14.
-  while (index != strLength) {
-    // Step 14.a.
-    int match = StringMatch(str, sep, index);
+  // Step 15
+  while (true) {
+    // Step 15.a.
+    size_t endIndex = matchIndex + sepLength;
+    size_t subLength = size_t(endIndex - sepLength - searchStart);
+    JSString* sub = NewDependentString(cx, str, searchStart, subLength, gcHeap);
 
-    // Step 14.b.
-    //
-    // Our match algorithm differs from the spec in that it returns the
-    // next index at which a match happens.  If no match happens we're
-    // done.
-    //
-    // But what if the match is at the end of the string (and the string is
-    // not empty)?  Per 14.c.i this shouldn't be a match, so we have to
-    // specially exclude it.  Thus this case should hold:
-    //
-    //   var a = "abc".split(/\b/);
-    //   assertEq(a.length, 1);
-    //   assertEq(a[0], "abc");
-    if (match == -1) {
-      break;
-    }
-
-    // Step 14.c.
-    size_t endIndex = match + sepLength;
-
-    // Step 14.c.i.
-    if (endIndex == lastEndIndex) {
-      index++;
-      continue;
-    }
-
-    // Step 14.c.ii.
-    MOZ_ASSERT(lastEndIndex < endIndex);
-    MOZ_ASSERT(sepLength <= strLength);
-    MOZ_ASSERT(lastEndIndex + sepLength <= endIndex);
-
-    // Step 14.c.ii.1.
-    size_t subLength = size_t(endIndex - sepLength - lastEndIndex);
-    JSString* sub =
-        NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
-
-    // Steps 14.c.ii.2-4.
+    // Step 15.b.
     if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
       return nullptr;
     }
 
-    // Step 14.c.ii.5.
+    // Step 15.c
     if (substrings->length() == limit) {
       return substrings;
     }
 
-    // Step 14.c.ii.6.
-    index = endIndex;
+    // Step 15.d
+    searchStart = endIndex;
 
-    // Step 14.c.ii.7.
-    lastEndIndex = index;
+    // Skip the last match if the separator is longer than the remaining string.
+    if (searchStart + sepLength > strLength) {
+      break;
+    }
+
+    // Step 15.e
+    matchIndex = StringMatch(str, sep, searchStart);
+    if (matchIndex == -1) {
+      break;
+    }
   }
 
-  // Step 15.
-  size_t subLength = strLength - lastEndIndex;
-  JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
+  // Step 16.
+  size_t subLength = strLength - searchStart;
+  JSString* sub = NewDependentString(cx, str, searchStart, subLength, gcHeap);
 
-  // Steps 16-17.
+  // Step 17.
   if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
     return nullptr;
   }
@@ -3785,10 +3773,14 @@ template <typename TextChar>
 static ArrayObject* SplitSingleCharHelper(JSContext* cx,
                                           Handle<JSLinearString*> str,
                                           char16_t patCh) {
+  static constexpr bool isTwoByteChar = std::is_same_v<TextChar, char16_t>;
+
   // Count the number of occurrences of |patCh| within |str|.
   uint32_t count = 0;
   if (patCh <= std::numeric_limits<TextChar>::max()) {
     JS::AutoCheckCannotGC nogc;
+
+    MOZ_RELEASE_ASSERT(str->hasTwoByteChars() == isTwoByteChar);
 
     auto text = str->range<TextChar>(nogc);
 
@@ -3818,11 +3810,13 @@ static ArrayObject* SplitSingleCharHelper(JSContext* cx,
     {
       JS::AutoCheckCannotGC nogc;
 
+      MOZ_RELEASE_ASSERT(str->hasTwoByteChars() == isTwoByteChar);
+
       auto text = str->range<TextChar>(nogc);
 
       auto* p = std::find(text.begin().get() + lastEndIndex, text.end().get(),
                           static_cast<TextChar>(patCh));
-      MOZ_ASSERT(p != text.end().get());
+      MOZ_RELEASE_ASSERT(p != text.end().get());
 
       index = std::distance(text.begin().get(), p);
     }
@@ -3907,9 +3901,7 @@ static const JSFunctionSpec string_methods[] = {
                     StringToLocaleUpperCase),
     JS_FN("localeCompare", str_localeCompare, 1, 0),
     JS_SELF_HOSTED_FN("repeat", "String_repeat", 1, 0),
-#if JS_HAS_INTL_API
     JS_FN("normalize", str_normalize, 0, 0),
-#endif
 
     /* Perl-ish methods (search is actually Python-esque). */
     JS_SELF_HOSTED_FN("match", "String_match", 1, 0),
@@ -4283,7 +4275,7 @@ SharedShape* StringObject::assignInitialShape(JSContext* cx,
   MOZ_ASSERT(obj->empty());
 
   if (!NativeObject::addPropertyInReservedSlot(cx, obj, cx->names().length,
-                                               LENGTH_SLOT, {})) {
+                                               LENGTH_SLOT.index(), {})) {
     return nullptr;
   }
 
@@ -4304,7 +4296,10 @@ JSObject* StringObject::createPrototype(JSContext* cx, JSProtoKey key) {
   Rooted<StringObject*> proto(
       cx, GlobalObject::createBlankPrototype<StringObject>(
               cx, cx->global(),
-              ObjectFlags({ObjectFlag::NeedsProxyGetSetResultValidation})));
+              ObjectFlags({
+                  ObjectFlag::NeedsProxyGetSetResultValidation,
+                  ObjectFlag::HasNonWritableOrAccessorPropExclProto,
+              })));
   if (!proto) {
     return nullptr;
   }

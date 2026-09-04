@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,14 +74,12 @@
 
 #ifndef NSCAP_ADDREF
 #  define NSCAP_ADDREF(this, ptr) \
-    mozilla::RefPtrTraits<        \
-        typename std::remove_reference<decltype(*ptr)>::type>::AddRef(ptr)
+    mozilla::RefPtrTraits<std::remove_reference_t<decltype(*ptr)>>::AddRef(ptr)
 #endif
 
 #ifndef NSCAP_RELEASE
 #  define NSCAP_RELEASE(this, ptr) \
-    mozilla::RefPtrTraits<         \
-        typename std::remove_reference<decltype(*ptr)>::type>::Release(ptr)
+    mozilla::RefPtrTraits<std::remove_reference_t<decltype(*ptr)>>::Release(ptr)
 #endif
 
 // Clients can define |NSCAP_LOG_ASSIGNMENT| to perform logging.
@@ -133,7 +129,7 @@ inline already_AddRefed<T>&& dont_AddRef(
  *
  * See |class nsGetInterface| for an example.
  */
-class MOZ_STACK_CLASS nsCOMPtr_helper {
+class MOZ_STACK_CLASS MOZ_NULL_AFTER_MOVE nsCOMPtr_helper {
  public:
   virtual nsresult NS_FASTCALL operator()(const nsIID&, void**) const = 0;
 };
@@ -392,7 +388,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   MOZ_IMPLICIT nsCOMPtr(const nsCOMPtr<U>& aSmartPtr)
       : mRawPtr(aSmartPtr.get()) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U should be a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U should be a subclass of T");
     assert_validity();
     if (mRawPtr) {
       NSCAP_ADDREF(this, mRawPtr);
@@ -410,7 +406,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   MOZ_IMPLICIT nsCOMPtr(nsCOMPtr<U>&& aSmartPtr)
       : mRawPtr(aSmartPtr.forget().template downcast<T>().take()) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U should be a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U should be a subclass of T");
     assert_validity();
     NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
     NSCAP_ASSERT_NO_QUERY_NEEDED();
@@ -446,7 +442,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
       : mRawPtr(static_cast<already_AddRefed<T>>(aSmartPtr.forget()).take()) {
     assert_validity();
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
     NSCAP_ASSERT_NO_QUERY_NEEDED();
   }
@@ -457,7 +453,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
       : mRawPtr(static_cast<T*>(aSmartPtr.take())) {
     assert_validity();
     // But make sure that U actually inherits from T.
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(mRawPtr));
     NSCAP_ASSERT_NO_QUERY_NEEDED();
   }
@@ -468,7 +464,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
       : mRawPtr(static_cast<T*>(aSmartPtr.take())) {
     assert_validity();
     // But make sure that U actually inherits from T.
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(mRawPtr));
     NSCAP_ASSERT_NO_QUERY_NEEDED();
   }
@@ -567,7 +563,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   template <class U>
   nsCOMPtr<T>& operator=(const nsCOMPtr<U>& aRhs) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U should be a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U should be a subclass of T");
     assign_with_AddRef(aRhs.get());
     return *this;
   }
@@ -580,7 +576,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   template <class U>
   nsCOMPtr<T>& operator=(nsCOMPtr<U>&& aRhs) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U should be a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U should be a subclass of T");
     assign_assuming_AddRef(aRhs.forget().template downcast<T>().take());
     NSCAP_ASSERT_NO_QUERY_NEEDED();
     return *this;
@@ -601,7 +597,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   template <typename U>
   nsCOMPtr<T>& operator=(already_AddRefed<U>& aRhs) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     assign_assuming_AddRef(static_cast<T*>(aRhs.take()));
     NSCAP_ASSERT_NO_QUERY_NEEDED();
     return *this;
@@ -611,7 +607,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   template <typename U>
   nsCOMPtr<T>& operator=(already_AddRefed<U>&& aRhs) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     assign_assuming_AddRef(static_cast<T*>(aRhs.take()));
     NSCAP_ASSERT_NO_QUERY_NEEDED();
     return *this;
@@ -621,7 +617,7 @@ class MOZ_IS_REFPTR nsCOMPtr final {
   template <typename U>
   nsCOMPtr<T>& operator=(RefPtr<U>&& aRhs) {
     // Make sure that U actually inherits from T
-    static_assert(std::is_base_of<T, U>::value, "U is not a subclass of T");
+    static_assert(std::is_base_of_v<T, U>, "U is not a subclass of T");
     assign_assuming_AddRef(static_cast<T*>(aRhs.forget().take()));
     NSCAP_ASSERT_NO_QUERY_NEEDED();
     return *this;
@@ -820,7 +816,7 @@ void nsCOMPtr<T>::assign_from_qi(const nsQueryInterface<U> aQI,
   // SameCOMIdentity uses it.
   static_assert(
       std::is_same_v<T, nsISupports> ||
-          !(std::is_same_v<T, U> || std::is_base_of<T, U>::value),
+          !(std::is_same_v<T, U> || std::is_base_of_v<T, U>),
       "don't use do_QueryInterface for compile-time-determinable casts");
   void* newRawPtr;
   if (NS_FAILED(aQI(aIID, &newRawPtr))) {
@@ -834,7 +830,7 @@ template <typename U>
 void nsCOMPtr<T>::assign_from_qi_with_error(
     const nsQueryInterfaceWithError<U>& aQI, const nsIID& aIID) {
   static_assert(
-      !(std::is_same_v<T, U> || std::is_base_of<T, U>::value),
+      !(std::is_same_v<T, U> || std::is_base_of_v<T, U>),
       "don't use do_QueryInterface for compile-time-determinable casts");
   void* newRawPtr;
   if (NS_FAILED(aQI(aIID, &newRawPtr))) {
@@ -1169,5 +1165,8 @@ struct outparam_as_pointer<nsGetterAddRefs<T>> {
   using type = T**;
 };
 }  // namespace mozilla::detail
+
+template <typename T>
+struct fmt::formatter<nsCOMPtr<T>> : fmt::ostream_formatter {};
 
 #endif  // !defined(nsCOMPtr_h_)

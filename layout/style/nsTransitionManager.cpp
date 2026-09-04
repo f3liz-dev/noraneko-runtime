@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,7 +14,9 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleAnimationValue.h"
+#include "mozilla/dom/CSSTransition.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/Element.h"
@@ -45,7 +45,8 @@ bool nsTransitionManager::UpdateTransitions(
   }
 
   MOZ_ASSERT(mPresContext->IsDynamic());
-  if (aNewStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
+  if (aNewStyle.StyleDisplay()->mDisplay == StyleDisplay::None &&
+      !StaticPrefs::layout_css_display_animations_enabled()) {
     StopAnimationsForElement(aElement, aPseudoRequest);
     return false;
   }
@@ -179,7 +180,7 @@ static Keyframe& AppendKeyframe(double aOffset, const CSSPropertyId& aProperty,
                                 AnimationValue&& aValue,
                                 nsTArray<Keyframe>& aKeyframes) {
   Keyframe& frame = *aKeyframes.AppendElement();
-  frame.mOffset.emplace(aOffset);
+  frame.mOffset.emplace(Keyframe::OffsetType::PercentageOffset(aOffset));
   MOZ_ASSERT(aValue.mServo);
   RefPtr<StyleLockedDeclarationBlock> decl =
       Servo_AnimationValue_Uncompute(aValue.mServo).Consume();
@@ -491,7 +492,7 @@ already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
   keyframeEffect->SetKeyframes(
       GetTransitionKeyframes(aProperty, std::move(aStartValue),
                              std::move(aEndValue)),
-      &aNewStyle, timeline);
+      &aNewStyle, timeline, nullptr /* No AnimationRange for transitions */);
 
   if (NS_WARN_IF(MOZ_UNLIKELY(!keyframeEffect->IsValidTransition()))) {
     return nullptr;
@@ -500,7 +501,8 @@ already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
   auto animation = MakeRefPtr<CSSTransition>(
       mPresContext->Document()->GetScopeObject(), aProperty);
   animation->SetOwningElement(OwningElementRef(*aElement, aPseudoRequest));
-  animation->SetTimelineNoUpdate(timeline);
+  animation->SetTimelineNoUpdate(timeline, {},
+                                 mozilla::dom::Animation::FromJS::No);
   animation->SetCreationSequence(
       mPresContext->RestyleManager()->GetAnimationGeneration());
   animation->SetEffectFromStyle(keyframeEffect);

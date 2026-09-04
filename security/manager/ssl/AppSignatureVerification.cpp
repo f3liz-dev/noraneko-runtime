@@ -1,12 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsNSSCertificateDB.h"
-
 #include "AppSignatureVerification.h"
+
 #include "AppTrustDomain.h"
 #include "CryptoTask.h"
 #include "NSSCertDBTrustDomain.h"
@@ -17,10 +14,13 @@
 #include "cosec.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
-#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
+#include "mozpkix/pkix.h"
+#include "mozpkix/pkixnss.h"
+#include "mozpkix/pkixutil.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDependentString.h"
@@ -30,13 +30,11 @@
 #include "nsIStringEnumerator.h"
 #include "nsIZipReader.h"
 #include "nsNSSCertificate.h"
+#include "nsNSSCertificateDB.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsString.h"
 #include "nsTHashtable.h"
-#include "mozpkix/pkix.h"
-#include "mozpkix/pkixnss.h"
-#include "mozpkix/pkixutil.h"
 #include "secerr.h"
 #include "secmime.h"
 
@@ -962,6 +960,9 @@ bool CoseVerificationCallback(const uint8_t* aPayload, size_t aPayloadLen,
     return false;
   }
   UniqueSECKEYPublicKey key(SECKEY_ExtractPublicKey(spki.get()));
+  if (!key) {
+    return false;
+  }
   SECItem signatureItem = {siBuffer, const_cast<uint8_t*>(aSignature),
                            static_cast<unsigned int>(aSignatureLen)};
   rv = PK11_VerifyWithMechanism(key.get(), mechanism, &param, &signatureItem,

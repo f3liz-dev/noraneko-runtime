@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 
 #include "Client.h"
 #include "ErrorList.h"
+#include "PLDHashTable.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/InitializedOnce.h"
@@ -21,6 +20,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/ThreadBound.h"
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/UnboundedMPSCQueue.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/BackgroundThreadObject.h"
@@ -77,12 +77,15 @@ class ClientUsageArray;
 class ClientDirectoryLock;
 class ClientDirectoryLockHandle;
 class DirectoryLockImpl;
+class DirtyTrackingAutoLock;
 class GroupInfo;
 class GroupInfoPair;
 class NormalOriginOperationBase;
+class OriginCacheMap;
 class OriginDirectoryLock;
 class OriginInfo;
 class OriginScope;
+class OriginUpserter;
 class QuotaObject;
 class SaveOriginAccessTimeOp;
 class UniversalDirectoryLock;
@@ -99,6 +102,7 @@ class QuotaManager final : public BackgroundThreadObject {
   friend class ClearStorageOp;
   friend class ClientDirectoryLockHandle;
   friend class DirectoryLockImpl;
+  friend class DirtyTrackingAutoLock;
   friend class FinalizeOriginEvictionOp;
   friend class GroupInfo;
   friend class InitOp;
@@ -115,6 +119,7 @@ class QuotaManager final : public BackgroundThreadObject {
   friend class test::GTEST_CLASS(TestQuotaManagerAndShutdownFixture,
                                  ThumbnailPrivateIdentityTemporaryOriginCount);
   friend class UniversalDirectoryLock;
+  friend class UsageTracker;
 
   friend Result<PrincipalMetadata, nsresult> GetInfoFromValidatedPrincipalInfo(
       QuotaManager& aQuotaManager,
@@ -210,8 +215,16 @@ class QuotaManager final : public BackgroundThreadObject {
    * not created during origin initialization is currently utilized only by
    * LSNG.
    */
+  // When called from the InitializeRepository disk-scan path, `aCacheMap`
+  // is the active map of pre-loaded L1 cache rows keyed by
+  // `(persistenceType, origin)` that the reconciliation logic (added in
+  // a subsequent commit) will consult. Other callers leave the default
+  // inactive map and the reconciliation step becomes a no-op.
   void InitQuotaForOrigin(const FullOriginMetadata& aFullOriginMetadata,
                           bool aDirectoryExists = true);
+
+  void InitQuotaForOrigin(const FullOriginMetadata& aFullOriginMetadata,
+                          bool aDirectoryExists, OriginCacheMap& aCacheMap);
 
   // XXX clients can use QuotaObject instead of calling this method directly.
   void DecreaseUsageForClient(const ClientMetadata& aClientMetadata,
@@ -249,6 +262,8 @@ class QuotaManager final : public BackgroundThreadObject {
   void UnloadQuota();
 
   void RemoveOriginFromCache(const OriginMetadata& aOriginMetadata);
+
+  void RemoveOriginFromCacheForEviction(const OriginMetadata& aOriginMetadata);
 
   already_AddRefed<QuotaObject> GetQuotaObject(
       PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
@@ -291,8 +306,12 @@ class QuotaManager final : public BackgroundThreadObject {
   Result<Ok, nsresult> EnsureTemporaryOriginDirectoryCreated(
       const OriginMetadata& aOriginMetadata);
 
-  static nsresult CreateDirectoryMetadata2(
-      nsIFile& aDirectory, const FullOriginMetadata& aFullOriginMetadata);
+  nsresult CreateDirectoryMetadata2(nsIFile& aDirectory,
+                                    FullOriginMetadata& aFullOriginMetadata);
+
+  // Clears the dirty flag before writing metadata, restoring it on failure.
+  nsresult SettleDirectoryMetadata2(nsIFile& aDirectory,
+                                    FullOriginMetadata& aFullOriginMetadata);
 
   nsresult RestoreDirectoryMetadata2(nsIFile* aDirectory);
 
@@ -414,6 +433,12 @@ class QuotaManager final : public BackgroundThreadObject {
 #endif
 
   RefPtr<BoolPromise> TemporaryStorageInitialized();
+
+  nsresult FlagOriginInfoAsDirtyOnDisk(
+      DirtyTrackingAutoLock& aProofOfLock,
+      const OriginStateMetadata& aStateMetadata);
+
+  void FlushDirtyOriginInfos();
 
  private:
   nsresult EnsureStorageIsInitializedInternal();
@@ -548,10 +573,16 @@ class QuotaManager final : public BackgroundThreadObject {
     return mTemporaryStorageInitialized;
   }
 
+  void RegisterDirtyOriginInfo(DirtyTrackingAutoLock& aProofOfLock);
+
  private:
   nsresult InitializeTemporaryStorageInternal();
 
   nsresult EnsureTemporaryStorageIsInitializedInternal();
+
+  nsresult InitializeFlushTimer();
+
+  void UninitializeFlushTimer();
 
  public:
   RefPtr<BoolPromise> InitializeAllTemporaryOrigins();
@@ -752,7 +783,26 @@ class QuotaManager final : public BackgroundThreadObject {
   // sanitized).
   static Result<PrincipalInfo, nsresult> ParseOrigin(const nsACString& aOrigin);
 
-  static void InvalidateQuotaCache();
+  // Caller-visible level for InvalidateQuotaCache. The level controls
+  // whether the eventual cache-wipe is gated on
+  // dom.quotaManager.caching.checkBuildId or unconditional. Priority is
+  // None < Soft < Hard; Soft requests promote only from None (so they never
+  // downgrade a Hard already in flight), Hard always wins.
+  enum class CacheInvalidationLevel : uint32_t {
+    // Pseudo-level used as the resting state of the global flag. Not a
+    // valid argument to InvalidateQuotaCache.
+    None = 0,
+    // Use this for "probably stale" signals like build-id mismatches.
+    // The actual cache wipe is suppressed when
+    // dom.quotaManager.caching.checkBuildId is false (e.g. in tests
+    // running on a packaged profile from a different binary).
+    Soft = 1,
+    // Use this when the caller has positive evidence that the cache is
+    // bad and a re-scan is mandatory. Not gated by checkBuildId.
+    Hard = 2,
+  };
+
+  static void InvalidateQuotaCache(CacheInvalidationLevel aLevel);
 
   OriginMetadataArray GetTemporaryOrigins(
       PersistenceType aPersistenceType) const;
@@ -846,12 +896,32 @@ class QuotaManager final : public BackgroundThreadObject {
       nsIFile& aLsArchiveFile) const;
 
   template <typename OriginFunc>
+  Result<Ok, nsresult> InitializeOriginDirectory(
+      const nsCOMPtr<nsIFile>& aChildDirectory, const nsAutoString& aLeafName,
+      PersistenceType aPersistenceType,
+      nsTArray<struct RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc, OriginCacheMap& aCacheMap);
+
+  // Determine the type of a repository entry (directory, file, or absent)
+  // and handle it accordingly.
+  template <typename OriginFunc>
+  Result<Ok, nsresult> ResolveRepositoryEntry(
+      const nsCOMPtr<nsIFile>& aChildDirectory,
+      PersistenceType aPersistenceType,
+      nsTArray<RenameAndInitInfo>& aRenameAndInitInfos,
+      OriginFunc&& aOriginFunc, OriginCacheMap& aCacheMap);
+
+  template <typename OriginFunc>
   nsresult InitializeRepository(PersistenceType aPersistenceType,
                                 OriginFunc&& aOriginFunc);
 
   nsresult InitializeOrigin(nsIFile* aDirectory,
                             const FullOriginMetadata& aFullOriginMetadata,
                             bool aForGroup = false);
+
+  nsresult InitializeOrigin(nsIFile* aDirectory,
+                            const FullOriginMetadata& aFullOriginMetadata,
+                            bool aForGroup, OriginCacheMap& aCacheMap);
 
   using OriginInfosFlatTraversable =
       nsTArray<NotNull<RefPtr<const OriginInfo>>>;
@@ -1096,6 +1166,8 @@ class QuotaManager final : public BackgroundThreadObject {
 
   nsCOMPtr<mozIStorageConnection> mStorageConnection;
 
+  RefPtr<OriginUpserter> mOriginUpserter;
+
   EnumeratedArray<Client::Type, nsCString, size_t(Client::TYPE_MAX)>
       mShutdownSteps;
   LazyInitializedOnce<const TimeStamp> mShutdownStartedAt;
@@ -1127,6 +1199,9 @@ class QuotaManager final : public BackgroundThreadObject {
   nsTHashMap<nsUint64HashKey, NotNull<DirectoryLockImpl*>>
       mDirectoryLockIdTable;
 
+  nsCOMPtr<nsITimer> mFlushDirtyOriginInfosTimer;
+  UnboundedMPSCQueue<RefPtr<OriginInfo>> mDirtyOriginInfos;
+
   // Things touched on the owning (PBackground) thread only.
   struct BackgroundThreadAccessible {
     PrincipalMetadataArray mUninitializedGroups;
@@ -1141,9 +1216,10 @@ class QuotaManager final : public BackgroundThreadObject {
   };
   ThreadBound<BackgroundThreadAccessible> mBackgroundThreadAccessible;
 
+  mutable mozilla::Mutex mInitializedOriginsMutex MOZ_UNANNOTATED;
   using BoolArray = AutoTArray<bool, PERSISTENCE_TYPE_INVALID>;
-  nsTHashMap<nsCStringHashKeyWithDisabledMemmove, BoolArray>
-      mInitializedOrigins;
+  nsTHashMap<nsCStringHashKeyWithDisabledMemmove, BoolArray> mInitializedOrigins
+      MOZ_GUARDED_BY(mInitializedOriginsMutex);
 
   using BitSetArray =
       AutoTArray<BitSet<Client::TYPE_MAX>, PERSISTENCE_TYPE_INVALID>;
@@ -1204,8 +1280,16 @@ class QuotaManager final : public BackgroundThreadObject {
 
   MozPromiseHolder<BoolPromise> mInitializeAllTemporaryOriginsPromiseHolder;
 
-  uint64_t mTemporaryStorageLimit;
-  uint64_t mTemporaryStorageUsage;
+  // Technically the limits should be unsigned, but mTemporaryStorageUsage can
+  // go below zero sometimes. We suppose this could either be of because a race
+  // condition in the order of completion of the quota operations, leading a
+  // temporary negative value until everything completes; or because of bugs
+  // elsewhere in our implementation leading to underflow in our usage values.
+  // In any case having signed integers ensures comparisons between numbers make
+  // sense. See bug 1585978 for details.
+  int64_t mTemporaryStorageLimit;
+  int64_t mTemporaryStorageUsage;
+
   int64_t mNextDirectoryLockId;
   bool mStorageInitialized;
   bool mPersistentStorageInitialized;
@@ -1215,6 +1299,8 @@ class QuotaManager final : public BackgroundThreadObject {
   bool mInitializingAllTemporaryOrigins;
   bool mAllTemporaryOriginsInitialized;
   bool mCacheUsable;
+  bool mCacheRequiresFullScan;
+  std::atomic<bool> mUsageModificationDisabled{false};
 };
 
 }  // namespace mozilla::dom::quota

@@ -108,7 +108,7 @@ add_task(async function open_tab_same_window() {
     await promiseHidden;
   });
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => originalTab.selected,
     "The original tab is selected."
   );
@@ -130,7 +130,7 @@ add_task(async function open_tab_same_window() {
     await promiseHidden;
   });
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => newTab.selected,
     "The new tab is selected."
   );
@@ -228,9 +228,9 @@ add_task(async function open_tab_new_window() {
     ]);
     ok(row.tabElement, "The row has a tabElement property");
     is(
-      row.tabElement.ownerGlobal,
+      row.tabElement.documentGlobal,
       window,
-      "The tabElement's ownerGlobal is our original window"
+      "The tabElement's documentGlobal is our original window"
     );
     info(`Clicking on row with URL: ${row.url}`);
     row.mainEl.click();
@@ -316,7 +316,7 @@ add_task(async function open_tab_new_window_sort_by_recency() {
       const [, secondCard] = getOpenTabsCards(openTabs);
       const tabItems = await getTabRowsForCard(secondCard);
       return tabItems[0].url === gInitialTabURL;
-    });
+    }, "the first tab item in the second card to have the initial tab URL");
     await checkTabLists(linkedBrowser, [
       [gInitialTabURL],
       [gInitialTabURL, URLs[0], URLs[1]],
@@ -359,7 +359,7 @@ add_task(async function styling_for_multiple_windows() {
       ".view-opentabs-card-container"
     );
     info("waiting for card-count to reflect 2 windows");
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return cardContainer.getAttribute("card-count") == "two";
     });
     is(
@@ -393,7 +393,7 @@ add_task(async function styling_for_multiple_windows() {
       ".view-opentabs-card-container"
     );
 
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return cardContainer.getAttribute("card-count") == "three-or-more";
     });
     ok(

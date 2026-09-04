@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -16,6 +14,7 @@
 #include "gc/GC.h"
 #include "gc/Zone.h"
 #include "jit/BaselineCompileTask.h"
+#include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
 #include "jit/IonCompileTask.h"
 #include "jit/JitRuntime.h"
@@ -517,8 +516,8 @@ void GlobalHelperThreadState::trace(JSTracer* trc) {
 
 #ifdef DEBUG
     // Since we hold the helper thread lock here we must disable GCMarker's
-    // checking of the atom marking bitmap since that also relies on taking the
-    // lock.
+    // checking of the atom reference bitmap since that also relies on taking
+    // the lock.
     GCMarker* marker = nullptr;
     if (trc->isMarkingTracer()) {
       marker = GCMarker::fromTracer(trc);
@@ -943,12 +942,31 @@ static bool JitDataStructuresExist(const CompilationSelector& selector) {
   return selector.match(Matcher());
 }
 
+static bool MayHaveOffThreadIonCompileTask(JSScript* script) {
+  jit::JitScript* jitScript = script->maybeJitScript();
+  if (!jitScript) {
+    return false;
+  }
+  if (jitScript->isIonCompilingOffThread()) {
+    return true;
+  }
+  return jitScript->hasBaselineScript() &&
+         jitScript->baselineScript()->hasPendingIonCompileTask();
+}
+
 void js::CancelOffThreadIonCompile(const CompilationSelector& selector) {
   if (!JitDataStructuresExist(selector)) {
     return;
   }
 
   if (jit::IsPortableBaselineInterpreterEnabled()) {
+    return;
+  }
+
+  // Off-thread Ion tasks are reflected in per-script state while they are on
+  // the helper-thread lists or the runtime's lazy-link list.
+  if (selector.is<JSScript*>() &&
+      !MayHaveOffThreadIonCompileTask(selector.as<JSScript*>())) {
     return;
   }
 
@@ -1629,7 +1647,10 @@ void GlobalHelperThreadState::createAndSubmitCompressionTasks(
   size_t currentBatchLength = 0;
 
   rt->pendingCompressions().eraseIf([&](const auto& entry) {
-    MOZ_ASSERT(entry.source()->hasUncompressedSource());
+    ScriptSource::DataReader reader(entry.source());
+
+    MOZ_ASSERT(reader.hasSourceText());
+    MOZ_ASSERT(reader->hasUncompressedSource());
 
     // If the script source has no other references then remove it from the
     // vector and don't compress it.
@@ -1646,7 +1667,7 @@ void GlobalHelperThreadState::createAndSubmitCompressionTasks(
 
     // Add this entry to the current batch if the total length doesn't exceed
     // MaxBatchLength.
-    size_t length = entry.source()->length();
+    size_t length = reader->length();
     if (currentBatch && currentBatchLength + length <= MaxBatchLength) {
       if (!currentBatch->addEntry(entry.source())) {
         return false;

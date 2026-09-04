@@ -5,17 +5,20 @@
 package org.mozilla.fenix.home.recentsyncedtabs
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.withContext
 import mozilla.components.browser.storage.sync.Tab
 import mozilla.components.concept.storage.HistoryStorage
 import mozilla.components.concept.sync.Device
 import mozilla.components.concept.sync.DeviceType
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.lib.state.ext.flow
-import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.service.fxa.manager.ext.withConstellationIfExists
@@ -40,6 +43,8 @@ import java.util.concurrent.TimeUnit
  * @param accountManager Account manager to initiate Syncs and refresh devices.
  * @param historyStorage Storage for searching history for preview image URLs matching synced tab.
  * @param coroutineScope The scope to collect Sync state Flow updates in.
+ * @param ioDispatcher The dispatcher to be used for background IO work.
+ * @param currentTimeMillis provider for the current time in milliseconds, injectable for testing.
  */
 @Suppress("LongParameterList")
 class RecentSyncedTabFeature(
@@ -50,6 +55,8 @@ class RecentSyncedTabFeature(
     private val accountManager: FxaAccountManager,
     private val historyStorage: HistoryStorage,
     private val coroutineScope: CoroutineScope,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) : LifecycleAwareFeature {
 
     private var syncStartId: GleanTimerId? = null
@@ -129,7 +136,7 @@ class RecentSyncedTabFeature(
             .map { deviceTab ->
                 val activeTabEntry = deviceTab.tab.active()
 
-                val currentTime = System.currentTimeMillis()
+                val currentTime = currentTimeMillis()
                 val maxAgeInMs = TimeUnit.DAYS.toMillis(DAYS_HISTORY_FOR_PREVIEW_IMAGE)
                 val history = historyStorage.getDetailedVisits(
                     start = currentTime - maxAgeInMs,
@@ -183,8 +190,8 @@ class RecentSyncedTabFeature(
         }
     }
 
-    private fun isSyncedTabsEngineEnabled(): Boolean {
-        return SyncEnginesStorage(context).getStatus()[SyncEngine.Tabs] ?: true
+    private suspend fun isSyncedTabsEngineEnabled(): Boolean = withContext(ioDispatcher) {
+        SyncEnginesStorage(context).getStatus()[SyncEngine.Tabs] ?: true
     }
 
     companion object {

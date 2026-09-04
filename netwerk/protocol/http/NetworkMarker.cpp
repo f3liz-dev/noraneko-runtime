@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set expandtab ts=4 sw=2 sts=2 cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,10 @@
 #include "NetworkMarker.h"
 
 #include "HttpBaseChannel.h"
-#include "nsIChannelEventSink.h"
-#include "mozilla/Perfetto.h"
 #include "mozilla/ErrorNames.h"
+#include "mozilla/Perfetto.h"
 #include "nsHttpHandler.h"
+#include "nsIChannelEventSink.h"
 #include "nsIClassOfService.h"
 
 namespace mozilla::net {
@@ -255,7 +253,8 @@ void EmitPerfettoTrackEvent<mozilla::net::NetworkMarker, mozilla::TimeStamp,
     const uint32_t& aRedirectFlags, const uint64_t& aRedirectChannelId) {
   MOZ_ASSERT(!aOptions.IsTimingUnspecified(),
              "Timing should be properly defined.");
-  const char* nameStr = aName.StringView().data();
+  auto nameSv = aName.StringView();
+  const char* nameStr = nameSv.data();
   if (!nameStr) {
     return;
   }
@@ -264,7 +263,6 @@ void EmitPerfettoTrackEvent<mozilla::net::NetworkMarker, mozilla::TimeStamp,
   startTime = aOptions.Timing().StartTime();
   endTime = aOptions.Timing().EndTime();
 
-  perfetto::DynamicString name{nameStr};
   perfetto::DynamicCategory category{"LOAD"};
 
   MOZ_ASSERT(
@@ -273,7 +271,7 @@ void EmitPerfettoTrackEvent<mozilla::net::NetworkMarker, mozilla::TimeStamp,
 
   // Create a unique id for each marker.
   mozilla::HashNumber hash =
-      mozilla::HashStringKnownLength(nameStr, aName.StringView().length());
+      mozilla::HashString(nameStr, aName.StringView().length());
   hash = mozilla::AddToHash(hash,
                             startTime.RawClockMonotonicNanosecondsSinceBoot());
   hash =
@@ -284,7 +282,9 @@ void EmitPerfettoTrackEvent<mozilla::net::NetworkMarker, mozilla::TimeStamp,
   desc.set_name(nameStr);
   perfetto::TrackEvent::SetTrackDescriptor(track, desc);
 
-  PERFETTO_TRACE_EVENT_BEGIN(category, name, track, startTime);
+  PERFETTO_TRACE_EVENT_BEGIN(
+      category, (perfetto::DynamicString{nameStr, nameSv.length()}), track,
+      startTime);
   PERFETTO_TRACE_EVENT_END(
       category, track, endTime, [&](perfetto::EventContext ctx) {
         auto* urlArg = ctx.event()->add_debug_annotations();

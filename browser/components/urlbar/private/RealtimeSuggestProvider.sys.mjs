@@ -9,10 +9,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -113,7 +113,7 @@ export class RealtimeSuggestProvider extends SuggestProvider {
 
   get notInterestedCommandL10n() {
     return {
-      id: "urlbar-result-menu-dont-show-" + this.realtimeTypeForFtl,
+      id: `urlbar-result-menu-dont-show-${this.realtimeTypeForFtl}2`,
     };
   }
 
@@ -139,7 +139,7 @@ export class RealtimeSuggestProvider extends SuggestProvider {
    *   The dynamic result type that will be set in the Merino result's payload
    *   as `result.payload.dynamicType`. Note that "dynamic" here refers to the
    *   concept of dynamic result types as used in the view and
-   *   `UrlbarUtils.RESULT_TYPE.DYNAMIC`, not Rust dynamic suggestions.
+   *   `UrlbarShared.RESULT_TYPE.DYNAMIC`, not Rust dynamic suggestions.
    *
    *   If you override this, make sure the value starts with "realtime-" because
    *   there are CSS rules that depend on that.
@@ -342,8 +342,8 @@ export class RealtimeSuggestProvider extends SuggestProvider {
     }
 
     let result = new lazy.UrlbarResult({
-      type: lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.DYNAMIC,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       isBestMatch: true,
       ...additionalOptions,
       payload: {
@@ -396,8 +396,8 @@ export class RealtimeSuggestProvider extends SuggestProvider {
         };
 
     return new lazy.UrlbarResult({
-      type: lazy.UrlbarUtils.RESULT_TYPE.TIP,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      type: lazy.UrlbarShared.RESULT_TYPE.TIP,
+      source: lazy.UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
       isBestMatch: true,
       payload: {
         // This `type` is the tip type, required for `TIP` results.
@@ -423,7 +423,7 @@ export class RealtimeSuggestProvider extends SuggestProvider {
               {
                 name: "not_interested",
                 l10n: {
-                  id: "urlbar-result-realtime-opt-in-dismiss-all",
+                  id: "urlbar-result-realtime-opt-in-dismiss-all2",
                 },
               },
             ],
@@ -444,6 +444,11 @@ export class RealtimeSuggestProvider extends SuggestProvider {
         role: hasMultipleItems ? "group" : "option",
       },
       classList: ["urlbarView-realtime-root"],
+      dataset: {
+        // This `url` or `query` is used when there's only one item.
+        url: items[0].url,
+        query: items[0].query,
+      },
       children: items.map((item, i) => ({
         name: `item_${i}`,
         tag: "span",
@@ -452,20 +457,13 @@ export class RealtimeSuggestProvider extends SuggestProvider {
           selectable: !hasMultipleItems ? null : "",
           role: hasMultipleItems ? "option" : "presentation",
         },
+        dataset: {
+          // These `url`s or `query`s are used when there are multiple items.
+          url: item.url,
+          query: item.query,
+        },
         children: [
-          // Create an image inside a container so that the image appears inset
-          // into a square. This is atypical because we normally use only an
-          // image and give it padding and a background color to achieve that
-          // effect, but that only works when the image size is fixed.
-          // Unfortunately Merino serves market icons of different sizes due to
-          // its reliance on a third-party API.
-          {
-            name: `image_container_${i}`,
-            tag: "span",
-            classList: ["urlbarView-realtime-image-container"],
-            children: this.getViewTemplateForImage(item, i),
-          },
-
+          ...this.getViewTemplateForImageContainer(item, i),
           {
             tag: "span",
             classList: ["urlbarView-realtime-description"],
@@ -488,23 +486,35 @@ export class RealtimeSuggestProvider extends SuggestProvider {
   }
 
   /**
-   * Returns the view template inside the `image_container`. This default
-   * implementation creates an `img` element. Override it if you need something
-   * else.
+   * Returns the view template for the image container. This default
+   * implementation creates a `span` with an `img` inside. Override it if you
+   * need something else.
    *
    * @param {object} _item
    *   An item from the `result.payload.items` array.
    * @param {number} index
    *   The index of the item in the array.
    * @returns {Array}
-   *   View template for the image, an array of objects.
+   *   View template for the image container, an array of objects.
    */
-  getViewTemplateForImage(_item, index) {
+  getViewTemplateForImageContainer(_item, index) {
+    // Create an image inside a container so that the image appears inset into a
+    // square. This is atypical because we normally use only an image and give
+    // it padding and a background color to achieve that effect, but that only
+    // works when the image size is fixed. Unfortunately Merino serves market
+    // icons of different sizes due to its reliance on a third-party API.
     return [
       {
-        name: `image_${index}`,
-        tag: "img",
-        classList: ["urlbarView-realtime-image"],
+        name: `image_container_${index}`,
+        tag: "span",
+        classList: ["urlbarView-realtime-image-container"],
+        children: [
+          {
+            name: `image_${index}`,
+            tag: "img",
+            classList: ["urlbarView-realtime-image"],
+          },
+        ],
       },
     ];
   }
@@ -515,11 +525,6 @@ export class RealtimeSuggestProvider extends SuggestProvider {
 
     let update = {
       root: {
-        dataset: {
-          // This `url` or `query` will be used when there's only one item.
-          url: items[0].url,
-          query: items[0].query,
-        },
         l10n: hasMultipleItems ? this.ariaGroupL10n : null,
       },
     };
@@ -527,13 +532,6 @@ export class RealtimeSuggestProvider extends SuggestProvider {
     for (let i = 0; i < items.length; i++) {
       let item = items[i];
       Object.assign(update, this.getViewUpdateForPayloadItem(item, i));
-
-      // These `url` or `query`s will be used when there are multiple items.
-      let itemName = `item_${i}`;
-      update[itemName] ??= {};
-      update[itemName].dataset ??= {};
-      update[itemName].dataset.url ??= item.url;
-      update[itemName].dataset.query ??= item.query;
     }
 
     return update;
@@ -552,7 +550,7 @@ export class RealtimeSuggestProvider extends SuggestProvider {
       commands.push({
         name: "show_less_frequently",
         l10n: {
-          id: "urlbar-result-menu-show-less-frequently",
+          id: "urlbar-result-menu-show-less-frequently2",
         },
       });
     }
@@ -566,13 +564,13 @@ export class RealtimeSuggestProvider extends SuggestProvider {
       {
         name: "manage",
         l10n: {
-          id: "urlbar-result-menu-manage-firefox-suggest",
+          id: "urlbar-result-menu-manage-firefox-suggest2",
         },
       },
       {
         name: "help",
         l10n: {
-          id: "urlbar-result-menu-learn-more",
+          id: "urlbar-result-menu-learn-more2",
         },
       }
     );
@@ -607,16 +605,13 @@ export class RealtimeSuggestProvider extends SuggestProvider {
       }
       case "not_interested": {
         lazy.UrlbarPrefs.set(this.suggestPref, false);
-        result.acknowledgeDismissalL10n = this.acknowledgeDismissalL10n;
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: this.acknowledgeDismissalL10n,
+        });
         break;
       }
       case "show_less_frequently": {
-        controller.view.acknowledgeFeedback(result);
-        this.incrementShowLessFrequentlyCount();
-        if (!this.canShowLessFrequently) {
-          controller.view.invalidateResultMenuCommands();
-        }
+        this.handleShowLessFrequently(controller, result);
         lazy.UrlbarPrefs.set(
           this.minKeywordLengthPref,
           searchString.length + 1
@@ -649,16 +644,18 @@ export class RealtimeSuggestProvider extends SuggestProvider {
           "quicksuggest.realtimeOptIn.dismissTypes",
           this.realtimeType
         );
-        details.result.acknowledgeDismissalL10n = this.acknowledgeDismissalL10n;
-        controller.removeResult(details.result);
+        controller.removeResult(details.result, {
+          acknowledgeDismissalL10n: this.acknowledgeDismissalL10n,
+        });
         break;
       }
       case "not_interested": {
         lazy.UrlbarPrefs.set("suggest.realtimeOptIn", false);
-        details.result.acknowledgeDismissalL10n = {
-          id: "urlbar-result-dismissal-acknowledgment-all",
-        };
-        controller.removeResult(details.result);
+        controller.removeResult(details.result, {
+          acknowledgeDismissalL10n: {
+            id: "urlbar-result-dismissal-acknowledgment-all",
+          },
+        });
         break;
       }
     }

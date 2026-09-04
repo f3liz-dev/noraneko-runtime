@@ -20,12 +20,15 @@ const PROFILES_CREATED_PREF_NAME = "browser.profiles.created";
 const DAU_GROUPID_PREF_NAME = "datareporting.dau.cachedUsageProfileGroupID";
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  LightweightThemeManager:
+    "resource://gre/modules/LightweightThemeManager.sys.mjs",
   CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
@@ -56,6 +59,239 @@ const COMMAND_LINE_UPDATE = "profiles-updated";
 const COMMAND_LINE_ACTIVATE = "profiles-activate";
 
 const gSupportsBadging = "nsIMacDockSupport" in Ci || "nsIWinTaskbar" in Ci;
+
+// Bug 1922374: Move themes to remote settings
+export const PROFILE_THEMES_MAP = new Map([
+  [
+    "firefox-compact-light@mozilla.org",
+    {
+      dataL10nId: "profiles-gray-theme",
+      dataL10nTitle: "profiles-gray-theme-title",
+      colors: {
+        light: {
+          chromeColor: "rgb(234, 234, 237)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "#F9F9FB",
+        },
+      },
+      isDark: false,
+      useInAutomation: true,
+    },
+  ],
+  [
+    "firefox-compact-dark@mozilla.org",
+    {
+      dataL10nId: "profiles-gray-theme",
+      dataL10nTitle: "profiles-gray-theme-title",
+      colors: {
+        dark: {
+          chromeColor: "rgb(28, 27, 34)",
+          toolbarColor: "rgb(28, 27, 34)",
+          contentColor: "rgb(43, 42, 51)",
+        },
+      },
+      isDark: true,
+      useInAutomation: true,
+    },
+  ],
+  [
+    "{cd6791f7-4b6d-47b4-8877-1d4c82c6699d}",
+    {
+      dataL10nId: "profiles-yellow-theme",
+      dataL10nTitle: "profiles-yellow-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552782/profiles_yellow-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(255, 230, 153)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 244, 208)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 16, 0)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(66, 27, 0)",
+        },
+      },
+    },
+  ],
+  [
+    "{7a301b7b-c3e2-40bf-a06b-6d517bbf138b}",
+    {
+      dataL10nId: "profiles-orange-theme",
+      dataL10nTitle: "profiles-orange-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552788/profiles_orange-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(255, 205, 158)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 237, 214)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 15, 0)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(72, 18, 0)",
+        },
+      },
+    },
+  ],
+  [
+    "{8de5f8c3-bfc2-443b-9913-7bbadbd1ba0d}",
+    {
+      dataL10nId: "profiles-red-theme",
+      dataL10nTitle: "profiles-red-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552785/profiles_red-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(255, 195, 201)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 232, 234)",
+        },
+        dark: {
+          chromeColor: "rgb(41, 11, 15)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(76, 5, 22)",
+        },
+      },
+    },
+  ],
+  [
+    "{2b0fadbf-238d-43db-aa9d-e06c9a7e000b}",
+    {
+      dataL10nId: "profiles-pink-theme",
+      dataL10nTitle: "profiles-pink-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552787/profiles_pink-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(255, 194, 219)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 232, 244)",
+        },
+        dark: {
+          chromeColor: "rgb(39, 11, 21)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(73, 6, 36)",
+        },
+      },
+    },
+  ],
+  [
+    "{1d73a1eb-128d-4e9e-83f8-c0c51f8c5fd3}",
+    {
+      dataL10nId: "profiles-purple-theme",
+      dataL10nTitle: "profiles-purple-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552786/profiles_purple-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(247, 202, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(255, 236, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(30, 14, 37)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(56, 17, 71)",
+        },
+      },
+    },
+  ],
+  [
+    "{aab1adac-5449-47fd-b836-c2f43dc28f3f}",
+    {
+      dataL10nId: "profiles-violet-theme",
+      dataL10nTitle: "profiles-violet-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552784/profiles_violet-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(221, 207, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(244, 240, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(22, 17, 43)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(40, 25, 83)",
+        },
+      },
+    },
+  ],
+  [
+    "{4223a94a-d3f9-40e9-95dd-99aca80ea04b}",
+    {
+      dataL10nId: "profiles-blue-theme",
+      dataL10nTitle: "profiles-blue-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4551961/profiles_blue-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(171, 223, 255)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(226, 247, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(8, 21, 44)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(4, 35, 86)",
+        },
+      },
+    },
+  ],
+  [
+    "{7063abff-a690-4b87-a548-fc32d3ce5708}",
+    {
+      dataL10nId: "profiles-green-theme",
+      dataL10nTitle: "profiles-green-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552789/profiles_green-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(181, 240, 181)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(225, 255, 225)",
+        },
+        dark: {
+          chromeColor: "rgb(5, 28, 7)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(0, 50, 0)",
+        },
+      },
+    },
+  ],
+  [
+    "{0683b144-0d4a-4815-963e-55a8ec8d386b}",
+    {
+      dataL10nId: "profiles-cyan-theme",
+      dataL10nTitle: "profiles-cyan-theme-title",
+      downloadURL:
+        "https://addons.mozilla.org/firefox/downloads/file/4552790/profiles_cyan-1.0.xpi",
+      colors: {
+        light: {
+          chromeColor: "rgb(166, 236, 244)",
+          toolbarColor: "rgb(255, 255, 255)",
+          contentColor: "rgb(207, 255, 255)",
+        },
+        dark: {
+          chromeColor: "rgb(0, 31, 43)",
+          toolbarColor: "rgb(22, 22, 22)",
+          contentColor: "rgb(0, 50, 61)",
+        },
+      },
+    },
+  ],
+  [
+    "default-theme@mozilla.org",
+    {
+      dataL10nId: "profiles-system-theme",
+      dataL10nTitle: "profiles-system-theme-title",
+      colors: {},
+    },
+  ],
+]);
 
 async function loadImage(profile) {
   let uri;
@@ -102,6 +338,8 @@ class SelectableProfileServiceClass extends EventEmitter {
   #badge = null;
   #windowActivated = null;
   #isEnabled = false;
+  // This is a rough number of the current profiles. It is not always correct.
+  #cachedProfileCount = null;
 
   // The preferences that must be permanently stored in the database and kept
   // consistent amongst profiles.
@@ -110,6 +348,12 @@ class SelectableProfileServiceClass extends EventEmitter {
     "browser.crashReports.unsubmittedCheck.autoSubmit2",
     "browser.discovery.enabled",
     "browser.shell.checkDefaultBrowser",
+    // Profiles on one install share a taskbar button, so whether the custom
+    // icon feature works is a property of the install, not of the profile.
+    "browser.shell.customIcon.enabled",
+    "browser.shell.customIcon.id",
+    "browser.shell.customIcon.perUserStartMenuShortcutCreated",
+    "browser.backup.enabled_on.profiles",
     DAU_GROUPID_PREF_NAME,
     "datareporting.healthreport.uploadEnabled",
     "datareporting.policy.currentPolicyVersion",
@@ -139,9 +383,9 @@ class SelectableProfileServiceClass extends EventEmitter {
   constructor() {
     super();
 
-    this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
     this.themeObserver = this.themeObserver.bind(this);
     this.matchMediaObserver = this.matchMediaObserver.bind(this);
+    this.lookAndFeelChanged = this.lookAndFeelChanged.bind(this);
     this.prefObserver = (subject, topic, prefName) =>
       this.flushSharedPrefToDatabase(prefName);
 
@@ -238,10 +482,10 @@ class SelectableProfileServiceClass extends EventEmitter {
 
   async #attemptFlushProfileService() {
     try {
-      await this.#profileService.asyncFlush();
+      await this.#profileService.asyncFlushCurrentProfile();
     } catch (e) {
       try {
-        await this.#profileService.asyncFlushCurrentProfile();
+        await this.#profileService.asyncFlush();
       } catch (ex) {
         console.error(
           `Failed to flush changes to the profiles database: ${ex}`
@@ -284,12 +528,6 @@ class SelectableProfileServiceClass extends EventEmitter {
     await this.#attemptFlushProfileService();
   }
 
-  onNimbusUpdate() {
-    if (lazy.NimbusFeatures.selectableProfiles.getVariable("enabled")) {
-      Services.prefs.setBoolPref(PROFILES_PREF_NAME, true);
-    }
-  }
-
   /**
    * At startup, store the nsToolkitProfile for the group.
    * Get the groupDBPath from the nsToolkitProfile, and connect to it.
@@ -313,8 +551,6 @@ class SelectableProfileServiceClass extends EventEmitter {
       return;
     }
 
-    lazy.NimbusFeatures.selectableProfiles.onUpdate(this.onNimbusUpdate);
-
     this.#profileService = ProfilesDatastoreService.toolkitProfileService;
 
     this.#storeID = await ProfilesDatastoreService.storeID;
@@ -333,6 +569,17 @@ class SelectableProfileServiceClass extends EventEmitter {
       return;
     }
 
+    const resetProfilePath = Services.env.get("SELECTABLE_PROFILE_RESET_PATH");
+    if (resetProfilePath) {
+      await this.#updateProfilePath(
+        resetProfilePath,
+        ProfilesDatastoreService.constructor.getDirectory("ProfD").path
+      );
+
+      Services.env.set("SELECTABLE_PROFILE_RESET_PATH", "");
+      Services.env.set("SELECTABLE_PROFILE_RESET_STORE_ID", "");
+    }
+
     // When we launch into the startup window, the `ProfD` is not defined so
     // getting the directory will throw. Leaving the `currentProfile` as null
     // is fine for the startup window.
@@ -343,6 +590,16 @@ class SelectableProfileServiceClass extends EventEmitter {
         ProfilesDatastoreService.constructor.getDirectory("ProfD")
       );
     } catch {}
+
+    if (resetProfilePath && this.#currentProfile) {
+      let { themeBg, themeFg } = this.getColorsForDefaultTheme();
+
+      this.currentProfile.theme = {
+        themeId: DEFAULT_THEME_ID,
+        themeFg,
+        themeBg,
+      };
+    }
 
     // If this isn't the first init prior to creating the first new profile and
     // the app is started up we should have found a current profile.
@@ -386,6 +643,8 @@ class SelectableProfileServiceClass extends EventEmitter {
       500
     );
 
+    this.#cachedProfileCount = await this.getProfileCount();
+
     // The 'activate' event listeners use #currentProfile, so this line has
     // to come after #currentProfile has been set.
     this.initWindowTracker();
@@ -402,7 +661,10 @@ class SelectableProfileServiceClass extends EventEmitter {
     let prefersDarkQuery = window?.matchMedia("(prefers-color-scheme: dark)");
     prefersDarkQuery?.addEventListener("change", this.matchMediaObserver);
 
+    Services.obs.addObserver(this.lookAndFeelChanged, "look-and-feel-changed");
+
     Services.obs.addObserver(this, "pds-datastore-changed");
+    Services.obs.addObserver(this, "taskbar-buttons-refreshed");
 
     this.#initialized = true;
 
@@ -417,6 +679,24 @@ class SelectableProfileServiceClass extends EventEmitter {
     }
   }
 
+  async startupMigrationInit() {
+    if (this.#initialized) {
+      return;
+    }
+
+    if (!lazy.MigrationUtils.isStartupMigration) {
+      return;
+    }
+
+    this.#connection =
+      await ProfilesDatastoreService.getStartupMigrationConnection();
+    if (!this.#connection) {
+      return;
+    }
+
+    this.#storeID = await ProfilesDatastoreService.storeID;
+  }
+
   async uninit() {
     if (!this.#initialized) {
       return;
@@ -427,7 +707,10 @@ class SelectableProfileServiceClass extends EventEmitter {
       "lightweight-theme-styling-update"
     );
 
-    lazy.NimbusFeatures.selectableProfiles.offUpdate(this.onNimbusUpdate);
+    Services.obs.removeObserver(
+      this.lookAndFeelChanged,
+      "look-and-feel-changed"
+    );
 
     this.#currentProfile = null;
     this.#badge = null;
@@ -438,6 +721,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     lazy.EveryWindow.unregisterCallback(this.#everyWindowCallbackId);
 
     Services.obs.removeObserver(this, "pds-datastore-changed");
+    Services.obs.removeObserver(this, "taskbar-buttons-refreshed");
 
     this.#initialized = false;
   }
@@ -490,6 +774,17 @@ class SelectableProfileServiceClass extends EventEmitter {
       }
       case "lightweight-theme-styling-update": {
         this.themeObserver(subject, topic);
+        break;
+      }
+      case "taskbar-buttons-refreshed": {
+        // WinTaskbar::RefreshTaskbarButtons cycles DeleteTab/AddTab on each button,
+        // which creates fresh taskbar buttons with no overlay state, wiping the profile
+        // badge. Re-apply it.
+        if (this.#badge && "nsIWinTaskbar" in Ci) {
+          for (let win of lazy.EveryWindow.readyWindows) {
+            this.#setOverlayIcon({ win });
+          }
+        }
         break;
       }
     }
@@ -653,6 +948,18 @@ class SelectableProfileServiceClass extends EventEmitter {
     }
   }
 
+  async #updateTitlebar() {
+    let previousCount = this.#cachedProfileCount;
+    this.#cachedProfileCount = await this.getProfileCount();
+
+    // We only need to update the titles if transitioning to or from a single profile.
+    if (previousCount <= 1 || this.#cachedProfileCount <= 1) {
+      for (let win of lazy.EveryWindow.readyWindows) {
+        win.gBrowser.updateTitlebar();
+      }
+    }
+  }
+
   /**
    * Invoked when changes have been made to the database. Sends the observer
    * notification "sps-profiles-updated" indicating that something has changed.
@@ -677,6 +984,7 @@ class SelectableProfileServiceClass extends EventEmitter {
       await this.loadSharedPrefsFromDatabase();
     }
 
+    await this.#updateTitlebar();
     await this.#updateTaskbar();
 
     if (source != "startup") {
@@ -701,8 +1009,10 @@ class SelectableProfileServiceClass extends EventEmitter {
       window.document.documentElement
     );
 
-    let themeFgColor = computedStyles.getPropertyValue("--toolbar-color");
-    let themeBgColor = computedStyles.getPropertyValue("--toolbar-bgcolor");
+    let themeFgColor = computedStyles.getPropertyValue("--toolbar-text-color");
+    let themeBgColor = computedStyles.getPropertyValue(
+      "--toolbar-background-color"
+    );
 
     let bg = window.InspectorUtils.colorToRGBA(themeBgColor);
     let themeBg = `rgba(${bg.r}, ${bg.g}, ${bg.b}, ${bg.a})`;
@@ -713,22 +1023,59 @@ class SelectableProfileServiceClass extends EventEmitter {
     return { themeBg, themeFg };
   }
 
-  /**
-   * The observer function that watches for theme changes and updates the
-   * current profile of a theme change.
-   *
-   * @param {object} aSubject The theme data
-   * @param {string} aTopic Should be "lightweight-theme-styling-update"
-   */
-  themeObserver(aSubject, aTopic) {
-    if (aTopic !== "lightweight-theme-styling-update") {
-      return;
+  async enableTheme(themeId, telemetryInfo) {
+    let theme = await lazy.AddonManager.getAddonByID(themeId);
+    if (!theme) {
+      let themeEntry = PROFILE_THEMES_MAP.get(themeId);
+      if (themeEntry?.downloadURL) {
+        let themeInstall = await lazy.AddonManager.getInstallForURL(
+          themeEntry.downloadURL,
+          { telemetryInfo }
+        );
+        await themeInstall.install();
+        theme = await lazy.AddonManager.getAddonByID(themeId);
+      }
     }
 
-    let data = aSubject.wrappedJSObject;
+    if (theme) {
+      await theme.enable();
+    } else {
+      console.warn(`enableTheme: could not find or install theme ${themeId}`);
+    }
 
-    if (!data.theme) {
-      // During startup the theme might be null so just return
+    // If the theme was already active, theme.enable() is a no-op and the
+    // themeObserver won't fire. Re-send the notification so that the
+    // observer picks up the correct colors.
+    let data = lazy.LightweightThemeManager.themeData;
+    if (data?.theme) {
+      Services.obs.notifyObservers(
+        { wrappedJSObject: data },
+        "lightweight-theme-styling-update"
+      );
+    }
+  }
+
+  /**
+   * Extract theme colors from theme data, handling Nova themes differently.
+   *
+   * @param {object} theme The theme object
+   * @returns {{ themeFg: string, themeBg: string }}
+   */
+  extractThemeColors(theme) {
+    let themeFg =
+      theme.icon_attention_color || theme.toolbar_text || theme.textcolor;
+    let themeBg = theme.accentcolor || theme.toolbarColor;
+
+    return { themeFg, themeBg };
+  }
+
+  /**
+   * Updates the current profile's theme colors based on theme data.
+   *
+   * @param {object} data The theme data object containing theme and darkTheme
+   */
+  updateProfileThemeColors(data) {
+    if (!data?.theme) {
       return;
     }
 
@@ -737,8 +1084,7 @@ class SelectableProfileServiceClass extends EventEmitter {
 
     let theme = isDark && !!data.darkTheme ? data.darkTheme : data.theme;
 
-    let themeFg = theme.toolbar_text || theme.textcolor;
-    let themeBg = theme.toolbarColor || theme.accentcolor;
+    let { themeFg, themeBg } = this.extractThemeColors(theme);
 
     if (theme.id === DEFAULT_THEME_ID || !themeFg || !themeBg) {
       window.addEventListener(
@@ -766,6 +1112,22 @@ class SelectableProfileServiceClass extends EventEmitter {
   }
 
   /**
+   * The observer function that watches for theme changes and updates the
+   * current profile of a theme change.
+   *
+   * @param {object} aSubject The theme data
+   * @param {string} aTopic Should be "lightweight-theme-styling-update"
+   */
+  themeObserver(aSubject, aTopic) {
+    if (aTopic !== "lightweight-theme-styling-update") {
+      return;
+    }
+
+    let data = aSubject.wrappedJSObject;
+    this.updateProfileThemeColors(data);
+  }
+
+  /**
    * The observer function that watches for OS theme changes and updates the
    * current profile of a theme change.
    */
@@ -783,6 +1145,16 @@ class SelectableProfileServiceClass extends EventEmitter {
       themeFg,
       themeBg,
     };
+  }
+
+  /**
+   * The observer function that watches for look-and-feel changes (including
+   * pref-driven appearance changes from theme-picker) and updates the current
+   * profile colors.
+   */
+  lookAndFeelChanged() {
+    let data = lazy.LightweightThemeManager.themeData;
+    this.updateProfileThemeColors(data);
   }
 
   async flushAllSharedPrefsToDatabase() {
@@ -957,6 +1329,16 @@ class SelectableProfileServiceClass extends EventEmitter {
       Services.prefs.addObserver(name, this.prefObserver);
       this.#observedPrefs.add(name);
     }
+
+    // Add shared prefs not already in the db to the db
+    const permanentSharedPrefsSet = new Set(
+      SelectableProfileServiceClass.permanentSharedPrefs
+    );
+    for (let prefName of permanentSharedPrefsSet.difference(
+      this.#observedPrefs
+    )) {
+      await this.flushSharedPrefToDatabase(prefName);
+    }
   }
 
   /**
@@ -971,7 +1353,19 @@ class SelectableProfileServiceClass extends EventEmitter {
     if (!aProfile) {
       return;
     }
-    this.groupToolkitProfile.rootDir = await aProfile.rootDir;
+
+    let newRootDir = await aProfile.rootDir;
+
+    // If the profile directory for the group is not changing and no other
+    // instance has updated profiles.ini then we don't need to do anything.
+    if (
+      newRootDir.equals(this.groupToolkitProfile.rootDir) &&
+      !this.#profileService.isListOutdated
+    ) {
+      return;
+    }
+
+    this.groupToolkitProfile.rootDir = newRootDir;
     Glean.profilesDefault.updated.record();
     await this.#attemptFlushProfileService();
   }
@@ -1052,8 +1446,13 @@ class SelectableProfileServiceClass extends EventEmitter {
    * Create the prefs.js file and write all shared prefs to the file.
    *
    * @param {nsIFile} profileDir The root dir of the newly created profile
+   * @param {string} source The entry point that is creating the profile
    */
-  async createProfileInitialFiles(profileDir) {
+  async createProfileInitialFiles(profileDir, source) {
+    if (!source) {
+      console.error("No source passed for new profile");
+    }
+
     let timesJsonFilePath = await IOUtils.createUniqueFile(
       profileDir.path,
       "times.json",
@@ -1063,6 +1462,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     await IOUtils.writeJSON(timesJsonFilePath, {
       created: Date.now(),
       firstUse: null,
+      source: source ?? "unknown",
     });
 
     let prefsJsFilePath = await IOUtils.createUniqueFile(
@@ -1083,34 +1483,30 @@ class SelectableProfileServiceClass extends EventEmitter {
   async addSelectableProfilePrefs(profileDirPath) {
     const sharedPrefs = await this.getAllDBPrefs();
 
-    const filteredPrefs = sharedPrefs.filter(
-      pref =>
-        !SelectableProfileServiceClass.ignoredSharedPrefs.includes(pref.name)
+    let prefsToAdd = new Map(
+      sharedPrefs
+        .filter(
+          pref =>
+            !SelectableProfileServiceClass.ignoredSharedPrefs.includes(
+              pref.name
+            )
+        )
+        .map(({ name, value }) => [name, value])
     );
-
-    const prefsToAdd = [];
-    for (let pref of filteredPrefs) {
-      prefsToAdd.push(
-        `user_pref("${pref.name}", ${
-          pref.type === "string" ? `"${pref.value}"` : `${pref.value}`
-        });`
-      );
-    }
 
     // Preferences that must be set for selectable profiles.
-    prefsToAdd.push(`user_pref("browser.profiles.enabled", true);`);
-    prefsToAdd.push(`user_pref("browser.profiles.created", true);`);
-    prefsToAdd.push(
-      `user_pref("toolkit.profiles.storeID", "${this.storeID}");`
-    );
-    prefsToAdd.push(
-      `user_pref("${DAU_GROUPID_PREF_NAME}", "${await this.getDBPref(DAU_GROUPID_PREF_NAME)}");`
-    );
+    prefsToAdd.set("browser.profiles.enabled", true);
+    prefsToAdd.set("browser.profiles.created", true);
+    prefsToAdd.set("toolkit.profiles.storeID", this.storeID);
 
     const LINEBREAK = AppConstants.platform === "win" ? "\r\n" : "\n";
     await IOUtils.writeUTF8(
       PathUtils.join(profileDirPath, "prefs.js"),
-      prefsToAdd.join(LINEBREAK) + LINEBREAK,
+      Array.from(
+        prefsToAdd,
+        ([name, value]) =>
+          `user_pref(${JSON.stringify(name)}, ${typeof value === "string" ? JSON.stringify(value) : value});`
+      ).join(LINEBREAK) + LINEBREAK,
       { mode: "appendOrCreate" }
     );
   }
@@ -1140,10 +1536,11 @@ class SelectableProfileServiceClass extends EventEmitter {
    * If path is not included, new profile directories will be created.
    *
    * @param {nsIFile} existingProfilePath Optional. The path of an existing profile.
+   * @param {string} source The entry point that is creating the profile
    *
    * @returns {SelectableProfile} The newly created profile object.
    */
-  async #createProfile(existingProfilePath) {
+  async #createProfile(existingProfilePath, source) {
     let nextProfileNumber = Math.max(
       0,
       ...(await this.getAllProfiles()).map(p => p.id)
@@ -1171,7 +1568,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     let path =
       existingProfilePath || (await this.createProfileDirs(profileData.name));
     if (!existingProfilePath) {
-      await this.createProfileInitialFiles(path);
+      await this.createProfileInitialFiles(path, source);
     }
     profileData.path = this.getRelativeProfilePath(path);
 
@@ -1198,7 +1595,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     // add the current toolkit profile to the datastore.
     if (!this.#currentProfile) {
       let path = this.groupToolkitProfile.rootDir;
-      this.#currentProfile = await this.#createProfile(path);
+      this.#currentProfile = await this.#createProfile(path, null);
 
       // And also set the profile selector window to show at startup (bug 1933911).
       await this.setShowProfileSelectorWindow(true);
@@ -1300,7 +1697,7 @@ class SelectableProfileServiceClass extends EventEmitter {
     let profiles = await this.getAllProfiles();
 
     if (profiles.length <= 1) {
-      await this.createNewProfile();
+      await this.createNewProfile(true, null, "replace-last");
       await this.setShowProfileSelectorWindow(false);
 
       profiles = await this.getAllProfiles();
@@ -1378,6 +1775,33 @@ class SelectableProfileServiceClass extends EventEmitter {
   }
 
   /**
+   * Update the profile path in the db.
+   *
+   * @param {string} aProfilePath The absolute path of the selectable profile
+   * to be updated
+   * @param {string} aUpdatedPath The new absolute path for the selectable
+   * profile
+   */
+  async #updateProfilePath(aProfilePath, aUpdatedPath) {
+    let aProfileDir = Cc["@mozilla.org/file/local;1"].createInstance(
+      Ci.nsIFile
+    );
+    aProfileDir.initWithPath(aProfilePath);
+    let relativePath = this.getRelativeProfilePath(aProfileDir);
+
+    let aUpdatedDir = Cc["@mozilla.org/file/local;1"].createInstance(
+      Ci.nsIFile
+    );
+    aUpdatedDir.initWithPath(aUpdatedPath);
+    let updatedRelativePath = this.getRelativeProfilePath(aUpdatedDir);
+
+    await this.#connection.execute(
+      `UPDATE Profiles SET path = :path WHERE path = :current;`,
+      { current: relativePath, path: updatedRelativePath }
+    );
+  }
+
+  /**
    * Create and launch a new SelectableProfile and add it to the group datastore.
    * This is an unmanaged profile from the nsToolkitProfile perspective.
    *
@@ -1391,13 +1815,18 @@ class SelectableProfileServiceClass extends EventEmitter {
    * the newly created profile.
    * @param {nsIFile} [existingProfilePath=null] Optional path to use for the
    * profile instead of creating new directories in the default location.
+   * @param {string} source The entry point that is creating the profile
    *
    * @returns {SelectableProfile} The profile just created.
    */
-  async createNewProfile(launchProfile = true, existingProfilePath = null) {
+  async createNewProfile(
+    launchProfile = true,
+    existingProfilePath = null,
+    source
+  ) {
     await this.maybeSetupDataStore();
 
-    let profile = await this.#createProfile(existingProfilePath);
+    let profile = await this.#createProfile(existingProfilePath, source);
     if (launchProfile) {
       this.launchInstance(profile, ["about:newprofile"]);
     }
@@ -1420,6 +1849,18 @@ class SelectableProfileServiceClass extends EventEmitter {
         return new SelectableProfile(row);
       })
       .sort((p1, p2) => p1.name.localeCompare(p2.name));
+  }
+
+  /**
+   * Synchronously gets a cached value for the number of profiles in the group.
+   * This will be incorrect in the event that another instance has added or
+   * removed profiles recently.
+   *
+   * @returns {number}
+   *   The cached number of profiles in the group.
+   */
+  getCachedProfileCount() {
+    return this.#cachedProfileCount;
   }
 
   /**

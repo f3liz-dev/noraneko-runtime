@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +31,7 @@
 
 namespace mozilla::dom {
 
-CharacterData::CharacterData(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
+CharacterData::CharacterData(already_AddRefed<dom::NodeInfo> aNodeInfo)
     : nsIContent(std::move(aNodeInfo)) {
   MOZ_ASSERT(mNodeInfo->NodeType() == TEXT_NODE ||
                  mNodeInfo->NodeType() == CDATA_SECTION_NODE ||
@@ -128,10 +126,7 @@ void CharacterData::GetData(nsAString& aData) const {
   } else {
     // Must use Substring() since nsDependentCString() requires null
     // terminated strings.
-
-    const char* data = mBuffer.Get1b();
-
-    if (data) {
+    if (const char* data = mBuffer.Get1b()) {
       CopyASCIItoUTF16(Substring(data, data + mBuffer.GetLength()), aData);
     } else {
       aData.Truncate();
@@ -382,8 +377,8 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
   MOZ_ASSERT(!IsInComposedDoc(), "Already have a document.  Unbind first!");
   // Note that as we recurse into the kids, they'll have a non-null parent.  So
   // only assert if our parent is _changing_ while we have a parent.
-  MOZ_ASSERT(!GetParentNode() || &aParent == GetParentNode(),
-             "Already have a parent.  Unbind first!");
+  MOZ_DIAGNOSTIC_ASSERT(!GetParentNode() || &aParent == GetParentNode(),
+                        "Already have a different parent.  Unbind first!");
 
   const bool hadParent = !!GetParentNode();
 
@@ -404,34 +399,22 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
   }
   MOZ_ASSERT(!!GetParent() == aParent.IsContent());
 
-  if (aParent.IsInUncomposedDoc() || aParent.IsInShadowTree()) {
-    // We no longer need to track the subtree pointer (and in fact we'll assert
-    // if we do this any later).
-    ClearSubtreeRootPointer();
-    SetIsConnected(aParent.IsInComposedDoc());
-
-    if (aParent.IsInUncomposedDoc()) {
-      SetIsInDocument();
-    } else {
-      SetFlags(NODE_IS_IN_SHADOW_TREE);
-      MOZ_ASSERT(aParent.IsContent() &&
-                 aParent.AsContent()->GetContainingShadow());
-      ExtendedContentSlots()->mContainingShadow =
-          aParent.AsContent()->GetContainingShadow();
-    }
-
-    if (IsInComposedDoc() && mBuffer.IsBidi()) {
+  SetSubtreeRootPointer(aParent.SubtreeRoot());
+  const bool connected = aParent.IsInComposedDoc();
+  SetIsConnected(connected);
+  if (connected) {
+    // Clear the lazy frame construction bits.
+    // XXX Why here?
+    UnsetFlags(NODE_NEEDS_FRAME | NODE_DESCENDANTS_NEED_FRAMES);
+    if (mBuffer.IsBidi()) {
       aContext.OwnerDoc().SetBidiEnabled();
     }
-
-    // Clear the lazy frame construction bits.
-    UnsetFlags(NODE_NEEDS_FRAME | NODE_DESCENDANTS_NEED_FRAMES);
-  } else {
-    // If we're not in the doc and not in a shadow tree,
-    // update our subtree pointer.
-    SetSubtreeRootPointer(aParent.SubtreeRoot());
   }
-
+  if (aParent.IsInUncomposedDoc()) {
+    SetIsInDocument();
+  } else if (aParent.IsInShadowTree()) {
+    SetFlags(NODE_IS_IN_SHADOW_TREE);
+  }
   MutationObservers::NotifyParentChainChanged(this);
 
   UpdateEditableState(false);
@@ -472,14 +455,9 @@ void CharacterData::UnbindFromTree(UnbindContext& aContext) {
 
   if (nullParent || !mParent->IsInShadowTree()) {
     UnsetFlags(NODE_IS_IN_SHADOW_TREE);
-
-    // Begin keeping track of our subtree root.
-    SetSubtreeRootPointer(nullParent ? this : mParent->SubtreeRoot());
-
-    if (nsExtendedContentSlots* slots = GetExistingExtendedContentSlots()) {
-      slots->mContainingShadow = nullptr;
-    }
   }
+
+  SetSubtreeRootPointer(nullParent ? this : mParent->SubtreeRoot());
 
   MutationObservers::NotifyParentChainChanged(this);
 

@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -223,12 +222,6 @@ interface nsIWebNavigation : nsISupports
   const unsigned long LOAD_FLAGS_BYPASS_CLASSIFIER = 0x10000;
 
   /**
-   * Force relevant cookies to be sent with this load even if normally they
-   * wouldn't be.
-   */
-  const unsigned long LOAD_FLAGS_FORCE_ALLOW_COOKIES = 0x20000;
-
-  /**
    * Prevent the owner principal from being inherited for this load.
    */
   const unsigned long LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL = 0x40000;
@@ -419,10 +412,6 @@ interface nsIWebNavigation : nsISupports
 
   /**
    * Resume a load which has been redirected from another process.
-   *
-   * A negative |aHistoryIndex| value corresponds to a non-history load being
-   * resumed.
    */
-  void resumeRedirectedLoad(in unsigned long long aLoadIdentifier,
-                            in long aHistoryIndex);
+  void resumeRedirectedLoad(in unsigned long long aLoadIdentifier);
 };

@@ -4,33 +4,19 @@
 
 package org.mozilla.fenix.benchmark
 
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.SystemClock
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
-import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.Parameterized
-import org.mozilla.fenix.benchmark.utils.EXTRA_COMPOSABLE_TOOLBAR
-import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
-import org.mozilla.fenix.benchmark.utils.ParameterizedToolbarsTest
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
-import org.mozilla.fenix.benchmark.utils.closeAllTabs
-import org.mozilla.fenix.benchmark.utils.enterSearchMode
-import org.mozilla.fenix.benchmark.utils.loadSite
 import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
-import org.mozilla.fenix.benchmark.utils.openNewTabOnTabsTray
-import org.mozilla.fenix.benchmark.utils.openTabsTray
-import org.mozilla.fenix.benchmark.utils.switchTabs
+import org.mozilla.fenix.benchmark.utils.switchTabsJourney
 import org.mozilla.fenix.benchmark.utils.url
 
 /**
@@ -57,11 +43,8 @@ import org.mozilla.fenix.benchmark.utils.url
  * For more information, see the [Macrobenchmark documentation](https://d.android.com/macrobenchmark#create-macrobenchmark)
  * and the [instrumentation arguments documentation](https://d.android.com/topic/performance/benchmarking/macrobenchmark-instrumentation-args).
  **/
-@RunWith(Parameterized::class)
 @BaselineProfileMacrobenchmark
-class BaselineProfilesSwitchTabsBenchmark(
-    private val useComposableToolbar: Boolean,
-): ParameterizedToolbarsTest() {
+class BaselineProfilesSwitchTabsBenchmark {
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
 
@@ -87,26 +70,10 @@ class BaselineProfilesSwitchTabsBenchmark(
                 pressHome()
             },
         ) {
-            val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-                .putExtra(EXTRA_COMPOSABLE_TOOLBAR, useComposableToolbar)
-            intent.setPackage(packageName)
-
-            startActivityAndWait(intent = intent)
-
-            device.enterSearchMode(useComposableToolbar)
-            val simpleHtmlUrl = mockRule.url(HtmlAsset.SIMPLE)
-            device.loadSite(url = simpleHtmlUrl, useComposableToolbar)
-
-            device.openTabsTray(useComposableToolbar)
-            device.openNewTabOnTabsTray()
-            device.loadSite(url = mockRule.url(HtmlAsset.LONG), useComposableToolbar)
-
-            device.openTabsTray(useComposableToolbar)
-            device.switchTabs(siteName = HtmlAsset.SIMPLE.title, newTabUrl = simpleHtmlUrl)
-
-            device.openTabsTray(useComposableToolbar)
-            device.closeAllTabs()
-
+            switchTabsJourney(
+                simpleHtmlUrl = mockRule.url(HtmlAsset.SIMPLE),
+                longHtmlUrl = mockRule.url(HtmlAsset.LONG),
+            )
             SystemClock.sleep(1000)
             killProcess()
         }

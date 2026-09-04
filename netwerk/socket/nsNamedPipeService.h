@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +6,15 @@
 #define mozilla_netwerk_socket_nsNamedPipeService_h
 
 #include <windows.h>
+
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/StaticPtr.h"
 #include "nsINamedPipeService.h"
 #include "nsIObserver.h"
 #include "nsIRunnable.h"
 #include "nsIThread.h"
 #include "nsTArray.h"
-#include "mozilla/StaticPtr.h"
 
 namespace mozilla {
 namespace net {
@@ -31,7 +31,7 @@ class NamedPipeService final : public nsINamedPipeService,
   static already_AddRefed<nsINamedPipeService> GetOrCreate();
 
  private:
-  explicit NamedPipeService();
+  explicit NamedPipeService() = default;
   virtual ~NamedPipeService() = default;
 
   nsresult Init();
@@ -39,9 +39,9 @@ class NamedPipeService final : public nsINamedPipeService,
   void Shutdown();
   void RemoveRetiredObjects();
 
-  HANDLE mIocp;  // native handle to the I/O completion port.
-  Atomic<bool>
-      mIsShutdown;  // set to true to stop the event loop running by mThread.
+  HANDLE mIocp{nullptr};  // native handle to the I/O completion port.
+  Atomic<bool> mIsShutdown{
+      false};  // set to true to stop the event loop running by mThread.
   nsCOMPtr<nsIThread> mThread;  // worker thread to get I/O events.
 
   /**
@@ -51,12 +51,11 @@ class NamedPipeService final : public nsINamedPipeService,
    * the worker thread to avoid a race condition that might happen between
    * |CloseHandle()| and |GetQueuedCompletionStatus()|.
    */
-  Mutex mLock MOZ_UNANNOTATED;
-  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>>
-      mObservers;  // protected by mLock
-  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>>
-      mRetiredObservers;             // protected by mLock
-  nsTArray<HANDLE> mRetiredHandles;  // protected by mLock
+  Mutex mLock{"NamedPipeServiceLock"};
+  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>> mObservers MOZ_GUARDED_BY(mLock);
+  nsTArray<nsCOMPtr<nsINamedPipeDataObserver>> mRetiredObservers
+      MOZ_GUARDED_BY(mLock);
+  nsTArray<HANDLE> mRetiredHandles MOZ_GUARDED_BY(mLock);
 
   static StaticRefPtr<NamedPipeService> gSingleton;
 };

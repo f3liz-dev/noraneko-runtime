@@ -60,7 +60,6 @@ pub mod url;
     ToTyped,
 )]
 #[repr(transparent)]
-#[typed_value(derive_fields)]
 pub struct NonNegative<T>(pub T);
 
 /// A trait to clamp a negative value to another.
@@ -94,16 +93,17 @@ impl<T: Zero> Zero for NonNegative<T> {
 }
 
 /// A wrapper of greater-than-or-equal-to-one values.
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
     Animate,
     Clone,
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
     PartialOrd,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -115,17 +115,18 @@ impl<T: Zero> Zero for NonNegative<T> {
 pub struct GreaterThanOrEqualToOne<T>(pub T);
 
 /// A wrapper of values between zero and one.
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[derive(
     Animate,
     Clone,
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     Hash,
     MallocSizeOf,
     PartialEq,
     PartialOrd,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -185,6 +186,7 @@ pub use self::GenericClipRect as ClipRect;
     ToTyped,
 )]
 #[repr(C, u8)]
+#[typed(todo_derive_fields)]
 pub enum GenericClipRectOrAuto<R> {
     Auto,
     Rect(R),

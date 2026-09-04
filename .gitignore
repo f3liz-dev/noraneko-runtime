@@ -17,6 +17,7 @@ tags
 *.gcov
 *.tsbuildinfo
 compile_commands.json
+ccache.conf
 
 # emacs backup files in any directory.
 # lint-ignore-next-line: syntax-difference
@@ -241,6 +242,12 @@ testing/web-platform/products/
 # Android Gradle artifacts.
 mobile/android/gradle/.gradle
 
+# Written by `mach android gradle-dependencies`, one per Gradle build it
+# enumerates, plus the copies it collects for the toolchain task to check.
+gradle/verification-metadata.dryrun.xml
+gradle/dependency-inventories/
+mobile/android/**/gradle/verification-metadata.dryrun.xml
+
 # Android build cache
 mobile/android/**/.build-cache
 mobile/android/**/.gradle
@@ -269,6 +276,9 @@ mobile/ios/GeckoTestBrowser/GeckoTestBrowser.xcodeproj/xcuserdata
 /dom/base/rust/target/
 /servo/components/style/target/
 /dom/webgpu/tests/cts/vendor/target/
+/third_party/application-services/**/target/
+/third_party/application-services/**/Cargo.lock
+/tools/update-verify/marannon/target/
 
 # Ignore mozharness execution files
 testing/mozharness/.tox/
@@ -387,7 +397,7 @@ extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/support_files/
 extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/*en_US-mozilla*
 
 # Ignore automatically generated mots documentation
-docs/mots/index.rst
+docs/mots/index.md
 
 # Ignore generated directory with .class files for GeckoView annotation processor
 mobile/android/annotations/bin/
@@ -403,7 +413,14 @@ toolkit/crashreporter/minidump-analyzer/target/
 
 # Ignore personal preferences files
 CLAUDE.local.md
-.claude/settings.local.json
+**/.claude/settings.local.json
+
+# Ignore claude scheduled task lock file
+**/.claude/scheduled_tasks.lock
+
+# Ignore Claude Code worktrees
+**/.claude/worktrees/
+.worktreeinclude
 
 # Ignore .json.gz (typically profiles) in the root directory
 # lint-ignore-next-line: git-only

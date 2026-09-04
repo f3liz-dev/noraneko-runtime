@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <memory>
+
+#include "VideoUtils.h"
 #include "gmock/gmock.h"
-#include "gtest/gtest.h"
 #include "gtest/gtest-spi.h"
-#include "nsThreadPool.h"
-#include "nsThread.h"
+#include "gtest/gtest.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "nsITargetShutdownTask.h"
-#include "VideoUtils.h"
+#include "nsThread.h"
+#include "nsThreadPool.h"
 
 namespace TestTaskQueue {
 
@@ -158,13 +157,13 @@ TEST(TaskQueue, ShutdownTask)
   RefPtr<TaskQueue> tq = TaskQueue::Create(
       GetMediaThreadPool(MediaThreadType::SUPERVISOR), "Testing TaskQueue");
 
-  nsCOMPtr<nsITargetShutdownTask> shutdownTask = new TestShutdownTask([=] {
+  RefPtr shutdownTask = MakeRefPtr<TestShutdownTask>([=] {
     EXPECT_TRUE(tq->IsOnCurrentThread());
 
     ASSERT_FALSE(*shutdownTaskRun);
     *shutdownTaskRun = true;
 
-    nsCOMPtr<nsITargetShutdownTask> dummyTask = new TestShutdownTask([] {});
+    RefPtr dummyTask = MakeRefPtr<TestShutdownTask>([] {});
     nsresult rv = tq->RegisterShutdownTask(dummyTask);
     EXPECT_TRUE(rv == NS_ERROR_UNEXPECTED);
 
@@ -172,8 +171,7 @@ TEST(TaskQueue, ShutdownTask)
         tq->Dispatch(NS_NewRunnableFunction("afterShutdownTask", [=] {
           EXPECT_TRUE(tq->IsOnCurrentThread());
 
-          nsCOMPtr<nsITargetShutdownTask> dummyTask =
-              new TestShutdownTask([] {});
+          RefPtr dummyTask = MakeRefPtr<TestShutdownTask>([] {});
           nsresult rv = tq->RegisterShutdownTask(dummyTask);
           EXPECT_TRUE(rv == NS_ERROR_UNEXPECTED);
 
@@ -186,8 +184,8 @@ TEST(TaskQueue, ShutdownTask)
   ASSERT_FALSE(*shutdownTaskRun);
   ASSERT_FALSE(*runnableFromShutdownRun);
 
-  RefPtr<mozilla::SyncRunnable> syncWithThread =
-      new mozilla::SyncRunnable(NS_NewRunnableFunction("dummy", [] {}));
+  RefPtr syncWithThread =
+      MakeRefPtr<mozilla::SyncRunnable>(NS_NewRunnableFunction("dummy", [] {}));
   MOZ_ALWAYS_SUCCEEDS(syncWithThread->DispatchToThread(tq));
 
   ASSERT_FALSE(*shutdownTaskRun);
@@ -205,13 +203,13 @@ TEST(TaskQueue, UnregisteredShutdownTask)
   RefPtr<TaskQueue> tq = TaskQueue::Create(
       GetMediaThreadPool(MediaThreadType::SUPERVISOR), "Testing TaskQueue");
 
-  nsCOMPtr<nsITargetShutdownTask> shutdownTask =
-      new TestShutdownTask([=] { MOZ_CRASH("should not be run"); });
+  RefPtr shutdownTask =
+      MakeRefPtr<TestShutdownTask>([=] { MOZ_CRASH("should not be run"); });
 
   MOZ_ALWAYS_SUCCEEDS(tq->RegisterShutdownTask(shutdownTask));
 
-  RefPtr<mozilla::SyncRunnable> syncWithThread =
-      new mozilla::SyncRunnable(NS_NewRunnableFunction("dummy", [] {}));
+  RefPtr syncWithThread =
+      MakeRefPtr<mozilla::SyncRunnable>(NS_NewRunnableFunction("dummy", [] {}));
   MOZ_ALWAYS_SUCCEEDS(syncWithThread->DispatchToThread(tq));
 
   MOZ_ALWAYS_SUCCEEDS(tq->UnregisterShutdownTask(shutdownTask));
@@ -429,12 +427,12 @@ void TestShutdownOnEventTargetShutdown(StaticString aTestName,
   RefPtr<TaskQueue> tq = TaskQueue::Create(aEventTarget.forget(), aTestName);
 
   Atomic<bool> shutdownTaskRun(false);
-  nsCOMPtr<nsITargetShutdownTask> shutdownTask =
-      new TestShutdownTask([&] { shutdownTaskRun = true; });
+  RefPtr shutdownTask =
+      MakeRefPtr<TestShutdownTask>([&] { shutdownTaskRun = true; });
   MOZ_ALWAYS_SUCCEEDS(tq->RegisterShutdownTask(shutdownTask));
 
-  RefPtr<mozilla::SyncRunnable> syncWithThread =
-      new mozilla::SyncRunnable(NS_NewRunnableFunction("dummy", [] {}));
+  RefPtr syncWithThread =
+      MakeRefPtr<mozilla::SyncRunnable>(NS_NewRunnableFunction("dummy", [] {}));
   MOZ_ALWAYS_SUCCEEDS(syncWithThread->DispatchToThread(tq));
 
   aShutdownFn();
@@ -451,7 +449,7 @@ void TestShutdownOnEventTargetShutdown(StaticString aTestName,
 
 TEST(TaskQueue, ShutdownOnThreadPoolShutdown)
 {
-  RefPtr<nsThreadPool> threadPool = new nsThreadPool();
+  RefPtr threadPool = MakeRefPtr<nsThreadPool>();
   ASSERT_TRUE(threadPool);
   threadPool->SetName("TaskQueue ThreadPool Shutdown Test"_ns);
   threadPool->SetThreadLimit(4);
@@ -506,7 +504,7 @@ TEST(TaskQueue, ShutdownOnThrottledEventQueueShutdown)
 
 TEST(TaskQueue, ShutdownOnNestedTaskQueuePoolShutdown)
 {
-  RefPtr<nsThreadPool> threadPool = new nsThreadPool();
+  RefPtr threadPool = MakeRefPtr<nsThreadPool>();
   ASSERT_TRUE(threadPool);
   threadPool->SetName("TaskQueue Nested Pool Test"_ns);
   threadPool->SetThreadLimit(1);
@@ -524,7 +522,7 @@ TEST(TaskQueue, ShutdownOnNestedTaskQueuePoolShutdown)
 
 TEST(TaskQueue, ShutdownOnNestedTaskQueueBaseShutdown)
 {
-  RefPtr<nsThreadPool> threadPool = new nsThreadPool();
+  RefPtr threadPool = MakeRefPtr<nsThreadPool>();
   ASSERT_TRUE(threadPool);
   threadPool->SetName("TaskQueue Nested Base Test"_ns);
   threadPool->SetThreadLimit(1);

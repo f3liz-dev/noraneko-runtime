@@ -43,6 +43,8 @@ head = "head_addressComponent.js"
 
 ["test_addressRecords.js"]
 
+["test_autofillDataTypes.js"]
+
 ["test_autofillFormFields.js"]
 
 ["test_autofill_ios_library.js"]
@@ -91,6 +93,10 @@ skip-if = [
 
 ["test_parseStreetAddress.js"]
 
+["test_passportStorage.js"]
+
+["test_paymentsListItems.js"]
+
 ["test_phoneNumber.js"]
 
 ["test_profileAutocompleteResult.js"]
@@ -99,6 +105,8 @@ skip-if = [
 skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1729554
 ]
+
+["test_rustStoreShutdown.js"]
 
 ["test_savedFieldNames.js"]
 

@@ -1,0 +1,155 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --button-border-radius: var(--border-radius-circle);
+  --button-font-weight: var(--font-weight);
+  --button-font-size: var(--font-size-small);
+
+  display: inline-flex;
+}
+
+.input-model-select-button::part(button) {
+  padding-inline-end: var(--space-small);
+}
+
+@container smartbar-controls (max-width: 340px) {
+  .input-model-select-button {
+    &::part(button) {
+      padding-inline: var(--space-small);
+    }
+    /* Visually hide the label (matches .sr-only) but keep it for a11y */
+    &::part(moz-button-label) {
+      clip: rect(0, 0, 0, 0);
+      clip-path: inset(50%);
+      height: 1px;
+      overflow: hidden;
+      position: absolute;
+      white-space: nowrap;
+      width: 1px;
+    }
+  }
+}
+
+panel-list {
+  --panel-max-width: none;
+  padding-inline: var(--space-small);
+}
+
+panel-item:not(.panel-section-header)::part(button) {
+  margin-inline: 0;
+}
+
+.model-item {
+  align-items: center;
+  background: transparent;
+  border-radius: var(--border-radius-medium);
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--space-small);
+  padding: var(--space-small);
+  text-align: start;
+  width: 100%;
+
+  &:hover {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:active {
+    background-color: var(--button-background-color-active);
+  }
+
+  /* TODO: Bug 2033070 -  Nova tokens were implemented as the default value for the custom properties, and the fallbacks (and lint exceptions) will need to be removed after launch */
+  @media -moz-pref("browser.nova.enabled") {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    border-radius: var(--smartwindow-panel-item-border-radius);
+  }
+}
+
+.model-item-avatar {
+  background: var(--background-color-canvas);
+  border-radius: var(--border-radius-circle);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border: var(--border-width) solid light-dark(var(--color-violet-desaturated-10), var(--color-violet-desaturated-50));
+  flex-shrink: 0;
+  width: var(--size-item-large);
+  height: var(--size-item-large);
+}
+
+.model-item-icon {
+  width: 100%;
+  height: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .model-item-icon--custom {
+    filter: brightness(0) invert(1);
+  }
+}
+
+.model-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  align-items: flex-start;
+  margin-inline-end: var(--space-medium);
+  /* Allow the column to shrink below its content's intrinsic width so long
+     localized strings truncate/wrap instead of spilling out of the panel. */
+  min-width: 0;
+}
+
+.model-item-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-small);
+  align-items: flex-start;
+  max-width: 100%;
+
+  .model-item-label {
+    font-size: var(--font-size-root);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  moz-badge {
+    flex-shrink: 0;
+    --badge-background-color-filled: light-dark(
+      var(--color-violet-desaturated-0, var(--color-violet-0)),
+      var(--color-violet-desaturated-50, var(--color-violet-50))
+    );
+    --badge-text-color-filled: var(--text-color);
+    --badge-font-weight: var(--font-weight);
+  }
+}
+
+.model-item-details {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-item-check {
+  flex-shrink: 0;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  margin-inline-start: auto;
+}
+
+/* TODO Bug 2053495: update styles for mistral release */
+panel-list[mistral-release="true"] {
+  .model-item-avatar {
+    box-sizing: border-box;
+    padding: var(--space-small);
+    border: none;
+  }
+}

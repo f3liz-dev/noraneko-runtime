@@ -7,19 +7,16 @@
  * typing a search engine domain.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderTopSites:
     "moz-src:///browser/components/urlbar/UrlbarProviderTopSites.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 const DYNAMIC_RESULT_TYPE = "quickSuggestContextualOptIn";
@@ -51,6 +48,7 @@ const VIEW_TEMPLATE = {
                   name: "learn_more",
                   tag: "a",
                   attributes: {
+                    "data-command": "learn_more",
                     "data-l10n-name": "learn-more-link",
                     selectable: true,
                   },
@@ -65,15 +63,6 @@ const VIEW_TEMPLATE = {
 };
 
 /**
- * Initializes this provider's dynamic result. To be called after the creation
- * of the provider singleton.
- */
-function initializeDynamicResult() {
-  lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-  lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-}
-
-/**
  * Class used to create the provider.
  */
 export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
@@ -82,10 +71,10 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    return lazy.UrlbarShared.PROVIDER_TYPE.HEURISTIC;
   }
 
   #shouldDisplayContextualOptIn(queryContext = null) {
@@ -94,7 +83,7 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
       (queryContext.isPrivate ||
         queryContext.restrictSource ||
         queryContext.searchString ||
-        queryContext.searchMode)
+        queryContext.restrictInSearchMode())
     ) {
       return false;
     }
@@ -190,6 +179,10 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     return lazy.UrlbarProviderTopSites.PRIORITY;
   }
 
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
+  }
+
   /**
    * This is called only for dynamic result types, when the urlbar view updates
    * the view of one of the results of the provider.  It should return an object
@@ -235,7 +228,7 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     // Remove the "Learn More" link.
     decription.firstElementChild?.remove();
     alertText += ". " + decription.textContent;
-    row.ownerGlobal.A11yUtils.announce({ raw: alertText });
+    row.ariaNotify(alertText);
   }
 
   onImpression(state, _queryContext, _controller, _resultsAndIndexes, details) {
@@ -263,12 +256,13 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
   }
 
   onEngagement(queryContext, controller, details) {
-    this._handleCommand(details.element, controller, details.result);
+    // The clicked control's command rides `selType` (set from its data-command),
+    // so it crosses the actor boundary; `details.element` is content-only.
+    this._handleCommand(details.selType, controller, details.result);
   }
 
-  _handleCommand(element, controller, result, container) {
-    let commandName = element?.getAttribute("name");
-    switch (commandName) {
+  _handleCommand(command, controller, result, container) {
+    switch (command) {
       case "learn_more":
         controller.browserWindow.openHelpLink("firefox-suggest");
         break;
@@ -281,6 +275,11 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
       default:
         return;
     }
+
+    // Picking one of these controls resolves the opt-in prompt, so close the
+    // view. elementPicked marks this as an engagement, so the zero-prefix
+    // telemetry and focus border are handled accordingly.
+    controller.view.close({ elementPicked: true });
 
     // Remove the result if it shouldn't be active anymore due to above
     // actions.
@@ -321,8 +320,8 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
    */
   async startQuery(queryContext, addCallback) {
     let result = new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.DYNAMIC,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       suggestedIndex: 0,
       payload: {
         buttons: [
@@ -330,12 +329,14 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
             l10n: {
               id: "urlbar-firefox-suggest-contextual-opt-in-allow",
             },
+            command: "allow",
             attributes: { primary: true, name: "allow" },
           },
           {
             l10n: {
               id: "urlbar-firefox-suggest-contextual-opt-in-dismiss",
             },
+            command: "dismiss",
             attributes: { name: "dismiss" },
           },
         ],
@@ -345,5 +346,3 @@ export class UrlbarProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     addCallback(this, result);
   }
 }
-
-initializeDynamicResult();

@@ -1,5 +1,13 @@
 "use strict";
 
+// Nova being enabled changes some of the styling that is being tested here.
+const novaEnabled = Services.prefs.getBoolPref(
+  "browser.nova.enabled",
+  true // If the pref isn't set to false, assume Nova styles are enabled by default.
+);
+
+info(`Run with Nova browser styles ${novaEnabled ? "enabled" : "disabled"}`);
+
 // PNG image data for a simple red dot.
 const BACKGROUND_1 =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==";
@@ -19,12 +27,26 @@ function hexToRGB(hex) {
   );
 }
 
-function validateTheme(backgroundImage, accentColor, textColor, isLWT) {
+function imageDataFromDataURI(dataURIString) {
+  return Uint8Array.from(
+    atob(dataURIString.replace("data:image/png;base64,", "")),
+    byte => byte.charCodeAt(0)
+  ).buffer;
+}
+
+function validateTheme(
+  backgroundImage,
+  accentColor,
+  textColor,
+  isLWT,
+  hasVerticalAlign = false
+) {
   let docEl = window.document.documentElement;
   let rootCS = window.getComputedStyle(docEl);
 
   let toolbox = document.querySelector("#navigator-toolbox");
   let toolboxCS = window.getComputedStyle(toolbox);
+  let bodyCS = window.getComputedStyle(window.document.body);
 
   if (isLWT) {
     Assert.ok(docEl.hasAttribute("lwtheme"), "LWT attribute should be set");
@@ -40,9 +62,22 @@ function validateTheme(backgroundImage, accentColor, textColor, isLWT) {
   if (textColor.startsWith("#")) {
     textColor = hexToRGB(textColor);
   }
+
+  const expectThemeImageInToolbox = isLWT ? hasVerticalAlign : novaEnabled;
+
+  Assert.equal(
+    expectThemeImageInToolbox,
+    docEl.hasAttribute("theme-image-in-toolbox"),
+    "root element should have attribute theme-image-in-toolbox when " +
+      "nova is enabled or custom vertical alignment expected"
+  );
   Assert.ok(
-    toolboxCS.backgroundImage.includes(backgroundImage),
-    "Expected correct background image"
+    expectThemeImageInToolbox
+      ? toolboxCS.backgroundImage.includes(backgroundImage)
+      : bodyCS.backgroundImage.includes(backgroundImage),
+    `Expected background image ${backgroundImage} to be set on the ${
+      expectThemeImageInToolbox ? "toolbox" : "body"
+    }: ${expectThemeImageInToolbox ? toolboxCS.backgroundImage : bodyCS.backgroundImage}`
   );
   Assert.equal(
     getToolboxBackgroundColor(),
@@ -59,8 +94,8 @@ add_task(async function test_dynamic_theme_updates() {
       permissions: ["theme"],
     },
     files: {
-      "image1.png": BACKGROUND_1,
-      "image2.png": BACKGROUND_2,
+      "image1.png": imageDataFromDataURI(BACKGROUND_1),
+      "image2.png": imageDataFromDataURI(BACKGROUND_2),
     },
     background() {
       browser.test.onMessage.addListener((msg, details) => {
@@ -83,9 +118,13 @@ add_task(async function test_dynamic_theme_updates() {
   );
   await extension.startup();
 
+  // Check with customized background vertical alignment
   extension.sendMessage("update-theme", {
     images: {
-      theme_frame: "image1.png",
+      additional_backgrounds: ["image1.png"],
+    },
+    properties: {
+      additional_backgrounds_alignment: ["right center"],
     },
     colors: {
       frame: ACCENT_COLOR_1,
@@ -95,10 +134,9 @@ add_task(async function test_dynamic_theme_updates() {
 
   await extension.awaitMessage("theme-updated");
 
-  validateTheme("image1.png", ACCENT_COLOR_1, TEXT_COLOR_1, true);
+  validateTheme("image1.png", ACCENT_COLOR_1, TEXT_COLOR_1, true, true);
 
-  // Check with the LWT aliases (to update on Firefox 69, because the
-  // LWT aliases are going to be removed).
+  // Check without customized background vertical alignment.
   extension.sendMessage("update-theme", {
     images: {
       theme_frame: "image2.png",
@@ -113,9 +151,10 @@ add_task(async function test_dynamic_theme_updates() {
 
   validateTheme("image2.png", ACCENT_COLOR_2, TEXT_COLOR_2, true);
 
-  extension.sendMessage("reset-theme");
-
-  await extension.awaitMessage("theme-reset");
+  await waitForThemeRestyle(async () => {
+    extension.sendMessage("reset-theme");
+    await extension.awaitMessage("theme-reset");
+  });
 
   let { color } = rootCS;
   let backgroundImage = toolboxCS.backgroundImage;
@@ -182,9 +221,10 @@ add_task(async function test_dynamic_theme_updates_with_data_url() {
 
   validateTheme(BACKGROUND_2, ACCENT_COLOR_2, TEXT_COLOR_2, true);
 
-  extension.sendMessage("reset-theme");
-
-  await extension.awaitMessage("theme-reset");
+  await waitForThemeRestyle(async () => {
+    extension.sendMessage("reset-theme");
+    await extension.awaitMessage("theme-reset");
+  });
 
   let { color } = rootCS;
   let backgroundImage = toolboxCS.backgroundImage;

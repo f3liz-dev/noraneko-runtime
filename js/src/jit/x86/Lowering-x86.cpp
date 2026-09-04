@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -48,8 +46,7 @@ void LIRGenerator::visitBox(MBox* box) {
   if (IsFloatingPointType(inner->type())) {
     LDefinition spectreTemp =
         JitOptions.spectreValueMasking ? temp() : LDefinition::BogusTemp();
-    defineBox(new (alloc()) LBoxFloatingPoint(useRegisterAtStart(inner),
-                                              tempCopy(inner, 0), spectreTemp,
+    defineBox(new (alloc()) LBoxFloatingPoint(useRegister(inner), spectreTemp,
                                               inner->type()),
               box);
     return;
@@ -204,7 +201,7 @@ void LIRGeneratorX86::lowerForMulInt64(LMulI64* ins, MMul* mir,
 
   if (rhs->isConstant()) {
     int64_t constant = rhs->toConstant()->toInt64();
-    int32_t shift = mozilla::FloorLog2(constant);
+    int32_t shift = mozilla::FloorLog2(uint64_t(constant));
     // See special cases in CodeGeneratorX86Shared::visitMulI64.
     if (constant >= -1 && constant <= 2) {
       needsTemp = false;
@@ -736,7 +733,6 @@ void LIRGeneratorX86::lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) {
   MOZ_ASSERT(lhs->type() == rhs->type());
   MOZ_ASSERT(IsNumberType(mod->type()));
 
-  MOZ_ASSERT(mod->type() == MIRType::Int64);
   MOZ_ASSERT(mod->type() == MIRType::Int64);
 
   if (mod->isUnsigned()) {

@@ -1,0 +1,19 @@
+apply from: "$appServicesRootDir/build-scripts/component-common.gradle"
+apply from: "$publishDir/publish.gradle"
+
+android {
+    namespace 'org.mozilla.appservices.viaduct'
+}
+
+dependencies {
+    implementation libs.kotlinx.coroutines
+    if (gradle.hasProperty("mozconfig")) {
+        api project(':components:concept-fetch')
+    } else {
+        api libs.mozilla.concept.fetch
+    }
+}
+
+ext.configureUniFFIBindgen("viaduct")
+ext.dependsOnTheMegazord()
+ext.configurePublish(appServicesGroupId, project.name, project.ext.description)

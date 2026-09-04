@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -56,9 +54,9 @@ add_task(async function testClearSiteDataFooterHiddenForExtensions() {
   });
 
   // Open the site identity popup
-  let { gIdentityHandler } = gBrowser.ownerGlobal;
+  let { gIdentityHandler } = gBrowser.documentGlobal;
   let promisePanelOpen = BrowserTestUtils.waitForEvent(
-    gBrowser.ownerGlobal,
+    gBrowser.documentGlobal,
     "popupshown",
     true,
     event => event.target == gIdentityHandler._identityPopup
@@ -74,6 +72,13 @@ add_task(async function testClearSiteDataFooterHiddenForExtensions() {
     clearSiteDataFooter.hidden,
     "The clear site data footer is hidden on a WebExtension page."
   );
+
+  let promisePanelHidden = BrowserTestUtils.waitForPopupEvent(
+    gIdentityHandler._identityPopup,
+    "hidden"
+  );
+  gIdentityHandler._identityPopup.hidePopup();
+  await promisePanelHidden;
 
   // Unload the extension
   await extension.unload();

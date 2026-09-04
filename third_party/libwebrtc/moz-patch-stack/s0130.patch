@@ -1,42 +1,27 @@
-From: =?UTF-8?q?Emilio=20Cobos=20=C3=81lvarez?= <emilio@crisal.io>
-Date: Wed, 12 Nov 2025 05:17:00 +0000
-Subject: Bug 1768116 - Compile as C++20. r=glandium,webrtc-reviewers,mjf
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 7 Apr 2026 18:03:00 -0500
+Subject: Bug 2030139 - (fix-1ccc59d5c9) don't use
+ std::make_unique_for_overwrite for now to fix build error
 
-Co-authored-by: Chris Peterson <cpeterson@mozilla.com>
-
-Differential Revision: https://phabricator.services.mozilla.com/D271779
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a076ddec60822b1d20f39dd468e025f712b3ba4d
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a4e2ac07bd6f2deb8fde32b147422c3918c31eca
 ---
- BUILD.gn | 12 +-----------
- 1 file changed, 1 insertion(+), 11 deletions(-)
+ rtc_base/copy_on_write_buffer.cc | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
 
-diff --git a/BUILD.gn b/BUILD.gn
-index c24f5c186e..487897df7a 100644
---- a/BUILD.gn
-+++ b/BUILD.gn
-@@ -316,16 +316,6 @@ config("common_config") {
-   cflags_objc = []
-   defines = []
+diff --git a/rtc_base/copy_on_write_buffer.cc b/rtc_base/copy_on_write_buffer.cc
+index 68e98ce729..5877f323f6 100644
+--- a/rtc_base/copy_on_write_buffer.cc
++++ b/rtc_base/copy_on_write_buffer.cc
+@@ -28,7 +28,11 @@
+ namespace webrtc {
  
--  # We should be able to remove this after c++20 is enabled
--  # across the Mozilla tree.
--  if (build_with_mozilla) {
--    if (is_win) {
--      cflags_cc += [ "-std:c++20" ]
--    } else {
--      cflags_cc += [ "-std=gnu++20" ]
--    }
--  }
--
-   if (rtc_enable_protobuf) {
-     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
-   } else {
-@@ -431,7 +421,7 @@ config("common_config") {
-         # "-Wnested-externs",  (C/Obj-C only)
-       ]
-       cflags_objc += [ "-Wstrict-prototypes" ]
--      cflags_cc += [
-+      cflags_cc = [
-         "-Wnon-virtual-dtor",
+ CopyOnWriteBuffer::RawBuffer::RawBuffer(size_t size)
+-    : size_(size), data_(std::make_unique_for_overwrite<uint8_t[]>(size)) {}
++    : size_(size), data_(std::unique_ptr<uint8_t[]>(new uint8_t[size])) {}
++// We should be able to use the form below, but our current compile setup
++// doesn't find std::make_unique_for_overwrite.  See Bug 2030186 to revert
++// this change.
++//     : size_(size), data_(std::make_unique_for_overwrite<uint8_t[]>(size)) {}
  
-         # This is enabled for clang; enable for gcc as well.
+ scoped_refptr<CopyOnWriteBuffer::RefCountedBuffer>
+ CopyOnWriteBuffer::CreateBuffer(size_t capacity) {

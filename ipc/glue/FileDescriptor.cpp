@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,16 +26,18 @@ FileDescriptor::FileDescriptor(FileDescriptor&& aOther)
     : mHandle(std::move(aOther.mHandle)) {}
 
 FileDescriptor::FileDescriptor(PlatformHandleType aHandle)
-    : mHandle(DuplicateFileHandle(aHandle)) {}
+    : mHandle(DuplicateFileHandle(aHandle)) {
+  if (FileHandleIsValid(aHandle)) {
+    MOZ_RELEASE_ASSERT(mHandle);
+  }
+}
 
 FileDescriptor::FileDescriptor(UniquePlatformHandle&& aHandle)
     : mHandle(std::move(aHandle)) {}
 
-FileDescriptor::~FileDescriptor() = default;
-
 FileDescriptor& FileDescriptor::operator=(const FileDescriptor& aOther) {
   if (this != &aOther) {
-    mHandle = DuplicateFileHandle(aOther.mHandle.get());
+    mHandle = aOther.ClonePlatformHandle();
   }
   return *this;
 }
@@ -53,7 +53,7 @@ bool FileDescriptor::IsValid() const { return mHandle != nullptr; }
 
 FileDescriptor::UniquePlatformHandle FileDescriptor::ClonePlatformHandle()
     const {
-  return DuplicateFileHandle(mHandle.get());
+  return FileDescriptor(mHandle.get()).TakePlatformHandle();
 }
 
 FileDescriptor::UniquePlatformHandle FileDescriptor::TakePlatformHandle() {
@@ -82,9 +82,6 @@ bool ParamTraits<mozilla::ipc::FileDescriptor>::Read(
   }
 
   *aResult = mozilla::ipc::FileDescriptor(std::move(handle));
-  if (!aResult->IsValid()) {
-    printf_stderr("IPDL protocol Error: Received an invalid file descriptor\n");
-  }
   return true;
 }
 

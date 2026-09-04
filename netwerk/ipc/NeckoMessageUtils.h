@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +8,11 @@
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/net/ClassOfService.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/net/HttpTrafficAnalyzer.h"
+#include "mozilla/net/HttpTransactionShell.h"
 #include "nsExceptionHandler.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIDNSService.h"
@@ -19,7 +21,6 @@
 #include "nsPrintfCString.h"
 #include "nsString.h"
 #include "prio.h"
-#include "mozilla/net/HttpTransactionShell.h"
 
 namespace IPC {
 
@@ -48,24 +49,8 @@ struct Permission {
   }
 };
 
-template <>
-struct ParamTraits<Permission> {
-  static void Write(MessageWriter* aWriter, const Permission& aParam) {
-    WriteParam(aWriter, aParam.origin);
-    WriteParam(aWriter, aParam.type);
-    WriteParam(aWriter, aParam.capability);
-    WriteParam(aWriter, aParam.expireType);
-    WriteParam(aWriter, aParam.expireTime);
-  }
-
-  static bool Read(MessageReader* aReader, Permission* aResult) {
-    return ReadParam(aReader, &aResult->origin) &&
-           ReadParam(aReader, &aResult->type) &&
-           ReadParam(aReader, &aResult->capability) &&
-           ReadParam(aReader, &aResult->expireType) &&
-           ReadParam(aReader, &aResult->expireTime);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(Permission, origin, type, capability,
+                                  expireType, expireTime);
 
 template <>
 struct ParamTraits<mozilla::net::NetAddr> {
@@ -117,14 +102,9 @@ struct ParamTraits<mozilla::net::NetAddr> {
              ReadParam(aReader, &aResult->inet6.ip.u64[0]) &&
              ReadParam(aReader, &aResult->inet6.ip.u64[1]) &&
              ReadParam(aReader, &aResult->inet6.scope_id);
-#if defined(XP_UNIX)
-    } else if (aResult->raw.family == AF_LOCAL) {
-      return aReader->ReadBytesInto(&aResult->local.path,
-                                    sizeof(aResult->local.path));
-#endif
     }
 
-    /* We've been tricked by some socket family we don't know about! */
+    // We've been tricked by some socket family we don't know about.
     return false;
   }
 };
@@ -161,49 +141,26 @@ struct ParamTraits<nsIClassOfService::FetchPriority>
           nsIClassOfService::FETCHPRIORITY_UNSET,
           nsIClassOfService::FETCHPRIORITY_HIGH> {};
 
-template <>
-struct ParamTraits<mozilla::net::ClassOfService> {
-  typedef mozilla::net::ClassOfService paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::ClassOfService, mClassFlags,
+                                  mIncremental, mFetchPriority);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mClassFlags);
-    WriteParam(aWriter, aParam.mIncremental);
-    WriteParam(aWriter, aParam.mFetchPriority);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mClassFlags) ||
-        !ReadParam(aReader, &aResult->mIncremental) ||
-        !ReadParam(aReader, &aResult->mFetchPriority))
-      return false;
-
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<struct mozilla::net::LNAPerms> {
-  typedef struct mozilla::net::LNAPerms paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mLocalHostPermission);
-    WriteParam(aWriter, aParam.mLocalNetworkPermission);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mLocalHostPermission) ||
-        !ReadParam(aReader, &aResult->mLocalNetworkPermission))
-      return false;
-
-    return true;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(struct mozilla::net::LNAPerms,
+                                  mLocalHostPermission,
+                                  mLocalNetworkPermission);
 
 template <>
 struct ParamTraits<mozilla::net::LNAPermission>
     : public ContiguousEnumSerializerInclusive<
           mozilla::net::LNAPermission, mozilla::net::LNAPermission::Granted,
           mozilla::net::LNAPermission::Pending> {};
+
+template <>
+struct MOZ_ENUM_SERIALIZER_ALLOW_SENTINEL_UPPER_BOUND
+    ParamTraits<mozilla::net::HttpTrafficCategory>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::net::HttpTrafficCategory,
+          mozilla::net::HttpTrafficCategory::eN1Sys,
+          mozilla::net::HttpTrafficCategory::eInvalid> {};
 
 template <>
 struct ParamTraits<nsICacheInfoChannel::CacheDisposition>

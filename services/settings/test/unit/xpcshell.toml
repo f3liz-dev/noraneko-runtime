@@ -43,3 +43,8 @@ skip-if = [
 ["test_remote_settings_worker.js"]
 
 ["test_shutdown_handling.js"]
+
+["test_uptake_telemetry.js"]
+skip-if = [
+  "os == 'android'", # Bug 2042499
+]

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,7 +34,6 @@
 #include "nsFrameSelection.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIFrame.h"
-#include "nsIHapticFeedback.h"
 #include "nsLayoutUtils.h"
 #include "nsServiceManagerUtils.h"
 
@@ -221,7 +218,7 @@ void AccessibleCaretManager::UpdateCarets(const UpdateCaretsHintSet& aHint) {
 
 bool AccessibleCaretManager::IsCaretDisplayableInCursorMode(
     nsIFrame** aOutFrame, int32_t* aOutOffset) const {
-  RefPtr<nsCaret> caret = mPresShell->GetCaret();
+  RefPtr<nsCaret> caret = mPresShell->GetOriginalCaret();
   if (!caret || !caret->IsVisible()) {
     return false;
   }
@@ -296,6 +293,11 @@ void AccessibleCaretManager::UpdateCaretsForCursorMode(
   mCarets.GetSecond()->SetAppearance(Appearance::None);
 
   mIsCaretPositionChanged = (result == PositionChangedResult::Position);
+
+  // Perform haptic feedback when the user drags the caret
+  if (mIsCaretPositionChanged && mActiveCaret) {
+    ProvideHapticFeedback(mozilla::HapticFeedbackType::TextHandleMove);
+  }
 
   if (!aHints.contains(UpdateCaretsHint::DispatchNoEvent) && !mActiveCaret) {
     DispatchCaretStateChangedEvent(CaretChangedReason::Updateposition);
@@ -373,8 +375,22 @@ void AccessibleCaretManager::UpdateCaretsForSelectionMode(
       secondCaretResult == PositionChangedResult::Position;
 
   if (mIsCaretPositionChanged) {
+    // Perform haptic feedback when the user drags the caret
+    if (mActiveCaret) {
+      ProvideHapticFeedback(mozilla::HapticFeedbackType::TextHandleMove);
+    }
+
+    AutoWeakFrame weakStartFrame = startFrameAndOffset.mFrame;
+    AutoWeakFrame weakEndFrame = endFrameAndOffset.mFrame;
+
     // Flush layout to make the carets intersection correct.
     if (MaybeFlushLayout() == Terminated::Yes) {
+      return;
+    }
+
+    if ((startFrameAndOffset.mFrame && !weakStartFrame.IsAlive()) ||
+        (endFrameAndOffset.mFrame && !weakEndFrame.IsAlive())) {
+      HideCaretsAndDispatchCaretStateChangedEvent();
       return;
     }
   }
@@ -485,11 +501,11 @@ void AccessibleCaretManager::UpdateCaretsForAlwaysTilt(
   }
 }
 
-void AccessibleCaretManager::ProvideHapticFeedback() {
+void AccessibleCaretManager::ProvideHapticFeedback(
+    mozilla::HapticFeedbackType aType) {
   if (StaticPrefs::layout_accessiblecaret_hapticfeedback()) {
-    if (nsCOMPtr<nsIHapticFeedback> haptic =
-            do_GetService("@mozilla.org/widget/hapticfeedback;1")) {
-      haptic->PerformSimpleAction(haptic->LongPress);
+    if (nsIWidget* widget = mPresShell->GetRootWidget()) {
+      widget->PerformHapticFeedback(aType);
     }
   }
 }
@@ -583,7 +599,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
       GetSelection()->ContainsPoint(aPoint)) {
     AC_LOG("%s: UpdateCarets() for current selection", __FUNCTION__);
     UpdateCarets();
-    ProvideHapticFeedback();
+    ProvideHapticFeedback(mozilla::HapticFeedbackType::LongPress);
     return NS_OK;
   }
 
@@ -603,7 +619,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
     return NS_ERROR_FAILURE;
   }
 
-  nsIFrame* focusableFrame = GetFocusableFrame(ptFrame);
+  AutoWeakFrame focusableFrame = GetFocusableFrame(ptFrame);
 
 #ifdef DEBUG_FRAME_DUMP
   AC_LOG("%s: Found %s under (%d, %d)", __FUNCTION__, ptFrame->ListTag().get(),
@@ -634,7 +650,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
     // We need to update carets to get correct information before dispatching
     // CaretStateChangedEvent.
     UpdateCarets();
-    ProvideHapticFeedback();
+    ProvideHapticFeedback(mozilla::HapticFeedbackType::LongPress);
     DispatchCaretStateChangedEvent(CaretChangedReason::Longpressonemptycontent);
     return NS_OK;
   }
@@ -659,7 +675,9 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
     return NS_ERROR_FAILURE;
   }
 
-  // ptFrame is selectable. Now change the focus.
+  // ptFrame is selectable. Now change the focus. Note that focusableFrame may
+  // have died during NotifyIME() above, but it is fine to pass nullptr into
+  // ChangeFocusToOrClearOldFocus() to clear the old focus.
   ChangeFocusToOrClearOldFocus(focusableFrame);
   if (!ptFrame.IsAlive()) {
     // Cannot continue because ptFrame died.
@@ -695,7 +713,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
         }
 
         UpdateCarets();
-        ProvideHapticFeedback();
+        ProvideHapticFeedback(mozilla::HapticFeedbackType::LongPress);
         DispatchCaretStateChangedEvent(
             CaretChangedReason::Longpressonemptycontent);
 
@@ -707,7 +725,7 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
   // Then try select a word under point.
   nsresult rv = SelectWord(ptFrame, ptInFrame);
   UpdateCarets();
-  ProvideHapticFeedback();
+  ProvideHapticFeedback(mozilla::HapticFeedbackType::LongPress);
 
   return rv;
 }
@@ -1233,7 +1251,8 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
                "mOffsetInFrameContent should not be negative when casting to "
                "signed integer");
   const Maybe<int32_t> cmpToInactiveCaretPos =
-      nsContentUtils::ComparePoints_AllowNegativeOffsets(
+      nsContentUtils::ComparePoints_AllowNegativeOffsets<
+          TreeKind::ShadowIncludingDOM>(
           aOffsets.content, aOffsets.StartOffset(),
           frameAndOffset.GetFrameContent(),
           static_cast<int32_t>(frameAndOffset.mOffsetInFrameContent));
@@ -1260,7 +1279,8 @@ bool AccessibleCaretManager::RestrictCaretDraggingOffsets(
   NS_ASSERTION(limit.mContentOffset >= 0,
                "limit.mContentOffset should not be negative");
   const Maybe<int32_t> cmpToLimit =
-      nsContentUtils::ComparePoints_AllowNegativeOffsets(
+      nsContentUtils::ComparePoints_AllowNegativeOffsets<
+          TreeKind::ShadowIncludingDOM>(
           aOffsets.content, aOffsets.StartOffset(), limit.mResultContent,
           limit.mContentOffset);
   if (NS_WARN_IF(!cmpToLimit)) {
@@ -1324,7 +1344,7 @@ bool AccessibleCaretManager::CompareTreePosition(const nsIFrame* aStartFrame,
   if (aStartFrame->GetContent() == aEndFrame->GetContent()) {
     return aStartOffset <= aEndOffset;
   }
-  return nsContentUtils::ComparePoints(
+  return nsContentUtils::ComparePoints<TreeKind::ShadowIncludingDOM>(
              ConstRawRangeBoundary(aStartFrame->GetContent(),
                                    static_cast<uint32_t>(aStartOffset)),
              ConstRawRangeBoundary(aEndFrame->GetContent(),

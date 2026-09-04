@@ -27,6 +27,7 @@
   <string name="teaser">အလိုအလျောက် တစ်ကိုယ်ရေသုံး၊ \nသုံးပြီးဖျက်</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">သင့် ဘယောက်ဆာသုံး မှတ်တမ်းဖျက်ပြီး</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">ရှာဖွေမှုမှတ်တမ်းကို ရှင်းလင်းထားသည်။</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">ကြည့်ရှုမှတ်တမ်းကို ရှင်းလင်းထားသည်။</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">%1$s ကို ဖျက်ပြီး ဖွင့်ပါ</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Klar တွင်ရှာပါ။</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Klar တွင်ရှာပါ။</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Focus Beta တွင် ရှာဖွေပါ။</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Focus Beta တွင် ရှာဖွေပါ။</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Focus Nightly တွင် ရှာဖွေပါ။</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Focus Nightly တွင် ရှာဖွေပါ။</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s သည် သင့်ကို ထိန်းချုပ်မှု ပေးထားပါသည်။</p>\n<p>သီးသန့်တစ်ကိုယ်ရေသုံး ဘရောင်ဇာအနေနှင့် အသုံးပြုပါ\n<ul>\n<li>ရှာဖွေကြည့်ရှုပါ</li>\n<li>နောက်ယောင်ခံများကို တားဆီးပါ (သို့မဟုတ် နောက်ယောင်ခံများကို ခွင့်ပြုရန် သတ်မှတ်ပြင်ဆင်ပါ)</li>\n<li>ကွတ်ကီးများ၊ ရှာဖွေကြည့်ရှုမှုမှတ်တမ်းများကို ရှင်းလင်းပါ</li>\n</ul> </p>\n<p>%1$s ကို Mozilla မှ ထုတ်လုပ်ပါသည်။ ကျွန်ုပ်တို့၏ ရည်မှန်းချက်သည် ကောင်းမွန်ပွင့်လင်းသော အင်တာနက်ကို တည်ဆောက်ရန် ဖြစ်သည်။<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s သည် သင့်ကို ထိန်းချုပ်မှု ပေးထားပါသည်။</p>\n<p>သီးသန့်တစ်ကိုယ်ရေသုံး ဘရောင်ဇာအနေနှင့် အသုံးပြုပါ\n<ul>\n<li>ရှာဖွေကြည့်ရှုပါ</li>\n<li>နောက်ယောင်ခံများကို တားဆီးပါ (သို့မဟုတ် နောက်ယောင်ခံများကို ခွင့်ပြုရန် သတ်မှတ်ပြင်ဆင်ပါ)</li>\n<li>ကွတ်ကီးများ၊ ရှာဖွေကြည့်ရှုမှုမှတ်တမ်းများကို ရှင်းလင်းပါ</li>\n</ul> </p>\n<p>%1$s ကို Mozilla မှ ထုတ်လုပ်ပါသည်။ ကျွန်ုပ်တို့၏ ရည်မှန်းချက်သည် ကောင်းမွန်ပွင့်လင်းသော အင်တာနက်ကို တည်ဆောက်ရန် ဖြစ်သည်။<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">ကိုယ်ရေးကာကွယ်မှုနှင့် လုံခြုံရေး</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -249,7 +253,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">URL ကို ကူးယူ သို့မဟုတ် ဝင်ပါ</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Example: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Example: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Example: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -321,15 +325,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">%1$s ကို ပုံသေအသုံးပြုမည့် ဘရောင်ဇာအဖြစ် သတ်မှတ်ပါ</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">အသုံးပြုမှုဆိုင်ရာ အချက်အလက်များကို ပေးပို့ရန်</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">ပိုမိုလေ့လာရန်</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla သည် လူတိုင်းအတွက် %1$s ကို ပေးစွမ်းရန်နှင့် တိုးတက်ကောင်းမွန်စေရန်အတွက်သာ ကောက်ခံမှုပြုခြင်း ဖြစ်ပါသည်။</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla သည် လူတိုင်းအတွက် %1$s ကို ပေးစွမ်းရန်နှင့် တိုးတက်ကောင်းမွန်စေရန်အတွက်သာ ကောက်ခံမှုပြုခြင်း ဖြစ်ပါသည်။</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">နေ့စဉ်အသုံးပြုမှု ping</string>
-  <string name="preference_daily_usage_ping_description">၎င်းသည် Mozilla အား သုံးဆွဲသူပမာဏကို ခန့်မှန်းရန် ကူညီပေးသည်။</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">၎င်းသည် Mozilla အား သုံးဆွဲသူပမာဏကို ခန့်မှန်းရန် ကူညီပေးသည်။</string>
   <string name="preference_daily_usage_ping_learn_more">ပိုမိုလေ့လာရန်</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">ကိုယ်ရေးကာကွယ်မှု သတိပေးချက်</string>
@@ -669,7 +673,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">တပ်ဗ်ကို ပိတ်ပါ</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Mozillaသို့ ပျက်စီးမှုအစီရင်ခံစာပို့ပါ</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Mozillaသို့ ပျက်စီးမှုအစီရင်ခံစာပို့ပါ</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Promote SearchWidget Dialog -->

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,6 +73,23 @@ void WebGL2Context::CopyBufferSubData(GLenum readTarget, GLenum writeTarget,
   gl->fCopyBufferSubData(readTarget, writeTarget, readOffset, writeOffset,
                          size);
 
+  // Update the destination index cache if needed.
+  if (writeBuffer->mIndexCache) {
+    MOZ_ASSERT(readBuffer->mIndexCache);
+    if (readBuffer->mIndexCache) {
+      // The read and write ranges have been validated above by
+      // fnValidateOffsetSize. If allocated, the size of mIndexCache is always
+      // mByteLength.
+      const auto* src =
+          static_cast<const uint8_t*>(readBuffer->mIndexCache.get()) +
+          readOffset;
+      auto* dst =
+          static_cast<uint8_t*>(writeBuffer->mIndexCache.get()) + writeOffset;
+      memcpy(dst, src, size);
+    }
+    writeBuffer->InvalidateCacheRange(writeOffset, size);
+  }
+
   writeBuffer->ResetLastUpdateFenceId();
 }
 
@@ -106,6 +122,7 @@ bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
     ErrorOutOfMemory("Offset or size too large for platform.");
     return false;
   }
+
   const GLsizeiptr glByteLen(srcLen);
 
   ////
@@ -130,19 +147,25 @@ bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
 
   ////
 
+  if (!srcLen) {
+    return true;
+  }
+
   const ScopedLazyBind readBind(gl, target, buffer);
 
-  if (srcLen) {
-    const bool isTF = (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER);
-    GLenum mapTarget = target;
-    if (isTF) {
-      gl->fBindTransformFeedback(LOCAL_GL_TRANSFORM_FEEDBACK, mEmptyTFO);
-      gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, buffer->mGLName);
-      mapTarget = LOCAL_GL_ARRAY_BUFFER;
-    }
+  const bool isTF = (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER);
+  GLenum mapTarget = target;
+  if (isTF) {
+    gl->fBindTransformFeedback(LOCAL_GL_TRANSFORM_FEEDBACK, mEmptyTFO);
+    gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, buffer->mGLName);
+    mapTarget = LOCAL_GL_ARRAY_BUFFER;
+  }
 
-    const void* mappedBytes = gl->fMapBufferRange(
-        mapTarget, srcByteOffset, glByteLen, LOCAL_GL_MAP_READ_BIT);
+  const void* mappedBytes = gl->fMapBufferRange(
+      mapTarget, srcByteOffset, glByteLen, LOCAL_GL_MAP_READ_BIT);
+  bool success = false;
+  if (mappedBytes != nullptr) {
+    success = true;
     if (numRows > 0 && (destStride != srcStride || rowDataWidth != srcStride)) {
       const uint8_t* srcRow = (const uint8_t*)mappedBytes;
       uint8_t* destRow = dest.begin().get();
@@ -156,16 +179,16 @@ bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
       memcpy(dest.begin().get(), mappedBytes, srcLen);
     }
     gl->fUnmapBuffer(mapTarget);
-
-    if (isTF) {
-      const GLuint vbo = (mBoundArrayBuffer ? mBoundArrayBuffer->mGLName : 0);
-      gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, vbo);
-      const GLuint tfo =
-          (mBoundTransformFeedback ? mBoundTransformFeedback->mGLName : 0);
-      gl->fBindTransformFeedback(LOCAL_GL_TRANSFORM_FEEDBACK, tfo);
-    }
   }
-  return true;
+
+  if (isTF) {
+    const GLuint vbo = (mBoundArrayBuffer ? mBoundArrayBuffer->mGLName : 0);
+    gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, vbo);
+    const GLuint tfo =
+        (mBoundTransformFeedback ? mBoundTransformFeedback->mGLName : 0);
+    gl->fBindTransformFeedback(LOCAL_GL_TRANSFORM_FEEDBACK, tfo);
+  }
+  return success;
 }
 
 }  // namespace mozilla

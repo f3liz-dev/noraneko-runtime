@@ -3,11 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "nsCOMPtr.h"
-#include "nsIRunnable.h"
-#include "nsIObserver.h"
 #include "mozilla/Services.h"
+#include "nsCOMPtr.h"
+#include "nsIObserver.h"
 #include "nsIObserverService.h"
+#include "nsIRunnable.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsString.h"
 
 extern "C" nsIObserverService* Rust_ObserveFromRust();
 
@@ -31,6 +34,20 @@ TEST(RustXpcom, ImplementRunnableInRust)
   EXPECT_FALSE(itWorked);
   runnable->Run();
   EXPECT_TRUE(itWorked);
+}
+
+extern "C" nsresult Rust_GetSpecFromRust(nsIURI* aURI, nsACString* aSpec);
+
+TEST(RustXpcom, GetSpecFromRust)
+{
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), "https://example.com/path"_ns);
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+
+  nsAutoCString spec;
+  rv = Rust_GetSpecFromRust(uri, &spec);
+  EXPECT_TRUE(NS_SUCCEEDED(rv));
+  EXPECT_TRUE(spec.EqualsLiteral("https://example.com/path"));
 }
 
 extern "C" void Rust_GetMultipleInterfaces(nsIRunnable** aRunnable,

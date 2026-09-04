@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIconDecoder.h"
+
 #include "RasterImage.h"
 #include "SurfacePipeFactory.h"
 #include "gfxPlatform.h"
@@ -25,7 +24,7 @@ nsIconDecoder::nsIconDecoder(RasterImage* aImage)
   // Nothing to do
 }
 
-nsIconDecoder::~nsIconDecoder() {}
+nsIconDecoder::~nsIconDecoder() = default;
 
 LexerResult nsIconDecoder::DoDecode(SourceBufferIterator& aIterator,
                                     IResumable* aOnResume) {
@@ -56,7 +55,7 @@ LexerTransition<nsIconDecoder::State> nsIconDecoder::ReadHeader(
 
   if (format != SurfaceFormat::B8G8R8A8 && format != SurfaceFormat::B8G8R8X8 &&
       format != SurfaceFormat::R8G8B8A8 && format != SurfaceFormat::R8G8B8X8 &&
-      format != SurfaceFormat::A8R8G8B8 && format != SurfaceFormat::X8R8G8B8) {
+      format != SurfaceFormat::OS_RGBA && format != SurfaceFormat::OS_RGBX) {
     return Transition::TerminateFailure();
   }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,15 +6,15 @@
 #define mozilla_a11y_IPCTypes_h
 
 #ifdef ACCESSIBILITY
-#  include "mozilla/a11y/AccAttributes.h"
-#  include "mozilla/a11y/AccTypes.h"
-#  include "mozilla/a11y/CacheConstants.h"
-#  include "mozilla/a11y/Role.h"
-#  include "mozilla/a11y/AccGroupInfo.h"
-#  include "mozilla/GfxMessageUtils.h"
 #  include "ipc/EnumSerializer.h"
 #  include "ipc/IPCMessageUtilsSpecializations.h"
 #  include "ipc/nsGUIEventIPC.h"
+#  include "mozilla/GfxMessageUtils.h"
+#  include "mozilla/a11y/AccAttributes.h"
+#  include "mozilla/a11y/AccGroupInfo.h"
+#  include "mozilla/a11y/AccTypes.h"
+#  include "mozilla/a11y/CacheConstants.h"
+#  include "mozilla/a11y/Role.h"
 
 namespace IPC {
 
@@ -29,9 +27,10 @@ struct ParamTraits<mozilla::a11y::role>
 
 template <>
 struct ParamTraits<mozilla::a11y::AccType>
-    : public ContiguousEnumSerializerInclusive<
-          mozilla::a11y::AccType, mozilla::a11y::AccType::eNoType,
-          mozilla::a11y::AccType::eLastAccType> {};
+    : public ContiguousEnumSerializerInclusive<mozilla::a11y::AccType,
+                                               mozilla::a11y::AccType::eNoType,
+                                               mozilla::a11y::kHighestAccType> {
+};
 
 template <>
 struct ParamTraits<mozilla::a11y::AccGenericType>
@@ -46,31 +45,11 @@ struct ParamTraits<mozilla::a11y::CacheUpdateType>
           mozilla::a11y::CacheUpdateType::Initial,
           mozilla::a11y::CacheUpdateType::Update> {};
 
-template <>
-struct ParamTraits<mozilla::a11y::FontSize> {
-  typedef mozilla::a11y::FontSize paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mValue);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &(aResult->mValue));
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::a11y::DeleteEntry> {
-  typedef mozilla::a11y::DeleteEntry paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mValue);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &(aResult->mValue));
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::a11y::FontSize, mValue);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::a11y::DeleteEntry, mValue);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::a11y::Color, mValue);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::a11y::TextOffsetAttribute,
+                                  mStartOffset, mEndOffset, mAttribute);
 
 template <>
 struct ParamTraits<mozilla::a11y::AccGroupInfo> {
@@ -83,36 +62,6 @@ struct ParamTraits<mozilla::a11y::AccGroupInfo> {
   static bool Read(MessageReader* aReader, paramType* aResult) {
     MOZ_ASSERT_UNREACHABLE("Cannot de-serialize AccGroupInfo");
     return false;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::a11y::Color> {
-  typedef mozilla::a11y::Color paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mValue);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &(aResult->mValue));
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::a11y::TextOffsetAttribute> {
-  typedef mozilla::a11y::TextOffsetAttribute paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mStartOffset);
-    WriteParam(aWriter, aParam.mEndOffset);
-    WriteParam(aWriter, aParam.mAttribute);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &(aResult->mStartOffset)) &&
-           ReadParam(aReader, &(aResult->mEndOffset)) &&
-           ReadParam(aReader, &(aResult->mAttribute));
   }
 };
 

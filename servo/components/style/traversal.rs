@@ -6,9 +6,9 @@
 
 use crate::context::{ElementCascadeInputs, SharedStyleContext, StyleContext};
 use crate::data::{ElementData, ElementStyles, RestyleKind};
-use crate::dom::{NodeInfo, OpaqueNode, TElement, TNode};
+use crate::dom::{OpaqueNode, TElement, TNode};
 use crate::invalidation::element::restyle_hints::RestyleHint;
-use crate::matching::{ChildRestyleRequirement, MatchMethods};
+use crate::matching::MatchMethods;
 use crate::selector_parser::PseudoElement;
 use crate::sharing::StyleSharingTarget;
 use crate::style_resolver::{PseudoElementResolution, StyleResolverForElement};
@@ -24,21 +24,8 @@ use std::collections::HashMap;
 pub type UndisplayedStyleCache =
     HashMap<selectors::OpaqueElement, servo_arc::Arc<crate::properties::ComputedValues>>;
 
-/// A per-traversal-level chunk of data. This is sent down by the traversal, and
-/// currently only holds the dom depth for the bloom filter.
-///
-/// NB: Keep this as small as possible, please!
-#[derive(Clone, Copy, Debug)]
-pub struct PerLevelTraversalData {
-    /// The current dom depth.
-    ///
-    /// This is kept with cooperation from the traversal code and the bloom
-    /// filter.
-    pub current_dom_depth: usize,
-}
-
 /// We use this structure, rather than just returning a boolean from pre_traverse,
-/// to enfore that callers process root invalidations before starting the traversal.
+/// to enforce that callers process root invalidations before starting the traversal.
 pub struct PreTraverseToken<E: TElement>(Option<E>);
 impl<E: TElement> PreTraverseToken<E> {
     /// Whether we should traverse children.
@@ -52,27 +39,6 @@ impl<E: TElement> PreTraverseToken<E> {
     }
 }
 
-/// A global variable holding the state of
-/// `is_servo_nonincremental_layout()`.
-/// See [#22854](https://github.com/servo/servo/issues/22854).
-#[cfg(feature = "servo")]
-pub static IS_SERVO_NONINCREMENTAL_LAYOUT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-#[cfg(feature = "servo")]
-#[inline]
-fn is_servo_nonincremental_layout() -> bool {
-    use std::sync::atomic::Ordering;
-
-    IS_SERVO_NONINCREMENTAL_LAYOUT.load(Ordering::Relaxed)
-}
-
-#[cfg(not(feature = "servo"))]
-#[inline]
-fn is_servo_nonincremental_layout() -> bool {
-    false
-}
-
 /// A DOM Traversal trait, that is used to generically implement styling for
 /// Gecko and Servo.
 pub trait DomTraversal<E: TElement>: Sync {
@@ -82,7 +48,6 @@ pub trait DomTraversal<E: TElement>: Sync {
     /// the traversal.
     fn process_preorder<F>(
         &self,
-        data: &PerLevelTraversalData,
         context: &mut StyleContext<E>,
         node: E::ConcreteNode,
         note_child: F,
@@ -200,14 +165,6 @@ pub trait DomTraversal<E: TElement>: Sync {
         PreTraverseToken(if should_traverse { Some(root) } else { None })
     }
 
-    /// Returns true if traversal should visit a text node. The style system
-    /// never processes text nodes, but Servo overrides this to visit them for
-    /// flow construction when necessary.
-    fn text_node_needs_traversal(node: E::ConcreteNode, _parent_data: &ElementData) -> bool {
-        debug_assert!(node.is_text_node());
-        false
-    }
-
     /// Returns true if traversal is needed for the given element and subtree.
     fn element_needs_traversal(
         el: E,
@@ -218,11 +175,6 @@ pub trait DomTraversal<E: TElement>: Sync {
             "element_needs_traversal({:?}, {:?}, {:?})",
             el, traversal_flags, data
         );
-
-        // Non-incremental layout visits every node.
-        if is_servo_nonincremental_layout() {
-            return true;
-        }
 
         // Unwrap the data.
         let data = match data {
@@ -339,6 +291,7 @@ where
 
     for ancestor in ancestors_requiring_style_resolution.iter().rev() {
         context.thread_local.bloom_filter.assert_complete(*ancestor);
+        context.thread_local.current_dom_depth = context.thread_local.bloom_filter.matching_depth();
 
         // Actually `PseudoElementResolution` doesn't really matter here.
         // (but it does matter below!).
@@ -348,11 +301,7 @@ where
             rule_inclusion,
             PseudoElementResolution::IfApplicable,
         )
-        .resolve_primary_style(
-            style.as_deref(),
-            layout_parent_style.as_deref(),
-            selectors::matching::IncludeStartingStyle::No,
-        );
+        .resolve_primary_style(style.as_deref(), layout_parent_style.as_deref());
 
         let is_display_contents = primary_style.style().is_display_contents();
 
@@ -368,6 +317,7 @@ where
     }
 
     context.thread_local.bloom_filter.assert_complete(element);
+    context.thread_local.current_dom_depth = context.thread_local.bloom_filter.matching_depth();
     let styles: ElementStyles = StyleResolverForElement::new(
         element,
         context,
@@ -389,7 +339,6 @@ where
 #[allow(unsafe_code)]
 pub fn recalc_style_at<E, D, F>(
     _traversal: &D,
-    traversal_data: &PerLevelTraversalData,
     context: &mut StyleContext<E>,
     element: E,
     data: &mut ElementData,
@@ -399,8 +348,6 @@ pub fn recalc_style_at<E, D, F>(
     D: DomTraversal<E>,
     F: FnMut(E::ConcreteNode),
 {
-    use std::cmp;
-
     let flags = context.shared.traversal_flags;
     let is_initial_style = !data.has_styles();
 
@@ -422,21 +369,17 @@ pub fn recalc_style_at<E, D, F>(
         data
     );
 
-    let mut child_restyle_requirement = ChildRestyleRequirement::CanSkipCascade;
+    let mut child_restyle_hint = RestyleHint::empty();
 
     // Compute style for this element if necessary.
     if let Some(restyle_kind) = restyle_kind {
-        child_restyle_requirement =
-            compute_style(traversal_data, context, element, data, restyle_kind);
+        child_restyle_hint = compute_style(context, element, data, restyle_kind);
 
         if !element.matches_user_and_content_rules() {
             // We must always cascade native anonymous subtrees, since they
             // may have pseudo-elements underneath that would inherit from the
             // closest non-NAC ancestor instead of us.
-            child_restyle_requirement = cmp::max(
-                child_restyle_requirement,
-                ChildRestyleRequirement::MustCascadeChildren,
-            );
+            child_restyle_hint |= RestyleHint::RECASCADE_SELF;
         }
 
         // If we're restyling this element to display:none, throw away all style
@@ -474,27 +417,13 @@ pub fn recalc_style_at<E, D, F>(
         "propagated_hint={:?}, restyle_requirement={:?}, \
          is_display_none={:?}, implementing_pseudo={:?}",
         propagated_hint,
-        child_restyle_requirement,
+        child_restyle_hint,
         data.styles.is_display_none(),
         element.implemented_pseudo_element()
     );
 
     // Integrate the child cascade requirement into the propagated hint.
-    match child_restyle_requirement {
-        ChildRestyleRequirement::CanSkipCascade => {},
-        ChildRestyleRequirement::MustCascadeDescendants => {
-            propagated_hint |= RestyleHint::RECASCADE_SELF | RestyleHint::RECASCADE_DESCENDANTS;
-        },
-        ChildRestyleRequirement::MustCascadeChildrenIfInheritResetStyle => {
-            propagated_hint |= RestyleHint::RECASCADE_SELF_IF_INHERIT_RESET_STYLE;
-        },
-        ChildRestyleRequirement::MustCascadeChildren => {
-            propagated_hint |= RestyleHint::RECASCADE_SELF;
-        },
-        ChildRestyleRequirement::MustMatchDescendants => {
-            propagated_hint |= RestyleHint::restyle_subtree();
-        },
-    }
+    propagated_hint |= child_restyle_hint;
 
     let has_dirty_descendants_for_this_restyle = if flags.for_animation_only() {
         element.has_animation_only_dirty_descendants()
@@ -512,9 +441,8 @@ pub fn recalc_style_at<E, D, F>(
     //
     // We only do this if we're not a display: none root, since in that case
     // it's useless to style children.
-    let mut traverse_children = has_dirty_descendants_for_this_restyle
-        || !propagated_hint.is_empty()
-        || is_servo_nonincremental_layout();
+    let mut traverse_children =
+        has_dirty_descendants_for_this_restyle || !propagated_hint.is_empty();
 
     traverse_children = traverse_children && !data.styles.is_display_none();
 
@@ -523,7 +451,6 @@ pub fn recalc_style_at<E, D, F>(
         note_children::<E, D, F>(
             context,
             element,
-            data,
             propagated_hint,
             is_initial_style,
             note_child,
@@ -553,12 +480,11 @@ where
 }
 
 fn compute_style<E>(
-    traversal_data: &PerLevelTraversalData,
     context: &mut StyleContext<E>,
     element: E,
     data: &mut ElementData,
     kind: RestyleKind,
-) -> ChildRestyleRequirement
+) -> RestyleHint
 where
     E: TElement,
 {
@@ -582,12 +508,12 @@ where
             context
                 .thread_local
                 .bloom_filter
-                .insert_parents_recovering(element, traversal_data.current_dom_depth);
+                .insert_parents_recovering(element, context.thread_local.current_dom_depth);
 
             context.thread_local.bloom_filter.assert_complete(element);
             debug_assert_eq!(
                 context.thread_local.bloom_filter.matching_depth(),
-                traversal_data.current_dom_depth
+                context.thread_local.current_dom_depth
             );
 
             // This is only relevant for animations as of right now.
@@ -616,11 +542,12 @@ where
                         resolver.resolve_style_with_default_parents()
                     };
 
+                    let dom_depth = context.thread_local.current_dom_depth;
                     context.thread_local.sharing_cache.insert_if_possible(
                         &element,
                         &new_styles.primary,
                         Some(&mut target),
-                        traversal_data.current_dom_depth,
+                        dom_depth,
                         &context.shared,
                     );
 
@@ -640,8 +567,7 @@ where
                 PseudoElementResolution::IfApplicable,
             );
 
-            resolver
-                .cascade_styles_with_default_parents(cascade_inputs, data.may_have_starting_style())
+            resolver.cascade_styles_with_default_parents(cascade_inputs)
         },
         CascadeOnly => {
             // Skipping full matching, load cascade inputs from previous values.
@@ -655,10 +581,7 @@ where
                     PseudoElementResolution::IfApplicable,
                 );
 
-                resolver.cascade_styles_with_default_parents(
-                    cascade_inputs,
-                    data.may_have_starting_style(),
-                )
+                resolver.cascade_styles_with_default_parents(cascade_inputs)
             };
 
             // Insert into the cache, but only if this style isn't reused from a
@@ -681,7 +604,7 @@ where
                     &element,
                     &new_styles.primary,
                     None,
-                    traversal_data.current_dom_depth,
+                    context.thread_local.current_dom_depth,
                     &context.shared,
                 );
             }
@@ -742,7 +665,6 @@ where
 fn note_children<E, D, F>(
     context: &mut StyleContext<E>,
     element: E,
-    data: &ElementData,
     propagated_hint: RestyleHint,
     is_initial_style: bool,
     mut note_child: F,
@@ -756,16 +678,8 @@ fn note_children<E, D, F>(
 
     // Loop over all the traversal children.
     for child_node in element.traversal_children() {
-        let child = match child_node.as_element() {
-            Some(el) => el,
-            None => {
-                if is_servo_nonincremental_layout()
-                    || D::text_node_needs_traversal(child_node, data)
-                {
-                    note_child(child_node);
-                }
-                continue;
-            },
+        let Some(child) = child_node.as_element() else {
+            continue;
         };
 
         let mut child_data = child.mutate_data();

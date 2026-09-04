@@ -11,9 +11,6 @@ transforms:
     - gecko_taskgraph.transforms.bootstrap:transforms
     - gecko_taskgraph.transforms.task:transforms
 
-task-defaults:
-    run-on-repo-type: [hg]
-
 tasks:
     debian11:
         image: debian:bullseye
@@ -109,8 +106,7 @@ tasks:
     opensuse-leap:
         image: opensuse/leap
         pre-commands:
-            - zypper install -y curl git python311-pip python311-curses gzip
-            - ln -s /usr/bin/python3.11 /usr/bin/python3
+            - zypper install -y curl git python3 python3-curses gzip
     opensuse-tumbleweed:
         image: opensuse/tumbleweed
         pre-commands:

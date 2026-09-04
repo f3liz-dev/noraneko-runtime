@@ -180,6 +180,9 @@ export default [
   //     
   "<h1 id=\"my-element\" class=\"test-class-a test-class-b\" aria-collapsed=\"false\" hidden>",
 
+  // new Document()
+  "Document { … }",
+
   // new Error("foo")
   "Error: foo",
 
@@ -202,10 +205,10 @@ export default [
   // 
   // foo();
   //     
-  "Uncaught ReferenceError: asdf is not defined[Learn More]\ndebugger eval code:3:9",
+  "Uncaught ReferenceError: asdf is not defined Learn More\ndebugger eval code:3:9",
 
   // eval("let a, a")
-  "Uncaught SyntaxError: redeclaration of let a[Learn More]\ndebugger eval code:1:1\nnote: Previously declared at line 1, column 5\ndebugger eval code:1:5",
+  "Uncaught SyntaxError: redeclaration of let a Learn More\ndebugger eval code:1:1\nnote: Previously declared at line 1, column 5\ndebugger eval code:1:5",
 
   // throw "";
   "Uncaught <empty string>\ndebugger eval code:1:1",
@@ -246,13 +249,13 @@ export default [
   // var d = new Error("err-d", { cause: c });
   // throw d;
   //     
-  "Uncaught SyntaxError: redeclaration of const a[Learn More]\ndebugger eval code:1:1",
+  "Uncaught SyntaxError: redeclaration of const a Learn More\ndebugger eval code:1:1",
 
   // var a = new Error("err-a", { cause: b });
   // var b = new Error("err-b", { cause: a });
   // throw b;
   //     
-  "Uncaught SyntaxError: redeclaration of const a[Learn More]\ndebugger eval code:1:1",
+  "Uncaught SyntaxError: redeclaration of const a Learn More\ndebugger eval code:1:1",
 
   // throw new Error("null cause", { cause: null });
   "Uncaught Error: null cause\nCaused by: null\ndebugger eval code:1:7",

@@ -19,10 +19,9 @@ import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
-import mozilla.components.concept.sync.UserData
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.FxaAuthData
 import mozilla.components.service.fxa.ServerConfig
-import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
@@ -342,7 +341,9 @@ class FxaWebChannelFeatureTest {
 
         val account: OAuthAccount = mock()
         val profile = Profile(uid = "testUID", email = "test@example.com", avatar = null, displayName = null)
-        whenever(account.getSessionToken()).thenReturn("testToken")
+        whenever(account.getSignedInUserForWebChannel()).thenReturn(
+            """{"sessionToken":"testToken","email":"test@example.com","uid":"testUID","verified":true}""",
+        )
         whenever(accountManager.accountProfile()).thenReturn(profile)
         whenever(accountManager.authenticatedAccount()).thenReturn(account)
         whenever(accountManager.supportedSyncEngines()).thenReturn(expectedEngines)
@@ -398,7 +399,9 @@ class FxaWebChannelFeatureTest {
         val responseToTheWebChannel = argumentCaptor<JSONObject>()
 
         val account: OAuthAccount = mock()
-        whenever(account.getSessionToken()).thenReturn("testToken")
+        whenever(account.getSignedInUserForWebChannel()).thenReturn(
+            """{"sessionToken":"testToken","email":null,"uid":null,"verified":true}""",
+        )
         whenever(accountManager.accountProfile()).thenReturn(null)
         whenever(accountManager.authenticatedAccount()).thenReturn(account)
         whenever(accountManager.supportedSyncEngines()).thenReturn(expectedEngines)
@@ -729,6 +732,55 @@ class FxaWebChannelFeatureTest {
     }
 
     @Test
+    fun `COMMAND_CHANGE_PASSWORD forwards the payload to handleWebChannelPasswordChange`() = runTest {
+        val accountManager: FxaAccountManager = mock()
+        val engineSession: EngineSession = mock()
+        val ext: WebExtension = mock()
+        val port: Port = mock()
+        val messageHandler = argumentCaptor<MessageHandler>()
+
+        BuiltInWebExtensionController.installedBuiltInExtensions[FxaWebChannelFeature.WEB_CHANNEL_EXTENSION_ID] = ext
+
+        val webchannelFeature = prepareFeatureForTest(ext, port, engineSession, null, emptySet(), accountManager)
+        webchannelFeature.start()
+        shadowOf(getMainLooper()).idle()
+
+        verify(ext).registerContentMessageHandler(
+            eq(engineSession),
+            eq(FxaWebChannelFeature.WEB_CHANNEL_MESSAGING_ID),
+            messageHandler.capture(),
+        )
+        messageHandler.value.onPortConnected(port)
+
+        val newSessionToken = "newsessiontoken456"
+        val jsonToWebChannel = JSONObject(
+            """{
+             "message":{
+                "command": "fxaccounts:change_password",
+                "messageId":456,
+                "data":{
+                    "email":"foo@bar.com",
+                    "sessionToken":"$newSessionToken",
+                    "uid":"uid123",
+                    "verified":true
+                }
+             }
+            }
+            """.trimIndent(),
+        )
+        whenever(port.senderUrl()).thenReturn("https://foo.bar/email")
+        messageHandler.value.onPortMessage(jsonToWebChannel, port)
+        shadowOf(getMainLooper()).idle()
+
+        val dataCaptor = argumentCaptor<String>()
+        verify(accountManager).handleWebChannelPasswordChange(dataCaptor.capture())
+        assertEquals(
+            jsonToWebChannel.getJSONObject("message").getJSONObject("data").toString(),
+            dataCaptor.value,
+        )
+    }
+
+    @Test
     fun `COMMAND_SYNC_PREFERENCES is processed if there is an account`() = runTest {
         val engineSession: EngineSession = mock()
         val ext: WebExtension = mock()
@@ -1012,15 +1064,15 @@ class FxaWebChannelFeatureTest {
         whenever(port.senderUrl()).thenReturn("https://foo.bar/email")
         messageHandler.onPortMessage(jsonToWebChannel, port)
 
-        val expectedUserData = UserData(
-            sessionToken = sessionToken,
-            email = email,
-            uid = uid,
-            verified = verified,
-        )
         shadowOf(getMainLooper()).idle()
 
-        verify(accountManager).setUserData(expectedUserData)
+        val loginDataCaptor = argumentCaptor<String>()
+        verify(accountManager).handleWebChannelLogin(loginDataCaptor.capture())
+        val loginData = JSONObject(loginDataCaptor.value)
+        assertEquals(sessionToken, loginData.getString("sessionToken"))
+        assertEquals(email, loginData.getString("email"))
+        assertEquals(uid, loginData.getString("uid"))
+        assertEquals(verified, loginData.getBoolean("verified"))
     }
 
     private fun jsonLogin(sessionToken: String, email: String, uid: String, verified: Boolean): JSONObject {

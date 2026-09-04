@@ -52,6 +52,11 @@
 .statistics-panel .table-chart-title {
   display: flex;
   align-items: center;
+
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
+  span:has(.learn-more-link) {
+    display: flex;
+  }
 }
 
 .pie-table-chart-container {

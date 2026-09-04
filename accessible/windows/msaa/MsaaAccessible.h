@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef mozilla_a11y_MsaaAccessible_h_
 #define mozilla_a11y_MsaaAccessible_h_
 
+#include "IUnknownImpl.h"
+#include "MsaaIdGenerator.h"
 #include "ia2Accessible.h"
 #include "ia2AccessibleComponent.h"
 #include "ia2AccessibleHyperlink.h"
 #include "ia2AccessibleValue.h"
-#include "IUnknownImpl.h"
-#include "MsaaIdGenerator.h"
 #include "nsXULAppAPI.h"
 #include "uiaRawElmProvider.h"
 
@@ -63,13 +61,14 @@ class MsaaAccessible : public ia2Accessible,
 
   // IAccessible
   virtual /* [id][propget] */ HRESULT STDMETHODCALLTYPE get_accParent(
-      /* [retval][out] */ IDispatch __RPC_FAR* __RPC_FAR* ppdispParent)
-      override;
+      /* [retval][out] */ IDispatch __RPC_FAR * __RPC_FAR *
+      ppdispParent) override;
   virtual /* [id][propget] */ HRESULT STDMETHODCALLTYPE get_accChildCount(
       /* [retval][out] */ long __RPC_FAR* pcountChildren) override;
   virtual /* [id][propget] */ HRESULT STDMETHODCALLTYPE get_accChild(
       /* [in] */ VARIANT varChild,
-      /* [retval][out] */ IDispatch __RPC_FAR* __RPC_FAR* ppdispChild) override;
+      /* [retval][out] */ IDispatch __RPC_FAR * __RPC_FAR *
+          ppdispChild) override;
   virtual /* [id][propget] */ HRESULT STDMETHODCALLTYPE get_accName(
       /* [optional][in] */ VARIANT varChild,
       /* [retval][out] */ BSTR __RPC_FAR* pszName) override;

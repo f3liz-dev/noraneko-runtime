@@ -10,7 +10,6 @@
 #include "BounceTrackingRecord.h"
 #include "BounceTrackingMapEntry.h"
 #include "ClearDataCallback.h"
-#include "PromiseNativeWrapper.h"
 #include "ProfileAfterChangeGate.h"
 
 #include "BounceTrackingStateGlobal.h"
@@ -21,7 +20,9 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_privacy.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsGlobalWindowInner.h"
 #include "nsHashPropertyBag.h"
@@ -130,7 +131,7 @@ nsresult BounceTrackingProtection::Init() {
       "Init BounceTrackingProtection. Config: mode: {}, "
       "bounceTrackingActivationLifetimeSec: {}, bounceTrackingGracePeriodSec: "
       "{}, bounceTrackingPurgeTimerPeriodSec: {}, "
-      "clientBounceDetectionTimerPeriodMS: {}, requireStatefulBounces: {}, "
+      "clientBounceDetectionTimerPeriodMS: {}, "
       "HasMigratedUserActivationData: {}",
       static_cast<nsIBounceTrackingProtection::Modes>(
           StaticPrefs::privacy_bounceTrackingProtection_mode()),
@@ -142,7 +143,6 @@ nsresult BounceTrackingProtection::Init() {
           privacy_bounceTrackingProtection_bounceTrackingPurgeTimerPeriodSec(),
       StaticPrefs::
           privacy_bounceTrackingProtection_clientBounceDetectionTimerPeriodMS(),
-      StaticPrefs::privacy_bounceTrackingProtection_requireStatefulBounces(),
       StaticPrefs::
           privacy_bounceTrackingProtection_hasMigratedUserActivationData());
 
@@ -257,13 +257,9 @@ nsresult BounceTrackingProtection::OnModeChange(bool aIsStartup) {
       mode == nsIBounceTrackingProtection::MODE_ENABLED_STANDBY) {
     // No further cleanup needed if we're just starting up.
     if (aIsStartup) {
-      MOZ_ASSERT(!mStorageObserver);
       MOZ_ASSERT(!mBounceTrackingPurgeTimer);
       return result;
     }
-
-    // Destroy storage observer to stop receiving storage notifications.
-    mStorageObserver = nullptr;
 
     // Stop regular purging.
     nsresult rv = UpdateBounceTrackingPurgeTimer(false);
@@ -281,13 +277,8 @@ nsresult BounceTrackingProtection::OnModeChange(bool aIsStartup) {
   MOZ_ASSERT(mode == nsIBounceTrackingProtection::MODE_ENABLED ||
              mode == nsIBounceTrackingProtection::MODE_ENABLED_DRY_RUN);
 
-  // Create and init storage observer.
-  mStorageObserver = new BounceTrackingStorageObserver();
-  nsresult rv = mStorageObserver->Init();
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Schedule regular purging.
-  rv = UpdateBounceTrackingPurgeTimer(true);
+  nsresult rv = UpdateBounceTrackingPurgeTimer(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return result;
@@ -302,7 +293,7 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
               *aBounceTrackingState);
 
   // Assert: navigable’s bounce tracking record is not null.
-  const Maybe<BounceTrackingRecord>& record =
+  BounceTrackingRecord* record =
       aBounceTrackingState->GetBounceTrackingRecord();
   if (!record) {
     MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
@@ -314,6 +305,23 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
   RefPtr<BounceTrackingStateGlobal> globalState =
       mStorage->GetOrCreateStateGlobal(aBounceTrackingState);
   MOZ_ASSERT(globalState);
+
+  // The storage partition we're about to write bounce trackers into is keyed by
+  // the BounceTrackingState's cached OriginAttributes. Assert it still matches
+  // the tab's current top BrowsingContext, so that if a tab's userContextId
+  // were ever to change during its lifetime we don't file bounces under a
+  // container the tab no longer lives in. The BrowsingContext may be gone when
+  // recording on tab close during shutdown; in that case there is nothing to
+  // compare against and we skip the check. See Bug 2054941.
+#ifdef DEBUG
+  if (RefPtr<dom::BrowsingContext> bc =
+          aBounceTrackingState->CurrentBrowsingContext()) {
+    MOZ_ASSERT(bc->OriginAttributesRef().EqualsIgnoringFPD(
+                   aBounceTrackingState->OriginAttributesRef()),
+               "BTP: recording bounces under a container that no longer "
+               "matches the tab's BrowsingContext (Bug 2054941).");
+  }
+#endif
 
   nsTArray<nsCString> classifiedHosts;
 
@@ -353,22 +361,11 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
       continue;
     }
 
-    // If navigable’s bounce tracking record's storage access set does not
-    // contain host, continue.
-    if (StaticPrefs::
-            privacy_bounceTrackingProtection_requireStatefulBounces() &&
-        !record->GetStorageAccessHosts().Contains(host)) {
-      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
-                  "{}: Skip host without storage access: {}", __FUNCTION__,
-                  host);
-      continue;
-    }
-
     // Set stateful bounce tracking map[host] to topDocument’s relevant settings
-    // object's current wall time.
+    // object’s current wall time.
     PRTime now = PR_Now();
     MOZ_ASSERT(!globalState->HasBounceTracker(host));
-    nsresult rv = globalState->RecordBounceTracker(host, now);
+    nsresult rv = globalState->RecordBounceTracker(host, now, false, record);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }
@@ -403,6 +400,13 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
 
     nsresult rv = props->SetPropertyAsUint64(
         u"browserId"_ns, aBounceTrackingState->GetBrowserId());
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Number of hosts classified as bounce trackers in this call. Tests use
+    // this to distinguish a finalization that classified trackers from one that
+    // finalized an empty or fully exempt record.
+    rv = props->SetPropertyAsUint32(u"bounceTrackerCandidateCount"_ns,
+                                    classifiedHosts.Length());
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = obsSvc->NotifyObservers(
@@ -524,8 +528,9 @@ BounceTrackingProtection::TestGetBounceTrackerCandidateHosts(
 
   for (auto iter = globalState->BounceTrackersMapRef().ConstIter();
        !iter.Done(); iter.Next()) {
-    RefPtr<nsIBounceTrackingMapEntry> candidate = new BounceTrackingMapEntry(
-        globalState->OriginAttributesRef(), iter.Key(), iter.Data());
+    RefPtr<nsIBounceTrackingMapEntry> candidate =
+        new BounceTrackingMapEntry(globalState->OriginAttributesRef(),
+                                   iter.Key(), iter.Data().mBounceTime);
     aCandidates.AppendElement(candidate);
   }
 
@@ -904,8 +909,19 @@ BounceTrackingProtection::EnsureRemoteExceptionListService() {
 
   // Convert to MozPromise so it can be handled from C++ side. Also store the
   // promise so that subsequent calls to this method can wait for init too.
-  mRemoteExceptionListInitPromise =
-      PromiseNativeWrapper::ConvertJSPromiseToMozPromise(jsPromise);
+  RefPtr<GenericNonExclusivePromise::Private> resultPromise =
+      new GenericNonExclusivePromise::Private(__func__);
+  mRemoteExceptionListInitPromise = resultPromise;
+
+  jsPromise->AddCallbacksWithCycleCollectedArgs(
+      [resultPromise](JSContext*, JS::Handle<JS::Value>, ErrorResult&) {
+        resultPromise->Resolve(true, __func__);
+      },
+      [resultPromise](JSContext*, JS::Handle<JS::Value>, ErrorResult&) {
+        resultPromise->Reject(NS_ERROR_FAILURE, __func__);
+      });
+  jsPromise->AppendNativeHandler(
+      new dom::MozPromiseRejectOnDestruction{resultPromise, __func__});
 
   return mRemoteExceptionListInitPromise;
 }
@@ -944,6 +960,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
           const GenericNonExclusivePromise::ResolveOrRejectValue& aResult) {
         if (aResult.IsReject()) {
           nsresult rv = aResult.RejectValue();
+          self->mPurgeInProgress = false;
           resultPromise->Reject(rv, __func__);
           return;
         }
@@ -973,6 +990,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
           nsresult rv = self->PurgeBounceTrackersForStateGlobal(
               stateGlobal, bounceTrackingAllowList, clearPromises);
           if (NS_WARN_IF(NS_FAILED(rv))) {
+            self->mPurgeInProgress = false;
             resultPromise->Reject(rv, __func__);
             return;
           }
@@ -1112,7 +1130,8 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
   for (auto hostIter = aStateGlobal->BounceTrackersMapRef().ConstIter();
        !hostIter.Done(); hostIter.Next()) {
     const nsACString& host = hostIter.Key();
-    const PRTime& bounceTime = hostIter.Data();
+    const auto& candidate = hostIter.Data();
+    const PRTime bounceTime = candidate.mBounceTime;
 
     // If bounceTime + bounce tracking grace period is after now, then continue.
     // The host is still within the grace period and must not be purged.
@@ -1186,7 +1205,7 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
     RefPtr<ClearDataMozPromise> clearDataPromise;
     rv = PurgeStateForHostAndOriginAttributes(
         host, bounceTime, aStateGlobal->OriginAttributesRef(),
-        getter_AddRefs(clearDataPromise));
+        candidate.mRecord, getter_AddRefs(clearDataPromise));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }
@@ -1203,14 +1222,14 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
 nsresult BounceTrackingProtection::PurgeStateForHostAndOriginAttributes(
     const nsACString& aHost, PRTime bounceTime,
     const OriginAttributes& aOriginAttributes,
-    ClearDataMozPromise** aClearPromise) {
+    BounceTrackingRecord* aChainRecord, ClearDataMozPromise** aClearPromise) {
   MOZ_ASSERT(!aHost.IsEmpty());
   MOZ_ASSERT(aClearPromise);
 
   RefPtr<ClearDataMozPromise::Private> clearPromise =
       new ClearDataMozPromise::Private(__func__);
-  RefPtr<ClearDataCallback> cb =
-      new ClearDataCallback(clearPromise, aOriginAttributes, aHost, bounceTime);
+  RefPtr<ClearDataCallback> cb = new ClearDataCallback(
+      clearPromise, aOriginAttributes, aHost, bounceTime, aChainRecord);
 
   if (StaticPrefs::privacy_bounceTrackingProtection_mode() ==
       nsIBounceTrackingProtection::MODE_ENABLED_DRY_RUN) {

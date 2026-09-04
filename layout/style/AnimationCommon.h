@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -142,6 +140,8 @@ class OwningElementRef final {
       Marker,
       Before,
       After,
+      Checkmark,
+      PickerIcon,
       ViewTransition,
       ViewTransitionGroup,
       ViewTransitionImagePair,
@@ -162,6 +162,10 @@ class OwningElementRef final {
           return SortingIndex::Before;
         case PseudoStyleType::After:
           return SortingIndex::After;
+        case PseudoStyleType::Checkmark:
+          return SortingIndex::Checkmark;
+        case PseudoStyleType::PickerIcon:
+          return SortingIndex::PickerIcon;
         case PseudoStyleType::ViewTransition:
           return SortingIndex::ViewTransition;
         case PseudoStyleType::ViewTransitionGroup:

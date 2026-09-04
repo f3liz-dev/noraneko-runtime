@@ -37,7 +37,7 @@ static auto ForAllPublicRTCStatsCollectionMembers(Collection& aStats,
       aStats.mPeerConnectionStats, aStats.mRtpContributingSourceStats,
       aStats.mIceCandidatePairStats, aStats.mIceCandidateStats,
       aStats.mTrickledIceCandidateStats, aStats.mDataChannelStats,
-      aStats.mCodecStats);
+      aStats.mCodecStats, aStats.mTransportStats, aStats.mCertificateStats);
 }
 
 // Calls aFunction with all members of aStats, including internal ones.
@@ -79,6 +79,11 @@ template <>
 struct ParamTraits<mozilla::dom::RTCBundlePolicy>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCBundlePolicy> {
 };
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceTcpCandidateType>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCIceTcpCandidateType> {};
 
 DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCIceServerInternal, mUrls,
                                   mCredentialProvided, mUserNameProvided);
@@ -123,13 +128,14 @@ DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCIceCandidatePairStats, mozilla::dom::RTCStats,
     mTransportId, mLocalCandidateId, mPriority, mNominated, mWritable,
     mReadable, mRemoteCandidateId, mSelected, mComponentId, mState, mBytesSent,
-    mBytesReceived, mLastPacketSentTimestamp, mLastPacketReceivedTimestamp,
-    mTotalRoundTripTime, mResponsesReceived, mCurrentRoundTripTime);
+    mBytesReceived, mPacketsSent, mPacketsReceived, mLastPacketSentTimestamp,
+    mLastPacketReceivedTimestamp, mTotalRoundTripTime, mResponsesReceived,
+    mCurrentRoundTripTime);
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCIceCandidateStats, mozilla::dom::RTCStats, mCandidateType,
-    mPriority, mTransportId, mAddress, mRelayProtocol, mPort, mProtocol,
-    mProxied);
+    mPriority, mTransportId, mAddress, mRelayProtocol, mUsernameFragment,
+    mFoundation, mPort, mProtocol, mTcpType, mProxied);
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCReceivedRtpStreamStats, mozilla::dom::RTCRtpStreamStats,
@@ -144,11 +150,12 @@ DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mTotalInterFrameDelay, mTotalSquaredInterFrameDelay, mPauseCount,
     mTotalPausesDuration, mFreezeCount, mTotalFreezesDuration,
     mLastPacketReceivedTimestamp, mHeaderBytesReceived, mFecPacketsReceived,
-    mFecPacketsDiscarded, mBytesReceived, mNackCount, mFirCount, mPliCount,
-    mTotalProcessingDelay, mEstimatedPlayoutTimestamp, mFramesReceived,
-    mJitterBufferDelay, mJitterBufferEmittedCount, mJitterBufferTargetDelay,
-    mJitterBufferMinimumDelay, mTotalSamplesReceived, mConcealedSamples,
-    mSilentConcealedSamples, mConcealmentEvents,
+    mFecPacketsDiscarded, mBytesReceived, mRtxSsrc,
+    mRetransmittedPacketsReceived, mRetransmittedBytesReceived, mNackCount,
+    mFirCount, mPliCount, mTotalProcessingDelay, mEstimatedPlayoutTimestamp,
+    mFramesReceived, mJitterBufferDelay, mJitterBufferEmittedCount,
+    mJitterBufferTargetDelay, mJitterBufferMinimumDelay, mTotalSamplesReceived,
+    mConcealedSamples, mSilentConcealedSamples, mConcealmentEvents,
     mInsertedSamplesForDeceleration, mRemovedSamplesForAcceleration,
     mAudioLevel, mTotalAudioEnergy, mTotalSamplesDuration,
     mFramesAssembledFromMultiplePackets, mTotalAssemblyTime);
@@ -163,11 +170,12 @@ DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCOutboundRtpStreamStats,
-    mozilla::dom::RTCSentRtpStreamStats, mRemoteId, mFramesEncoded, mQpSum,
-    mNackCount, mFirCount, mPliCount, mHeaderBytesSent,
-    mRetransmittedPacketsSent, mRetransmittedBytesSent,
-    mTotalEncodedBytesTarget, mFrameWidth, mFrameHeight, mFramesPerSecond,
-    mFramesSent, mHugeFramesSent, mTotalEncodeTime);
+    mozilla::dom::RTCSentRtpStreamStats, mRemoteId, mFramesEncoded,
+    mKeyFramesEncoded, mQpSum, mNackCount, mFirCount, mPliCount,
+    mHeaderBytesSent, mRtxSsrc, mRetransmittedPacketsSent,
+    mRetransmittedBytesSent, mTotalEncodedBytesTarget, mFrameWidth,
+    mFrameHeight, mFramesPerSecond, mFramesSent, mHugeFramesSent,
+    mTotalEncodeTime);
 
 DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
     mozilla::dom::RTCRemoteInboundRtpStreamStats,
@@ -220,6 +228,30 @@ DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::dom::RTCCodecStats, mTimestamp,
                                   mType, mId, mPayloadType, mCodecType,
                                   mTransportId, mMimeType, mClockRate,
                                   mChannels, mSdpFmtpLine)
+
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::dom::RTCTransportStats, mozilla::dom::RTCStats, mPacketsSent,
+    mPacketsReceived, mBytesSent, mBytesReceived, mIceRole,
+    mIceLocalUsernameFragment, mDtlsState, mIceState, mSelectedCandidatePairId,
+    mLocalCertificateId, mRemoteCertificateId, mTlsVersion, mDtlsCipher,
+    mDtlsRole, mSrtpCipher, mSelectedCandidatePairChanges)
+
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::dom::RTCCertificateStats, mozilla::dom::RTCStats, mFingerprint,
+    mFingerprintAlgorithm, mBase64Certificate, mIssuerCertificateId)
+
+template <>
+struct ParamTraits<mozilla::dom::RTCIceRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCIceRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsRole>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCDtlsRole> {};
+
+template <>
+struct ParamTraits<mozilla::dom::RTCDtlsTransportState>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::RTCDtlsTransportState> {};
 
 template <>
 struct ParamTraits<mozilla::dom::RTCCodecType>

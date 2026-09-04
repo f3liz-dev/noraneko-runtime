@@ -5,6 +5,7 @@ pdfjs.jar:
  content/PdfJsTelemetry.sys.mjs (content/PdfJsTelemetry.sys.mjs)
  content/PdfSandbox.sys.mjs (content/PdfSandbox.sys.mjs)
  content/PdfStreamConverter.sys.mjs (content/PdfStreamConverter.sys.mjs)
+ content/pdfFeaturesNotification.mjs        (../aboutpdf/content/pdfFeaturesNotification.mjs)
  content/build/	(content/build/*)
  content/web/cmaps/	(content/web/cmaps/*)
  content/web/standard_fonts/	(content/web/standard_fonts/*)
@@ -14,6 +15,7 @@ pdfjs.jar:
  content/web/wasm/openjpeg_nowasm_fallback.js (content/web/wasm/openjpeg_nowasm_fallback.js)
  content/web/wasm/qcms_bg.wasm (content/web/wasm/qcms_bg.wasm)
  content/web/wasm/jbig2.wasm (content/web/wasm/jbig2.wasm)
+ content/web/wasm/jbig2_nowasm_fallback.js (content/web/wasm/jbig2_nowasm_fallback.js)
  content/web/iccs/ (content/web/iccs/*.icc)
 #ifdef ANDROID
  content/GeckoViewPdfjsParent.sys.mjs (content/GeckoViewPdfjsParent.sys.mjs)
@@ -26,6 +28,7 @@ pdfjs.jar:
  content/PdfJsAIFeature.sys.mjs (content/PdfJsAIFeature.sys.mjs)
  content/PdfjsParent.sys.mjs (content/PdfjsParent.sys.mjs)
  content/PdfjsChild.sys.mjs (content/PdfjsChild.sys.mjs)
+ content/PdfjsContextMenu.sys.mjs (content/PdfjsContextMenu.sys.mjs)
  content/web/viewer.html (content/web/viewer.html)
  content/web/viewer.css (content/web/viewer.css)
  content/web/viewer.mjs (content/web/viewer.mjs)
@@ -43,4 +46,5 @@ pdfjs.jar:
  content/web/images/	(content/web/images/messageBar_*.svg)
  content/web/images/	(content/web/images/comment-*.svg)
  content/web/images/	(content/web/images/pages_*.svg)
+ content/web/images/	(content/web/images/signature-properties-*.svg)
 #endif

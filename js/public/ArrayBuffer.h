@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +13,7 @@
 #include <stdint.h>  // uint32_t
 
 #include "jstypes.h"  // JS_PUBLIC_API
+
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 
@@ -124,7 +124,7 @@ extern JS_PUBLIC_API JSObject* NewArrayBufferWithContents(
  * |JS::NewArrayBufferWithContents| passing in |maybeArrayBuffer|'s internal
  * data pointer and length, in a manner safe against |maybeArrayBuffer|'s data
  * being moved around by the GC.  In particular, the new ArrayBuffer will not
- * behave like one created for WASM or asm.js, so it *can* be detached.
+ * behave like one created for WASM, so it *can* be detached.
  */
 extern JS_PUBLIC_API JSObject* CopyArrayBuffer(
     JSContext* cx, JS::Handle<JSObject*> maybeArrayBuffer);
@@ -324,8 +324,7 @@ extern JS_PUBLIC_API uint8_t* GetArrayBufferData(JSObject* obj,
  * the ArrayBuffer's original attached memory.
  *
  * This function throws only if it is provided a non-ArrayBuffer object or if
- * the provided ArrayBuffer is a WASM-backed ArrayBuffer or an ArrayBuffer used
- * in asm.js code.
+ * the provided ArrayBuffer is a WASM-backed ArrayBuffer.
  */
 extern JS_PUBLIC_API bool DetachArrayBuffer(JSContext* cx,
                                             Handle<JSObject*> obj);

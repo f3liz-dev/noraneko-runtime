@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +7,8 @@
 /* https://w3c.github.io/webtransport/#web-transport-configuration */
 
 dictionary WebTransportHash {
-  DOMString algorithm;
-  BufferSource value;
+  required DOMString algorithm;
+  required BufferSource value;
 };
 
 dictionary WebTransportOptions {
@@ -17,6 +16,7 @@ dictionary WebTransportOptions {
   boolean requireUnreliable = false;
   sequence<WebTransportHash> serverCertificateHashes;
   WebTransportCongestionControl congestionControl = "default";
+  sequence<DOMString> protocols = [];
 };
 
 enum WebTransportCongestionControl {
@@ -32,9 +32,14 @@ dictionary WebTransportCloseInfo {
   UTF8String reason = "";
 };
 
+/* https://w3c.github.io/webtransport/#send-options */
+dictionary WebTransportSendOptions {
+  WebTransportSendGroup? sendGroup = null;
+  long long sendOrder = 0;
+};
+
 /* https://w3c.github.io/webtransport/#uni-stream-options */
-dictionary WebTransportSendStreamOptions {
-  long long? sendOrder = null;
+dictionary WebTransportSendStreamOptions : WebTransportSendOptions {
 };
 
 /* https://w3c.github.io/webtransport/#web-transport-stats */
@@ -72,10 +77,15 @@ interface WebTransport {
 
   [NewObject]
   Promise<WebTransportStats> getStats();
+  [NewObject]
+  Promise<Uint8Array> exportKeyingMaterial(BufferSource label,
+                                            optional BufferSource context);
   readonly attribute Promise<undefined> ready;
   readonly attribute WebTransportReliabilityMode reliability;
   readonly attribute WebTransportCongestionControl congestionControl;
+  readonly attribute DOMString protocol;
   readonly attribute Promise<WebTransportCloseInfo> closed;
+  readonly attribute Promise<undefined> draining;
   [Throws] undefined close(optional WebTransportCloseInfo closeInfo = {});
 
   [Throws] readonly attribute WebTransportDatagramDuplexStream datagrams;
@@ -92,6 +102,9 @@ interface WebTransport {
     optional WebTransportSendStreamOptions options = {});
   /* a ReadableStream of WebTransportReceiveStream objects */
   readonly attribute ReadableStream incomingUnidirectionalStreams;
+
+  [NewObject, Throws]
+  WebTransportSendGroup createSendGroup();
 };
 
 enum WebTransportReliabilityMode {

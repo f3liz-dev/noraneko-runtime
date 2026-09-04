@@ -32,16 +32,9 @@ from gecko_taskgraph.files_changed import get_locally_changed_files
 
 
 def format_taskgraph_yaml(taskgraph):
-    from taskgraph.util.readonlydict import ReadOnlyDict
-
     class TGDumper(yaml.SafeDumper):
         def ignore_aliases(self, data):
             return True
-
-        def represent_ro_dict(self, data):
-            return self.represent_dict(dict(data))
-
-    TGDumper.add_representer(ReadOnlyDict, TGDumper.represent_ro_dict)
 
     return yaml.dump(taskgraph.to_json(), Dumper=TGDumper, default_flow_style=False)
 
@@ -293,7 +286,7 @@ def show_taskgraph(options):
         # as best we can after we're done. In all known cases, using
         # branch or bookmark (which are both available on the VCS object)
         # as `branch` is preferable to a specific revision.
-        cur_ref = repo.branch or repo.head_ref[:12]
+        cur_ref = repo.branch or repo.head_rev[:12]
         cur_ref_file = cur_ref.replace("/", "_")
 
         diffdir = tempfile.mkdtemp()
@@ -369,7 +362,7 @@ def show_taskgraph(options):
         base_ref_file = base_ref.replace("/", "_")
         try:
             repo.update(base_ref)
-            base_ref = repo.head_ref[:12]
+            base_ref = repo.head_rev[:12]
             options["output_file"] = os.path.join(
                 diffdir, f"{options['graph_attr']}_{base_ref_file}"
             )
@@ -586,16 +579,23 @@ def image_digest(args):
 )
 @argument("--try-task-config-file", help="path to try task configuration file")
 @argument(
+    "--allow-parameter-override",
+    default=False,
+    action="store_true",
+    help="Allow user to override computed decision task parameters.",
+)
+@argument(
     "--no-verify",
     dest="verify",
     default=True,
     action="store_false",
     help="Skip graph verifications.",
 )
-def decision(options):
+def decision(options, parameters):
+
     from gecko_taskgraph.decision import taskgraph_decision
 
-    taskgraph_decision(options)
+    taskgraph_decision(options, parameters)
 
 
 @command("action-callback", description="Run action callback used by action tasks")

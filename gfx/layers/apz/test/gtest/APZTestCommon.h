@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,24 +10,23 @@
  * writing APZ gtests.
  */
 
-#include "gtest/gtest.h"
-#include "gmock/gmock.h"
-
-#include "mozilla/layers/GeckoContentController.h"
-#include "mozilla/layers/CompositorBridgeParent.h"
-#include "mozilla/layers/DoubleTapToZoom.h"
-#include "mozilla/layers/APZThreadUtils.h"
-#include "mozilla/layers/MatrixMessage.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/TypedEnumBits.h"
-#include "mozilla/UniquePtr.h"
+#include "TestWRScrollData.h"
+#include "UnitTransforms.h"
 #include "apz/src/APZCTreeManager.h"
 #include "apz/src/AsyncPanZoomController.h"
 #include "apz/src/HitTestingTreeNode.h"
 #include "base/task.h"
 #include "gfxPlatform.h"
-#include "TestWRScrollData.h"
-#include "UnitTransforms.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/TypedEnumBits.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/DoubleTapToZoom.h"
+#include "mozilla/layers/GeckoContentController.h"
+#include "mozilla/layers/MatrixMessage.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -124,6 +121,8 @@ static inline constexpr auto kDefaultTouchBehavior =
 
 class MockContentController : public GeckoContentController {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MockContentController, final);
+
   MOCK_METHOD1(NotifyLayerTransforms, void(nsTArray<MatrixMessage>&&));
   MOCK_METHOD1(RequestContentRepaint, void(const RepaintRequest&));
   MOCK_METHOD6(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
@@ -159,6 +158,9 @@ class MockContentController : public GeckoContentController {
                void(const ScrollableLayerGuid&, float, float, bool));
   MOCK_METHOD4(UpdateOverscrollOffset,
                void(const ScrollableLayerGuid&, float, float, bool));
+
+ protected:
+  virtual ~MockContentController() = default;
 };
 
 class MockContentControllerDelayed : public MockContentController {
@@ -722,6 +724,15 @@ void APZCTesterBase::Pan(const RefPtr<InputReceiver>& aTarget,
       overcomeTouchToleranceX = panThreshold;
     } else if (aTouchStart.y != aTouchEnd.y) {
       overcomeTouchToleranceY = panThreshold;
+    }
+    // For a negative-direction gesture we add the offset and subtract it for a
+    // positive-direction one, so the touch-down is "behind" the start
+    // coordinate along the gesture direction.
+    if (aTouchEnd.x > aTouchStart.x) {
+      overcomeTouchToleranceX = -overcomeTouchToleranceX;
+    }
+    if (aTouchEnd.y > aTouchStart.y) {
+      overcomeTouchToleranceY = -overcomeTouchToleranceY;
     }
   }
 

@@ -1,22 +1,33 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GeckoProcessManager.h"
 
+#include "mozilla/Services.h"
+#include "mozilla/java/GeckoAppShellWrappers.h"
 #include "nsINetworkLinkService.h"
 #include "nsISupportsImpl.h"
-#include "mozilla/Services.h"
-
-#include "mozilla/java/GeckoAppShellWrappers.h"
 
 namespace mozilla {
 
 /* static */ void GeckoProcessManager::Init() {
   BaseNatives::Init();
   ConnectionManager::Init();
+}
+
+// static
+void GeckoProcessManager::GetEditableParent(jni::Object::Param aEditableChild,
+                                            int64_t aContentId,
+                                            int64_t aTabId) {
+  nsCOMPtr<nsIWidget> widget = GetWidget(aContentId, aTabId);
+  if (RefPtr<nsWindow> window = nsWindow::From(widget)) {
+    java::GeckoProcessManager::SetEditableChildParent(
+        aEditableChild, window->GetEditableParent());
+    return;
+  }
+
+  NS_WARNING("GeckoProcessManager::GetEditableParent FAILED");
 }
 
 NS_IMPL_ISUPPORTS(GeckoProcessManager::ConnectionManager, nsIObserver)

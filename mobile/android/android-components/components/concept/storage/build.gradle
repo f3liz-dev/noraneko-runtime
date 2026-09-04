@@ -3,12 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
+    alias(libs.plugins.kotlin.parcelize)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-parcelize'
 
 android {
     namespace = 'mozilla.components.concept.storage'
@@ -19,6 +17,8 @@ dependencies {
     // dependency, but it will crash at runtime.
     // Included via 'api' because this module is unusable without coroutines.
     api libs.kotlinx.coroutines
+
+    api project(':components:concept-storage-bookmarks')
 
     implementation project(':components:support-base')
     implementation project(':components:support-ktx')

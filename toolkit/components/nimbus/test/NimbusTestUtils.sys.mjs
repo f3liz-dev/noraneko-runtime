@@ -12,15 +12,17 @@ import {
 } from "resource://nimbus/ExperimentAPI.sys.mjs";
 import { ExperimentStore } from "resource://nimbus/lib/ExperimentStore.sys.mjs";
 import { FileTestUtils } from "resource://testing-common/FileTestUtils.sys.mjs";
+import enrollmentSchema from "resource://testing-common/nimbus/schemas/NimbusEnrollment.schema.json" with { type: "json" };
+import featureSchema from "resource://testing-common/nimbus/schemas/ExperimentFeature.schema.json" with { type: "json" };
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
   JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
-  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   NimbusEnrollments: "resource://nimbus/lib/Enrollments.sys.mjs",
   NimbusMigrations: "resource://nimbus/lib/Migrations.sys.mjs",
+  NimbusTelemetry: "resource://nimbus/lib/Telemetry.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   ProfilesDatastoreService:
@@ -29,38 +31,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
-});
-
-function fetchSchemaSync(uri) {
-  // Yes, this is doing a sync load, but this is only done *once* and we cache
-  // the result after *and* it is test-only.
-  const channel = lazy.NetUtil.newChannel({
-    uri,
-    loadUsingSystemPrincipal: true,
-  });
-  const stream = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(
-    Ci.nsIScriptableInputStream
-  );
-
-  stream.init(channel.open());
-
-  const available = stream.available();
-  const json = stream.read(available);
-  stream.close();
-
-  return JSON.parse(json);
-}
-
-ChromeUtils.defineLazyGetter(lazy, "enrollmentSchema", () => {
-  return fetchSchemaSync(
-    "resource://testing-common/nimbus/schemas/NimbusEnrollment.schema.json"
-  );
-});
-
-ChromeUtils.defineLazyGetter(lazy, "featureSchema", () => {
-  return fetchSchemaSync(
-    "resource://testing-common/nimbus/schemas/ExperimentFeature.schema.json"
-  );
 });
 
 const { SYNC_DATA_PREF_BRANCH, SYNC_DEFAULTS_PREF_BRANCH } = ExperimentStore;
@@ -170,15 +140,12 @@ const NimbusLogging = {
   },
 };
 
-let _testSuite = null;
-
 export const NimbusTestUtils = {
   init(testCase) {
-    _testSuite = testCase;
-
+    const assert = testCase.Assert;
     Object.defineProperty(NimbusTestUtils, "Assert", {
       configurable: true,
-      get: () => _testSuite.Assert,
+      get: () => assert,
     });
   },
 
@@ -395,7 +362,7 @@ export const NimbusTestUtils = {
           ],
           firefoxLabsTitle: null,
         },
-        source: "NimbusTestUtils",
+        source: lazy.NimbusTelemetry.EnrollmentSource.RS_LOADER,
         userFacingName,
         userFacingDescription,
         lastSeen: new Date().toJSON(),
@@ -439,7 +406,14 @@ export const NimbusTestUtils = {
      * @param {object?} props
      *        Additional properties to splat into to the
      */
-    recipe(slug, props = {}) {
+    recipe(
+      slug,
+      { isFirefoxLabsOptIn = false, isRollout = false, ...props } = {}
+    ) {
+      if (isFirefoxLabsOptIn && !isRollout) {
+        throw new Error("isFirefoxLabsOptIn requires isRollout");
+      }
+
       return {
         id: slug,
         schemaVersion: "1.7.0",
@@ -454,7 +428,7 @@ export const NimbusTestUtils = {
         proposedEnrollment: 7,
         referenceBranch: "control",
         application: "firefox-desktop",
-        branches: props?.isRollout
+        branches: isRollout
           ? [NimbusTestUtils.factories.recipe.branches[0]]
           : NimbusTestUtils.factories.recipe.branches,
         bucketConfig: NimbusTestUtils.factories.recipe.bucketConfig,
@@ -464,12 +438,14 @@ export const NimbusTestUtils = {
           "testFeature",
         ],
         targeting: "true",
-        isRollout: false,
-        isFirefoxLabsOptIn: false,
-        firefoxLabsTitle: null,
-        firefoxLabsDescription: null,
+        isRollout,
+        isFirefoxLabsOptIn,
+        firefoxLabsTitle: isFirefoxLabsOptIn ? "placeholder-title" : null,
+        firefoxLabsDescription: isFirefoxLabsOptIn
+          ? "placeholder-description"
+          : null,
         firefoxLabsDescriptionLinks: null,
-        firefoxLabsGroup: null,
+        firefoxLabsGroup: isFirefoxLabsOptIn ? "placeholder-group" : null,
         requiresRestart: false,
         localizations: null,
         ...props,
@@ -573,13 +549,33 @@ export const NimbusTestUtils = {
       });
     },
 
+    get GRADUATED_FIREFOX_LABS_JPEG_XL() {
+      const { Phase } = lazy.NimbusMigrations;
+
+      return NimbusTestUtils.makeMigrationState({
+        [Phase.INIT_STARTED]: "separate-rollout-opt-out",
+        [Phase.AFTER_STORE_INITIALIZED]: "graduate-firefox-labs-jpeg-xl",
+        [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
+      });
+    },
+
+    get PREFFLIPS_RESTORED() {
+      const { Phase } = lazy.NimbusMigrations;
+
+      return NimbusTestUtils.makeMigrationState({
+        [Phase.INIT_STARTED]: "separate-rollout-opt-out",
+        [Phase.AFTER_STORE_INITIALIZED]: "bug-2054546-mitigation",
+        [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
+      });
+    },
+
     /**
      * A migration state that represents all migrations applied.
      *
      * @type {Record<Phase, number>}
      */
     get LATEST() {
-      return NimbusTestUtils.migrationState.SEPARATE_ROLLOUT_OPT_OUT;
+      return NimbusTestUtils.migrationState.PREFFLIPS_RESTORED;
     },
   },
 
@@ -643,7 +639,7 @@ export const NimbusTestUtils = {
       slug: recipe.slug,
       branch,
       active: true,
-      source: "NimbusTestUtils",
+      source: lazy.NimbusTelemetry.EnrollmentSource.RS_LOADER,
       userFacingName: recipe.userFacingName,
       userFacingDescription: recipe.userFacingDescription,
       lastSeen: new Date().toJSON(),
@@ -677,7 +673,7 @@ export const NimbusTestUtils = {
    *          A cleanup function to remove the features once the test has completed.
    */
   addTestFeatures(...features) {
-    const validator = new lazy.JsonSchema.Validator(lazy.featureSchema);
+    const validator = new lazy.JsonSchema.Validator(featureSchema);
 
     for (const feature of features) {
       if (Object.hasOwn(NimbusFeatures, feature.featureId)) {
@@ -909,7 +905,7 @@ export const NimbusTestUtils = {
    * @throws {Error} If the recipe references a feature that does not exist or
    *                 if the recipe fails to enroll.
    */
-  async enroll(recipe, { manager, source = "nimbus-test-utils" } = {}) {
+  async enroll(recipe, { manager, source } = {}) {
     if (!recipe?.slug) {
       throw new Error("Experiment with slug is required");
     }
@@ -927,7 +923,10 @@ export const NimbusTestUtils = {
     const experimentManager = manager ?? ExperimentAPI.manager;
     await experimentManager.store.ready();
 
-    const enrollment = await experimentManager.enroll(recipe, source);
+    const enrollment = await experimentManager.enroll(
+      recipe,
+      source ?? lazy.NimbusTelemetry.EnrollmentSource.RS_LOADER
+    );
 
     if (!enrollment) {
       throw new Error(`Failed to enroll in ${recipe}`);
@@ -1067,7 +1066,7 @@ export const NimbusTestUtils = {
         lastSeen,
         setPrefs: setPrefs ? JSON.stringify(setPrefs) : null,
         prefFlips: prefFlips ? JSON.stringify(prefFlips) : null,
-        source: extra.source ?? "NimbusTestUtils",
+        source: extra.source ?? lazy.NimbusTelemetry.EnrollmentSource.RS_LOADER,
       }
     );
   },
@@ -1332,6 +1331,8 @@ export const NimbusTestUtils = {
         // Remove all migration state.
         Services.prefs.deleteBranch("nimbus.migrations.");
 
+        Services.prefs.clearUserPref("nimbus.firstUpdateComplete");
+
         NimbusLogging.maybeResetLogLevel();
       },
     };
@@ -1361,7 +1362,7 @@ export const NimbusTestUtils = {
 
     validateFeatureValueEnum(enrollment);
     validateSchema(
-      lazy.enrollmentSchema,
+      enrollmentSchema,
       enrollment,
       `Enrollment ${enrollment.slug} is not valid`
     );
@@ -1428,6 +1429,36 @@ export const NimbusTestUtils = {
     const db = (store ?? ExperimentAPI.manager.store)._db;
 
     await db?._flushNow();
+  },
+
+  /**
+   * Temporarily disable signature verification for Remote Settings clients used
+   * by Nimbus.
+   *
+   * NB: This is only required for browser tests.
+   *
+   * @returns {() => void} A callback that will restore signature verification
+   * to its previous state.
+   */
+  disableSignatureVerification() {
+    const { remoteSettingsClients } = ExperimentAPI._rsLoader;
+
+    const originalValues = Object.fromEntries(
+      Object.entries(remoteSettingsClients).map(([key, collection]) => [
+        key,
+        collection.verifySignature,
+      ])
+    );
+
+    for (const client of Object.values(remoteSettingsClients)) {
+      client.verifySignature = false;
+    }
+
+    return () => {
+      for (const [key, client] of Object.entries(remoteSettingsClients)) {
+        client.verifySignature = originalValues[key];
+      }
+    };
   },
 };
 

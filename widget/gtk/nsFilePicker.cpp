@@ -1,38 +1,37 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsFilePicker.h"
+
 #include <dlfcn.h>
 #include <gtk/gtk.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "AsyncDBus.h"
-#include "nsGtkUtils.h"
-#include "nsIFileURL.h"
-#include "nsIGIOService.h"
-#include "nsIURI.h"
-#include "nsIWidget.h"
-#include "nsIFile.h"
-#include "nsIStringBundle.h"
-#include "nsWindow.h"
-#include "mozilla/Components.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Document.h"
-
-#include "nsArrayEnumerator.h"
-#include "nsEnumeratorUtils.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
+#include "GRefPtr.h"
 #include "MozContainer.h"
 #include "WidgetUtilsGtk.h"
-
 #include "gfxPlatform.h"
+#include "mozilla/Components.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Promise.h"
+#include "nsArrayEnumerator.h"
+#include "nsEnumeratorUtils.h"
+#include "nsGtkUtils.h"
+#include "nsIFile.h"
+#include "nsIFileURL.h"
+#include "nsIGIOService.h"
+#include "nsIStringBundle.h"
+#include "nsIURI.h"
+#include "nsIWidget.h"
+#include "nsNetUtil.h"
+#include "nsReadableUtils.h"
+#include "nsWindow.h"
 #include "nsXULAppAPI.h"
-#include "nsFilePicker.h"
 
 #undef LOG
 #ifdef MOZ_LOGGING
@@ -794,6 +793,7 @@ void nsFilePicker::OpenNonPortal() {
                    this);
   g_signal_connect(file_chooser, "destroy", G_CALLBACK(OnNonPortalDestroy),
                    this);
+  RecordLastShownTime();
   gtk_widget_show(GTK_WIDGET(file_chooser));
 }
 
@@ -860,16 +860,24 @@ bool nsFilePicker::WarnForNonReadableFile() {
       mParentWidget
           ? GTK_WINDOW(mParentWidget->GetNativeData(NS_NATIVE_SHELLWIDGET))
           : nullptr;
-  auto* cancel_dialog = gtk_message_dialog_new(
+  RefPtr<GtkWidget> cancel_dialog = gtk_message_dialog_new(
       parent_window, flags, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s",
       NS_ConvertUTF16toUTF8(errorMessage).get());
-  gtk_dialog_run(GTK_DIALOG(cancel_dialog));
+  gtk_dialog_run(GTK_DIALOG(cancel_dialog.get()));
   gtk_widget_destroy(cancel_dialog);
 
   return true;
 }
 
 void nsFilePicker::DoneNonPortal(GtkWidget* file_chooser, gint response) {
+  // Ignore a confirmation that arrives before the input-protection time range
+  // has passed, leaving the dialog open. (GTK emits GTK_RESPONSE_ACCEPT on a
+  // double-click.)
+  if ((response == GTK_RESPONSE_OK || response == GTK_RESPONSE_ACCEPT) &&
+      IsPickerInputProtected()) {
+    return;
+  }
+
   mFileChooser = nullptr;
 
   nsIFilePicker::ResultCode result;

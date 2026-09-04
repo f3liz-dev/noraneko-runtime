@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,16 @@
 #ifndef nsProtocolProxyService_h_
 #define nsProtocolProxyService_h_
 
-#include "nsString.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsIProtocolProxyService2.h"
-#include "nsIProtocolProxyFilter.h"
-#include "nsIProxyInfo.h"
-#include "nsIObserver.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
+#include "nsIObserver.h"
+#include "nsIProtocolProxyFilter.h"
+#include "nsIProtocolProxyService2.h"
+#include "nsIProxyInfo.h"
 #include "nsITimer.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "prio.h"
 
 class nsIPrefBranch;

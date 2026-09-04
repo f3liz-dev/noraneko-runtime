@@ -9,7 +9,6 @@ import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContainerAction
 import mozilla.components.browser.state.action.ContentAction
-import mozilla.components.browser.state.action.CookieBannerAction
 import mozilla.components.browser.state.action.CopyInternetResourceAction
 import mozilla.components.browser.state.action.CrashAction
 import mozilla.components.browser.state.action.CustomTabListAction
@@ -29,6 +28,7 @@ import mozilla.components.browser.state.action.RestoreCompleteAction
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.action.ShareResourceAction
 import mozilla.components.browser.state.action.SystemAction
+import mozilla.components.browser.state.action.SystemPermissionRequestAction
 import mozilla.components.browser.state.action.TabGroupAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.action.TrackingProtectionAction
@@ -66,7 +66,6 @@ internal object BrowserStateReducer {
             is TabGroupAction -> TabGroupReducer.reduce(state, action)
             is TrackingProtectionAction -> TrackingProtectionStateReducer.reduce(state, action)
             is TranslationsAction -> TranslationsStateReducer.reduce(state, action)
-            is CookieBannerAction -> CookieBannerStateReducer.reduce(state, action)
             is WebExtensionAction -> WebExtensionReducer.reduce(state, action)
             is MediaSessionAction -> MediaSessionReducer.reduce(state, action)
             is DownloadAction -> DownloadStateReducer.reduce(state, action)
@@ -83,6 +82,7 @@ internal object BrowserStateReducer {
             is AwesomeBarAction -> AwesomeBarStateReducer.reduce(state, action)
             is UpdateDistribution -> state.copy(distributionId = action.distributionId)
             is DefaultDesktopModeAction -> DesktopModeReducer.reduce(state = state, action = action)
+            is SystemPermissionRequestAction -> SystemPermissionReducer.reduce(state, action)
         }
     }
 }

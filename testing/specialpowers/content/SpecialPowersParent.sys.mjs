@@ -195,6 +195,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
       parent: {
         esModuleURI: "resource://testing-common/SpecialPowersParent.sys.mjs",
       },
+      safeForUntrustedWebProcess: true,
     });
     ChromeUtils.registerProcessActor("SpecialPowersProcessActor", {
       child: {
@@ -205,6 +206,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
         esModuleURI:
           "resource://testing-common/SpecialPowersProcessActor.sys.mjs",
       },
+      safeForUntrustedWebProcess: true,
     });
   }
 
@@ -388,46 +390,6 @@ export class SpecialPowersParent extends JSWindowActorParent {
 
   _getURI(url) {
     return Services.io.newURI(url);
-  }
-  _notifyCategoryAndObservers(subject, topic, data) {
-    const serviceMarker = "service,";
-
-    // First create observers from the category manager.
-
-    let observers = [];
-
-    for (let { value: contractID } of Services.catMan.enumerateCategory(
-      topic
-    )) {
-      let factoryFunction;
-      if (contractID.substring(0, serviceMarker.length) == serviceMarker) {
-        contractID = contractID.substring(serviceMarker.length);
-        factoryFunction = "getService";
-      } else {
-        factoryFunction = "createInstance";
-      }
-
-      try {
-        let handler = Cc[contractID][factoryFunction]();
-        if (handler) {
-          let observer = handler.QueryInterface(Ci.nsIObserver);
-          observers.push(observer);
-        }
-      } catch (e) {}
-    }
-
-    // Next enumerate the registered observers.
-    for (let observer of Services.obs.enumerateObservers(topic)) {
-      if (observer instanceof Ci.nsIObserver && !observers.includes(observer)) {
-        observers.push(observer);
-      }
-    }
-
-    observers.forEach(function (observer) {
-      try {
-        observer.observe(subject, topic, data);
-      } catch (e) {}
-    });
   }
 
   /*
@@ -719,9 +681,9 @@ export class SpecialPowersParent extends JSWindowActorParent {
   _toggleMuteAudio(aMuted) {
     let browser = this.browsingContext.top.embedderElement;
     if (aMuted) {
-      browser.mute();
+      browser.browsingContext.mediaController.mute();
     } else {
-      browser.unmute();
+      browser.browsingContext.mediaController.unmute();
     }
   }
 
@@ -1434,7 +1396,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
             aMessage.data;
 
           return browsingContext.currentWindowGlobal
-            .drawSnapshot(rect, 1.0, background, resetScrollPosition)
+            .drawSnapshot(rect, 1.0, background, { resetScrollPosition })
             .then(async image => {
               let hiddenFrame = new lazy.HiddenFrame();
               let win = await hiddenFrame.get();

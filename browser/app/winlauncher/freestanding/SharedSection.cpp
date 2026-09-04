@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -116,7 +114,7 @@ RTL_RUN_ONCE SharedSection::sEnsureOnce = RTL_RUN_ONCE_INIT;
 nt::SRWLock SharedSection::sLock;
 
 void SharedSection::Reset(HANDLE aNewSectionObject) {
-  nt::AutoExclusiveLock{sLock};
+  nt::AutoExclusiveLock lock{sLock};
   if (sWriteCopyView) {
     nt::AutoMappedView view(sWriteCopyView);
     sWriteCopyView = nullptr;
@@ -151,9 +149,23 @@ LauncherVoidResult SharedSection::Init() {
       kSharedViewSize >= sizeof(Layout),
       "kSharedViewSize is too small to represent SharedSection::Layout.");
 
-  HANDLE section =
-      ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0,
-                           kSharedViewSize, nullptr);
+  // Create with an empty DACL to limit the duplicated handle's access rights.
+  // See shared_memory::CreateImpl for details.
+  SECURITY_DESCRIPTOR sd;
+  ACL dacl;
+  if (!::InitializeAcl(&dacl, sizeof(dacl), ACL_REVISION) ||
+      !::InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION) ||
+      !::SetSecurityDescriptorDacl(&sd, TRUE, &dacl, FALSE)) {
+    return LAUNCHER_ERROR_FROM_LAST();
+  }
+
+  SECURITY_ATTRIBUTES sa;
+  sa.nLength = sizeof(sa);
+  sa.lpSecurityDescriptor = &sd;
+  sa.bInheritHandle = FALSE;
+
+  HANDLE section = ::CreateFileMappingW(
+      INVALID_HANDLE_VALUE, &sa, PAGE_READWRITE, 0, kSharedViewSize, nullptr);
   if (!section) {
     return LAUNCHER_ERROR_FROM_LAST();
   }

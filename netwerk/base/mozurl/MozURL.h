@@ -5,10 +5,10 @@
 #ifndef mozURL_h_
 #define mozURL_h_
 
-#include "nsIMemoryReporter.h"
-#include "mozilla/net/MozURL_ffi.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
+#include "mozilla/net/MozURL_ffi.h"
+#include "nsIMemoryReporter.h"
 
 MOZ_DEFINE_MALLOC_SIZE_OF(MozURLMallocSizeOf)
 
@@ -39,6 +39,13 @@ namespace net {
 // reflect the actual layout of the type.
 class MozURL final {
  public:
+  // Make it a compile time error for C++ code to ever create, destruct, or copy
+  // MozURL objects. All of these operations will be performed by rust.
+  MozURL() = delete;
+  ~MozURL() = delete;
+  MozURL(const MozURL&) = delete;
+  MozURL& operator=(const MozURL&) = delete;
+
   static nsresult Init(MozURL** aURL, const nsACString& aSpec,
                        const MozURL* aBaseURL = nullptr) {
     return mozurl_new(aURL, &aSpec, aBaseURL);
@@ -217,14 +224,6 @@ class MozURL final {
   // AddRef and Release are non-virtual on this type, and always call into rust.
   void AddRef() { mozurl_addref(this); }
   void Release() { mozurl_release(this); }
-
- private:
-  // Make it a compile time error for C++ code to ever create, destruct, or copy
-  // MozURL objects. All of these operations will be performed by rust.
-  MozURL();  /* never defined */
-  ~MozURL(); /* never defined */
-  MozURL(const MozURL&) = delete;
-  MozURL& operator=(const MozURL&) = delete;
 };
 
 }  // namespace net

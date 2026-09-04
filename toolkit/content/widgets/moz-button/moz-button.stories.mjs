@@ -18,7 +18,7 @@ export default {
       control: { type: "select" },
     },
     size: {
-      options: ["default", "small"],
+      options: ["default", "small", "large"],
       control: { type: "radio" },
     },
     type: {
@@ -26,6 +26,9 @@ export default {
         "default",
         "primary",
         "destructive",
+        "muted",
+        "toolbar",
+        "menuitem",
         "icon",
         "icon ghost",
         "split",
@@ -47,6 +50,8 @@ moz-button-labelled =
   .label = Button
 moz-button-primary = Primary
 moz-button-destructive = Destructive
+moz-button-muted = Muted
+moz-button-menuitem = Menu Item
 moz-button-titled =
   .title = View logins
 moz-button-aria-labelled =
@@ -113,6 +118,11 @@ DefaultSmall.args = {
   ...Default.args,
   size: "small",
 };
+export const DefaultLarge = Template.bind({});
+DefaultLarge.args = {
+  ...Default.args,
+  size: "large",
+};
 export const Disabled = Template.bind({});
 Disabled.args = {
   ...Default.args,
@@ -130,6 +140,19 @@ Destructive.args = {
   type: "destructive",
   l10nId: "moz-button-destructive",
 };
+export const MenuItem = Template.bind({});
+MenuItem.args = {
+  ...Default.args,
+  type: "menuitem",
+  l10nId: "moz-button-menuitem",
+  size: "small",
+};
+export const Muted = Template.bind({});
+Muted.args = {
+  ...Default.args,
+  type: "muted",
+  l10nId: "moz-button-muted",
+};
 export const Icon = Template.bind({});
 Icon.args = {
   ...Default.args,
@@ -140,6 +163,11 @@ export const IconSmall = Template.bind({});
 IconSmall.args = {
   ...Icon.args,
   size: "small",
+};
+export const IconLarge = Template.bind({});
+IconLarge.args = {
+  ...Icon.args,
+  size: "large",
 };
 export const IconGhost = Template.bind({});
 IconGhost.args = {
@@ -166,6 +194,7 @@ WithAccesskey.args = {
 export const Toolbar = Template.bind({});
 Toolbar.args = {
   ...Default.args,
+  type: "toolbar",
   showOuterPadding: true,
 };
 export const Badged = Template.bind({});

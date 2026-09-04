@@ -17,11 +17,6 @@ object FeatureFlags {
     val customExtensionCollectionFeature = Config.channel.isNightlyOrDebug || Config.channel.isBeta
 
     /**
-     * Controls whether the "Choose download location" feature is enabled or not.
-     */
-    val downloadsDefaultLocation = Config.channel.isDebug
-
-    /**
      * Pull-to-refresh allows you to pull the web content down far enough to have the page to
      * reload.
      */
@@ -41,12 +36,7 @@ object FeatureFlags {
     val onboardingFeatureEnabled = !Config.channel.isDebug
 
     /**
-     * Enables the "Discover more" stories screen.
-     */
-    const val DISCOVER_MORE_STORIES = true
-
-    /**
      * Enables Firefox Labs.
      */
-    const val FIREFOX_LABS = false
+    const val FIREFOX_LABS = true
 }

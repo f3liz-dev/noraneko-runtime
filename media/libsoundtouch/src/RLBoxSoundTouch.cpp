@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Assertions.h"
 #include "RLBoxSoundTouch.h"
+#include "rlbox_wasm2c_thread_locals.h"
 
 using namespace rlbox;
 using namespace mozilla;
@@ -153,6 +153,12 @@ uint RLBoxSoundTouch::receiveSamples(AudioDataValue* aOutput,
 
 void RLBoxSoundTouch::flush() {
   return mSandbox.invoke_sandbox_function(Flush, mTimeStretcher);
+}
+
+void RLBoxSoundTouch::redirectRLBoxSbxGrowFail(void (*fn)()) {
+#ifdef MOZ_WASM_SANDBOXING_SOUNDTOUCH
+  moz_wasm2c_set_memgrow_redirect_target(fn);
+#endif
 }
 
 void RLBoxSoundTouch::resizeSampleBuffer(uint aNewSize) {

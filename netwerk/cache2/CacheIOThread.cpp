@@ -3,21 +3,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheIOThread.h"
+
 #include "CacheFileIOManager.h"
 #include "CacheLog.h"
 #include "CacheObserver.h"
 #include "GeckoProfiler.h"
-
+#include "mozilla/EventQueue.h"
+#include "mozilla/IOInterposer.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ThreadEventQueue.h"
 #include "nsIRunnable.h"
 #include "nsISupportsImpl.h"
 #include "nsPrintfCString.h"
 #include "nsThread.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
-#include "mozilla/EventQueue.h"
-#include "mozilla/IOInterposer.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ThreadEventQueue.h"
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -333,9 +333,8 @@ void CacheIOThread::ThreadFunc() {
         MakeRefPtr<ThreadEventQueue>(MakeUnique<mozilla::EventQueue>());
     nsCOMPtr<nsIThread> xpcomThread =
         nsThreadManager::get().CreateCurrentThread(queue);
-#if defined(MOZ_GECKO_PROFILER)
+
     profiler_register_thread("Cache2 I/O", &stackTop);
-#endif
 
     threadInternal = do_QueryInterface(xpcomThread);
     if (threadInternal) threadInternal->SetObserver(this);
@@ -403,10 +402,11 @@ void CacheIOThread::ThreadFunc() {
 #endif
   }  // lock
 
-  if (threadInternal) threadInternal->SetObserver(nullptr);
-#if defined(MOZ_GECKO_PROFILER)
+  if (threadInternal) {
+    threadInternal->SetObserver(nullptr);
+  }
+
   profiler_unregister_thread();
-#endif
 }
 
 void CacheIOThread::LoopOneLevel(uint32_t aLevel) {

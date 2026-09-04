@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +6,6 @@
 #ifndef WebBrowserPersistDocumentParent_h_
 #define WebBrowserPersistDocumentParent_h_
 
-#include "mozilla/Maybe.h"
 #include "mozilla/PWebBrowserPersistDocumentParent.h"
 #include "nsCOMPtr.h"
 #include "nsIWebBrowserPersistDocument.h"
@@ -45,8 +43,9 @@ class WebBrowserPersistDocumentParent final
   using Attrs = WebBrowserPersistDocumentAttrs;
 
   // IPDL methods:
-  mozilla::ipc::IPCResult RecvAttributes(const Attrs& aAttrs,
-                                         const Maybe<IPCStream>& aPostStream);
+  mozilla::ipc::IPCResult RecvAttributes(Attrs&& aAttrs,
+                                         NotNull<nsIPrincipal*> aPrincipal,
+                                         nsIInputStream* aPostStream);
   mozilla::ipc::IPCResult RecvInitFailure(const nsresult& aFailure);
 
   PWebBrowserPersistResourcesParent* AllocPWebBrowserPersistResourcesParent();

@@ -17,6 +17,7 @@ DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
 DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
+DEFINES["WEBRTC_DEPRECATE_PLAN_B"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
@@ -41,6 +42,16 @@ LOCAL_INCLUDES += [
     "/third_party/libwebrtc/sdk/objc/",
     "/third_party/libwebrtc/sdk/objc/base/",
     "/tools/profiler/public"
+]
+
+OS_LIBS += [
+    "-framework AppKit",
+    "-framework AVFoundation",
+    "-framework CoreMedia",
+    "-framework CoreVideo",
+    "-framework Foundation",
+    "-framework IOKit",
+    "-framework IOSurface"
 ]
 
 UNIFIED_SOURCES += [

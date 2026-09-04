@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxQuartzSurface.h"
+
+#include "cairo-quartz.h"
 #include "gfxContext.h"
 #include "gfxImageSurface.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/HelpersCairo.h"
-
-#include "cairo-quartz.h"
 
 void gfxQuartzSurface::MakeInvalid() { mSize = mozilla::gfx::IntSize(-1, -1); }
 

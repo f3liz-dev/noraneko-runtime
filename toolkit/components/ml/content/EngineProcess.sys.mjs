@@ -9,6 +9,8 @@
  * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
  */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
 /**
  * @constant
  * @type {string}
@@ -18,14 +20,20 @@
 export const DEFAULT_ENGINE_ID = "default-engine";
 
 /**
+ * Set once the native ONNX runtime availability has been reported to telemetry,
+ * keeping the one-off probe to a single run per profile.
+ */
+const ONNX_AVAILABILITY_REPORTED_PREF =
+  "browser.ml.onnxNativeAvailabilityReported";
+
+/**
  * Supported backends.
  */
 export const BACKENDS = Object.freeze({
   onnx: "onnx",
-  wllama: "wllama",
   onnxNative: "onnx-native",
   llamaCpp: "llama.cpp",
-  bestLlama: "best-llama",
+  bestOnnx: "best-onnx",
   openai: "openai",
   staticEmbeddings: "static-embeddings",
 });
@@ -35,7 +43,7 @@ export const BACKENDS = Object.freeze({
  * @type {Array<string>}
  * @description Backends using WASM.
  */
-export const WASM_BACKENDS = [BACKENDS.onnx, BACKENDS.wllama];
+export const WASM_BACKENDS = [BACKENDS.onnx];
 
 /**
  * @constant
@@ -165,20 +173,103 @@ export const FEATURES = {
     engineId: "smart-tab-topic-engine",
     fluentId: "mlmodel-smart-tab-topic-engine",
   },
+  // Smart Window auto tab grouping: a separate topic-model slot so its naming
+  // model can be updated independently of the shared smart-tab-topic model.
+  // see browser/components/aiwindow/ui/modules/AutoTabGroupingSuggestions.sys.mjs
+  "smart-window-tab-topic": {
+    engineId: "smart-window-tab-topic-engine",
+    fluentId: "mlmodel-smart-tab-topic-engine",
+  },
+  // see toolkit/components/formautofill/shared/FormAutofillML.sys.mjs
+  "formfill-classification": {
+    engineId: "formfill-classification-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
+  // Triple-encoder Approach 3: the field-type classifier is split into a stock
+  // feature-extraction encoder (produces per-field pooled embeddings) and a
+  // small ONNX fusion "head" (windowed embeddings -> field-type logits).
+  // Both engines are driven from
+  // toolkit/components/formautofill/shared/FormAutofillML.sys.mjs
+  "formfill-encoder": {
+    engineId: "formfill-encoder-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
+  "formfill-head": {
+    engineId: "formfill-head-engine",
+    fluentId: "mlmodel-formfill-engine",
+  },
   // see toolkit/components/ml/content/nlp/EmbeddingsGenerator.sys.mjs
   "simple-text-embedder": {
     engineId: "simple-text-embedder-engine",
   },
   // see browser/components/genai/LinkPreviewModel.sys.mjs
   "link-preview": {
-    engineId: "wllamapreview",
+    engineId: "link-preview",
     fluentId: "mlmodel-link-preview",
   },
   // see browser/components/aiwindow/models/IntentClassifier.sys.mjs
   "smart-intent": {
     engineId: "smart-intent",
   },
+  "smart-intent-en-fr": {
+    engineId: "smart-intent-en-fr",
+  },
+  chat: {
+    engineId: "smart-openai",
+  },
+  "smart-form-fill": {
+    engineId: "smart-openai",
+  },
+  "title-generation": {
+    engineId: "title-generation-engine",
+  },
+  "tab-group-naming": {
+    engineId: "smart-openai",
+  },
+  "conversation-suggestions-sidebar-starter": {
+    engineId: "smart-openai",
+  },
+  "conversation-suggestions-followup": {
+    engineId: "smart-openai",
+  },
+  "resume-activity-conversation-starter": {
+    engineId: "smart-openai",
+  },
+  "memories-initial-generation-system": {
+    engineId: "smart-openai-memories-generation",
+  },
+  "memories-message-classification-system": {
+    engineId: "smart-openai-memories-usage",
+  },
+  "llm-telemetry": {
+    engineId: "llm-telemetry-engine",
+  },
+  //agents
+  "agent-monitor": {
+    engineId: "agent-monitor-engine",
+  },
+  // see browser/components/aiwindow/models/search/SearchAgent.sys.mjs
+  "search-answer-generation": {
+    engineId: "smart-openai",
+  },
 };
+
+/**
+ * Whether telemetry this profile records would actually be submitted.
+ * `Cu.IsInAutomation` short-circuits the condition to enable testing.
+ *
+ * @returns {boolean}
+ */
+function isTelemetryEnabled() {
+  return (
+    Cu.isInAutomation ||
+    (AppConstants.MOZ_TELEMETRY_REPORTING &&
+      Services.prefs.getBoolPref(
+        "datareporting.healthreport.uploadEnabled",
+        false
+      ))
+  );
+}
 
 /**
  * Custom error class for validation errors.
@@ -346,6 +437,7 @@ export const AllowedBoolean = [false, true];
 /**
  * @import { TranslationsEngineParent } from "../../translations/actors/TranslationsEngineParent.sys.mjs"
  * @import { StaticEmbeddingsOptions } from "./backends/StaticEmbeddingsPipeline.d.ts"
+ * @import { PURPOSES, SERVICE_TYPES } from "../../../../browser/components/aiwindow/models/Utils.sys.mjs"
  */
 
 const PIPELINE_TEST_NAMES = ["moz-echo", "test-echo"];
@@ -607,9 +699,16 @@ export class PipelineOptions {
   /**
    * The service type for an OpenAIPipeline.
    *
-   * @type {"ai" | "memories" | "s2s" | null}
+   * @type {SERVICE_TYPES[keyof SERVICE_TYPES] | null}
    */
   serviceType = null;
+
+  /**
+   * The purpose of the request, used for telemetry tracking.
+   *
+   * @type {PURPOSES[keyof PURPOSES] | null}
+   */
+  purpose = null;
 
   /**
    * This option allows for extra headers to be passed to
@@ -801,6 +900,7 @@ export class PipelineOptions {
       "timeoutMS",
       "modelId",
       "modelRevision",
+      "flowId",
       "tokenizerId",
       "tokenizerRevision",
       "processorId",
@@ -826,6 +926,7 @@ export class PipelineOptions {
       "apiKey",
       "staticEmbeddingsOptions",
       "serviceType",
+      "purpose",
       "extraHeaders",
     ];
 
@@ -948,6 +1049,7 @@ export class PipelineOptions {
       timeoutMS: this.timeoutMS,
       modelId: this.modelId,
       modelRevision: this.modelRevision,
+      flowId: this.flowId,
       tokenizerId: this.tokenizerId,
       tokenizerRevision: this.tokenizerRevision,
       processorId: this.processorId,
@@ -973,6 +1075,7 @@ export class PipelineOptions {
       apiKey: this.apiKey,
       staticEmbeddingsOptions: this.staticEmbeddingsOptions,
       serviceType: this.serviceType,
+      purpose: this.purpose,
       extraHeaders: this.extraHeaders,
     };
   }
@@ -992,7 +1095,22 @@ export class PipelineOptions {
   }
 
   /**
-   * Checks if this PipelineOptions instance is equal to another.
+   * Per-request metadata fields that must not influence engine reuse.
+   * Callers differing only in these values should share one engine.
+   */
+  static #nonIdentityKeys = new Set([
+    "engineId",
+    "featureId",
+    "flowId",
+    "logLevel",
+    "timeoutMS",
+    "serviceType",
+    "purpose",
+  ]);
+
+  /**
+   * Checks if this PipelineOptions is equivalent to another for engine-reuse
+   * purposes. Fields in #nonIdentityKeys are intentionally ignored.
    *
    * @param {PipelineOptions} other - The other PipelineOptions instance to compare with.
    * @returns {boolean} True if the instances are equal, false otherwise.
@@ -1003,6 +1121,7 @@ export class PipelineOptions {
     }
     const options = this.getOptions();
     const otherOptions = other.getOptions();
+    const skip = PipelineOptions.#nonIdentityKeys;
 
     const isEqual = (val1, val2) => {
       if (val1 === val2) {
@@ -1022,9 +1141,38 @@ export class PipelineOptions {
       return keys1.every(key => isEqual(val1[key], val2[key]));
     };
 
-    return Object.keys(options).every(key =>
-      isEqual(options[key], otherOptions[key])
-    );
+    return Object.keys(options).every(key => {
+      if (skip.has(key)) {
+        return true;
+      }
+      if (key === "backend") {
+        return PipelineOptions.#backendsCompatible(
+          options.backend,
+          otherOptions.backend
+        );
+      }
+      return isEqual(options[key], otherOptions[key]);
+    });
+  }
+
+  /**
+   * Whether two backend identifiers should be considered equivalent for
+   * engine reuse. "best-onnx" is a sentinel that resolves at engine-creation
+   * time to either "onnx" or "onnx-native"; a cached engine using either
+   * concrete backend should still satisfy a new "best-onnx" request.
+   */
+  static #backendsCompatible(a, b) {
+    if (a === b) {
+      return true;
+    }
+    const isOnnxConcrete = v => v === "onnx" || v === "onnx-native";
+    if (a === "best-onnx" && isOnnxConcrete(b)) {
+      return true;
+    }
+    if (b === "best-onnx" && isOnnxConcrete(a)) {
+      return true;
+    }
+    return false;
   }
 }
 
@@ -1033,6 +1181,26 @@ export class PipelineOptions {
  * Translations engine and the MLEngine component.
  */
 export class EngineProcess {
+  /**
+   * The cached native ONNX runtime availability request.
+   *
+   * @type {Promise<boolean> | null}
+   */
+  static #nativeOnnxRuntimeAvailabilityPromise = null;
+
+  static #nativeOnnxRuntimeAvailabilityReportSettled = Promise.withResolvers();
+
+  /**
+   * Resolves once `maybeReportNativeOnnxRuntimeAvailability` has settled at
+   * least once, whether or not it recorded anything. Lets tests order
+   * themselves after the `browser-idle-startup` invocation of the report.
+   *
+   * @returns {Promise<void>}
+   */
+  static get nativeOnnxRuntimeAvailabilityReportSettled() {
+    return EngineProcess.#nativeOnnxRuntimeAvailabilityReportSettled.promise;
+  }
+
   /**
    * Get a reference to all running "inference" processes.
    *
@@ -1074,6 +1242,113 @@ export class EngineProcess {
   }
 
   /**
+   * Probes and reports the native ONNX runtime availability to telemetry, at
+   * most once per profile. Registered as a `browser-idle-startup` entry.
+   *
+   * First run of this probe spawns an inference process and calls `requestIsNativeOnnxRuntimeAvailable`
+   * to determine availability, and sets browser.ml.onnxNativeAvailabilityReported to true.
+   *
+   * Subsequent runs check browser.ml.onnxNativeAvailabilityReported to make sure the probe is only ever run once.
+   *
+   * @returns {Promise<void>}
+   */
+  static async maybeReportNativeOnnxRuntimeAvailability() {
+    try {
+      if (
+        !isTelemetryEnabled() ||
+        !Services.prefs.getBoolPref("browser.ml.enable") ||
+        Services.prefs.getBoolPref(ONNX_AVAILABILITY_REPORTED_PREF)
+      ) {
+        return;
+      }
+
+      const resultPromise = EngineProcess.requestIsNativeOnnxRuntimeAvailable();
+      const availabilityPromise =
+        EngineProcess.#nativeOnnxRuntimeAvailabilityPromise;
+      const available = await resultPromise;
+
+      // A definitive result stays cached, while a failed probe clears the
+      // cached promise to allow retries, which tells a real `unavailable`
+      // apart from a `probe_error`.
+      let label = "probe_error";
+      if (
+        EngineProcess.#nativeOnnxRuntimeAvailabilityPromise ===
+        availabilityPromise
+      ) {
+        label = available ? "available" : "unavailable";
+      }
+
+      Services.prefs.setBoolPref(ONNX_AVAILABILITY_REPORTED_PREF, true);
+      Glean.firefoxAiRuntime.onnxNativeAvailability[label].add(1);
+    } finally {
+      EngineProcess.#nativeOnnxRuntimeAvailabilityReportSettled.resolve();
+    }
+  }
+
+  /**
+   * Resolves to true if the native ONNX runtime is available, otherwise false.
+   *
+   * @returns {Promise<boolean>}
+   */
+  static requestIsNativeOnnxRuntimeAvailable() {
+    if (!Services.prefs.getBoolPref("browser.ml.enable")) {
+      return Promise.resolve(false);
+    }
+
+    if (!EngineProcess.#nativeOnnxRuntimeAvailabilityPromise) {
+      EngineProcess.#nativeOnnxRuntimeAvailabilityPromise =
+        EngineProcess.#requestNativeOnnxRuntimeAvailability();
+    }
+
+    const availabilityPromise =
+      EngineProcess.#nativeOnnxRuntimeAvailabilityPromise;
+    return availabilityPromise.catch(() => {
+      if (
+        EngineProcess.#nativeOnnxRuntimeAvailabilityPromise ===
+        availabilityPromise
+      ) {
+        // We weren't able to determine the availability definitively,
+        // so we shouldn't block future retry attempts.
+        EngineProcess.#nativeOnnxRuntimeAvailabilityPromise = null;
+      }
+
+      return false;
+    });
+  }
+
+  /**
+   * Clears the cached native ONNX runtime availability for tests.
+   */
+  static resetNativeOnnxRuntimeAvailabilityForTests() {
+    if (!Cu.isInAutomation) {
+      throw new Error("This function is only available in automation.");
+    }
+    EngineProcess.#nativeOnnxRuntimeAvailabilityPromise = null;
+  }
+
+  /**
+   * Requests native ONNX runtime availability from the inference process.
+   *
+   * @returns {Promise<boolean>}
+   */
+  static async #requestNativeOnnxRuntimeAvailability() {
+    const keepAlive =
+      await ChromeUtils.ensureHeadlessContentProcess("inference");
+
+    if (!keepAlive?.domProcess?.canSend) {
+      keepAlive?.invalidateKeepAlive();
+      throw new Error("Could not start the MLEngine inference process.");
+    }
+
+    try {
+      const actor = keepAlive.domProcess.getActor("MLEngine");
+      return await actor.requestIsNativeOnnxRuntimeAvailable();
+    } finally {
+      keepAlive.invalidateKeepAlive();
+    }
+  }
+
+  /**
    * @returns {Promise<JSProcessActorParent>}
    */
   static async #getEngineActor({ actorName }) {
@@ -1086,6 +1361,13 @@ export class EngineProcess {
     }
 
     try {
+      // The inference engine starts system-principal ChromeWorker instances
+      // within the content process, so needs to be marked as having loaded that
+      // principal. Remove this when we stop using system workers for inference.
+      keepAlive.domProcess.aboutToLoadOrigin(
+        Services.scriptSecurityManager.getSystemPrincipal()
+      );
+
       const actor = keepAlive.domProcess.getActor(actorName);
 
       // keep track of the childID for the inference process, so we can observe its shutdowns.
@@ -1177,6 +1459,7 @@ export async function createEngine(
       engineId: options.engineId || "",
       modelId: options.modelId || "",
       featureId: options.featureId || "",
+      flow_id: options.flowId || "",
       taskName: options.taskName || "",
       error: e.constructor.name || "",
     });

@@ -23,15 +23,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout.LayoutParams
 import android.widget.TextView
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AppCompatDialogFragment
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
+import mozilla.components.support.base.android.NoObscuredTouchesDialogFragment
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.appName
 import mozilla.components.support.ktx.kotlin.ifNullOrEmpty
 import mozilla.components.support.ktx.util.PromptAbuserDetector
+import mozilla.components.support.utils.OnEnterAnimationCompleteListener
 
 internal const val KEY_SESSION_ID = "KEY_SESSION_ID"
 internal const val KEY_TITLE = "KEY_TITLE"
@@ -51,7 +52,9 @@ private const val KEY_IS_NOTIFICATION_REQUEST = "KEY_IS_NOTIFICATION_REQUEST"
 private const val DEFAULT_VALUE = Int.MAX_VALUE
 private const val KEY_PERMISSION_ID = "KEY_PERMISSION_ID"
 
-internal open class SitePermissionsDialogFragment : AppCompatDialogFragment() {
+internal open class SitePermissionsDialogFragment :
+    NoObscuredTouchesDialogFragment(),
+    OnEnterAnimationCompleteListener {
 
     private val logger = Logger("SitePermissionsDialogFragment")
 
@@ -132,6 +135,11 @@ internal open class SitePermissionsDialogFragment : AppCompatDialogFragment() {
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
         feature?.onDismiss(permissionRequestId, sessionId)
+    }
+
+    override fun onEnterAnimationComplete() {
+        // Extend the positive button click delay.
+        promptAbuserDetector.updateJSDialogAbusedState()
     }
 
     private fun Dialog.setContainerView(rootView: View) {

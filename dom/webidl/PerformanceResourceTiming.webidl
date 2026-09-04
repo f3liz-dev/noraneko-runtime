@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -16,6 +15,15 @@ enum RenderBlockingStatusType { "blocking", "non-blocking" };
 interface PerformanceResourceTiming : PerformanceEntry
 {
   readonly attribute DOMString initiatorType;
+
+  // https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-deliverytype
+  // Own pref, independent of dom.speculation_rules.enabled: this partial
+  // implementation only ever reports "navigational-prefetch", never "cache"
+  // (bug 1914120), so it must not turn on automatically when speculation
+  // rules ships.
+  [Pref="dom.performance.deliverytype.enabled"]
+  readonly attribute DOMString deliveryType;
+
   readonly attribute DOMString nextHopProtocol;
 
   readonly attribute DOMHighResTimeStamp workerStart;
@@ -39,6 +47,10 @@ interface PerformanceResourceTiming : PerformanceEntry
   readonly attribute DOMHighResTimeStamp secureConnectionStart;
   [NeedsSubjectPrincipal]
   readonly attribute DOMHighResTimeStamp requestStart;
+  [NeedsSubjectPrincipal]
+  readonly attribute DOMHighResTimeStamp finalResponseHeadersStart;
+  [NeedsSubjectPrincipal]
+  readonly attribute DOMHighResTimeStamp firstInterimResponseStart;
   [NeedsSubjectPrincipal]
   readonly attribute DOMHighResTimeStamp responseStart;
 

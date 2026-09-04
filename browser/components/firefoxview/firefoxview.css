@@ -24,24 +24,24 @@
   --fxview-border: var(--border-color-transparent);
   --fxview-indicator-stroke-color-hover: light-dark(#deddde, #5d5c66);
 
-  /* ensure utility button hover states match those of the rest of the page */
-  --button-background-color-hover: var(--fxview-element-background-hover);
-  --button-background-color-active: var(--fxview-element-background-active);
-  --button-text-color-hover: var(--fxview-text-color-hover);
-
   --fxview-sidebar-width: 288px;
   --fxview-margin-top: 72px;
   --fxview-card-padding-inline: 4px;
 
   /* copy over newtab background color from activity-stream-[os].css files */
   --newtab-background-color: light-dark(#f9f9fb, #2b2a33);
-  --fxview-card-header-font-weight: var(--heading-font-weight);
-
   &[lwt-newtab] {
     color-scheme: light;
   }
   &[lwt-newtab-brighttext] {
     color-scheme: dark;
+  }
+
+  @media not -moz-pref("browser.nova.enabled") {
+    /* ensure utility button hover states match those of the rest of the page */
+    --button-background-color-hover: var(--fxview-element-background-hover);
+    --button-background-color-active: var(--fxview-element-background-active);
+    --button-text-color-hover: var(--fxview-text-color-hover);
   }
 }
 
@@ -56,9 +56,15 @@
   }
 }
 
-@media (max-width: 52rem) {
+@media (max-width: 950px) {
   :root {
     --fxview-sidebar-width: 82px;
+  }
+}
+
+@media (min-width: 72rem) {
+  :root {
+    --fxview-sidebar-width: 320px;
   }
 }
 
@@ -69,7 +75,7 @@ body {
   background-color: var(--fxview-background-color);
   color: var(--fxview-text-primary-color);
 
-  @media (max-width: 52rem) {
+  @media (max-width: 950px) {
     display: flex;
   }
 }
@@ -145,17 +151,20 @@ fxview-empty-state {
   }
 
   /* these illustrations need a larger width otherwise they look too small */
-  &.synced-tabs::part(image-container) {
+  &.synced-tabs::part(image-container),
+  &.recentlyclosed::part(image-container) {
     min-width: 250px;
   }
 
-  /* center align the empty state image */
-  &.recentlyclosed::part(image-container) {
-    margin-inline-start: 50px;
-  }
-
-  /* align empty state text with synced tabs on recent browsing page */
-  &.recentlyclosed::part(main) {
-    padding-inline-start: 50px;
+  @media not (-moz-pref("browser.nova.enabled")) {
+    /* center align the empty state image */
+    &.recentlyclosed::part(image-container) {
+      margin-inline-start: 50px;
+      min-width: 150px;
+    }
+    /* align empty state text with synced tabs on recent browsing page */
+    &.recentlyclosed::part(main) {
+      padding-inline-start: 50px;
+    }
   }
 }

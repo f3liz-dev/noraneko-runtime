@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,14 @@
 #ifndef MOZILLA_GFX_COMPOSITORD3D11_H
 #define MOZILLA_GFX_COMPOSITORD3D11_H
 
-#include "mozilla/gfx/2D.h"
-#include "gfx2DGlue.h"
-#include "mozilla/layers/Compositor.h"
-#include "TextureD3D11.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
+
 #include "ShaderDefinitionsD3D11.h"
+#include "TextureD3D11.h"
+#include "gfx2DGlue.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/layers/Compositor.h"
 
 class nsWidget;
 
@@ -27,7 +26,7 @@ class DeviceAttachmentsD3D11;
 class CompositorD3D11 : public Compositor {
  public:
   explicit CompositorD3D11(widget::CompositorWidget* aWidget);
-  virtual ~CompositorD3D11();
+  virtual ~CompositorD3D11() = default;
 
   CompositorD3D11* AsCompositorD3D11() override { return this; }
 

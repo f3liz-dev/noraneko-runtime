@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -243,8 +241,9 @@ class FrameIter {
   explicit FrameIter(JSContext* cx,
                      DebuggerEvalOption = FOLLOW_DEBUGGER_EVAL_PREV_LINK);
   FrameIter(JSContext* cx, DebuggerEvalOption, JSPrincipals*);
-  FrameIter(const FrameIter& iter);
+  FrameIter(const FrameIter& iter) = delete;
   MOZ_IMPLICIT FrameIter(const Data& data);
+  explicit FrameIter(mozilla::UniquePtr<Data> data) : FrameIter(*data) {}
 
   bool done() const { return data_.state_ == DONE; }
 
@@ -278,6 +277,9 @@ class FrameIter {
   bool isEvalFrame() const;
   bool isModuleFrame() const;
   bool isFunctionFrame() const;
+
+  bool isResumingGenerator() const;
+
   bool hasArgs() const { return isFunctionFrame(); }
 
   ScriptSource* scriptSource() const;
@@ -369,7 +371,7 @@ class FrameIter {
   // -----------------------------------------------------------
 
   AbstractFramePtr abstractFramePtr() const;
-  Data* copyData() const;
+  mozilla::UniquePtr<Data> copyData() const;
 
   // This can only be called when isInterp():
   inline InterpreterFrame* interpFrame() const;
@@ -537,7 +539,7 @@ inline wasm::Instance* FrameIter::wasmInstance() const {
 inline unsigned FrameIter::wasmBytecodeOffset() const {
   MOZ_ASSERT(!done());
   MOZ_ASSERT(isWasm());
-  return wasmFrame().lineOrBytecode();
+  return wasmFrame().bytecodeOffset();
 }
 
 inline uint32_t FrameIter::wasmFuncIndex() const {

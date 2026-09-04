@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -189,7 +187,7 @@ already_AddRefed<nsIContentSecurityPolicy> CSPInfoToCSP(
   nsresult stackResult;
   nsresult& rv = aOptionalResult ? *aOptionalResult : stackResult;
 
-  RefPtr<nsCSPContext> csp = new nsCSPContext();
+  RefPtr csp = MakeRefPtr<nsCSPContext>();
 
   if (aRequestingDoc) {
     rv = csp->SetRequestContextWithDocument(aRequestingDoc);
@@ -581,15 +579,16 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetOriginalFrameSrcLoad(),
       aLoadInfo->GetForceInheritPrincipalDropped(),
       aLoadInfo->GetInnerWindowID(), aLoadInfo->GetBrowsingContextID(),
+      aLoadInfo->GetAssociatedBrowsingContextID(),
       aLoadInfo->GetFrameBrowsingContextID(),
       aLoadInfo->GetInitialSecurityCheckDone(),
       aLoadInfo->GetIsInThirdPartyContext(), isThirdPartyContextToTopWindow,
       aLoadInfo->GetIsOn3PCBExceptionList(), aLoadInfo->GetIsFormSubmission(),
       aLoadInfo->GetIsGETRequest(), aLoadInfo->GetSendCSPViolationEvents(),
       aLoadInfo->GetOriginAttributes(), redirectChainIncludingInternalRedirects,
-      redirectChain, aLoadInfo->GetHasInjectedCookieForCookieBannerHandling(),
-      aLoadInfo->GetSchemelessInput(), aLoadInfo->GetHttpsUpgradeTelemetry(),
-      ipcClientInfo, ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
+      redirectChain, aLoadInfo->GetSchemelessInput(),
+      aLoadInfo->GetHttpsUpgradeTelemetry(), ipcClientInfo,
+      ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
       aLoadInfo->CorsUnsafeHeaders(), aLoadInfo->GetForcePreflight(),
       aLoadInfo->GetIsPreflight(), aLoadInfo->GetLoadTriggeredFromExternal(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
@@ -603,12 +602,12 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       requestMode, aLoadInfo->GetIsFromProcessingFrameAttributes(),
-      aLoadInfo->GetIsMediaRequest(), aLoadInfo->GetIsMediaInitialRequest(),
-      aLoadInfo->GetIsFromObjectOrEmbed(), cookieJarSettingsArgs,
-      aLoadInfo->GetRequestBlockingReason(), maybePolicyContainerToInherit,
-      aLoadInfo->GetStoragePermission(), aLoadInfo->GetParentIpAddressSpace(),
-      aLoadInfo->GetIpAddressSpace(), overriddenFingerprintingSettingsArg,
-      aLoadInfo->GetIsMetaRefresh(), aLoadInfo->GetLoadingEmbedderPolicy(),
+      aLoadInfo->GetIsMediaRequest(), aLoadInfo->GetIsFromObjectOrEmbed(),
+      cookieJarSettingsArgs, aLoadInfo->GetRequestBlockingReason(),
+      maybePolicyContainerToInherit, aLoadInfo->GetStoragePermission(),
+      aLoadInfo->GetParentIpAddressSpace(), aLoadInfo->GetIpAddressSpace(),
+      overriddenFingerprintingSettingsArg, aLoadInfo->GetIsMetaRefresh(),
+      aLoadInfo->GetLoadingEmbedderPolicy(),
       aLoadInfo->GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(),
       unstrippedURI, interceptionInfoArg, aLoadInfo->GetIsNewWindowTarget(),
       aLoadInfo->GetUserNavigationInvolvement(),
@@ -878,6 +877,7 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
       reservedClientInfo, initialClientInfo, controller,
       loadInfoArgs.securityFlags(), loadInfoArgs.sandboxFlags(),
       loadInfoArgs.contentPolicyType(),
+      loadInfoArgs.serviceWorkerTaintingSynthesized(),
       static_cast<LoadTainting>(loadInfoArgs.tainting()),
 
 #define DEFINE_ARGUMENT(_t, _n, name, _d) loadInfoArgs.name(),

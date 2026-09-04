@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,6 @@
 #include "mozilla/dom/PBackgroundLSSnapshot.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/dom/quota/ScopedLogExtraInfo.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -300,7 +297,7 @@ nsresult LSSnapshot::GetItem(const nsAString& aKey, nsAString& aResult) {
     return rv;
   }
 
-  aResult = result;
+  aResult = std::move(result);
   return NS_OK;
 }
 
@@ -378,9 +375,8 @@ nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
     }
 
     {
-      quota::ScopedLogExtraInfo scope{
-          quota::ScopedLogExtraInfo::kTagContextTainted,
-          "dom::localstorage::LSSnapshot::SetItem::UpdateUsage"_ns};
+      QM_SCOPED_CONTEXT(
+          "dom::localstorage::LSSnapshot::SetItem::UpdateUsage"_ns);
       GECKO_TRACE_SCOPE("dom::localstorage",
                         "LSSnapshot::SetItem::UpdateUsage");
       QM_TRY(MOZ_TO_RESULT(UpdateUsage(delta)), QM_PROPAGATE, QM_NO_CLEANUP,
@@ -425,7 +421,7 @@ nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
   }
 
   aNotifyInfo.changed() = changed;
-  aNotifyInfo.oldValue() = oldValue;
+  aNotifyInfo.oldValue() = std::move(oldValue);
 
   return NS_OK;
 }
@@ -497,7 +493,7 @@ nsresult LSSnapshot::RemoveItem(const nsAString& aKey,
   }
 
   aNotifyInfo.changed() = changed;
-  aNotifyInfo.oldValue() = oldValue;
+  aNotifyInfo.oldValue() = std::move(oldValue);
 
   return NS_OK;
 }
@@ -807,7 +803,7 @@ nsresult LSSnapshot::GetItemInternal(const nsAString& aKey,
       MOZ_CRASH("Bad state!");
   }
 
-  aResult = result;
+  aResult = std::move(result);
   return NS_OK;
 }
 
@@ -830,7 +826,7 @@ nsresult LSSnapshot::EnsureAllKeys() {
 
   nsTHashMap<nsStringHashKey, nsString> newValues;
 
-  for (auto key : keys) {
+  for (const auto& key : keys) {
     newValues.InsertOrUpdate(key, VoidString());
   }
 
@@ -905,7 +901,7 @@ nsresult LSSnapshot::EnsureAllKeys() {
   for (auto iter = newValues.Iter(); !iter.Done(); iter.Next()) {
     nsString value;
     if (mValues.Get(iter.Key(), &value)) {
-      iter.Data() = value;
+      iter.Data() = std::move(value);
     }
   }
 

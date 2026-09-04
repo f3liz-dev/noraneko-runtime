@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,6 +10,7 @@
 #include "jit/Lowering.h"
 #include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
+
 #include "jit/shared/Lowering-shared-inl.h"
 
 using namespace js;
@@ -49,8 +48,8 @@ void LIRGenerator::visitBox(MBox* box) {
 
   // If the box wrapped a double, it needs a new register.
   if (IsFloatingPointType(inner->type())) {
-    defineBox(new (alloc()) LBoxFloatingPoint(
-                  useRegisterAtStart(inner), tempCopy(inner, 0), inner->type()),
+    defineBox(new (alloc())
+                  LBoxFloatingPoint(useRegister(inner), inner->type()),
               box);
     return;
   }
@@ -203,7 +202,7 @@ void LIRGeneratorARM::lowerForMulInt64(LMulI64* ins, MMul* mir,
 
   if (rhs->isConstant()) {
     int64_t constant = rhs->toConstant()->toInt64();
-    int32_t shift = mozilla::FloorLog2(constant);
+    int32_t shift = mozilla::FloorLog2(uint64_t(constant));
     // See special cases in CodeGeneratorARM::visitMulI64
     if (constant >= -1 && constant <= 2) {
       needsTemp = false;
@@ -318,7 +317,7 @@ void LIRGeneratorARM::lowerDivI(MDiv* div) {
     // possible; division by negative powers of two can be optimized in a
     // similar manner as positive powers of two, and division by other
     // constants can be optimized by a reciprocal multiplication technique.
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LDivPowTwoI* lir =
           new (alloc()) LDivPowTwoI(useRegisterAtStart(div->lhs()), shift);
@@ -371,7 +370,7 @@ void LIRGeneratorARM::lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs) {
 void LIRGeneratorARM::lowerModI(MMod* mod) {
   if (mod->rhs()->isConstant()) {
     int32_t rhs = mod->rhs()->toConstant()->toInt32();
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegister(mod->lhs()), shift);
@@ -707,56 +706,6 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
 
   auto* lir = new (alloc()) LWasmStore(ptr, value, memoryBase, ptrCopy);
   add(lir, ins);
-}
-
-void LIRGenerator::visitAsmJSLoadHeap(MAsmJSLoadHeap* ins) {
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-
-  // For the ARM it is best to keep the 'base' in a register if a bounds check
-  // is needed.
-  LAllocation baseAlloc;
-  LAllocation limitAlloc;
-
-  if (base->isConstant() && !ins->needsBoundsCheck()) {
-    // A bounds check is only skipped for a positive index.
-    MOZ_ASSERT(base->toConstant()->toInt32() >= 0);
-    baseAlloc = LAllocation(base->toConstant());
-  } else {
-    baseAlloc = useRegisterAtStart(base);
-    if (ins->needsBoundsCheck()) {
-      MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-      MOZ_ASSERT(boundsCheckLimit->type() == MIRType::Int32);
-      limitAlloc = useRegisterAtStart(boundsCheckLimit);
-    }
-  }
-
-  define(new (alloc()) LAsmJSLoadHeap(baseAlloc, limitAlloc, LAllocation()),
-         ins);
-}
-
-void LIRGenerator::visitAsmJSStoreHeap(MAsmJSStoreHeap* ins) {
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-
-  LAllocation baseAlloc;
-  LAllocation limitAlloc;
-
-  if (base->isConstant() && !ins->needsBoundsCheck()) {
-    MOZ_ASSERT(base->toConstant()->toInt32() >= 0);
-    baseAlloc = LAllocation(base->toConstant());
-  } else {
-    baseAlloc = useRegisterAtStart(base);
-    if (ins->needsBoundsCheck()) {
-      MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-      MOZ_ASSERT(boundsCheckLimit->type() == MIRType::Int32);
-      limitAlloc = useRegisterAtStart(boundsCheckLimit);
-    }
-  }
-
-  add(new (alloc()) LAsmJSStoreHeap(baseAlloc, useRegisterAtStart(ins->value()),
-                                    limitAlloc, LAllocation()),
-      ins);
 }
 
 void LIRGeneratorARM::lowerTruncateDToInt32(MTruncateToInt32* ins) {

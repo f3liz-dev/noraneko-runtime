@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +8,15 @@
 #include "ClientManagerService.h"
 #include "ClientPrincipalUtils.h"
 #include "ClientSourceParent.h"
+#include "ClientValidation.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/PClientManagerParent.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla::dom {
 
+using mozilla::ipc::BackgroundParent;
 using mozilla::ipc::IPCResult;
 
 IPCResult ClientHandleParent::RecvTeardown() {
@@ -59,7 +62,13 @@ ClientHandleParent::ClientHandleParent()
 
 ClientHandleParent::~ClientHandleParent() { MOZ_DIAGNOSTIC_ASSERT(!mSource); }
 
-void ClientHandleParent::Init(const IPCClientInfo& aClientInfo) {
+IPCResult ClientHandleParent::Init(const IPCClientInfo& aClientInfo) {
+  if (!ClientIsValidPrincipalInfo(
+          aClientInfo.principalInfo(),
+          BackgroundParent::GetLoadedOrigins(Manager()->Manager()))) {
+    return IPC_FAIL(this, "Invalid PrincipalInfo!");
+  }
+
   mClientId = aClientInfo.id();
   mPrincipalInfo = aClientInfo.principalInfo();
 
@@ -80,6 +89,8 @@ void ClientHandleParent::Init(const IPCClientInfo& aClientInfo) {
             (void)Send__delete__(self);
           })
       ->Track(mSourcePromiseRequestHolder);
+
+  return IPC_OK();
 }
 
 ClientSourceParent* ClientHandleParent::GetSource() const { return mSource; }

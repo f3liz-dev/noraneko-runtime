@@ -7,7 +7,7 @@ package mozilla.components.concept.awesomebar
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.view.View
-import mozilla.components.concept.awesomebar.AwesomeBar.Suggestion.Flag.BOOKMARK
+import mozilla.components.concept.awesomebar.AwesomeBar.Suggestion.Flag
 import java.util.UUID
 
 /**
@@ -91,7 +91,7 @@ interface AwesomeBar {
          * An ordered map of the currently visible [SuggestionProviderGroup]s, and the visible [Suggestion]s in each
          * group. The groups and their suggestions are ordered top to bottom.
          */
-        val visibleProviderGroups: Map<SuggestionProviderGroup, List<Suggestion>> = emptyMap(),
+        val visibleProviderGroups: Map<SuggestionProviderGroup, List<SuggestionItem>> = emptyMap(),
     )
 
     /**
@@ -99,7 +99,7 @@ interface AwesomeBar {
      * [Suggestion] should be shown.
      */
     data class GroupedSuggestion(
-        val suggestion: Suggestion,
+        val suggestion: SuggestionItem,
         val groupId: String,
     )
 
@@ -126,6 +126,11 @@ interface AwesomeBar {
          * A callback to be executed when the suggestion was clicked by the user.
          */
         val onSuggestionClicked: (() -> Unit)?
+
+        /**
+         * A set of [Flag] values for this [Suggestion].
+         */
+        val flags: Set<Flag>
     }
 
     /**
@@ -162,7 +167,7 @@ interface AwesomeBar {
         val icon: Bitmap? = null,
         val indicatorIcon: Drawable? = null,
         val chips: List<Chip> = emptyList(),
-        val flags: Set<Flag> = emptySet(),
+        override val flags: Set<Flag> = emptySet(),
         override val onSuggestionClicked: (() -> Unit)? = null,
         val onChipClicked: ((Chip) -> Unit)? = null,
         val onRemovalClicked: (() -> Unit)? = null,
@@ -205,35 +210,6 @@ interface AwesomeBar {
     }
 
     /**
-     * [StockSuggestion] to be displayed by an [AwesomeBar] implementation for stock information.
-     *
-     * @property provider The provider this suggestion came from.
-     * @property id A unique ID (provider scope) identifying this [StockSuggestion].
-     * @property score A score used to rank suggestions of this provider against each other.
-     * @property onSuggestionClicked A callback to be executed when the [StockSuggestion] was clicked by the user.
-     * @property query The user input in the toolbar.
-     * @property ticker The stock ticker symbol (e.g., "AAPL", "GOOGL").
-     * @property name The full name of the stock.
-     * @property index The stock index or exchange where the stock is listed (e.g., "NASDAQ", "NYSE").
-     * @property lastPrice The ask price from the most recent quote for this ticker.
-     * @property currency The currency of the stock.
-     * @property changePercToday The percentage change since the previous day.
-     */
-    data class StockSuggestion(
-        override val provider: SuggestionProvider,
-        override val id: String = UUID.randomUUID().toString(),
-        override val score: Int = 0,
-        override val onSuggestionClicked: (() -> Unit)? = null,
-        val query: String,
-        val ticker: String,
-        val name: String,
-        val index: String,
-        val lastPrice: String,
-        val currency: String,
-        val changePercToday: String,
-    ) : SuggestionItem
-
-    /**
      * A [SuggestionProvider] is queried by an [AwesomeBar] whenever the text in the address bar is changed by the user.
      * It returns a list of [Suggestion]s to be displayed by the [AwesomeBar].
      */
@@ -249,6 +225,11 @@ interface AwesomeBar {
          * A header title for grouping the suggestions.
          **/
         fun groupTitle(): String? = null
+
+        /**
+         * Display the header title for grouping the suggestions.
+         **/
+        fun displayGroupTitle(): Boolean = true
 
         /**
          * Fired when the user starts interacting with the awesome bar by entering text in the toolbar.
@@ -271,7 +252,7 @@ interface AwesomeBar {
          * @param text The current user input in the toolbar.
          * @return A list of suggestions to be displayed by the [AwesomeBar].
          */
-        suspend fun onInputChanged(text: String): List<Suggestion>
+        suspend fun onInputChanged(text: String): List<SuggestionItem>
 
         /**
          * Fired when the user has cancelled their interaction with the awesome bar.
@@ -308,6 +289,7 @@ interface AwesomeBar {
      * in the AwesomeBar suggestions. Group having the highest integer value will have the highest priority.
      * @property title An optional title for this group. The title may be rendered by an AwesomeBar
      * implementation.
+     * @property displayTitle display the above title.
      * @property limit The maximum number of suggestions that will be shown in this group.
      * @property id A unique ID for this group (uses a generated UUID by default)
      */
@@ -315,6 +297,7 @@ interface AwesomeBar {
         val providers: List<SuggestionProvider>,
         var priority: Int = 0,
         val title: String? = null,
+        val displayTitle: Boolean = true,
         val limit: Int = Integer.MAX_VALUE,
         val id: String = UUID.randomUUID().toString(),
     )

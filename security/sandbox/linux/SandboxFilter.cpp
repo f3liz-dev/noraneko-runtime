@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,7 +31,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "PlatformMacros.h"
 #include "Sandbox.h"  // for ContentProcessSandboxParams
 #include "SandboxBrokerClient.h"
 #include "SandboxFilterUtil.h"
@@ -43,6 +40,7 @@
 #include "SandboxOpenedFiles.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/ProcInfo_linux.h"
+#include "mozilla/ProfilerPlatformMacros.h"
 #include "mozilla/UniquePtr.h"
 #include "prenv.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl.h"
@@ -105,6 +103,10 @@ static_assert(F_LINUX_SPECIFIC_BASE == 1024);
 #ifndef F_ADD_SEALS
 #  define F_ADD_SEALS (F_LINUX_SPECIFIC_BASE + 9)
 #  define F_GET_SEALS (F_LINUX_SPECIFIC_BASE + 10)
+#  define F_SEAL_SEAL 0x0001
+#  define F_SEAL_SHRINK 0x0002
+#  define F_SEAL_GROW 0x0004
+#  define F_SEAL_WRITE 0x0008
 #else
 static_assert(F_ADD_SEALS == (F_LINUX_SPECIFIC_BASE + 9));
 static_assert(F_GET_SEALS == (F_LINUX_SPECIFIC_BASE + 10));
@@ -301,13 +303,6 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     return broker->Link(path, path2);
   }
 
-  static intptr_t SymlinkTrap(ArgsRef aArgs, void* aux) {
-    auto broker = static_cast<SandboxBrokerClient*>(aux);
-    auto path = reinterpret_cast<const char*>(aArgs.args[0]);
-    auto path2 = reinterpret_cast<const char*>(aArgs.args[1]);
-    return broker->Symlink(path, path2);
-  }
-
   static intptr_t RenameTrap(ArgsRef aArgs, void* aux) {
     auto broker = static_cast<SandboxBrokerClient*>(aux);
     auto path = reinterpret_cast<const char*>(aArgs.args[0]);
@@ -331,7 +326,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
   static intptr_t UnlinkTrap(ArgsRef aArgs, void* aux) {
     auto broker = static_cast<SandboxBrokerClient*>(aux);
     auto path = reinterpret_cast<const char*>(aArgs.args[0]);
-    if (path && path[0] == '\0') {
+    if (!path) {
+      // A null path is a bad pointer as far as the kernel is concerned.
+      return -EFAULT;
+    }
+    if (path[0] == '\0') {
       // If the path is empty, then just fail the call here
       return -ENOENT;
     }
@@ -474,19 +473,6 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     return broker->Link(path, path2);
   }
 
-  static intptr_t SymlinkAtTrap(ArgsRef aArgs, void* aux) {
-    auto broker = static_cast<SandboxBrokerClient*>(aux);
-    auto path = reinterpret_cast<const char*>(aArgs.args[0]);
-    auto fd2 = static_cast<int>(aArgs.args[1]);
-    auto path2 = reinterpret_cast<const char*>(aArgs.args[2]);
-    if (fd2 != AT_FDCWD && path2[0] != '/') {
-      SANDBOX_LOG("unsupported fd-relative symlinkat(\"%s\", %d, \"%s\")", path,
-                  fd2, path2);
-      return BlockedSyscallTrap(aArgs, nullptr);
-    }
-    return broker->Symlink(path, path2);
-  }
-
   static intptr_t RenameAtTrap(ArgsRef aArgs, void* aux) {
     auto broker = static_cast<SandboxBrokerClient*>(aux);
     auto fd = static_cast<int>(aArgs.args[0]);
@@ -520,7 +506,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto fd = static_cast<int>(aArgs.args[0]);
     auto path = reinterpret_cast<const char*>(aArgs.args[1]);
     auto flags = static_cast<int>(aArgs.args[2]);
-    if (path && path[0] == '\0') {
+    if (!path) {
+      // A null path is a bad pointer as far as the kernel is concerned.
+      return -EFAULT;
+    }
+    if (path[0] == '\0') {
       // If the path is empty, then just fail the call here
       return -ENOENT;
     }
@@ -968,7 +958,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         case __NR_mkdir:
           return Trap(MkdirTrap, mBroker);
         case __NR_symlink:
-          return Trap(SymlinkTrap, mBroker);
+          return Error(EPERM);
         case __NR_rename:
           return Trap(RenameTrap, mBroker);
         case __NR_rmdir:
@@ -997,7 +987,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         case __NR_mkdirat:
           return Trap(MkdirAtTrap, mBroker);
         case __NR_symlinkat:
-          return Trap(SymlinkAtTrap, mBroker);
+          return Error(EPERM);
         case __NR_renameat:
           return Trap(RenameAtTrap, mBroker);
         case __NR_unlinkat:
@@ -1040,10 +1030,10 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         // filter those; pids do need to be restricted to the current
         // process in order to not leak information.
         Arg<clockid_t> clk_id(0);
-#ifdef MOZ_GECKO_PROFILER
+
         clockid_t this_process =
             MAKE_PROCESS_CPUCLOCK(getpid(), CPUCLOCK_SCHED);
-#endif
+
         return If(clk_id == CLOCK_MONOTONIC, Allow())
 #ifdef CLOCK_MONOTONIC_COARSE
             // Used by SandboxReporter, among other things.
@@ -1058,13 +1048,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
             .ElseIf(clk_id == CLOCK_REALTIME_COARSE, Allow())
 #endif
             .ElseIf(clk_id == CLOCK_THREAD_CPUTIME_ID, Allow())
-#ifdef MOZ_GECKO_PROFILER
             // Allow clock_gettime on the same process.
             .ElseIf(clk_id == this_process, Allow())
             // Allow clock_gettime on a thread.
             .ElseIf((clk_id & 7u) == (CPUCLOCK_PERTHREAD_MASK | CPUCLOCK_SCHED),
                     Allow())
-#endif
 #ifdef CLOCK_BOOTTIME
             .ElseIf(clk_id == CLOCK_BOOTTIME, Allow())
 #endif
@@ -1094,14 +1082,23 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
       CASES_FOR_fcntl: {
         Arg<int> cmd(1);
         Arg<int> flags(2);
+
         // Typical use of F_SETFL is to modify the flags returned by
         // F_GETFL and write them back, including some flags that
         // F_SETFL ignores.  This is a default-deny policy in case any
         // new SETFL-able flags are added.  (In particular we want to
         // forbid O_ASYNC; see bug 1328896, but also see bug 1408438.)
-        static const int ignored_flags =
+        static constexpr int kIgnoredFlags =
             O_ACCMODE | O_LARGEFILE_REAL | O_CLOEXEC | FMODE_NONOTIFY;
-        static const int allowed_flags = ignored_flags | O_APPEND | O_NONBLOCK;
+        static constexpr int kAllowedFlags =
+            kIgnoredFlags | O_APPEND | O_NONBLOCK;
+
+        // Limiting file seals may be an excess of caution; more can be added if
+        // needed. (E.g., F_SEAL_WRITE would be useful so that child-to-parent
+        // IPC can prevent races, but we don't have a cross-platform solution
+        // for that use case.)
+        static constexpr int kAllowedSeals = F_SEAL_SHRINK | F_SEAL_GROW;
+
         return Switch(cmd)
             // Close-on-exec is meaningless when execve isn't allowed, but
             // NSPR reads the bit and asserts that it has the expected value.
@@ -1111,7 +1108,7 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
                 If((flags & ~FD_CLOEXEC) == 0, Allow()).Else(InvalidSyscall()))
             // F_GETFL is also used by fdopen
             .Case(F_GETFL, Allow())
-            .Case(F_SETFL, If((flags & ~allowed_flags) == 0, Allow())
+            .Case(F_SETFL, If((flags & ~kAllowedFlags) == 0, Allow())
                                .Else(InvalidSyscall()))
 #if defined(MOZ_PROFILE_GENERATE)
             .Case(F_SETLKW, Allow())
@@ -1121,6 +1118,10 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
             // Used by Mesa, generally useful, and harmless: tests if
             // two file descriptors refer to the same file description.
             .Case(F_DUPFD_QUERY, Allow())
+            // Allow sealing size for shared memory; see above.
+            .Case(F_GET_SEALS, Allow())
+            .Case(F_ADD_SEALS, If((flags & ~kAllowedSeals) == 0, Allow())
+                                   .Else(InvalidSyscall()))
             .Default(SandboxPolicyBase::EvaluateSyscall(sysno));
       }
 
@@ -1814,9 +1815,10 @@ UniquePtr<sandbox::bpf_dsl::Policy> GetContentSandboxPolicy(
   return MakeUnique<ContentSandboxPolicy>(aMaybeBroker, std::move(aParams));
 }
 
-// Unlike for content, the GeckoMediaPlugin seccomp-bpf policy needs
-// to be an effective sandbox by itself, because we allow GMP on Linux
-// systems where that's the only sandboxing mechanism we can use.
+// The GeckoMediaPlugin seccomp-bpf policy is more delicate than the others,
+// because this process loads a closed-source binary and we've told users
+// that we prohibit it from fingerprinting them; see:
+// https://hacks.mozilla.org/2014/05/reconciling-mozillas-mission-and-w3c-eme/
 //
 // Be especially careful about what this policy allows.
 class GMPSandboxPolicy : public SandboxPolicyCommon {
@@ -1883,20 +1885,6 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
     return 0;
   }
 
-  static intptr_t FcntlTrap(const arch_seccomp_data& aArgs, void* aux) {
-    const auto cmd = static_cast<int>(aArgs.args[1]);
-    switch (cmd) {
-        // This process can't exec, so the actual close-on-exec flag
-        // doesn't matter; have it always read as true and ignore writes.
-      case F_GETFD:
-        return O_CLOEXEC;
-      case F_SETFD:
-        return 0;
-      default:
-        return -ENOSYS;
-    }
-  }
-
   const SandboxOpenedFiles* mFiles;
 
  public:
@@ -1942,8 +1930,6 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
       // Bug 1372428
       case __NR_uname:
         return Trap(UnameTrap, nullptr);
-      CASES_FOR_fcntl:
-        return Trap(FcntlTrap, nullptr);
 
       // Allow the same advice values as the default policy, but return
       // Error(ENOSYS) for other values. Because the Widevine CDM may probe
@@ -1994,6 +1980,11 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
   explicit RDDSandboxPolicy(SandboxBrokerClient* aBroker) {
     mBroker = aBroker;
     mMayCreateShmem = true;
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+    if (aBroker) {
+      mBrokeredConnect = true;
+    }
+#endif
   }
 
 #ifndef ANDROID
@@ -2038,6 +2029,15 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
       case SYS_SHUTDOWN:
         return Some(Allow());
 
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+      // GPU drivers may call bind() while probing display sockets; this does
+      // not enable any connections (no MAY_CONNECT targets in RDD policy) and
+      // is not needed for Vulkan video decode — only avoids seccomp noise
+      // (bug 2021722).
+      case SYS_BIND:
+        return Some(Error(EPERM));
+#endif
+
       case SYS_SOCKET:
         // Hardware-accelerated decode uses EGL to manage hardware surfaces.
         // When initialised it tries to connect to the Wayland server over a
@@ -2047,6 +2047,15 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         //
         // We also see attempts to connect to an X server on desktop
         // Linux sometimes (bug 1882598).
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+        // Vulkan video decode requires EGL to successfully connect to the
+        // display server for EGL_MESA_image_dma_buf_export (bug 2021722).
+        // With a broker, route through FakeSocketTrap so connect() is
+        // restricted to the MAY_CONNECT paths in the broker policy.
+        if (mBrokeredConnect) {
+          return SandboxPolicyCommon::EvaluateSocketCall(aCall, aHasArgs);
+        }
+#endif
         return Some(Error(EACCES));
 
       default:
@@ -2058,6 +2067,14 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
     switch (sysno) {
       case __NR_getrusage:
         return Allow();
+
+      // Required by libnuma for FFmpeg
+      case __NR_get_mempolicy:
+        return Allow();
+
+      // Required by libnuma for FFmpeg
+      case __NR_set_mempolicy:
+        return Error(ENOSYS);
 
       case __NR_ioctl: {
         Arg<unsigned long> request(1);
@@ -2071,6 +2088,14 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Type 'V' for V4L2, used for hw accelerated decode
         static constexpr unsigned long kVideoType =
             static_cast<unsigned long>('V') << _IOC_TYPESHIFT;
+#endif
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+        static constexpr unsigned long kNvidiaRmType =
+            static_cast<unsigned long>('m') << _IOC_TYPESHIFT;
+        // UDMABUF_CREATE(_LIST) on /dev/udmabuf for NVIDIA Wayland DMA-BUF
+        // export.
+        static constexpr unsigned long kUdmabufType =
+            static_cast<unsigned long>('u') << _IOC_TYPESHIFT;
 #endif
         // nvidia non-tegra uses some ioctls from this range (but not actual
         // fbdev ioctls; nvidia uses values >= 200 for the NR field
@@ -2090,6 +2115,10 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Allow DRI and DMA-Buf for VA-API. Also allow V4L2 if enabled
         return If(shifted_type == kDrmType, Allow())
             .ElseIf(shifted_type == kDmaBufType, Allow())
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+            .ElseIf(shifted_type == kNvidiaRmType, Allow())
+            .ElseIf(shifted_type == kUdmabufType, Allow())
+#endif
 #ifdef MOZ_ENABLE_V4L2
             .ElseIf(shifted_type == kVideoType, Allow())
 #endif
@@ -2099,7 +2128,11 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
             .ElseIf(shifted_type == kNvidiaNvhostType, Allow())
 #endif  // defined(__aarch64__)
         // Hack for nvidia non-tegra devices, which isn't supported yet:
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+            .ElseIf(shifted_type == kFbDevType, Allow())
+#else
             .ElseIf(shifted_type == kFbDevType, Error(ENOTTY))
+#endif
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
 
@@ -2115,6 +2148,7 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // Mesa attempts to use them to optimize performance; often
         // this involves passing other threads' tids, which we can't
         // safely allow, but maybe a future Mesa version could fix that.
+        // Also sched_setaffinity is required by libnuma for FFmpeg.
       case __NR_sched_getaffinity:
       case __NR_sched_setaffinity:
       case __NR_sched_getparam:
@@ -2154,8 +2188,28 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
       case __NR_fork:
         return Error(ENOSYS);
 #endif
-
-        // Pass through the common policy.
+#ifdef MOZ_ENABLE_VULKAN_VIDEO
+      CASES_FOR_getresuid:
+      CASES_FOR_getresgid:
+        return Allow();
+      CASES_FOR_fcntl: {
+        Arg<int> cmd(1);
+        // udmabuf requires the backing memfd to be sealed, and the driver may
+        // check the seals it applied.
+        return Switch(cmd)
+            .Case(F_ADD_SEALS, Allow())
+            .Case(F_GET_SEALS, Allow())
+            .Default(SandboxPolicyCommon::EvaluateSyscall(sysno));
+      }
+      // EGL snapshot GL context needs socket creation and display server
+      // connection for EGL_MESA_image_dma_buf_export (bug 2021722).
+      // With a broker, these are brokered: socket() via FakeSocketTrap
+      // (AF_UNIX only), connect() via ConnectTrap (MAY_CONNECT paths only).
+      case __NR_socket:
+      case __NR_connect:
+        return SandboxPolicyCommon::EvaluateSyscall(sysno);
+#endif
+        // Pass through the common policy for other syscalls
       default:
         return SandboxPolicyCommon::EvaluateSyscall(sysno);
     }

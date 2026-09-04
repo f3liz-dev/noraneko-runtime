@@ -1,38 +1,41 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SocketProcessParent.h"
-#include "SocketProcessLogging.h"
 
 #include "AltServiceParent.h"
 #include "HttpTransactionParent.h"
+#include "SSLTokensCache.h"
 #include "SocketProcessHost.h"
+#include "SocketProcessLogging.h"
 #include "TLSClientAuthCertSelection.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Components.h"
-#include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/FOGIPC.h"
 #include "mozilla/GeckoTrace.h"
-#include "mozilla/net/DNSRequestParent.h"
-#include "mozilla/net/ProxyConfigLookupParent.h"
-#include "mozilla/net/SocketProcessBackgroundParent.h"
 #include "mozilla/RemoteLazyInputStreamParent.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
+#include "mozilla/dom/MemoryReportRequest.h"
+#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/net/DNSRequestParent.h"
+#include "mozilla/net/ProxyConfigLookupParent.h"
+#include "mozilla/net/SocketProcessBackgroundParent.h"
+#include "mozilla/net/neqo_glue_ffi_generated.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
 #include "nsIConsoleService.h"
 #include "nsIHttpActivityObserver.h"
+#include "nsIOService.h"
 #include "nsIObserverService.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSComponent.h"
-#include "nsIOService.h"
-#include "nsHttpHandler.h"
-#include "nsHttpConnectionInfo.h"
+#include "nsSocketTransportService2.h"
 #include "secerr.h"
 #ifdef MOZ_WEBRTC
-#  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/dom/BrowserParent.h"
+#  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
 #if defined(MOZ_WIDGET_ANDROID)
@@ -100,33 +103,37 @@ bool SocketProcessParent::SendRequestMemoryReport(
     const Maybe<ipc::FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<dom::MemoryReportRequestHost>(aGeneration);
 
-  PSocketProcessParent::SendRequestMemoryReport(
-      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
-      [&](const uint32_t& aGeneration2) {
-        MOZ_ASSERT(gIOService);
-        if (!gIOService->SocketProcess()) {
-          return;
-        }
-        SocketProcessParent* actor = gIOService->SocketProcess()->GetActor();
-        if (!actor) {
-          return;
-        }
-        if (actor->mMemoryReportRequest) {
-          actor->mMemoryReportRequest->Finish(aGeneration2);
-          actor->mMemoryReportRequest = nullptr;
-        }
-      },
-      [&](mozilla::ipc::ResponseRejectReason) {
-        MOZ_ASSERT(gIOService);
-        if (!gIOService->SocketProcess()) {
-          return;
-        }
-        SocketProcessParent* actor = gIOService->SocketProcess()->GetActor();
-        if (!actor) {
-          return;
-        }
-        actor->mMemoryReportRequest = nullptr;
-      });
+  PSocketProcessParent::SendRequestMemoryReport(aGeneration, aAnonymize,
+                                                aMinimizeMemoryUsage, aDMDFile)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](uint32_t aGeneration2) {
+            MOZ_ASSERT(gIOService);
+            if (!gIOService->SocketProcess()) {
+              return;
+            }
+            SocketProcessParent* actor =
+                gIOService->SocketProcess()->GetActor();
+            if (!actor) {
+              return;
+            }
+            if (actor->mMemoryReportRequest) {
+              actor->mMemoryReportRequest->Finish(aGeneration2);
+              actor->mMemoryReportRequest = nullptr;
+            }
+          },
+          [](mozilla::ipc::ResponseRejectReason) {
+            MOZ_ASSERT(gIOService);
+            if (!gIOService->SocketProcess()) {
+              return;
+            }
+            SocketProcessParent* actor =
+                gIOService->SocketProcess()->GetActor();
+            if (!actor) {
+              return;
+            }
+            actor->mMemoryReportRequest = nullptr;
+          });
 
   return true;
 }
@@ -180,24 +187,13 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvRecordDiscardedData(
   return IPC_OK();
 }
 
-PWebrtcTCPSocketParent* SocketProcessParent::AllocPWebrtcTCPSocketParent(
-    const Maybe<TabId>& aTabId) {
+already_AddRefed<PWebrtcTCPSocketParent>
+SocketProcessParent::AllocPWebrtcTCPSocketParent(const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
-  parent->AddRef();
-  return parent;
+  return do_AddRef(new WebrtcTCPSocketParent(aTabId));
 #else
   return nullptr;
 #endif
-}
-
-bool SocketProcessParent::DeallocPWebrtcTCPSocketParent(
-    PWebrtcTCPSocketParent* aActor) {
-#ifdef MOZ_WEBRTC
-  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
-  parent->Release();
-#endif
-  return true;
 }
 
 already_AddRefed<PDNSRequestParent> SocketProcessParent::AllocPDNSRequestParent(
@@ -331,9 +327,35 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvFOGData(ByteBuf&& aBuf) {
   return IPC_OK();
 }
 
+#if defined(XP_MACOSX) || defined(XP_IOS)
+mozilla::ipc::IPCResult SocketProcessParent::RecvAppleFastDatapathProbeResult(
+    const bool& aAvailable) {
+  if (mHost) {
+    mHost->mAppleFastDatapathProbeResultReceived = true;
+  }
+  glean::network::apple_fast_datapath_used.Set(aAvailable);
+  // When neqo runs in the parent (socket process not used for I/O), enable
+  // the fast path here so parent-side QUIC sockets benefit from it too.
+  if (aAvailable && !nsIOService::UseSocketProcess() &&
+      gSocketTransportService) {
+    gSocketTransportService->Dispatch(
+        NS_NewRunnableFunction("net::EnableAppleFastPath",
+                               []() { neqo_glue_enable_apple_fast_path(); }),
+        NS_DISPATCH_NORMAL);
+  }
+  return IPC_OK();
+}
+#endif
+
 mozilla::ipc::IPCResult SocketProcessParent::RecvGeckoTraceExport(
     ByteBuf&& aBuf) {
   recv_gecko_trace_export(aBuf.mData, aBuf.mLen);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvSSLTokensCacheData(
+    nsTArray<SSLTokensCacheRecordInfo>&& aRecords) {
+  SSLTokensCache::ReplaceAllRecords(std::move(aRecords));
   return IPC_OK();
 }
 

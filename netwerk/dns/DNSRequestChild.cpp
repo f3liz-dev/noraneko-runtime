@@ -1,24 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/net/DNSRequestChild.h"
+
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/DNSByTypeRecord.h"
-#include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/SocketProcessChild.h"
-#include "mozilla/SchedulerGroup.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "nsIDNSRecord.h"
-#include "nsIDNSByTypeRecord.h"
 #include "nsHostResolver.h"
+#include "nsIDNSByTypeRecord.h"
+#include "nsIDNSRecord.h"
 #include "nsIOService.h"
-#include "nsTArray.h"
 #include "nsNetAddr.h"
+#include "nsTArray.h"
 #include "nsThreadUtils.h"
 
 using namespace mozilla::ipc;
@@ -163,9 +162,7 @@ ChildDNSRecord::GetNextAddrAsString(nsACString& result) {
     return rv;
   }
 
-  char buf[kIPv6CStrBufSize];
-  if (addr.ToStringBuffer(buf, sizeof(buf))) {
-    result.Assign(buf);
+  if (addr.ToString(result)) {
     return NS_OK;
   }
   NS_ERROR("NetAddrToString failed unexpectedly");

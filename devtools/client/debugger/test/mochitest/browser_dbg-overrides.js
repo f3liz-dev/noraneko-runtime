@@ -70,7 +70,7 @@ add_task(async function () {
 
   info("Select test.js tree node, and add override");
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   const nsiFile = new FileUtils.File(
     PathUtils.join(PathUtils.tempDir, "test.js")
   );
@@ -84,8 +84,8 @@ add_task(async function () {
   );
 
   info("Wait for `test.js` to be saved to disk and re-write it");
-  await BrowserTestUtils.waitForCondition(() => IOUtils.exists(path));
-  await BrowserTestUtils.waitForCondition(async () => {
+  await TestUtils.waitForCondition(() => IOUtils.exists(path));
+  await TestUtils.waitForCondition(async () => {
     const { size } = await IOUtils.stat(path);
     return size > 0;
   });

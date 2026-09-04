@@ -125,7 +125,7 @@ const TEST_GLOBAL = {
       prefix: "ASRouter",
     }),
   },
-  AWScreenUtils: {
+  ASRouterScreenUtils: {
     evaluateTargetingAndRemoveScreens() {
       return true;
     },
@@ -248,12 +248,6 @@ const TEST_GLOBAL = {
       CRYPTOMINERS_ID: 3,
       FINGERPRINTERS_ID: 4,
       SOCIAL_ID: 5,
-    },
-    nsICookieBannerService: {
-      MODE_DISABLED: 0,
-      MODE_REJECT: 1,
-      MODE_REJECT_OR_ACCEPT: 2,
-      MODE_UNSET: 3,
     },
   },
   Cu: {
@@ -565,6 +559,12 @@ const TEST_GLOBAL = {
   },
   Logger: FakeLogger,
   getFxAccountsSingleton() {},
+  AWEnsureAddonInstalled() {
+    return Promise.resolve("complete");
+  },
+  AWWaitForNimbus() {
+    return Promise.resolve("ready");
+  },
   AboutNewTab: {},
   Glean: {
     messagingExperiments: {

@@ -28,7 +28,7 @@ add_setup(async function setPrefsReducedMotion() {
 add_task(async function test_time_spinner_markup() {
   info("Test that the time picker opens with an accessible markup");
 
-  await helper.openPicker(`data:text/html, <input type="time">`);
+  await helper.openPicker(`data:text/html, <input type="time" step=".001">`);
 
   Assert.equal(helper.panel.state, "open", "Panel should be opened");
   Assert.equal(
@@ -51,14 +51,40 @@ add_task(async function test_time_spinner_markup() {
   const spinnerMin = helper.getElement(SPINNER_MIN);
   const spinnerMinPrev = helper.getElement(BTN_PREV_MIN);
   const spinnerMinNext = helper.getElement(BTN_NEXT_MIN);
+  // Second (ss):
+  const spinnerSec = helper.getElement(SPINNER_SEC);
+  const spinnerSecPrev = helper.getElement(BTN_PREV_SEC);
+  const spinnerSecNext = helper.getElement(BTN_NEXT_SEC);
+  // Millisecond (mmm):
+  const spinnerMs = helper.getElement(SPINNER_MSEC);
+  const spinnerMsPrev = helper.getElement(BTN_PREV_MSEC);
+  const spinnerMsNext = helper.getElement(BTN_NEXT_MSEC);
   // Time of the day (AM/PM):
   const spinnerTime = helper.getElement(SPINNER_TIME);
   const spinnerTimePrev = helper.getElement(BTN_PREV_TIME);
   const spinnerTimeNext = helper.getElement(BTN_NEXT_TIME);
 
-  const spinners = [spinnerHour, spinnerMin, spinnerTime];
-  const prevBtns = [spinnerHourPrev, spinnerMinPrev, spinnerTimePrev];
-  const nextBtns = [spinnerHourNext, spinnerMinNext, spinnerTimeNext];
+  const spinners = [
+    spinnerHour,
+    spinnerMin,
+    spinnerSec,
+    spinnerMs,
+    spinnerTime,
+  ];
+  const prevBtns = [
+    spinnerHourPrev,
+    spinnerMinPrev,
+    spinnerSecPrev,
+    spinnerMsPrev,
+    spinnerTimePrev,
+  ];
+  const nextBtns = [
+    spinnerHourNext,
+    spinnerMinNext,
+    spinnerSecNext,
+    spinnerMsNext,
+    spinnerTimeNext,
+  ];
 
   // Check spinner controls:
   for (const el of spinners) {
@@ -79,7 +105,9 @@ add_task(async function test_time_spinner_markup() {
     );
     Assert.ok(
       /* "0" and "12" are the only values for Time of the day spinners */
-      ["11", "23", "59", "12"].includes(el.getAttribute("aria-valuemax")),
+      ["11", "23", "59", "12", "999"].includes(
+        el.getAttribute("aria-valuemax")
+      ),
       `Spinner control ${el.id} has a max value set`
     );
 
@@ -109,6 +137,352 @@ add_task(async function test_time_spinner_markup() {
       testAttribute(btn, "aria-label");
     }
   }
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that time input field has a picker button
+ * with an accessible markup with the time picker enabled
+ */
+add_task(async function test_picker_button_markup_time() {
+  info(
+    "Test that type=time input field has a picker button with an accessible markup with the time picker enabled"
+  );
+
+  await helper.openPicker("data:text/html, <input type='time'>");
+  let browser = helper.tab.linkedBrowser;
+
+  Assert.equal(helper.panel.state, "open", "Panel is visible");
+
+  let closed = helper.promisePickerClosed();
+
+  await testPickerBtnAttribute("aria-expanded", "true");
+  await testPickerBtnAttribute("aria-label", null, true);
+  await testPickerBtnAttribute("data-l10n-id", "datetime-time");
+
+  await SpecialPowers.spawn(browser, [], () => {
+    const input = content.document.querySelector("input");
+    const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
+    const pickerBtn = shadowRoot.getElementById("picker-button");
+
+    Assert.equal(pickerBtn.tagName, "BUTTON", "Picker control is a button");
+    Assert.ok(
+      ContentTaskUtils.isVisible(pickerBtn),
+      "The picker button is visible"
+    );
+
+    pickerBtn.click();
+  });
+
+  await closed;
+
+  Assert.equal(
+    helper.panel.state,
+    "closed",
+    "Panel should be closed on click on the picker button"
+  );
+
+  await testPickerBtnAttribute("aria-expanded", "false");
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that time input field does not include a picker button
+ * with the time picker disabled
+ */
+add_task(async function test_picker_button_markup_time_picker_off() {
+  info(
+    "Test that type=time input field does not include a picker button with the time picker disabled"
+  );
+
+  // Toggle off the time picker pref
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.forms.datetime.timepicker", false]],
+  });
+
+  let testTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "data:text/html, <input type='time'>"
+  );
+
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    const input = content.document.querySelector("input");
+    const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
+    const pickerBtn = shadowRoot.getElementById("picker-button");
+
+    Assert.ok(
+      ContentTaskUtils.isHidden(pickerBtn),
+      "The Calendar control within a type=time input field is programmatically hidden with the time picker disabled"
+    );
+  });
+
+  await SpecialPowers.popPrefEnv();
+  BrowserTestUtils.removeTab(testTab);
+});
+
+/**
+ * Test that the time picker enables the correct values when the valid range wraps midnight
+ */
+add_task(async function test_timepicker_wrap_midnight() {
+  info(
+    "Test that the time picker enables the correct values when the valid range wraps midnight"
+  );
+  const maxValue = "01:00";
+  const minValue = "23:00";
+  const inputValue = "00:00";
+
+  await helper.openPicker(
+    `data:text/html, <input type='time' value="${inputValue}" max="${maxValue}" min="${minValue}">`
+  );
+
+  let hours = helper.getSpinnerOptions(SPINNER_HOUR);
+  const dayPeriods = helper.getSpinnerOptions(SPINNER_TIME);
+
+  Assert.deepEqual(
+    hours,
+    ["12", "1"],
+    "The valid AM hours are available in the picker"
+  );
+
+  Assert.deepEqual(
+    dayPeriods,
+    ["AM", "PM"],
+    "The valid day periods are available in the picker"
+  );
+
+  // Move focus to the day period spinner and select PM
+  EventUtils.synthesizeKey("KEY_Tab", {});
+  EventUtils.synthesizeKey("KEY_Tab", {});
+  EventUtils.synthesizeKey("KEY_ArrowDown", {});
+
+  const spinnerTime = helper.getElement(SPINNER_TIME);
+  await BrowserTestUtils.waitForMutationCondition(
+    spinnerTime,
+    { attributeFilter: ["aria-valuenow"] },
+    () => {
+      return spinnerTime.ariaValueNow == "12";
+    },
+    `Should change to 12, instead got ${spinnerTime.ariaValueNow}`
+  );
+
+  hours = helper.getSpinnerOptions(SPINNER_HOUR);
+
+  Assert.deepEqual(
+    hours,
+    ["11"],
+    "The valid PM hours are available in the picker"
+  );
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that the time picker selects the minimum valid value when opened with an invalid value.
+ */
+add_task(async function test_timepicker_select_min_valid_when_invalid() {
+  info(
+    "Test that the time picker selects the minimum valid value when opened with an invalid value"
+  );
+  const minValue = "02:30";
+  const inputValue = "00:10";
+
+  await helper.openPicker(
+    `data:text/html, <input type='time' value="${inputValue}" min="${minValue}">`
+  );
+
+  const spinnerHour = helper.getElement(SPINNER_HOUR);
+  const spinnerMin = helper.getElement(SPINNER_MIN);
+
+  Assert.equal(
+    spinnerHour.ariaValueNow,
+    "2",
+    "The minimum valid hour is selected in the picker"
+  );
+
+  Assert.equal(
+    spinnerMin.ariaValueNow,
+    "30",
+    "The minimum valid minute is selected in the picker"
+  );
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that the time picker displays as expected for a locale using 12-hour time
+ */
+add_task(async function test_timepicker_locale_format_12hr() {
+  info(
+    "Test that the time picker displays as expected for a locale using 12-hour time"
+  );
+  const inputValue = "00:00";
+  const locale = "en-US";
+
+  const oldAvailableLocales = Services.locale.availableLocales;
+  const oldRequestedLocales = Services.locale.requestedLocales;
+
+  // Set the locale to test
+  Services.locale.availableLocales = [locale];
+  Services.locale.requestedLocales = [locale];
+
+  await helper.openPicker(
+    `data:text/html, <input type='time' value="${inputValue}">`
+  );
+
+  const pickerChildren = helper.getChildren(DIALOG_TIME_PICKER);
+  let hourSpinner, minSpinner, timeSpinner;
+
+  Assert.equal(
+    pickerChildren.length,
+    5,
+    "The picker should have the expected number of elements"
+  );
+
+  // Test that we have the expected children with the expected text
+  for (let i = 0; i < pickerChildren.length; i++) {
+    switch (i) {
+      case 0:
+        for (const child of Array.from(pickerChildren[i].children)) {
+          if (child == helper.getElement(SPINNER_HOUR)) {
+            hourSpinner = child;
+            break;
+          }
+        }
+        Assert.ok(hourSpinner, "The first element is the hour spinner");
+        Assert.equal(
+          hourSpinner?.ariaValueText,
+          "12",
+          "The hour spinner has the correct number format"
+        );
+        break;
+      case 1:
+        Assert.equal(
+          pickerChildren[i].textContent,
+          ":",
+          "The second element is a literal colon"
+        );
+        break;
+      case 2:
+        for (const child of Array.from(pickerChildren[i].children)) {
+          if (child == helper.getElement(SPINNER_MIN)) {
+            minSpinner = child;
+            break;
+          }
+        }
+        Assert.ok(minSpinner, "The third element is the minute spinner");
+        Assert.equal(
+          minSpinner?.ariaValueText,
+          "00",
+          "The minute spinner has the correct number format"
+        );
+        break;
+      case 3:
+        Assert.equal(
+          pickerChildren[i].className,
+          "spacer",
+          "The fourth element is a spacer"
+        );
+        break;
+      case 4:
+        for (const child of Array.from(pickerChildren[i].children)) {
+          if (child == helper.getElement(SPINNER_TIME)) {
+            timeSpinner = child;
+            break;
+          }
+        }
+        Assert.ok(timeSpinner, "The fifth element is the day period spinner");
+        Assert.equal(
+          timeSpinner?.ariaValueText,
+          "AM",
+          "The day period spinner has the correct format"
+        );
+        break;
+    }
+  }
+
+  // Restore original locales
+  Services.locale.availableLocales = oldAvailableLocales;
+  Services.locale.requestedLocales = oldRequestedLocales;
+
+  await helper.tearDown();
+});
+
+/**
+ * Test that the time picker displays as expected for a locale using 24-hour time
+ */
+add_task(async function test_timepicker_locale_format_24hr() {
+  info(
+    "Test that the time picker displays as expected for a locale using 24-hour time"
+  );
+  const inputValue = "00:00";
+  const locale = "de-DE";
+
+  const oldAvailableLocales = Services.locale.availableLocales;
+  const oldRequestedLocales = Services.locale.requestedLocales;
+
+  // Set the locale to test
+  Services.locale.availableLocales = [locale];
+  Services.locale.requestedLocales = [locale];
+
+  await helper.openPicker(
+    `data:text/html, <input type='time' value="${inputValue}">`
+  );
+
+  const pickerChildren = helper.getChildren(DIALOG_TIME_PICKER);
+  let hourSpinner, minSpinner;
+
+  Assert.equal(
+    pickerChildren.length,
+    3,
+    "The picker should have the expected number of elements"
+  );
+
+  // Test that we have the expected children with the expected text
+  for (let i = 0; i < pickerChildren.length; i++) {
+    switch (i) {
+      case 0:
+        for (const child of Array.from(pickerChildren[i].children)) {
+          if (child == helper.getElement(SPINNER_HOUR)) {
+            hourSpinner = child;
+            break;
+          }
+        }
+        Assert.ok(hourSpinner, "The first element is the hour spinner");
+        Assert.equal(
+          hourSpinner?.ariaValueText,
+          "00",
+          "The hour spinner has the correct number format"
+        );
+        break;
+      case 1:
+        Assert.equal(
+          pickerChildren[i].textContent,
+          ":",
+          "The second element is a literal colon"
+        );
+        break;
+      case 2:
+        for (const child of Array.from(pickerChildren[i].children)) {
+          if (child == helper.getElement(SPINNER_MIN)) {
+            minSpinner = child;
+            break;
+          }
+        }
+        Assert.ok(minSpinner, "The third element is the minute spinner");
+        Assert.equal(
+          minSpinner?.ariaValueText,
+          "00",
+          "The minute spinner has the correct number format"
+        );
+        break;
+    }
+  }
+
+  // Restore original locales
+  Services.locale.availableLocales = oldAvailableLocales;
+  Services.locale.requestedLocales = oldRequestedLocales;
 
   await helper.tearDown();
 });

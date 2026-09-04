@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +9,8 @@ struct IDXGISwapChain;
 struct ID3D11DeviceContext;
 struct ID3D11Device;
 
-#include <windows.h>
 #include <d3d11_1.h>
+#include <windows.h>
 
 #include "mozilla/RefPtr.h"
 

@@ -477,8 +477,10 @@ _cairo_win32_printing_surface_select_solid_brush (cairo_win32_printing_surface_t
     color = _cairo_win32_printing_surface_flatten_transparency (surface,
 								&pattern->color);
     surface->brush = CreateSolidBrush (color);
-    if (!surface->brush)
-	return _cairo_win32_print_gdi_error ("_cairo_win32_surface_select_solid_brush(CreateSolidBrush)");
+    if (!surface->brush) {
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "CreateSolidBrush");
+        return _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+    }
     surface->old_brush = SelectObject (surface->win32.dc, surface->brush);
 
     return CAIRO_STATUS_SUCCESS;
@@ -501,13 +503,17 @@ _cairo_win32_printing_surface_get_ctm_clip_box (cairo_win32_printing_surface_t *
     XFORM xform;
 
     _cairo_matrix_to_win32_xform (&surface->ctm, &xform);
-    if (!ModifyWorldTransform (surface->win32.dc, &xform, MWT_LEFTMULTIPLY))
-	return _cairo_win32_print_gdi_error ("_cairo_win32_printing_surface_get_clip_box:ModifyWorldTransform");
+    if (!ModifyWorldTransform (surface->win32.dc, &xform, MWT_LEFTMULTIPLY)) {
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "ModifyWorldTransform");
+        return _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+    }
     GetClipBox (surface->win32.dc, clip);
 
     _cairo_matrix_to_win32_xform (&surface->gdi_ctm, &xform);
-    if (!SetWorldTransform (surface->win32.dc, &xform))
-	return _cairo_win32_print_gdi_error ("_cairo_win32_printing_surface_get_clip_box:SetWorldTransform");
+    if (!SetWorldTransform (surface->win32.dc, &xform)) {
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "SetWorldTransform");
+        return _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+    }
 
     return CAIRO_STATUS_SUCCESS;
 }
@@ -887,7 +893,8 @@ _cairo_win32_printing_surface_paint_image_pattern (cairo_win32_printing_surface_
     _cairo_matrix_to_win32_xform (&m, &xform);
 
     if (! SetWorldTransform (surface->win32.dc, &xform)) {
-	status = _cairo_win32_print_gdi_error ("_cairo_win32_printing_surface_paint_image_pattern");
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "SetWorldTransform");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	goto CLEANUP_OPAQUE_IMAGE;
     }
 
@@ -922,7 +929,8 @@ _cairo_win32_printing_surface_paint_image_pattern (cairo_win32_printing_surface_
 				DIB_RGB_COLORS,
 				SRCCOPY))
 	    {
-		status = _cairo_win32_print_gdi_error ("_cairo_win32_printing_surface_paint(StretchDIBits)");
+                fprintf (stderr, "%s:%s\n", __FUNCTION__, "StretchDIBits");
+                status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 		goto CLEANUP_OPAQUE_IMAGE;
 	    }
 	}
@@ -955,8 +963,8 @@ static cairo_int_status_t
 _cairo_win32_printing_surface_paint_linear_pattern (cairo_win32_printing_surface_t *surface,
                                                     cairo_linear_pattern_t *pattern)
 {
-    TRIVERTEX *vert;
-    GRADIENT_RECT *rect;
+    TRIVERTEX *vert = NULL;
+    GRADIENT_RECT *rect = NULL;
     RECT clip;
     XFORM xform;
     int i, num_stops;
@@ -966,6 +974,7 @@ _cairo_win32_printing_surface_paint_linear_pattern (cairo_win32_printing_surface
     int range_start, range_stop, num_ranges, num_rects, stop;
     int total_verts, total_rects;
     cairo_status_t status;
+    cairo_uint64_t alloc_size;
 
     extend = cairo_pattern_get_extend (&pattern->base.base);
     SaveDC (surface->win32.dc);
@@ -996,8 +1005,11 @@ _cairo_win32_printing_surface_paint_linear_pattern (cairo_win32_printing_surface
 
     _cairo_matrix_to_win32_xform (&mat, &xform);
 
-    if (!SetWorldTransform (surface->win32.dc, &xform))
-	return _cairo_win32_print_gdi_error ("_win32_printing_surface_paint_linear_pattern:SetWorldTransform2");
+    if (!SetWorldTransform (surface->win32.dc, &xform)) {
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "SetWorldTransform");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+        goto cleanup;
+    }
 
     GetClipBox (surface->win32.dc, &clip);
 
@@ -1013,8 +1025,24 @@ _cairo_win32_printing_surface_paint_linear_pattern (cairo_win32_printing_surface
     num_rects = num_stops - 1;
 
     /* Add an extra four points and two rectangles for EXTEND_PAD */
-    vert = _cairo_malloc (sizeof (TRIVERTEX) * (num_rects*2*num_ranges + 4));
-    rect = _cairo_malloc (sizeof (GRADIENT_RECT) * (num_rects*num_ranges + 2));
+    alloc_size = sizeof (TRIVERTEX) * ((cairo_uint64_t)num_rects * 2 * (cairo_uint64_t)num_ranges + 4);
+    if (alloc_size > (cairo_uint64_t)SIZE_MAX) {
+        status = _cairo_error (CAIRO_INT_STATUS_UNSUPPORTED);
+        goto cleanup;
+    }
+    vert = _cairo_malloc (alloc_size);
+
+    alloc_size = sizeof (GRADIENT_RECT) * ((cairo_uint64_t)num_rects * (cairo_uint64_t)num_ranges + 2);
+    if (alloc_size > (cairo_uint64_t)SIZE_MAX) {
+        status = _cairo_error (CAIRO_INT_STATUS_UNSUPPORTED);
+        goto cleanup;
+    }
+    rect = _cairo_malloc (alloc_size);
+
+    if (!vert || !rect) {
+        status = _cairo_error (CAIRO_STATUS_NO_MEMORY);
+        goto cleanup;
+    }
 
     for (i = 0; i < num_ranges*num_rects; i++) {
 	vert[i*2].y = (LONG) clip.top;
@@ -1086,13 +1114,17 @@ _cairo_win32_printing_surface_paint_linear_pattern (cairo_win32_printing_surface
 		       vert, total_verts,
 		       rect, total_rects,
 		       GRADIENT_FILL_RECT_H))
-	return _cairo_win32_print_gdi_error ("_win32_printing_surface_paint_linear_pattern:GradientFill");
+    {
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "GradientFill");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+    }
 
+cleanup:
     free (rect);
     free (vert);
     RestoreDC (surface->win32.dc, -1);
 
-    return 0;
+    return status;
 }
 
 static cairo_int_status_t
@@ -1524,9 +1556,11 @@ _cairo_win32_printing_surface_stroke (void			*abstract_surface,
     dash_array = NULL;
     if (style->num_dashes) {
 	pen_style |= PS_USERSTYLE;
-	dash_array = calloc (sizeof (DWORD), style->num_dashes);
+	dash_array = _cairo_calloc_ab (sizeof (DWORD), style->num_dashes);
 	for (i = 0; i < style->num_dashes; i++) {
-	    dash_array[i] = (DWORD) (scale * style->dash[i]);
+      /* ExtCreatePen fails if the scaled dash length becomes zero,
+         so enforce a minimum of 1 unit. */
+	    dash_array[i] = MAX(1, (DWORD) (scale * style->dash[i]));
 	}
     } else {
 	pen_style |= PS_SOLID;
@@ -1556,13 +1590,15 @@ _cairo_win32_printing_surface_stroke (void			*abstract_surface,
 		       style->num_dashes,
 		       dash_array);
     if (pen == NULL) {
-	status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:ExtCreatePen");
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "ExtCreatePen");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	goto cleanup_composite;
     }
 
     obj = SelectObject (surface->win32.dc, pen);
     if (obj == NULL) {
-	status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:SelectObject");
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "SelectObject");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	goto cleanup_composite;
     }
 
@@ -1582,7 +1618,8 @@ _cairo_win32_printing_surface_stroke (void			*abstract_surface,
     xform.eDy = 0.0f;
 
     if (!ModifyWorldTransform (surface->win32.dc, &xform, MWT_LEFTMULTIPLY)) {
-	status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:SetWorldTransform");
+        fprintf (stderr, "%s:%s\n", __FUNCTION__, "ModifyWorldTransform");
+        status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	goto cleanup_composite;
     }
 
@@ -1590,18 +1627,21 @@ _cairo_win32_printing_surface_stroke (void			*abstract_surface,
 	StrokePath (surface->win32.dc);
     } else {
 	if (!WidenPath (surface->win32.dc)) {
-	    status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:WidenPath");
+            fprintf (stderr, "%s:%s\n", __FUNCTION__, "WidenPath");
+            status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	    goto cleanup_composite;
 	}
 	if (!SelectClipPath (surface->win32.dc, RGN_AND)) {
-	    status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:SelectClipPath");
+            fprintf (stderr, "%s:%s\n", __FUNCTION__, "SelectClipPath");
+            status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	    goto cleanup_composite;
 	}
 
 	/* Return to device space to paint the pattern */
 	_cairo_matrix_to_win32_xform (&surface->gdi_ctm, &xform);
 	if (!SetWorldTransform (surface->win32.dc, &xform)) {
-	    status = _cairo_win32_print_gdi_error ("_win32_surface_stroke:ModifyWorldTransform");
+            fprintf (stderr, "%s:%s\n", __FUNCTION__, "SetWorldTransform");
+            status = _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
 	    goto cleanup_composite;
 	}
 	status = _cairo_win32_printing_surface_paint_pattern (surface, source, &extents.bounded);
@@ -2102,8 +2142,10 @@ _cairo_win32_printing_surface_start_page (void *abstract_surface)
 	surface->ctm.x0 = xform.eDx;
 	surface->ctm.y0 = xform.eDy;
 	cairo_matrix_init_identity (&surface->gdi_ctm);
-	if (!ModifyWorldTransform (surface->win32.dc, NULL, MWT_IDENTITY))
-	    return _cairo_win32_print_gdi_error ("_cairo_win32_printing_surface_start_page:ModifyWorldTransform");
+	if (!ModifyWorldTransform (surface->win32.dc, NULL, MWT_IDENTITY)) {
+            fprintf (stderr, "%s:%s\n", __FUNCTION__, "ModifyWorldTransform");
+            return _cairo_error (CAIRO_STATUS_WIN32_GDI_ERROR);
+        }
     }
 
     surface->has_ctm = !_cairo_matrix_is_identity (&surface->ctm);
@@ -2167,7 +2209,7 @@ cairo_win32_printing_surface_create (HDC hdc)
     cairo_win32_printing_surface_t *surface;
     cairo_surface_t *paginated;
 
-    surface = _cairo_malloc (sizeof (cairo_win32_printing_surface_t));
+    surface = _cairo_calloc (sizeof (cairo_win32_printing_surface_t));
     if (surface == NULL)
 	return _cairo_surface_create_in_error (_cairo_error (CAIRO_STATUS_NO_MEMORY));
 

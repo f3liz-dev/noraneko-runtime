@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/Utf16.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
@@ -26,7 +24,6 @@
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsContentUtils.h"
-#include "nsDOMCID.h"
 #include "nsFocusManager.h"
 #include "nsGkAtoms.h"
 #include "nsGlobalWindowCommands.h"
@@ -37,15 +34,12 @@
 #include "nsIScriptError.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsJSUtils.h"
-#include "nsNameSpaceManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsQueryObject.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
 #include "nsXULElement.h"
-#include "xpcpublic.h"
 
 namespace mozilla {
 
@@ -101,15 +95,38 @@ KeyEventHandler::~KeyEventHandler() {
   NS_CONTENT_DELETE_LIST_MEMBER(KeyEventHandler, this, mNextHandler);
 }
 
-void KeyEventHandler::GetCommand(nsAString& aCommand) const {
+bool KeyEventHandler::IsCommand(const char* aCommandStr) const {
+  MOZ_ASSERT(aCommandStr);
+  if (mIsXULKey) {
+    nsAutoString command;
+    if (nsCOMPtr<dom::Element> handlerElement = GetHandlerElement()) {
+      handlerElement->GetAttr(nsGkAtoms::command, command);
+    }
+    return command.EqualsASCII(aCommandStr);
+  }
+  if (mCommand) {
+    return nsDependentString(mCommand).EqualsASCII(aCommandStr);
+  }
+  return false;
+}
+
+void KeyEventHandler::GetCommandStr(nsAString& aCommand) const {
   MOZ_ASSERT(aCommand.IsEmpty());
   if (mIsXULKey) {
-    MOZ_ASSERT_UNREACHABLE("Not yet implemented");
+    if (nsCOMPtr<dom::Element> handlerElement = GetHandlerElement()) {
+      handlerElement->GetAttr(nsGkAtoms::command, aCommand);
+    }
     return;
   }
   if (mCommand) {
     aCommand.Assign(mCommand);
   }
+}
+
+Command KeyEventHandler::GetCommand() const {
+  nsAutoString command;
+  GetCommandStr(command);
+  return GetInternalCommand(NS_LossyConvertUTF16toASCII(command));
 }
 
 bool KeyEventHandler::TryConvertToKeyboardShortcut(
@@ -165,9 +182,7 @@ bool KeyEventHandler::TryConvertToKeyboardShortcut(
 
 bool KeyEventHandler::KeyElementIsDisabled() const {
   RefPtr<dom::Element> keyElement = GetHandlerElement();
-  return keyElement &&
-         keyElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
-                                 nsGkAtoms::_true, eCaseMatters);
+  return keyElement && keyElement->GetBoolAttr(nsGkAtoms::disabled);
 }
 
 already_AddRefed<dom::Element> KeyEventHandler::GetHandlerElement() const {
@@ -315,8 +330,7 @@ nsresult KeyEventHandler::DispatchXBLCommand(dom::EventTarget* aTarget,
 nsresult KeyEventHandler::DispatchXULKeyCommand(dom::Event* aEvent) {
   nsCOMPtr<dom::Element> handlerElement = GetHandlerElement();
   NS_ENSURE_STATE(handlerElement);
-  if (handlerElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
-                                  nsGkAtoms::_true, eCaseMatters)) {
+  if (handlerElement->GetBoolAttr(nsGkAtoms::disabled)) {
     // Don't dispatch command events for disabled keys.
     return NS_SUCCESS_DOM_NO_OPERATION;
   }
@@ -433,7 +447,7 @@ bool KeyEventHandler::KeyEventMatched(
       } else {
         code = aDomKeyboardEvent->CharCode();
       }
-      if (IS_IN_BMP(code)) {
+      if (IsInBMP(code)) {
         code = ToLowerCase(char16_t(code));
       }
     } else {
@@ -656,7 +670,7 @@ void KeyEventHandler::ReportKeyConflict(const char16_t* aKey,
   params.AppendElement(id);
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, "Key dom::Event Handler"_ns, doc,
-      nsContentUtils::eDOM_PROPERTIES, aMessageName, params);
+      PropertiesFile::DOM_PROPERTIES, aMessageName, params);
 }
 
 bool KeyEventHandler::ModifiersMatchMask(

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -207,8 +205,10 @@ already_AddRefed<Path> CSSClipPathInstance::CreateClipPathShape(
   const Point offset =
       LayoutDevicePoint::FromAppUnits(aRefBox.TopLeft(), appUnitsPerDevPixel)
           .ToUnknownPoint();
-  const float scale = mTargetFrame->Style()->EffectiveZoom().Zoom(
-      float(AppUnitsPerCSSPixel()) / float(appUnitsPerDevPixel));
+  // For path() we would need to take into consideration the current CSS zoom,
+  // but this is a shape() so the zoom was already applied to the shape
+  // commands.
+  const float scale = float(AppUnitsPerCSSPixel()) / float(appUnitsPerDevPixel);
   return SVGPathData::BuildPath(shape.commands.AsSpan(), builder,
                                 StyleStrokeLinecap::Butt, 0.0, basis, offset,
                                 scale);

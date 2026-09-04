@@ -1,66 +1,62 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsBaseParentChannel.h"
-#include "nsHttp.h"
+#include "mozilla/net/NeckoParent.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/net/ExtensionProtocolHandler.h"
-#include "mozilla/net/PageThumbProtocolHandler.h"
-#include "mozilla/net/MozNewTabWallpaperProtocolHandler.h"
-#include "mozilla/net/NeckoParent.h"
-#include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/CookieServiceParent.h"
+#include "mozilla/net/ExtensionProtocolHandler.h"
+#include "mozilla/net/HttpChannelParent.h"
+#include "mozilla/net/MozNewTabWallpaperProtocolHandler.h"
+#include "mozilla/net/PageThumbProtocolHandler.h"
 #include "mozilla/net/WebSocketChannelParent.h"
 #include "mozilla/net/WebSocketEventListenerParent.h"
-#ifdef MOZ_WIDGET_GTK
-#  include "mozilla/net/GIOChannelParent.h"
-#endif
+#include "nsBaseParentChannel.h"
+#include "nsHttp.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/net/GeckoViewContentChannelParent.h"
 #endif
-#include "mozilla/net/DocumentChannelParent.h"
-#include "mozilla/net/CacheEntryWriteHandleParent.h"
 #include "mozilla/net/AltDataOutputStreamParent.h"
+#include "mozilla/net/CacheEntryWriteHandleParent.h"
 #include "mozilla/net/DNSRequestParent.h"
+#include "mozilla/net/DocumentChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
+#include "mozilla/net/PSocketProcessBridgeParent.h"
 #include "mozilla/net/RemoteStreamGetter.h"
 #include "mozilla/net/RequestContextService.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/net/PSocketProcessBridgeParent.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestParent.h"
 #  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
-#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/MaybeDiscarded.h"
-#include "mozilla/dom/network/TCPSocketParent.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/network/TCPServerSocketParent.h"
+#include "mozilla/dom/network/TCPSocketParent.h"
 #include "mozilla/dom/network/UDPSocketParent.h"
 #ifdef MOZ_PLACES
 #  include "mozilla/places/PageIconProtocolHandler.h"
 #endif
+#include "SerializedLoadContext.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
-#include "nsPrintfCString.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "nsEscape.h"
-#include "SerializedLoadContext.h"
 #include "nsAuthInformationHolder.h"
-#include "nsISpeculativeConnect.h"
+#include "nsEscape.h"
 #include "nsFileChannel.h"
 #include "nsHttpHandler.h"
 #include "nsIMIMEService.h"
-#include "nsNetUtil.h"
 #include "nsIOService.h"
+#include "nsISpeculativeConnect.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
 
 using IPC::SerializedLoadContext;
 using mozilla::dom::BrowserParent;
@@ -214,43 +210,22 @@ mozilla::ipc::IPCResult NeckoParent::RecvPHttpChannelConstructor(
   return IPC_OK();
 }
 
-PStunAddrsRequestParent* NeckoParent::AllocPStunAddrsRequestParent() {
+already_AddRefed<PStunAddrsRequestParent>
+NeckoParent::AllocPStunAddrsRequestParent() {
 #ifdef MOZ_WEBRTC
-  StunAddrsRequestParent* p = new StunAddrsRequestParent();
-  p->AddRef();
-  return p;
+  return do_AddRef(new StunAddrsRequestParent());
 #else
   return nullptr;
 #endif
 }
 
-bool NeckoParent::DeallocPStunAddrsRequestParent(
-    PStunAddrsRequestParent* aActor) {
+already_AddRefed<PWebrtcTCPSocketParent>
+NeckoParent::AllocPWebrtcTCPSocketParent(const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  StunAddrsRequestParent* p = static_cast<StunAddrsRequestParent*>(aActor);
-  p->Release();
-#endif
-  return true;
-}
-
-PWebrtcTCPSocketParent* NeckoParent::AllocPWebrtcTCPSocketParent(
-    const Maybe<TabId>& aTabId) {
-#ifdef MOZ_WEBRTC
-  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
-  parent->AddRef();
-  return parent;
+  return do_AddRef(new WebrtcTCPSocketParent(aTabId));
 #else
   return nullptr;
 #endif
-}
-
-bool NeckoParent::DeallocPWebrtcTCPSocketParent(
-    PWebrtcTCPSocketParent* aActor) {
-#ifdef MOZ_WEBRTC
-  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
-  parent->Release();
-#endif
-  return true;
 }
 
 PCacheEntryWriteHandleParent* NeckoParent::AllocPCacheEntryWriteHandleParent(
@@ -367,6 +342,22 @@ PWebSocketEventListenerParent* NeckoParent::AllocPWebSocketEventListenerParent(
   return c.forget().take();
 }
 
+mozilla::ipc::IPCResult NeckoParent::RecvPWebSocketEventListenerConstructor(
+    PWebSocketEventListenerParent* aActor, const uint64_t& aInnerWindowID) {
+  RefPtr<dom::WindowGlobalParent> wgp =
+      dom::WindowGlobalParent::GetByInnerWindowId(aInnerWindowID);
+  if (wgp && wgp->GetContentParent() == ContentParent::Cast(Manager())) {
+    return IPC_OK();
+  }
+
+  if (wgp) {
+    return IPC_FAIL(this, "Invalid aInnerWindowID");
+  }
+
+  (void)PWebSocketEventListenerParent::Send__delete__(aActor);
+  return IPC_OK();
+}
+
 bool NeckoParent::DeallocPWebSocketEventListenerParent(
     PWebSocketEventListenerParent* aActor) {
   RefPtr<WebSocketEventListenerParent> c =
@@ -381,54 +372,10 @@ mozilla::ipc::IPCResult NeckoParent::RecvConnectBaseChannel(
       new nsBaseParentChannel(ContentParent::Cast(Manager())->GetRemoteType());
 
   nsCOMPtr<nsIChannel> channel;
-  NS_LinkRedirectChannels(channelId, parentChannel, getter_AddRefs(channel));
+  NS_LinkRedirectChannels(channelId, ContentParent::Cast(Manager())->ChildID(),
+                          parentChannel, getter_AddRefs(channel));
   return IPC_OK();
 }
-
-#ifdef MOZ_WIDGET_GTK
-static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
-    const GIOChannelCreationArgs& aArgs) {
-  if (aArgs.type() != GIOChannelCreationArgs::TGIOChannelOpenArgs) {
-    return nullptr;
-  }
-
-  const GIOChannelOpenArgs& args = aArgs.get_GIOChannelOpenArgs();
-  return GetRequestingPrincipal(args.loadInfo());
-}
-
-PGIOChannelParent* NeckoParent::AllocPGIOChannelParent(
-    PBrowserParent* aBrowser, const SerializedLoadContext& aSerialized,
-    const GIOChannelCreationArgs& aOpenArgs) {
-  nsCOMPtr<nsIPrincipal> requestingPrincipal =
-      GetRequestingPrincipal(aOpenArgs);
-
-  nsCOMPtr<nsILoadContext> loadContext;
-  CreateChannelLoadContext(aBrowser, Manager(), aSerialized,
-                           requestingPrincipal, loadContext);
-  PBOverrideStatus overrideStatus =
-      PBOverrideStatusFromLoadContext(aSerialized);
-  GIOChannelParent* p = new GIOChannelParent(BrowserParent::GetFrom(aBrowser),
-                                             loadContext, overrideStatus);
-  p->AddRef();
-  return p;
-}
-
-bool NeckoParent::DeallocPGIOChannelParent(PGIOChannelParent* channel) {
-  GIOChannelParent* p = static_cast<GIOChannelParent*>(channel);
-  p->Release();
-  return true;
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPGIOChannelConstructor(
-    PGIOChannelParent* actor, PBrowserParent* aBrowser,
-    const SerializedLoadContext& aSerialized,
-    const GIOChannelCreationArgs& aOpenArgs) {
-  GIOChannelParent* p = static_cast<GIOChannelParent*>(actor);
-  DebugOnly<bool> rv = p->Init(aOpenArgs);
-  MOZ_ASSERT(rv);
-  return IPC_OK();
-}
-#endif
 
 #ifdef MOZ_WIDGET_ANDROID
 static already_AddRefed<nsIPrincipal> GetRequestingPrincipal(
@@ -493,48 +440,39 @@ bool NeckoParent::DeallocPTCPSocketParent(PTCPSocketParent* actor) {
   return true;
 }
 
-PTCPServerSocketParent* NeckoParent::AllocPTCPServerSocketParent(
-    const uint16_t& aLocalPort, const uint16_t& aBacklog,
-    const bool& aUseArrayBuffers) {
-  TCPServerSocketParent* p =
-      new TCPServerSocketParent(this, aLocalPort, aBacklog, aUseArrayBuffers);
-  p->AddIPDLReference();
-  return p;
+already_AddRefed<PTCPServerSocketParent>
+NeckoParent::AllocPTCPServerSocketParent(const uint16_t& aLocalPort,
+                                         const uint16_t& aBacklog,
+                                         const bool& aUseArrayBuffers) {
+  return do_AddRef(
+      new TCPServerSocketParent(this, aLocalPort, aBacklog, aUseArrayBuffers));
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPTCPServerSocketConstructor(
     PTCPServerSocketParent* aActor, const uint16_t& aLocalPort,
     const uint16_t& aBacklog, const bool& aUseArrayBuffers) {
+  if (!StaticPrefs::dom_tcpsocket_in_child_enabled()) {
+    return IPC_FAIL(this, "tcp socket not enabled");
+  }
   static_cast<TCPServerSocketParent*>(aActor)->Init();
   return IPC_OK();
 }
 
-bool NeckoParent::DeallocPTCPServerSocketParent(PTCPServerSocketParent* actor) {
-  TCPServerSocketParent* p = static_cast<TCPServerSocketParent*>(actor);
-  p->ReleaseIPDLReference();
-  return true;
-}
-
-PUDPSocketParent* NeckoParent::AllocPUDPSocketParent(
+already_AddRefed<PUDPSocketParent> NeckoParent::AllocPUDPSocketParent(
     nsIPrincipal* /* unused */, const nsACString& /* unused */) {
-  RefPtr<UDPSocketParent> p = new UDPSocketParent(this);
-
-  return p.forget().take();
+  return do_AddRef(new UDPSocketParent(this));
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPUDPSocketConstructor(
     PUDPSocketParent* aActor, nsIPrincipal* aPrincipal,
     const nsACString& aFilter) {
+  if (!StaticPrefs::dom_udpsocket_enabled() && aFilter.IsEmpty()) {
+    return IPC_FAIL(this, "udp socket not enabled");
+  }
   if (!static_cast<UDPSocketParent*>(aActor)->Init(aPrincipal, aFilter)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
-}
-
-bool NeckoParent::DeallocPUDPSocketParent(PUDPSocketParent* actor) {
-  UDPSocketParent* p = static_cast<UDPSocketParent*>(actor);
-  p->Release();
-  return true;
 }
 
 already_AddRefed<PDNSRequestParent> NeckoParent::AllocPDNSRequestParent(
@@ -551,6 +489,10 @@ mozilla::ipc::IPCResult NeckoParent::RecvPDNSRequestConstructor(
     const nsACString& aTrrServer, const int32_t& aPort, const uint16_t& aType,
     const OriginAttributes& aOriginAttributes,
     const nsIDNSService::DNSFlags& aFlags) {
+  if (!aTrrServer.IsEmpty()) {
+    return IPC_FAIL(this, "Content process should not specify TRR server");
+  }
+
   RefPtr<DNSRequestParent> actor = static_cast<DNSRequestParent*>(aActor);
   RefPtr<DNSRequestHandler> handler =
       actor->GetDNSRequest()->AsDNSRequestHandler();
@@ -592,6 +534,15 @@ mozilla::ipc::IPCResult NeckoParent::RecvHTMLDNSPrefetch(
     const OriginAttributes& aOriginAttributes,
     const nsIDNSService::DNSFlags& flags) {
   dom::HTMLDNSPrefetch::Prefetch(hostname, isHttps, aOriginAttributes, flags);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult NeckoParent::RecvHTMLDNSPrefetchBatch(
+    nsTArray<HTMLDNSPrefetchArgs>&& aPrefetches) {
+  for (const auto& entry : aPrefetches) {
+    dom::HTMLDNSPrefetch::Prefetch(entry.hostname(), entry.isHttps(),
+                                   entry.originAttributes(), entry.flags());
+  }
   return IPC_OK();
 }
 
@@ -810,6 +761,13 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetPageThumbStream(
     return IPC_FAIL(this, "Wrong process type");
   }
 
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(
+      aLoadInfoArgs, PRIVILEGEDABOUT_REMOTE_TYPE, getter_AddRefs(loadInfo));
+  if (NS_FAILED(rv)) {
+    return IPC_FAIL(this, "moz-page-thumb request must include loadInfo");
+  }
+
   RefPtr<PageThumbProtocolHandler> ph(PageThumbProtocolHandler::GetSingleton());
   MOZ_ASSERT(ph);
 
@@ -821,7 +779,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetPageThumbStream(
   // validating the request.
   nsCOMPtr<nsIInputStream> inputStream;
   bool terminateSender = true;
-  auto inputStreamPromise = ph->NewStream(aURI, &terminateSender);
+  auto inputStreamPromise = ph->NewStream(aURI, loadInfo, &terminateSender);
 
   if (terminateSender) {
     return IPC_FAIL(this, "Malformed moz-page-thumb request");
@@ -855,6 +813,13 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetMozNewTabWallpaperStream(
     return IPC_FAIL(this, "Wrong process type");
   }
 
+  nsCOMPtr<nsILoadInfo> loadInfo;
+  nsresult rv = mozilla::ipc::LoadInfoArgsToLoadInfo(
+      aLoadInfoArgs, PRIVILEGEDABOUT_REMOTE_TYPE, getter_AddRefs(loadInfo));
+  if (NS_FAILED(rv)) {
+    return IPC_FAIL(this, "moz-newtab-wallpaper request must include loadInfo");
+  }
+
   RefPtr<net::MozNewTabWallpaperProtocolHandler> ph(
       net::MozNewTabWallpaperProtocolHandler::GetSingleton());
   MOZ_ASSERT(ph);
@@ -867,7 +832,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetMozNewTabWallpaperStream(
   // validating the request.
   nsCOMPtr<nsIInputStream> inputStream;
   bool terminateSender = true;
-  auto inputStreamPromise = ph->NewStream(aURI, &terminateSender);
+  auto inputStreamPromise = ph->NewStream(aURI, loadInfo, &terminateSender);
 
   if (terminateSender) {
     return IPC_FAIL(this, "Malformed moz-newtab-wallpaper request");

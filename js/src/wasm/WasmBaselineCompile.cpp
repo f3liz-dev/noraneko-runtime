@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -213,40 +211,23 @@ class OutOfLineCode : public TempObject {
   // All other registers must be explicitly saved and restored by the OOL code
   // before being used.
 
-  virtual void generate(MacroAssembler* masm) = 0;
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) = 0;
 };
 
-class OutOfLineAbortingTrap : public OutOfLineCode {
-  Trap trap_;
-  TrapSiteDesc desc_;
-
- public:
-  OutOfLineAbortingTrap(Trap trap, const TrapSiteDesc& desc)
-      : trap_(trap), desc_(desc) {}
-
-  virtual void generate(MacroAssembler* masm) override {
-    masm->wasmTrap(trap_, desc_);
-    MOZ_ASSERT(!rejoin()->bound());
-  }
-};
-
-class OutOfLineResumableTrap : public OutOfLineCode {
+class OutOfLineTrap : public OutOfLineCode {
   Trap trap_;
   TrapSiteDesc desc_;
   wasm::StackMap* stackMap_;
-  wasm::StackMaps* stackMaps_;
 
  public:
-  OutOfLineResumableTrap(Trap trap, const TrapSiteDesc& desc,
-                         wasm::StackMap* stackMap, wasm::StackMaps* stackMaps)
-      : trap_(trap), desc_(desc), stackMap_(stackMap), stackMaps_(stackMaps) {}
+  OutOfLineTrap(Trap trap, const TrapSiteDesc& desc, wasm::StackMap* stackMap)
+      : trap_(trap), desc_(desc), stackMap_(stackMap) {}
 
-  virtual void generate(MacroAssembler* masm) override {
-    masm->wasmTrap(trap_, desc_);
-    if (stackMap_ && !stackMaps_->add(masm->currentOffset(), stackMap_)) {
-      masm->setOOM();
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) override {
+    bc->trap(trap_, desc_, stackMap_);
+    if (rejoin()) {
+      masm->jump(rejoin());
     }
-    masm->jump(rejoin());
   }
 };
 
@@ -264,7 +245,7 @@ bool BaseCompiler::generateOutOfLineCode() {
       continue;
     }
     ool->bind(&fr, &masm);
-    ool->generate(&masm);
+    ool->generate(&masm, this);
   }
 
   return !masm.oom();
@@ -339,7 +320,8 @@ void BaseCompiler::jumpTable(const LabelVector& labels, Label* theTable) {
   // constant pool entries.
   masm.flush();
 
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
+    defined(JS_CODEGEN_RISCV64)
   // Prevent nop sequences to appear in the jump table.
   AutoForbidNops afn(&masm);
 #endif
@@ -583,17 +565,16 @@ bool BaseCompiler::beginFunction() {
   }
 
   OutOfLineCode* oolStackOverflowTrap =
-      addOutOfLineCode(new (alloc_) OutOfLineAbortingTrap(
+      addOutOfLineCode(new (alloc_) OutOfLineTrap(
           Trap::StackOverflow,
-          TrapSiteDesc(BytecodeOffset(func_.lineOrBytecode))));
+          TrapSiteDesc(BytecodeOffset(func_.bytecodeOffset)), nullptr));
   if (!oolStackOverflowTrap) {
     return false;
   }
   fr.checkStack(ABINonArgReg0, ABINonArgReg1, oolStackOverflowTrap->entry());
 
-  OutOfLineCode* oolInterruptTrap = addOutOfLineCode(
-      new (alloc_) OutOfLineResumableTrap(Trap::CheckInterrupt, trapSiteDesc(),
-                                          functionEntryStackMap, stackMaps_));
+  OutOfLineCode* oolInterruptTrap = addOutOfLineCode(new (alloc_) OutOfLineTrap(
+      Trap::CheckInterrupt, trapSiteDesc(), functionEntryStackMap));
   if (!oolInterruptTrap) {
     return false;
   }
@@ -752,11 +733,13 @@ bool BaseCompiler::endFunction() {
                         HasDebugFrameWithLiveRefs::Maybe)) {
       return false;
     }
+
     insertBreakablePoint(CallSiteKind::LeaveFrame);
     if (!createStackMap("debug: leave-frame breakpoint",
                         HasDebugFrameWithLiveRefs::Maybe)) {
       return false;
     }
+
     restoreRegisterReturnValues(resultType);
   }
 
@@ -954,7 +937,8 @@ void BaseCompiler::insertPerFunctionDebugStub() {
 
     // Check the filter bit.  There is one bit per function in the module.
     // Table elements are 32-bit because the masm makes that convenient.
-    masm.branchTest32(Assembler::NonZero, Address(scratch, func_.index / 32),
+    masm.branchTest32(Assembler::NonZero,
+                      Address(scratch, (func_.index / 32) * sizeof(uint32_t)),
                       Imm32(1 << (func_.index % 32)), &L);
 
     // Fast path: return to the execution.
@@ -967,7 +951,8 @@ void BaseCompiler::insertPerFunctionDebugStub() {
     // Logic as above, except abiret to jump to the LR directly
     masm.loadPtr(Address(InstanceReg, Instance::offsetOfDebugFilter()),
                  scratch);
-    masm.branchTest32(Assembler::NonZero, Address(scratch, func_.index / 32),
+    masm.branchTest32(Assembler::NonZero,
+                      Address(scratch, (func_.index / 32) * sizeof(uint32_t)),
                       Imm32(1 << (func_.index % 32)), &L);
     masm.abiret();
   }
@@ -985,7 +970,7 @@ void BaseCompiler::insertPerFunctionDebugStub() {
     masm.ma_ldr(
         DTRAddr(InstanceReg, DtrOffImm(Instance::offsetOfDebugFilter())), tmp1);
     masm.ma_mov(Imm32(func_.index / 32), tmp2);
-    masm.ma_ldr(DTRAddr(tmp1, DtrRegImmShift(tmp2, LSL, 0)), tmp2);
+    masm.ma_ldr(DTRAddr(tmp1, DtrRegImmShift(tmp2, LSL, 2)), tmp2);
     masm.ma_tst(tmp2, Imm32(1 << func_.index % 32), tmp1, Assembler::Always);
     masm.ma_bx(lr, Assembler::Zero);
   }
@@ -997,7 +982,8 @@ void BaseCompiler::insertPerFunctionDebugStub() {
     // Logic same as ARM64.
     masm.loadPtr(Address(InstanceReg, Instance::offsetOfDebugFilter()),
                  scratch);
-    masm.branchTest32(Assembler::NonZero, Address(scratch, func_.index / 32),
+    masm.branchTest32(Assembler::NonZero,
+                      Address(scratch, (func_.index / 32) * sizeof(uint32_t)),
                       Imm32(1 << (func_.index % 32)), &L);
     masm.abiret();
   }
@@ -1128,7 +1114,7 @@ class OutOfLineRequestTierUp : public OutOfLineCode {
       : instance_(instance),
         scratch_(scratch),
         lastOpcodeOffset_(lastOpcodeOffset) {}
-  virtual void generate(MacroAssembler* masm) override {
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) override {
     // Generate:
     //
     // [optionally, if `instance_` != InstanceReg: swap(instance_, InstanceReg)]
@@ -1669,6 +1655,7 @@ bool BaseCompiler::insertDebugCollapseFrame() {
   if (!compilerEnv_.debugEnabled() || deadCode_) {
     return true;
   }
+
   insertBreakablePoint(CallSiteKind::CollapseFrame);
   return createStackMap("debug: collapse-frame breakpoint",
                         HasDebugFrameWithLiveRefs::Maybe);
@@ -2065,14 +2052,17 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                                 CodeOffset* slowCallOffset) {
   CallIndirectId callIndirectId =
       CallIndirectId::forFuncType(codeMeta_, funcTypeIndex);
-  MOZ_ASSERT(callIndirectId.kind() != CallIndirectIdKind::AsmJS);
 
   const TableDesc& table = codeMeta_.tables[tableIndex];
   CallSiteDesc desc(bytecodeOffset(), CallSiteKind::Indirect);
   CalleeDesc callee =
       CalleeDesc::wasmTable(codeMeta_, table, tableIndex, callIndirectId);
-  OutOfLineCode* oob = addOutOfLineCode(
-      new (alloc_) OutOfLineAbortingTrap(Trap::OutOfBounds, trapSiteDesc()));
+  StackMap* oobTrapStackMap;
+  if (!createAbortingOutOfLineTrapStackMap(&oobTrapStackMap)) {
+    return false;
+  }
+  OutOfLineCode* oob = addOutOfLineCode(new (alloc_) OutOfLineTrap(
+      Trap::OutOfBounds, trapSiteDesc(), oobTrapStackMap));
   if (!oob) {
     return false;
   }
@@ -2103,8 +2093,12 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
 
   Label* nullCheckFailed = nullptr;
 #ifndef WASM_HAS_HEAPREG
-  OutOfLineCode* nullref = addOutOfLineCode(new (alloc_) OutOfLineAbortingTrap(
-      Trap::IndirectCallToNull, trapSiteDesc()));
+  StackMap* nullTrapStackMap;
+  if (!createAbortingOutOfLineTrapStackMap(&nullTrapStackMap)) {
+    return false;
+  }
+  OutOfLineCode* nullref = addOutOfLineCode(new (alloc_) OutOfLineTrap(
+      Trap::IndirectCallToNull, trapSiteDesc(), nullTrapStackMap));
   if (!nullref) {
     return false;
   }
@@ -2123,7 +2117,7 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
 
 class OutOfLineUpdateCallRefMetrics : public OutOfLineCode {
  public:
-  virtual void generate(MacroAssembler* masm) override {
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) override {
     // Call the stub pointed to by Instance::updateCallRefMetricsStub, then
     // rejoin.  See "Register management" in BaseCompiler::updateCallRefMetrics
     // for details of register management.
@@ -2260,17 +2254,18 @@ CodeOffset BaseCompiler::builtinCall(SymbolicAddress builtin,
   return callSymbolic(builtin, call);
 }
 
-CodeOffset BaseCompiler::builtinInstanceMethodCall(
+void BaseCompiler::builtinInstanceMethodCall(
     const SymbolicAddressSignature& builtin, const ABIArg& instanceArg,
-    const FunctionCall& call) {
+    const FunctionCall& call, CodeOffset* callStackMapKey,
+    CodeOffset* trapStackMapKey) {
 #ifndef RABALDR_PIN_INSTANCE
   // Builtin method calls assume the instance register has been set.
   fr.loadInstancePtr(InstanceReg);
 #endif
   CallSiteDesc desc(bytecodeOffset(), CallSiteKind::Symbolic);
-  return masm.wasmCallBuiltinInstanceMethod(desc, instanceArg, builtin.identity,
-                                            builtin.failureMode,
-                                            builtin.failureTrap);
+  masm.wasmCallBuiltinInstanceMethod(desc, instanceArg, builtin.identity,
+                                     builtin.failureMode, builtin.failureTrap,
+                                     callStackMapKey, trapStackMapKey);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2611,7 +2606,7 @@ class OutOfLineTruncateCheckF32OrF64ToI32 : public OutOfLineCode {
                                       TrapSiteDesc trapSiteDesc)
       : src(src), dest(dest), flags(flags), trapSiteDesc(trapSiteDesc) {}
 
-  virtual void generate(MacroAssembler* masm) override {
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) override {
     if (src.tag == AnyReg::F32) {
       masm->oolWasmTruncateCheckF32ToI32(src.f32(), dest, flags, trapSiteDesc,
                                          rejoin());
@@ -2669,7 +2664,7 @@ class OutOfLineTruncateCheckF32OrF64ToI64 : public OutOfLineCode {
                                       TrapSiteDesc trapSiteDesc)
       : src(src), dest(dest), flags(flags), trapSiteDesc(trapSiteDesc) {}
 
-  virtual void generate(MacroAssembler* masm) override {
+  virtual void generate(MacroAssembler* masm, BaseCompiler* bc) override {
     if (src.tag == AnyReg::F32) {
       masm->oolWasmTruncateCheckF32ToI64(src.f32(), dest, flags, trapSiteDesc,
                                          rejoin());
@@ -4618,6 +4613,24 @@ bool BaseCompiler::emitTryTable() {
     return true;
   }
 
+  // The block params are consumed by the try body, so keep them off the value
+  // stack while emitting the landing pad and restore them for the body, the way
+  // endTryCatch does for its results. sync() above spilled them, so the saved
+  // entries hold no registers.
+  MOZ_ASSERT(stk_.length() >= controlItem().stackSize);
+  StkVector savedParams;
+  if (!savedParams.append(stk_.begin() + controlItem().stackSize, stk_.end())) {
+    return false;
+  }
+  for (const Stk& v : savedParams) {
+    MOZ_ASSERT(v.kind() < Stk::RegFirst || v.kind() > Stk::RegLast);
+    if (v.kind() == Stk::MemRef) {
+      stackMapGenerator_.memRefsOnStk--;
+    }
+  }
+  stk_.shrinkTo(controlItem().stackSize);
+  MOZ_ASSERT(stk_.length() == controlItem().stackSize);
+
   // Emit a landing pad that exceptions will jump into. Jump over it for now.
   Label skipLandingPad;
   masm.jump(&skipLandingPad);
@@ -4677,8 +4690,8 @@ bool BaseCompiler::emitTryTable() {
 
     // This is a `catch $t`, load the tag type we're trying to match
     const TagType& tagType = *codeMeta_.tags[tryTableCatch.tagIndex].type;
-    const TagOffsetVector& tagOffsets = tagType.argOffsets();
-    ResultType tagParams = tagType.resultType();
+    const TagOffsetVector& tagOffsets = tagType.exceptionArgOffsets();
+    ResultType tagParams = tagType.argResultType();
 
     // Load the tag for this catch and compare it against the exception's tag.
     // If they don't match, skip to the next catch handler.
@@ -4809,6 +4822,16 @@ bool BaseCompiler::emitTryTable() {
   fr.setStackHeight(prePadHeight);
   masm.bind(&skipLandingPad);
 
+  // Restore the block params removed above, for the try body.
+  if (!stk_.appendAll(savedParams)) {
+    return false;
+  }
+  for (const Stk& v : savedParams) {
+    if (v.kind() == Stk::MemRef) {
+      stackMapGenerator_.memRefsOnStk++;
+    }
+  }
+
   // Start the try note for this try block, after the landing pad
   if (!startTryNote(&controlItem().tryNoteIndex)) {
     return false;
@@ -4897,7 +4920,7 @@ bool BaseCompiler::emitCatch() {
   // Extract the arguments in the exception package and push them.
   const SharedTagType& tagType = codeMeta_.tags[tagIndex].type;
   const ValTypeVector& params = tagType->argTypes();
-  const TagOffsetVector& offsets = tagType->argOffsets();
+  const TagOffsetVector& offsets = tagType->exceptionArgOffsets();
 
   // The landing pad uses the block return protocol to communicate the
   // exception object pointer to the catch block.
@@ -5191,8 +5214,8 @@ bool BaseCompiler::emitThrow() {
   }
 
   const TagDesc& tagDesc = codeMeta_.tags[tagIndex];
-  const ResultType& params = tagDesc.type->resultType();
-  const TagOffsetVector& offsets = tagDesc.type->argOffsets();
+  const ResultType& params = tagDesc.type->argResultType();
+  const TagOffsetVector& offsets = tagDesc.type->exceptionArgOffsets();
 
   // Load the tag object
 #ifdef RABALDR_PIN_INSTANCE
@@ -6559,12 +6582,18 @@ bool BaseCompiler::emitInstanceCall(const SymbolicAddressSignature& builtin) {
     }
     passArg(t, peek(numNonInstanceArgs - i), &baselineCall);
   }
-  CodeOffset raOffset =
-      builtinInstanceMethodCall(builtin, instanceArg, baselineCall);
-  if (!createStackMap("emitInstanceCall", raOffset)) {
+
+  CodeOffset callStackMapKey;
+  CodeOffset trapStackMapKey;
+  builtinInstanceMethodCall(builtin, instanceArg, baselineCall,
+                            &callStackMapKey, &trapStackMapKey);
+  if (!createStackMap("emitInstanceCall-call", callStackMapKey)) {
     return false;
   }
-
+  if (trapStackMapKey.bound() &&
+      !createStackMap("emitInstanceCall-trap", trapStackMapKey)) {
+    return false;
+  }
   endCall(baselineCall, stackSpace);
 
   popValueStackBy(numNonInstanceArgs);
@@ -6824,7 +6853,8 @@ bool BaseCompiler::emitMemCopy() {
     return true;
   }
 
-  if (dstMemIndex == 0 && srcMemIndex == 0 && isMem32(dstMemIndex)) {
+  if (dstMemIndex == 0 && srcMemIndex == 0 && isMem32(dstMemIndex) &&
+      codeMeta_.memories[srcMemIndex].pageSize() == PageSize::Standard) {
     int32_t signedLength;
     if (peekConst(&signedLength) && signedLength != 0 &&
         uint32_t(signedLength) <= MaxInlineMemoryCopyLength) {
@@ -7195,6 +7225,185 @@ bool BaseCompiler::emitTableSetAnyRef(uint32_t tableIndex) {
 
 //////////////////////////////////////////////////////////////////////////////
 //
+// Wide Arithmetic support
+
+bool BaseCompiler::emitI64AddSub128(bool isAdd) {
+  Nothing nothing;
+  if (!iter_.readBinaryI128(&nothing, &nothing, &nothing, &nothing)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+#ifdef JS_64BIT
+  // All 64-bit targets.  Produce inline code.
+  RegI64 temp = needI64();
+  RegI64 xHi, xLo, yHi, yLo;
+  pop2xI64(&yLo, &yHi);
+  pop2xI64(&xLo, &xHi);
+
+  // Compute zHi:zLo = xHi:xLo +/- yHi:yLo.
+  masm.move64(xLo, temp);
+  if (isAdd) {
+    masm.add64(yLo, temp);
+  } else {
+    masm.sub64(yLo, temp);
+  }
+  pushI64(temp);  // zLo
+
+  temp = needI64();
+  masm.wasmAddSubI128HI64(xLo.reg, xHi.reg, yLo.reg, yHi.reg, temp.reg, isAdd);
+  pushI64(temp);  // zHi
+  freeI64(xHi);
+  freeI64(yHi);
+  freeI64(xLo);
+  freeI64(yLo);
+
+#else
+  // All 32-bit targets.  Call a helper function; doing it inline is too
+  // difficult, given x86_32's lack of registers.  The arguments and return
+  // value are passed in Instance::baselineScratchWords_[0..7]; see
+  // Instance::addSubI128 for details.
+  RegPtr instance = needPtr();
+  fr.loadInstancePtr(instance);
+
+  // Pop 4 args, in the sequence yHi, yLo, xHi, xLo, and put them into
+  // Instance::baselineScratchWords_ slots as specified by `wordOffsets`.
+  const int wordOffsets[4] = {6, 4, 2, 0};
+  for (int i = 0; i < 4; i++) {
+    RegI64 reg64 = popI64();
+    stashWord(instance, wordOffsets[i] + 0, RegPtr(reg64.low));
+    stashWord(instance, wordOffsets[i] + 1, RegPtr(reg64.high));
+    freeI64(reg64);
+  }
+
+  freePtr(instance);
+
+  // Compute zHi:zLo = xHi:xLo +/- yHi:yLo.
+  pushI32(isAdd ? 1 : 0);
+  if (!emitInstanceCall(SASigAddSubI128)) {
+    return false;
+  }
+
+  instance = needPtr();
+  fr.loadInstancePtr(instance);
+
+  RegI64 reg64 = needI64();
+  unstashWord(instance, 0, RegPtr(reg64.low));
+  unstashWord(instance, 1, RegPtr(reg64.high));
+  pushI64(reg64);  // zLo
+
+  reg64 = needI64();
+  unstashWord(instance, 2, RegPtr(reg64.low));
+  unstashWord(instance, 3, RegPtr(reg64.high));
+  pushI64(reg64);  // zHi
+
+  freePtr(instance);
+#endif  // JS_64BIT
+
+  return true;
+}
+
+bool BaseCompiler::emitI64MulWide(bool isSigned) {
+  Nothing nothing;
+  if (!iter_.readBinaryI64Wide(&nothing, &nothing)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+#ifdef JS_CODEGEN_X64
+  // 64-bit Intel implementation.  Produce inline code.  The inputs need to be
+  // in rax/rdx, and we also need three temporaries.
+  need2xI64(specific_.rax, specific_.rdx);
+  RegI64 y = popI64ToSpecific(specific_.rdx);
+  RegI64 x = popI64ToSpecific(specific_.rax);
+  RegI64 temp0 = needI64();
+  RegI64 temp1 = needI64();
+  RegI64 temp2 = needI64();
+
+  // Compute zHi:zLo = x *widen y.
+  masm.move64(x, temp0);
+  masm.mul64(y, temp0);
+  pushI64(temp0);  // zLo
+
+  temp0 = needI64();
+  masm.wasmMulI64WideHI64(x.reg, y.reg, temp1.reg, temp2.reg, temp0.reg,
+                          isSigned);
+  pushI64(temp0);  // zHi
+
+  free(temp1);
+  free(temp2);
+  free(x);
+  free(y);
+
+#elif JS_64BIT
+  // All other 64-bit targets.  Produce inline code.  We need just one
+  // temporary.
+  RegI64 y = popI64();
+  RegI64 x = popI64();
+  RegI64 temp = needI64();
+
+  // Compute zHi:zLo = x *widen y.
+  masm.move64(x, temp);
+  masm.mul64(y, temp);
+  pushI64(temp);  // zLo
+
+  temp = needI64();
+  masm.wasmMulI64WideHI64(x.reg, y.reg, temp.reg, isSigned);
+  pushI64(temp);  // zHi
+
+  free(x);
+  free(y);
+
+#else
+  // All 32-bit targets.  Call a helper function.  The arguments and return
+  // value are passed in Instance::baselineScratchWords_[0..4]; see
+  // Instance::mulI64Wide for details.
+  RegPtr instance = needPtr();
+  fr.loadInstancePtr(instance);
+
+  RegI64 reg64 = popI64();  // y
+  stashWord(instance, 2, RegPtr(reg64.low));
+  stashWord(instance, 3, RegPtr(reg64.high));
+  freeI64(reg64);
+
+  reg64 = popI64();  // x
+  stashWord(instance, 0, RegPtr(reg64.low));
+  stashWord(instance, 1, RegPtr(reg64.high));
+  freeI64(reg64);
+
+  freePtr(instance);
+
+  // Compute zHi:zLo = x *widen y.
+  pushI32(isSigned ? 1 : 0);
+  if (!emitInstanceCall(SASigMulI64Wide)) {
+    return false;
+  }
+
+  instance = needPtr();
+  fr.loadInstancePtr(instance);
+
+  reg64 = needI64();
+  unstashWord(instance, 0, RegPtr(reg64.low));
+  unstashWord(instance, 1, RegPtr(reg64.high));
+  pushI64(reg64);  // zLo
+
+  reg64 = needI64();
+  unstashWord(instance, 2, RegPtr(reg64.low));
+  unstashWord(instance, 3, RegPtr(reg64.high));
+  pushI64(reg64);  // zHi
+
+  freePtr(instance);
+#endif  // JS_64BIT
+
+  return true;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
 // Data and element segment management.
 
 bool BaseCompiler::emitDataOrElemDrop(bool isData) {
@@ -7227,10 +7436,10 @@ void BaseCompiler::emitPreBarrier(RegPtr valueAddr) {
 #endif
 #ifdef JS_CODEGEN_ARM64
   // The prebarrier stub assumes the PseudoStackPointer is set up.  It is OK
-  // to just move the sp to x28 here because x28 is not being used by the
+  // to just move the sp to x20 here because x20 is not being used by the
   // baseline compiler and need not be saved or restored.
-  MOZ_ASSERT(!GeneralRegisterSet::All().hasRegisterIndex(x28.asUnsized()));
-  masm.Mov(x28, sp);
+  MOZ_ASSERT(!GeneralRegisterSet::All().hasRegisterIndex(x20.asUnsized()));
+  masm.Mov(x20, sp);
 #endif
   // The prebarrier call preserves all volatile registers
   EmitWasmPreBarrierCallImmediate(masm, instance, scratch, valueAddr,
@@ -7452,11 +7661,11 @@ void BaseCompiler::SignalNullCheck::emitNullCheck(BaseCompiler* bc, RegRef rp) {
 
 /* static */
 void BaseCompiler::SignalNullCheck::emitTrapSite(BaseCompiler* bc,
-                                                 FaultingCodeOffset fco,
+                                                 FaultingCodeRange fcr,
                                                  TrapMachineInsn tmi) {
   MacroAssembler& masm = bc->masm;
-  masm.append(wasm::Trap::NullPointerDereference, tmi, fco.get(),
-              bc->trapSiteDesc());
+  masm.appendAndVerify(wasm::Trap::NullPointerDereference, tmi, fcr,
+                       bc->trapSiteDesc());
 }
 
 template <typename NullCheckPolicy>
@@ -7464,9 +7673,9 @@ RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
   // `rp` points at a WasmArrayObject.  Return a reg holding the value of its
   // `data_` field.
   RegPtr rdata = needPtr();
-  FaultingCodeOffset fco =
+  FaultingCodeRange fcr =
       masm.loadPtr(Address(rp, WasmArrayObject::offsetOfData()), rdata);
-  NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsnForLoadWord());
+  NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsnForLoadWord());
   return rdata;
 }
 
@@ -7476,9 +7685,9 @@ RegI32 BaseCompiler::emitGcArrayGetNumElements(RegRef rp) {
   // `numElements_` field.
   STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
   RegI32 numElements = needI32();
-  FaultingCodeOffset fco = masm.load32(
+  FaultingCodeRange fcr = masm.load32(
       Address(rp, WasmArrayObject::offsetOfNumElements()), numElements);
-  NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load32);
+  NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load32);
   return numElements;
 }
 
@@ -7496,34 +7705,34 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
     case StorageType::I8: {
       MOZ_ASSERT(wideningOp != FieldWideningOp::None);
       RegI32 r = needI32();
-      FaultingCodeOffset fco;
+      FaultingCodeRange fcr;
       if (wideningOp == FieldWideningOp::Unsigned) {
-        fco = masm.load8ZeroExtend(src, r);
+        fcr = masm.load8ZeroExtend(src, r);
       } else {
-        fco = masm.load8SignExtend(src, r);
+        fcr = masm.load8SignExtend(src, r);
       }
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load8);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load8);
       pushI32(r);
       break;
     }
     case StorageType::I16: {
       MOZ_ASSERT(wideningOp != FieldWideningOp::None);
       RegI32 r = needI32();
-      FaultingCodeOffset fco;
+      FaultingCodeRange fcr;
       if (wideningOp == FieldWideningOp::Unsigned) {
-        fco = masm.load16ZeroExtend(src, r);
+        fcr = masm.load16ZeroExtend(src, r);
       } else {
-        fco = masm.load16SignExtend(src, r);
+        fcr = masm.load16SignExtend(src, r);
       }
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load16);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load16);
       pushI32(r);
       break;
     }
     case StorageType::I32: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegI32 r = needI32();
-      FaultingCodeOffset fco = masm.load32(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load32);
+      FaultingCodeRange fcr = masm.load32(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load32);
       pushI32(r);
       break;
     }
@@ -7531,12 +7740,12 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegI64 r = needI64();
 #ifdef JS_64BIT
-      FaultingCodeOffset fco = masm.load64(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load64);
+      FaultingCodeRange fcr = masm.load64(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load64);
 #else
-      FaultingCodeOffsetPair fcop = masm.load64(src, r);
-      NullCheckPolicy::emitTrapSite(this, fcop.first, TrapMachineInsn::Load32);
-      NullCheckPolicy::emitTrapSite(this, fcop.second, TrapMachineInsn::Load32);
+      FaultingCodeRangePair fcrp = masm.load64(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcrp.first, TrapMachineInsn::Load32);
+      NullCheckPolicy::emitTrapSite(this, fcrp.second, TrapMachineInsn::Load32);
 #endif
       pushI64(r);
       break;
@@ -7544,16 +7753,16 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
     case StorageType::F32: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegF32 r = needF32();
-      FaultingCodeOffset fco = masm.loadFloat32(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load32);
+      FaultingCodeRange fcr = masm.loadFloat32(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load32);
       pushF32(r);
       break;
     }
     case StorageType::F64: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegF64 r = needF64();
-      FaultingCodeOffset fco = masm.loadDouble(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load64);
+      FaultingCodeRange fcr = masm.loadDouble(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load64);
       pushF64(r);
       break;
     }
@@ -7561,8 +7770,8 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
     case StorageType::V128: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegV128 r = needV128();
-      FaultingCodeOffset fco = masm.loadUnalignedSimd128(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load128);
+      FaultingCodeRange fcr = masm.loadUnalignedSimd128(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Load128);
       pushV128(r);
       break;
     }
@@ -7570,8 +7779,8 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
     case StorageType::Ref: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegRef r = needRef();
-      FaultingCodeOffset fco = masm.loadPtr(src, r);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsnForLoadWord());
+      FaultingCodeRange fcr = masm.loadPtr(src, r);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsnForLoadWord());
       pushRef(r);
       break;
     }
@@ -7586,46 +7795,46 @@ void BaseCompiler::emitGcSetScalar(const T& dst, StorageType type,
                                    AnyReg value) {
   switch (type.kind()) {
     case StorageType::I8: {
-      FaultingCodeOffset fco = masm.store8(value.i32(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store8);
+      FaultingCodeRange fcr = masm.store8(value.i32(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store8);
       break;
     }
     case StorageType::I16: {
-      FaultingCodeOffset fco = masm.store16(value.i32(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store16);
+      FaultingCodeRange fcr = masm.store16(value.i32(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store16);
       break;
     }
     case StorageType::I32: {
-      FaultingCodeOffset fco = masm.store32(value.i32(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store32);
+      FaultingCodeRange fcr = masm.store32(value.i32(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store32);
       break;
     }
     case StorageType::I64: {
 #ifdef JS_64BIT
-      FaultingCodeOffset fco = masm.store64(value.i64(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store64);
+      FaultingCodeRange fcr = masm.store64(value.i64(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store64);
 #else
-      FaultingCodeOffsetPair fcop = masm.store64(value.i64(), dst);
-      NullCheckPolicy::emitTrapSite(this, fcop.first, TrapMachineInsn::Store32);
-      NullCheckPolicy::emitTrapSite(this, fcop.second,
+      FaultingCodeRangePair fcrp = masm.store64(value.i64(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcrp.first, TrapMachineInsn::Store32);
+      NullCheckPolicy::emitTrapSite(this, fcrp.second,
                                     TrapMachineInsn::Store32);
 #endif
       break;
     }
     case StorageType::F32: {
-      FaultingCodeOffset fco = masm.storeFloat32(value.f32(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store32);
+      FaultingCodeRange fcr = masm.storeFloat32(value.f32(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store32);
       break;
     }
     case StorageType::F64: {
-      FaultingCodeOffset fco = masm.storeDouble(value.f64(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store64);
+      FaultingCodeRange fcr = masm.storeDouble(value.f64(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store64);
       break;
     }
 #ifdef ENABLE_WASM_SIMD
     case StorageType::V128: {
-      FaultingCodeOffset fco = masm.storeUnalignedSimd128(value.v128(), dst);
-      NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store128);
+      FaultingCodeRange fcr = masm.storeUnalignedSimd128(value.v128(), dst);
+      NullCheckPolicy::emitTrapSite(this, fcr, TrapMachineInsn::Store128);
       break;
     }
 #endif
@@ -7945,9 +8154,9 @@ bool BaseCompiler::emitStructGet(FieldWideningOp wideningOp) {
     // The path has two components, of which the first (the IL component) is
     // the offset where the OOL pointer is stored.  Hence `path.ilOffset()`.
     RegPtr outlineBase = needPtr();
-    FaultingCodeOffset fco =
+    FaultingCodeRange fcr =
         masm.loadPtr(Address(object, path.ilOffset()), outlineBase);
-    SignalNullCheck::emitTrapSite(this, fco, TrapMachineInsnForLoadWord());
+    SignalNullCheck::emitTrapSite(this, fcr, TrapMachineInsnForLoadWord());
     // Load the value
     emitGcGet<Address, NoNullCheck>(fieldType, wideningOp,
                                     Address(outlineBase, path.oolOffset()));
@@ -7999,9 +8208,9 @@ bool BaseCompiler::emitStructSet() {
     // Make `outlineBase` point at the first byte of the relevant area.
     // The path has two components, of which the first (the IL component) is
     // the offset where the OOL pointer is stored.  Hence `path.ilOffset()`.
-    FaultingCodeOffset fco =
+    FaultingCodeRange fcr =
         masm.loadPtr(Address(object, path.ilOffset()), outlineBase);
-    SignalNullCheck::emitTrapSite(this, fco, TrapMachineInsnForLoadWord());
+    SignalNullCheck::emitTrapSite(this, fcr, TrapMachineInsnForLoadWord());
     // Consumes `value`. `object` is unchanged by this call.
     if (!emitGcStructSet<NoNullCheck>(object, outlineBase, path.oolOffset(),
                                       fieldType, value,
@@ -8801,6 +9010,8 @@ bool BaseCompiler::emitArrayFill() {
     freePtr(RegPtr(PreBarrierReg));
   }
 
+  sync();
+
   // Perform the fill loop using `numElements` as the loop variable, counting
   // down to zero.
   Label done;
@@ -8957,21 +9168,26 @@ bool BaseCompiler::emitRefCast(bool nullable) {
 
   RegRef ref = popRef();
 
+  StackMap* trapStackMap;
+  if (!createAbortingOutOfLineTrapStackMap(&trapStackMap)) {
+    return false;
+  }
   OutOfLineCode* ool = addOutOfLineCode(
-      new (alloc_) OutOfLineAbortingTrap(Trap::BadCast, trapSiteDesc()));
+      new (alloc_) OutOfLineTrap(Trap::BadCast, trapSiteDesc(), trapStackMap));
   if (!ool) {
     return false;
   }
 
   BranchIfRefSubtypeRegisters regs =
       allocRegistersForBranchIfRefSubtype(destType);
-  FaultingCodeOffset fco = masm.branchWasmRefIsSubtype(
+  FaultingCodeRange fcr = masm.branchWasmRefIsSubtype(
       ref, MaybeRefType(sourceType), destType, ool->entry(),
       /*onSuccess=*/false, /*signalNullChecks=*/true, regs.superSTV,
       regs.scratch1, regs.scratch2);
-  if (fco.isValid()) {
-    masm.append(wasm::Trap::BadCast, wasm::TrapMachineInsnForLoadWord(),
-                fco.get(), trapSiteDesc());
+  if (fcr.isValid()) {
+    masm.appendAndVerify(wasm::Trap::BadCast,
+                         wasm::TrapMachineInsnForLoadWord(), fcr,
+                         trapSiteDesc());
   }
   freeRegistersForBranchIfRefSubtype(regs);
 
@@ -11916,6 +12132,26 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitTableGrow());
           case uint32_t(MiscOp::TableSize):
             CHECK_NEXT(emitTableSize());
+          case uint32_t(MiscOp::I64Add128):
+            if (!codeMeta_.wideArithmeticEnabled()) {
+              return iter_.unrecognizedOpcode(&op);
+            }
+            CHECK_NEXT(emitI64AddSub128(/*isAdd=*/true));
+          case uint32_t(MiscOp::I64Sub128):
+            if (!codeMeta_.wideArithmeticEnabled()) {
+              return iter_.unrecognizedOpcode(&op);
+            }
+            CHECK_NEXT(emitI64AddSub128(/*isAdd=*/false));
+          case uint32_t(MiscOp::I64MulWideS):
+            if (!codeMeta_.wideArithmeticEnabled()) {
+              return iter_.unrecognizedOpcode(&op);
+            }
+            CHECK_NEXT(emitI64MulWide(/*isSigned=*/true));
+          case uint32_t(MiscOp::I64MulWideU):
+            if (!codeMeta_.wideArithmeticEnabled()) {
+              return iter_.unrecognizedOpcode(&op);
+            }
+            CHECK_NEXT(emitI64MulWide(/*isSigned=*/false));
           default:
             break;
         }  // switch (op.b1)
@@ -12117,7 +12353,7 @@ bool BaseCompiler::emitBody() {
         break;
       }
 
-      // asm.js and other private operations
+      // Other private operations
       case uint16_t(Op::MozPrefix): {
         if (op.b1 != uint32_t(MozOp::CallBuiltinModuleFunc) ||
             !codeMeta_.isBuiltinModule()) {
@@ -12376,10 +12612,6 @@ bool BaseCompiler::init() {
     MOZ_ASSERT_IF(isMem64(memoryIndex),
                   !codeMeta_.hugeMemoryEnabled(memoryIndex));
   }
-  // asm.js is not supported in baseline
-  MOZ_ASSERT(!codeMeta_.isAsmJS());
-  // Only asm.js modules have call site line numbers
-  MOZ_ASSERT(func_.callSiteLineNums.empty());
 
   ra.init(this);
 
@@ -12437,7 +12669,6 @@ bool js::wasm::BaselineCompileFunctions(const CodeMetadata& codeMeta,
                                         CompiledCode* code,
                                         UniqueChars* error) {
   MOZ_ASSERT(compilerEnv.tier() == Tier::Baseline);
-  MOZ_ASSERT(codeMeta.kind == ModuleKind::Wasm);
 
   // The MacroAssembler will sometimes access the jitContext.
 
@@ -12466,7 +12697,7 @@ bool js::wasm::BaselineCompileFunctions(const CodeMetadata& codeMeta,
   }
 
   for (const FuncCompileInput& func : inputs) {
-    Decoder d(func.begin, func.end, func.lineOrBytecode, error);
+    Decoder d(func.begin, func.end, func.bytecodeOffset, error);
 
     // Build the local types vector.
 

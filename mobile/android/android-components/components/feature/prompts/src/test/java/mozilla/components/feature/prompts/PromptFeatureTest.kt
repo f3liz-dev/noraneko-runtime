@@ -46,10 +46,12 @@ import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
+import mozilla.components.concept.storage.LoginHint
 import mozilla.components.feature.prompts.address.AddressDelegate
 import mozilla.components.feature.prompts.address.AddressPicker
 import mozilla.components.feature.prompts.certificate.CertificatePicker
 import mozilla.components.feature.prompts.concept.AutocompletePrompt
+import mozilla.components.feature.prompts.concept.EmailMaskPromptView
 import mozilla.components.feature.prompts.concept.PasswordPromptView
 import mozilla.components.feature.prompts.creditcard.CreditCardDelegate
 import mozilla.components.feature.prompts.creditcard.CreditCardPicker
@@ -59,6 +61,9 @@ import mozilla.components.feature.prompts.dialog.ConfirmDialogFragment
 import mozilla.components.feature.prompts.dialog.MultiButtonDialogFragment
 import mozilla.components.feature.prompts.dialog.PromptDialogFragment
 import mozilla.components.feature.prompts.dialog.SaveLoginDialogFragment
+import mozilla.components.feature.prompts.dialog.WebAuthnRelatedOriginDialogFragment
+import mozilla.components.feature.prompts.emailmask.EmailMaskDelegate
+import mozilla.components.feature.prompts.facts.AddressAutofillDialogFacts
 import mozilla.components.feature.prompts.facts.CreditCardAutofillDialogFacts
 import mozilla.components.feature.prompts.file.FilePicker.Companion.FILE_PICKER_ACTIVITY_REQUEST_CODE
 import mozilla.components.feature.prompts.login.LoginDelegate
@@ -78,7 +83,6 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -93,6 +97,8 @@ import org.robolectric.Robolectric
 import java.lang.ref.WeakReference
 import java.security.InvalidParameterException
 import java.util.Date
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @RunWith(AndroidJUnit4::class)
 class PromptFeatureTest {
@@ -110,6 +116,20 @@ class PromptFeatureTest {
     private fun tab(): TabSessionState? {
         return store.state.tabs.find { it.id == tabId }
     }
+
+    private val address = Address(
+        guid = "1",
+        name = "John Doe",
+        organization = "Mozilla",
+        streetAddress = "999 Test Street",
+        addressLevel3 = "",
+        addressLevel2 = "Mountain View",
+        addressLevel1 = "CA",
+        postalCode = "94016",
+        country = "US",
+        tel = "+15551234567",
+        email = "john@example.com",
+    )
 
     @Before
     fun setUp() {
@@ -2945,8 +2965,8 @@ class PromptFeatureTest {
         )
 
         // Only interested in the icon, but it doesn't hurt to be sure we show a properly configured dialog.
-        assertTrue(feature.activePrompt!!.get() is SaveLoginDialogFragment)
-        val dialogFragment = feature.activePrompt!!.get() as SaveLoginDialogFragment
+        val dialogFragment = feature.activePrompt!!.get()
+        assertIs<SaveLoginDialogFragment>(dialogFragment)
         assertEquals(loginUsername, dialogFragment.username)
         assertEquals(loginPassword, dialogFragment.password)
         assertEquals(websiteIcon, dialogFragment.icon)
@@ -3037,7 +3057,7 @@ class PromptFeatureTest {
 
         val prompt = feature.activePrompt?.get()
         assertNotNull(prompt)
-        assertFalse(prompt!!.shouldDismissOnLoad)
+        assertFalse(prompt.shouldDismissOnLoad)
     }
 
     @Test
@@ -3263,9 +3283,8 @@ class PromptFeatureTest {
             session = session,
         )
 
-        assertTrue(feature.activePrompt!!.get() is CreditCardSaveDialogFragment)
-
-        val dialogFragment = feature.activePrompt!!.get() as CreditCardSaveDialogFragment
+        val dialogFragment = feature.activePrompt!!.get()
+        assertIs<CreditCardSaveDialogFragment>(dialogFragment)
 
         assertEquals(sessionId, dialogFragment.sessionId)
         assertEquals(creditCardEntry, dialogFragment.creditCard)
@@ -3359,6 +3378,73 @@ class PromptFeatureTest {
             assertEquals(Action.DISPLAY, fact.action)
             assertEquals(
                 CreditCardAutofillDialogFacts.Items.AUTOFILL_CREDIT_CARD_SAVE_PROMPT_SHOWN,
+                fact.item,
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN isAddressAutofillEnabled is false WHEN SaveAddress request is handled THEN dismiss SaveAddress`() = runTest(testDispatcher) {
+        val promptRequest = spy(
+            PromptRequest.SaveAddress(
+                address = address,
+                onConfirm = {},
+                onDismiss = {},
+            ),
+        )
+        val feature = spy(
+            PromptFeature(
+                activity = mock(),
+                store = store,
+                fragmentManager = fragmentManager,
+                tabsUseCases = mock(),
+                isAddressAutofillEnabled = { false },
+                fileUploadsDirCleaner = mock(),
+                isEmailMaskFeatureEnabled = { false },
+                isSuggestEmailMaskEnabled = { false },
+                onNeedToRequestPermissions = {},
+            ),
+        )
+        val session = tab()!!
+
+        feature.handleDialogsRequest(promptRequest, session)
+
+        verify(feature).dismissDialogRequest(promptRequest, session)
+    }
+
+    @Test
+    fun `WHEN SaveAddress is handled THEN the address save prompt shown fact is emitted`() = runTest(testDispatcher) {
+        val feature = PromptFeature(
+            activity = mock(),
+            store = store,
+            fragmentManager = fragmentManager,
+            tabsUseCases = mock(),
+            isAddressAutofillEnabled = { true },
+            fileUploadsDirCleaner = mock(),
+            isEmailMaskFeatureEnabled = { false },
+            isSuggestEmailMaskEnabled = { false },
+            onNeedToRequestPermissions = { },
+        )
+        val request = PromptRequest.SaveAddress(
+            address = address,
+            onConfirm = {},
+            onDismiss = {},
+        )
+        val session: TabSessionState = mock()
+        val sessionId = "sessionId"
+        `when`(session.id).thenReturn(sessionId)
+
+        CollectionProcessor.withFactCollection { facts ->
+            feature.handleDialogsRequest(
+                promptRequest = request,
+                session = session,
+            )
+
+            val fact = facts.find { it.item == AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_SAVE_PROMPT_SHOWN }!!
+            assertEquals(Component.FEATURE_PROMPTS, fact.component)
+            assertEquals(Action.INTERACTION, fact.action)
+            assertEquals(
+                AddressAutofillDialogFacts.Items.AUTOFILL_ADDRESS_SAVE_PROMPT_SHOWN,
                 fact.item,
             )
         }
@@ -3595,6 +3681,245 @@ class PromptFeatureTest {
             dialog.negativeButtonText,
         )
     }
+
+    @Test
+    fun `A WebAuthnRelatedOriginPrompt for create will be shown as a WebAuthnRelatedOriginDialogFragment`() = runTest(testDispatcher) {
+        val feature = PromptFeature(
+            activity = Robolectric.buildActivity(Activity::class.java).setup().get(),
+            store = store,
+            fragmentManager = fragmentManager,
+            tabsUseCases = mock(),
+            fileUploadsDirCleaner = mock(),
+            isEmailMaskFeatureEnabled = { false },
+            isSuggestEmailMaskEnabled = { false },
+            onNeedToRequestPermissions = { },
+        )
+        val promptRequest = PromptRequest.WebAuthnRelatedOriginPrompt(
+            origin = "example.com",
+            rpId = "rp.example.com",
+            isCreate = true,
+            onConfirm = { },
+            onDismiss = { },
+        )
+
+        feature.handleDialogsRequest(promptRequest, mock())
+
+        val dialog = feature.activePrompt!!.get() as WebAuthnRelatedOriginDialogFragment
+        assertEquals(
+            testContext.getString(R.string.webauthn_related_origin_create_message, "example.com", "rp.example.com"),
+            dialog.message,
+        )
+    }
+
+    @Test
+    fun `A WebAuthnRelatedOriginPrompt for use will be shown as a WebAuthnRelatedOriginDialogFragment`() = runTest(testDispatcher) {
+        val feature = PromptFeature(
+            activity = Robolectric.buildActivity(Activity::class.java).setup().get(),
+            store = store,
+            fragmentManager = fragmentManager,
+            tabsUseCases = mock(),
+            fileUploadsDirCleaner = mock(),
+            isEmailMaskFeatureEnabled = { false },
+            isSuggestEmailMaskEnabled = { false },
+            onNeedToRequestPermissions = { },
+        )
+        val promptRequest = PromptRequest.WebAuthnRelatedOriginPrompt(
+            origin = "example.com",
+            rpId = "rp.example.com",
+            isCreate = false,
+            onConfirm = { },
+            onDismiss = { },
+        )
+
+        feature.handleDialogsRequest(promptRequest, mock())
+
+        val dialog = feature.activePrompt!!.get() as WebAuthnRelatedOriginDialogFragment
+        assertEquals(
+            testContext.getString(R.string.webauthn_related_origin_use_message, "example.com", "rp.example.com"),
+            dialog.message,
+        )
+    }
+
+    @Test
+    fun `Calling onConfirm on a WebAuthnRelatedOriginPrompt request will consume promptRequest`() = runTest(testDispatcher) {
+        val feature = PromptFeature(
+            activity = mock(),
+            store = store,
+            fragmentManager = fragmentManager,
+            tabsUseCases = mock(),
+            fileUploadsDirCleaner = mock(),
+            isEmailMaskFeatureEnabled = { false },
+            isSuggestEmailMaskEnabled = { false },
+            onNeedToRequestPermissions = { },
+        )
+        var onConfirmWasCalled = false
+        val promptRequest = PromptRequest.WebAuthnRelatedOriginPrompt(
+            origin = "example.com",
+            rpId = "rp.example.com",
+            isCreate = true,
+            onConfirm = { onConfirmWasCalled = true },
+            onDismiss = { },
+        )
+
+        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, promptRequest))
+
+        feature.onConfirm(tabId, promptRequest.uid, false)
+        assertTrue(tab()!!.content.promptRequests.isEmpty())
+        assertTrue(onConfirmWasCalled)
+    }
+
+    @Test
+    fun `Calling onCancel on a WebAuthnRelatedOriginPrompt request will consume promptRequest`() = runTest(testDispatcher) {
+        val feature = PromptFeature(
+            activity = mock(),
+            store = store,
+            fragmentManager = fragmentManager,
+            tabsUseCases = mock(),
+            fileUploadsDirCleaner = mock(),
+            isEmailMaskFeatureEnabled = { false },
+            isSuggestEmailMaskEnabled = { false },
+            onNeedToRequestPermissions = { },
+        )
+        var onDismissWasCalled = false
+        val promptRequest = PromptRequest.WebAuthnRelatedOriginPrompt(
+            origin = "example.com",
+            rpId = "rp.example.com",
+            isCreate = true,
+            onConfirm = { },
+            onDismiss = { onDismissWasCalled = true },
+        )
+
+        feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, promptRequest))
+
+        feature.onCancel(tabId, promptRequest.uid)
+        assertTrue(tab()!!.content.promptRequests.isEmpty())
+        assertTrue(onDismissWasCalled)
+    }
+
+    @Test
+    fun `GIVEN isEmailMaskFeatureEnabled is false WHEN handleEmailMaskOrLoginPrompt is called THEN no prompt is shown`() {
+        val emailMaskView: EmailMaskPromptView = mock()
+        val feature = spy(
+            createPromptFeature(
+                emailMaskDelegate = mockEmailMaskDelegate(emailMaskView),
+                isEmailMaskFeatureEnabled = false,
+            ),
+        )
+
+        val emailMaskLogin = mockEmailMaskLogin()
+        val selectLoginRequest = createSelectLoginPrompt(emailMaskLogin)
+
+        feature.handleEmailMaskOrLoginPrompt(
+            selectLoginRequest,
+            tab()!!,
+            mapOf(LoginHint.EMAIL_MASK to listOf(emailMaskLogin)),
+        )
+
+        verify(emailMaskView, never()).showPrompt()
+        verify(feature, never()).handleDialogsRequest(any(), any())
+    }
+
+    @Test
+    fun `GIVEN isSuggestEmailMaskEnabled is false WHEN handleEmailMaskOrLoginPrompt is called THEN no prompt is shown`() {
+        val emailMaskView: EmailMaskPromptView = mock()
+        val feature = spy(
+            createPromptFeature(
+                emailMaskDelegate = mockEmailMaskDelegate(emailMaskView),
+                isSuggestEmailMaskEnabled = false,
+            ),
+        )
+
+        val emailMaskLogin = mockEmailMaskLogin()
+        val selectLoginRequest = createSelectLoginPrompt(emailMaskLogin)
+
+        feature.handleEmailMaskOrLoginPrompt(
+            selectLoginRequest,
+            tab()!!,
+            mapOf(LoginHint.EMAIL_MASK to listOf(emailMaskLogin)),
+        )
+
+        verify(emailMaskView, never()).showPrompt()
+        verify(feature, never()).handleDialogsRequest(any(), any())
+    }
+
+    @Test
+    fun `GIVEN both email mask flags are true AND no emailMaskDelegate WHEN handleEmailMaskOrLoginPrompt is called THEN handleDialogsRequest is called`() {
+        val feature = spy(createPromptFeature())
+
+        val emailMaskLogin = mockEmailMaskLogin()
+        val selectLoginRequest = createSelectLoginPrompt(emailMaskLogin)
+
+        feature.handleEmailMaskOrLoginPrompt(
+            selectLoginRequest,
+            tab()!!,
+            mapOf(LoginHint.EMAIL_MASK to listOf(emailMaskLogin)),
+        )
+
+        verify(feature).handleDialogsRequest(eq(selectLoginRequest), any())
+    }
+
+    @Test
+    fun `GIVEN both email mask flags are true AND emailMaskDelegate is set WHEN handleEmailMaskOrLoginPrompt is called THEN email mask prompt is shown`() {
+        val emailMaskView: EmailMaskPromptView = mock()
+        val feature = createPromptFeature(emailMaskDelegate = mockEmailMaskDelegate(emailMaskView))
+
+        val emailMaskLogin = mockEmailMaskLogin()
+        val selectLoginRequest = spy(createSelectLoginPrompt(emailMaskLogin))
+
+        feature.handleEmailMaskOrLoginPrompt(
+            selectLoginRequest,
+            tab()!!,
+            mapOf(LoginHint.EMAIL_MASK to listOf(emailMaskLogin)),
+        )
+
+        verify(emailMaskView).showPrompt()
+    }
+
+    private fun createPromptFeature(
+        emailMaskDelegate: EmailMaskDelegate? = null,
+        isEmailMaskFeatureEnabled: Boolean = true,
+        isSuggestEmailMaskEnabled: Boolean = true,
+    ) = PromptFeature(
+        activity = mock(),
+        store = store,
+        fragmentManager = fragmentManager,
+        tabsUseCases = mock(),
+        fileUploadsDirCleaner = mock(),
+        emailMaskDelegate = emailMaskDelegate,
+        isEmailMaskFeatureEnabled = { isEmailMaskFeatureEnabled },
+        isSuggestEmailMaskEnabled = { isSuggestEmailMaskEnabled },
+        onNeedToRequestPermissions = { },
+    )
+
+    private fun mockEmailMaskDelegate(emailMaskView: EmailMaskPromptView) =
+        object : EmailMaskDelegate {
+            override val emailMaskPromptViewListenerView = emailMaskView
+            override fun shouldShowEmailMaskCfr() = false
+            override fun onEmailMaskCfrDismissed() = Unit
+            override suspend fun onEmailMaskClick(generatedFor: String) = null
+        }
+
+    private fun mockEmailMaskLogin() = Login(
+        guid = "A",
+        origin = "https://www.mozilla.org",
+        username = "user@example.com",
+        password = "password",
+        hint = LoginHint.EMAIL_MASK,
+    )
+
+    private fun createSelectLoginPrompt(emailMaskLogin: Login): PromptRequest.SelectLoginPrompt =
+        PromptRequest.SelectLoginPrompt(
+            logins = listOf(emailMaskLogin),
+            generatedPassword = null,
+            onConfirm = {},
+            onDismiss = {},
+        )
 
     private fun mockFragmentManager(): FragmentManager {
         val fragmentManager: FragmentManager = mock()

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,13 +30,8 @@ PR_BEGIN_EXTERN_C
  * to avoid PRUint32 overflow.
  */
 
-PR_EXTERN(char *)
-PL_Base64Encode
-(
-    const char *src,
-    PRUint32    srclen,
-    char       *dest
-);
+PR_EXTERN(char*)
+PL_Base64Encode(const char* src, PRUint32 srclen, char* dest);
 
 /*
  * PL_Base64Decode
@@ -63,13 +57,8 @@ PL_Base64Encode
  * which is equivalent but doesn't overflow for any value of srclen.
  */
 
-PR_EXTERN(char *)
-PL_Base64Decode
-(
-    const char *src,
-    PRUint32    srclen,
-    char       *dest
-);
+PR_EXTERN(char*)
+PL_Base64Decode(const char* src, PRUint32 srclen, char* dest);
 
 PR_END_EXTERN_C
 

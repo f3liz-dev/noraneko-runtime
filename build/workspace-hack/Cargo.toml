@@ -31,7 +31,7 @@ fluent = { version = "0.17", default-features = false, features = ["fluent-pseud
 fluent-langneg = { version = "0.13", features = ["cldr"], optional = true }
 fnv = { version = "1", optional = true }
 form_urlencoded = { version = "1", optional = true }
-futures = { version = "0.3", features = ["futures-executor"], optional = true }
+futures = { version = "0.3", features = ["alloc", "futures-executor"], optional = true }
 futures-channel = { version = "0.3", features = ["sink"], optional = true }
 futures-core = { version = "0.3", optional = true }
 futures-executor = { version = "0.3", features = ["thread-pool"], optional = true }
@@ -40,7 +40,7 @@ futures-util = { version = "0.3", features = ["channel", "io", "sink"], optional
 getrandom = { version = "0.2", default-features = false, features = ["custom", "std"], optional = true }
 hashbrown = { version = "0.13", optional = true }
 hex = { version = "0.4", features = ["serde"], optional = true }
-hyper = { version = "0.14", features = ["full"], optional = true }
+hyper = { version = "1", features = ["server", "http1"], optional = true }
 icu_locale_core = { version = "2.0", default-features = false, features = ["zerovec"], optional = true }
 icu_properties = { version = "2.0", features = ["unicode_bidi"], optional = true }
 idna = { version = "1", optional = true }
@@ -87,7 +87,7 @@ scopeguard = { version = "1", optional = true }
 [build-dependencies]
 bindgen = { version = "0.69", default-features = false, features = ["runtime"], optional = true }
 cc = { version = "1.0", features = ["parallel"], optional = true }
-itertools = { version = "0.14", default-features = false, features = ["use_alloc"], optional = true }
+itertools = { version = "0.15", default-features = false, features = ["use_alloc"], optional = true }
 libc = "0.2"
 log = { version = "0.4", features = ["std"], optional = true }
 memchr = { version = "2", optional = true }
@@ -222,7 +222,7 @@ features = [
 ]
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.52"
+version = "0.61.1"
 optional = true
 features = [
     "Wdk_Foundation",
@@ -281,3 +281,9 @@ pkcs11testmodule-static = []
 test-trust-anchors-static = ["dep:bindgen", "dep:bitflags", "dep:itertools", "dep:memchr", "dep:nom", "dep:regex", "dep:smallvec"]
 toolchain-embedded-uniffi-bindgen = []
 toolchain-nimbus-fml = []
+megazord = []
+embedded-uniffi-bindgen = []
+nimbus-fml = []
+gkrust-uniffi-components = []
+uniffi-bindgen-gecko-js = []
+uniffi-bindgen-gecko-js-test-fixtures = []

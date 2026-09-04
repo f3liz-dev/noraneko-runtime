@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,31 +9,31 @@
 
 /* Threadsafe. */
 
-#include "nsCOMArray.h"
-#include "nsThreadUtils.h"
-
 #include "nsConsoleService.h"
+
+#include "js/friend/ErrorMessages.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "nsCOMArray.h"
 #include "nsConsoleMessage.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIConsoleListener.h"
 #include "nsIObserverService.h"
-#include "nsPrintfCString.h"
-#include "nsProxyRelease.h"
 #include "nsIScriptError.h"
 #include "nsISupportsPrimitives.h"
-#include "js/friend/ErrorMessages.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/ScriptSettings.h"
-
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/Services.h"
+#include "nsPrintfCString.h"
+#include "nsProxyRelease.h"
+#include "nsThreadUtils.h"
 
 #if defined(ANDROID)
 #  include <android/log.h>
-#  include "mozilla/dom/ContentChild.h"
+
 #  include "mozilla/StaticPrefs_consoleservice.h"
+#  include "mozilla/dom/ContentChild.h"
 #endif
 #ifdef XP_WIN
 #  include <windows.h>
@@ -378,7 +376,7 @@ nsresult nsConsoleService::LogMessageWithMode(
     }
 
     // Avoid MOG_LOG-ing messages sent from the content process,
-    // where ContentParent will pass SupressLog output mode.
+    // where ContentParent will pass SuppressLog output mode.
     if (aOutputMode == OutputToLog) {
       uint32_t logLevel = 0;
       aMessage->GetLogLevel(&logLevel);

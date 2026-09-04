@@ -1,4 +1,4 @@
-/* eslint-disable @microsoft/sdl/no-insecure-url */
+/* eslint-disable sdl/no-insecure-url */
 
 // TODO (Bug 1680996): Investigate why this test takes a long time.
 requestLongerTimeout(2);
@@ -49,6 +49,20 @@ add_task(async function single_data_url() {
 });
 add_task(async function single_url3() {
   await dropText("example.com/third", ["http://example.com/third"]);
+});
+
+// Multi-line text with no URL is searched as a single query, with newlines
+// collapsed to spaces so the lines aren't concatenated.
+add_task(async function multiline_search() {
+  await dropText("Charles Ray\nAmerican", [
+    url => new URL(url).searchParams.get("q") === "Charles Ray American",
+  ]);
+});
+// A URL among prose lines is opened as a link; the prose is ignored.
+add_task(async function url_among_prose() {
+  await dropText("some prose\nexample.com/prose\nmore prose", [
+    "http://example.com/prose",
+  ]);
 });
 
 // Single text/plain item, with multiple links.

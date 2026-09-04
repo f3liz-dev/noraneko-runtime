@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,11 +17,11 @@
 #include "mozilla/DataMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ipc/IOThread.h"
+#include "nsExceptionHandler.h"
 #include "nsITimer.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
-#include "prenv.h"
 
 #include "chrome/common/process_watcher.h"
 
@@ -328,6 +326,11 @@ class ProcessCleaner final : public MessageLoopForIO::Watcher,
     auto lock = gPendingChildren.Lock();
     auto& children = lock.ref();
     if (children) {
+      // Give the children we deliberately crash below a uniform signature.
+      // Scoped so a later crash of the parent itself isn't misattributed.
+      CrashReporter::AutoRecordAnnotation autoShutdownHangCrash(
+          CrashReporter::Annotation::CrashSignatureOverrideForTesting,
+          kShutdownHangCrashSignature);
       for (const auto& child : *children) {
         // If the child still has force-termination pending, do that now.
         if (child.mForce) {
@@ -342,10 +345,7 @@ class ProcessCleaner final : public MessageLoopForIO::Watcher,
             continue;
           }
         } else {
-          // Exception for the fake hang tests in ipc/glue/test/browser
-          // (See also the comment in `~ProcessChild()`.)
-          if (!PR_GetEnv("MOZ_TEST_CHILD_EXIT_HANG") &&
-              !CrashProcessIfHanging(child.mPid)) {
+          if (!CrashProcessIfHanging(child.mPid)) {
             continue;
           }
         }

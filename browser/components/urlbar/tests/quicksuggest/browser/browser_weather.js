@@ -41,7 +41,19 @@ add_task(async function showLessFrequentlyCapReached_manySearches() {
       },
     },
   ]);
+  try {
+    await doShowLessFrequentlyCapReachedManySearches();
+  } finally {
+    await UrlbarTestUtils.promisePopupClose(window);
+    await QuickSuggestTestUtils.setRemoteSettingsRecords([
+      QuickSuggestTestUtils.weatherRecord(),
+    ]);
+    UrlbarPrefs.clear("weather.minKeywordLength");
+    UrlbarPrefs.clear("weather.showLessFrequentlyCount");
+  }
+});
 
+async function doShowLessFrequentlyCapReachedManySearches() {
   // Trigger the suggestion.
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -61,6 +73,15 @@ add_task(async function showLessFrequentlyCapReached_manySearches() {
     gURLBar.view.isOpen,
     "The view should remain open clicking the command"
   );
+
+  // The feedback acknowledgment is applied to the row content-side; on the
+  // message path it arrives asynchronously over the actor. Immediate in-process.
+  await BrowserTestUtils.waitForMutationCondition(
+    details.element.row,
+    { attributes: true, attributeFilter: ["feedback-acknowledgment"] },
+    () => details.element.row.hasAttribute("feedback-acknowledgment")
+  );
+
   Assert.ok(
     details.element.row.hasAttribute("feedback-acknowledgment"),
     "Row should have feedback acknowledgment after clicking command"
@@ -105,15 +126,8 @@ add_task(async function showLessFrequentlyCapReached_manySearches() {
     `menuitem[data-command=${command}]`
   );
   Assert.ok(!menuitem, "Menuitem should be absent");
-  gURLBar.view.resultMenu.hidePopup(true);
-
-  await UrlbarTestUtils.promisePopupClose(window);
-  await QuickSuggestTestUtils.setRemoteSettingsRecords([
-    QuickSuggestTestUtils.weatherRecord(),
-  ]);
-  UrlbarPrefs.clear("weather.minKeywordLength");
-  UrlbarPrefs.clear("weather.showLessFrequentlyCount");
-});
+  gURLBar.view.resultMenu.removeAttribute("open");
+}
 
 // Tests the "Don't show weather suggestions" result menu dismissal command.
 add_task(async function dontShow() {
@@ -132,12 +146,22 @@ async function doDismissTest(command) {
   let dismissalPromise = TestUtils.topicObserved(
     "quicksuggest-dismissals-changed"
   );
+
+  // The dismissal round-trips over the actor on the message path: the engagement
+  // runs parent-side, calls removeResult and notifies back, so the row is
+  // replaced asynchronously. The notification fires synchronously in-process.
+  let promiseRemoved = UrlbarTestUtils.promiseControllerNotification(
+    window,
+    "onQueryResultRemoved"
+  );
+
   await UrlbarTestUtils.openResultMenuAndClickItem(window, command, {
     resultIndex: EXPECTED_RESULT_INDEX,
     openByMouse: true,
   });
   info("Awaiting dismissal promise");
   await dismissalPromise;
+  await promiseRemoved;
 
   Assert.ok(
     !UrlbarPrefs.get("suggest.weather"),
@@ -157,7 +181,7 @@ async function doDismissTest(command) {
   );
   Assert.equal(
     details.type,
-    UrlbarUtils.RESULT_TYPE.TIP,
+    UrlbarShared.RESULT_TYPE.TIP,
     "Row should be a tip after dismissal"
   );
   Assert.equal(
@@ -193,7 +217,7 @@ async function doDismissTest(command) {
     details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
     Assert.notEqual(
       details.type,
-      UrlbarUtils.RESULT_TYPE.TIP,
+      UrlbarShared.RESULT_TYPE.TIP,
       "Tip result should not be present"
     );
     info("Weather result should not be present");
@@ -244,6 +268,15 @@ async function doSessionOngoingCommandTest(command) {
     gURLBar.view.isOpen,
     "The view should remain open clicking the command"
   );
+
+  // The feedback acknowledgment is applied to the row content-side; on the
+  // message path it arrives asynchronously over the actor. Immediate in-process.
+  await BrowserTestUtils.waitForMutationCondition(
+    details.element.row,
+    { attributes: true, attributeFilter: ["feedback-acknowledgment"] },
+    () => details.element.row.hasAttribute("feedback-acknowledgment")
+  );
+
   Assert.ok(
     details.element.row.hasAttribute("feedback-acknowledgment"),
     "Row should have feedback acknowledgment after clicking command"
@@ -452,7 +485,7 @@ function assertIsWeatherResult(result, isWeatherResult) {
       "Result should be from UrlbarProviderQuickSuggest"
     );
     Assert.equal(
-      UrlbarUtils.searchEngagementTelemetryType(result),
+      UrlbarShared.searchEngagementTelemetryType(result),
       "weather",
       "Result telemetry type should be 'weather'"
     );
@@ -463,7 +496,7 @@ function assertIsWeatherResult(result, isWeatherResult) {
       "Result should not be from UrlbarProviderQuickSuggest"
     );
     Assert.notEqual(
-      UrlbarUtils.searchEngagementTelemetryType(result),
+      UrlbarShared.searchEngagementTelemetryType(result),
       "weather",
       "Result telemetry type should not be 'weather'"
     );

@@ -103,7 +103,7 @@ add_task(async function () {
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://mozapps/content/update/history.xhtml"
   );
-  showBtn.doCommand();
+  showBtn.click();
   await promiseSubDialogLoaded;
   ok(!BrowserTestUtils.isHidden(dialogOverlay), "The dialog should be visible");
 
@@ -164,7 +164,7 @@ add_task(async function () {
 
   // Test the dialog window closes
   let closeBtn = dialogOverlay.querySelector(".dialogClose");
-  closeBtn.doCommand();
+  closeBtn.click();
   ok(
     BrowserTestUtils.isHidden(dialogOverlay),
     "The dialog should be invisible"

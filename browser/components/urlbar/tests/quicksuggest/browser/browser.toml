@@ -3,13 +3,19 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 [DEFAULT]
+tags = "urlbar"
 support-files = [
   "head.js",
   "searchSuggestionEngine.xml",
   "searchSuggestionEngine.sjs",
   "subdialog.xhtml",
 ]
-prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
+prefs = [
+  "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
+  "layout.css.attr.enabled=true",
+]
+
+["browser_pickedSearchSuggestion.js"]
 
 ["browser_quicksuggest.js"]
 
@@ -29,13 +35,19 @@ prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 
 ["browser_quicksuggest_merinoSessions.js"]
 
-["browser_quicksuggest_ping_amp.js"]
-tags = "search-telemetry"
-
 ["browser_quicksuggest_ping_deletionRequest.js"]
 tags = "search-telemetry"
+skip-if = [
+  "true", # Bug 2056936 - The `quick-suggest-deletion-request` ping is disabled
+]
 
-["browser_quicksuggest_ping_merinoAndNullValues.js"]
+["browser_quicksuggest_ping_nullValues.js"]
+tags = "search-telemetry"
+
+["browser_quicksuggest_ping_offline.js"]
+tags = "search-telemetry"
+
+["browser_quicksuggest_ping_online.js"]
 tags = "search-telemetry"
 
 ["browser_quicksuggest_realtime_flight_status.js"]
@@ -47,6 +59,10 @@ tags = "search-telemetry"
 ["browser_quicksuggest_realtime_yelp.js"]
 
 ["browser_quicksuggest_sports.js"]
+support-files = [
+  "moz.png",
+  "moz-flipped.png",
+]
 
 ["browser_quicksuggest_yelp.js"]
 
@@ -57,10 +73,6 @@ tags = "search-telemetry"
 tags = "search-telemetry"
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1971091
-  "os == 'win' && os_version == '11.26100'", # Bug 1971091
 ]
 
 ["browser_weather.js"]
-skip-if = [
-  "os == 'win' && os_version == '11.26100'", # Bug 1885264
-]

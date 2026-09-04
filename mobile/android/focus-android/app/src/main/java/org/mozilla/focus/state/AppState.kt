@@ -12,7 +12,6 @@ import org.mozilla.focus.autocomplete.AutocompleteAddFragment
 import org.mozilla.focus.autocomplete.AutocompleteListFragment
 import org.mozilla.focus.autocomplete.AutocompleteRemoveFragment
 import org.mozilla.focus.autocomplete.AutocompleteSettingsFragment
-import org.mozilla.focus.cookiebanner.CookieBannerFragment
 import org.mozilla.focus.exceptions.ExceptionsListFragment
 import org.mozilla.focus.exceptions.ExceptionsRemoveFragment
 import org.mozilla.focus.fragment.CrashListFragment
@@ -46,7 +45,6 @@ import java.util.UUID
  * @property showTrackingProtectionCfrForTab A map where keys are tab IDs and values indicate whether
  * to show the Tracking Protection CFR for that tab.
  * @property showStartBrowsingTabsCfr A flag which reflects the state of start browsing CFR
- * @property showCookieBannerCfr A flag witch reflects the state of cookie banner CFR
  * @property isPinningSupported A nullable flag indicating whether pinning shortcuts to the home screen is supported.
  */
 data class AppState(
@@ -58,7 +56,6 @@ data class AppState(
     val showSearchWidgetSnackbar: Boolean = false,
     val showTrackingProtectionCfrForTab: Map<String, Boolean> = emptyMap(),
     val showStartBrowsingTabsCfr: Boolean = false,
-    val showCookieBannerCfr: Boolean = false,
     val isPinningSupported: Boolean? = null,
 ) : State
 
@@ -119,10 +116,21 @@ sealed class Screen {
      * be redirected to a certain screen.It comes from the external intent.
      */
     data class Locked(val bundle: Bundle? = null) : Screen()
+
+    /**
+     * Screen for site permission options.
+     */
     data class SitePermissionOptionsScreen(val sitePermission: SitePermission) : Screen()
+
+    /**
+     * Settings screen.
+     */
     data class Settings(
         val page: Page = Page.Start,
     ) : Screen() {
+        /**
+         * Pages within the settings screen.
+         */
         enum class Page(val fragmentClass: Class<out Fragment>) {
             Start(SettingsFragment::class.java),
 
@@ -137,7 +145,6 @@ sealed class Screen {
 
             PrivacyExceptions(ExceptionsListFragment::class.java),
             PrivacyExceptionsRemove(ExceptionsRemoveFragment::class.java),
-            CookieBanner(CookieBannerFragment::class.java),
             SitePermissions(SitePermissionsFragment::class.java),
             SecretSettings(SecretSettingsFragment::class.java),
 

@@ -235,6 +235,12 @@ def setup_argument_parser():
 
     global parser
     parser = MochitestArgumentParser()
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Force reinstallation of test symlinks even if up to date.",
+    )
     return parser
 
 
@@ -308,10 +314,6 @@ def run_mochitest_general(
     from mozlog.handlers import ResourceHandler, StreamHandler
     from moztest.resolve import get_suite_definition
 
-    # TODO: This is only strictly necessary while mochitest is using Python
-    # 2 and can be removed once the command is migrated to Python 3.
-    command_context.activate_virtualenv()
-
     buildapp = None
     for app in SUPPORTED_APPS:
         if conditions.is_buildapp_in(command_context, apps=[app]):
@@ -322,7 +324,7 @@ def run_mochitest_general(
     if kwargs.get("android"):
         buildapp = "android"
 
-    flavors = None
+    flavors = []
     if flavor:
         for fname, fobj in ALL_FLAVORS.items():
             if flavor in fobj["aliases"]:
@@ -354,6 +356,10 @@ def run_mochitest_general(
         )
 
     if not kwargs.get("log"):
+        if not kwargs.get("log_testsummary"):
+            kwargs["log_testsummary"] = [
+                command_context._get_state_filename("testsummary.jsonl")
+            ]
         # Create shared logger
         format_args = {"level": command_context._mach_context.settings["test"]["level"]}
         if len(tests) == 1:
@@ -371,8 +377,9 @@ def run_mochitest_general(
 
         log.add_handler(ResourceHandler(command_context))
 
+    force = kwargs.pop("force", False)
     driver = command_context._spawn(BuildDriver)
-    driver.install_tests()
+    driver.install_tests(force=force)
 
     subsuite = kwargs.get("subsuite")
     if subsuite == "default":
@@ -583,6 +590,10 @@ def run_junit(command_context, no_install, **kwargs):
     if not kwargs.get("log"):
         from mozlog.commandline import setup_logging
 
+        if not kwargs.get("log_testsummary"):
+            kwargs["log_testsummary"] = [
+                command_context._get_state_filename("testsummary.jsonl")
+            ]
         format_args = {"level": command_context._mach_context.settings["test"]["level"]}
         default_format = command_context._mach_context.settings["test"]["format"]
         kwargs["log"] = setup_logging(
@@ -611,7 +622,8 @@ def classname_for_test(test):
         "java",
     )
     return (
-        os.path.normpath(test)
+        os.path
+        .normpath(test)
         .split(os.path.normpath(test_path))[-1]
         .removeprefix(os.path.sep)
         .replace(os.path.sep, ".")

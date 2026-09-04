@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,7 @@
 #include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/EditContext.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIMutationObserver.h"
@@ -262,6 +261,21 @@ void TextComposition::DispatchEvent(
   }
   RefPtr<nsINode> node = mNode;
   RefPtr<nsPresContext> presContext = mPresContext;
+  if (auto* element = nsGenericHTMLElement::FromNode(node)) {
+    if (RefPtr<dom::EditContext> editContext = element->GetEditContext()) {
+      // Only compositionstart and compositionend are sent to EditContext
+      if (aDispatchEvent->mMessage == eCompositionStart) {
+        editContext->StartComposition(*aDispatchEvent);
+      } else if (aDispatchEvent->mMessage == eCompositionEnd) {
+        editContext->EndComposition(*aDispatchEvent);
+      }
+      // Internally, we want to dispatch this event to the EditContext's
+      // associated element, since that is what the EditorEventListener is
+      // listening to. But according to the spec, composition events should only
+      // be dispatched to the EditContext.
+      aDispatchEvent->mFlags.mOnlySystemGroupDispatch = true;
+    }
+  }
   EventDispatcher::Dispatch(node, presContext, aDispatchEvent, nullptr, aStatus,
                             aCallBack);
 
@@ -662,7 +676,8 @@ void TextComposition::MaybeNotifyIMEOfCompositionEventHandled(
   //     destroying IMEContentObserver notifies IME of blur.  So, native IME
   //     handler can treat it as this notification too.
   if (contentObserver && contentObserver->IsObserving(*this)) {
-    contentObserver->MaybeNotifyCompositionEventHandled();
+    contentObserver->MaybeNotifyCompositionEventHandled(
+        aCompositionEvent->mMessage);
     return;
   }
   // Otherwise, e.g., this composition is in non-active window, we should
@@ -673,7 +688,7 @@ void TextComposition::MaybeNotifyIMEOfCompositionEventHandled(
 void TextComposition::DispatchCompositionEventRunnable(
     EventMessage aEventMessage, const nsAString& aData,
     bool aIsSynthesizingCommit) {
-  nsContentUtils::AddScriptRunner(new CompositionEventDispatcher(
+  nsContentUtils::AddScriptRunner(MakeAndAddRef<CompositionEventDispatcher>(
       this, mNode, aEventMessage, aData, aIsSynthesizingCommit));
 }
 
@@ -846,8 +861,10 @@ RawRangeBoundary TextComposition::FirstIMESelectionStartRef() const {
       }
       // Unfortunately, really slow path.
       // The ranges should always have a common ancestor, hence, be comparable.
-      if (*nsContentUtils::ComparePoints(range->StartRef(),
-                                         firstRange->StartRef()) == -1) {
+      // XXX Should use TreeKind::DOM? Editable state won't cross shadow DOM
+      // boundaries.
+      if (*nsContentUtils::ComparePoints<TreeKind::ShadowIncludingDOM>(
+              range->StartRef(), firstRange->StartRef()) == -1) {
         firstRange = range;
       }
     }
@@ -907,8 +924,10 @@ RawRangeBoundary TextComposition::LastIMESelectionEndRef() const {
       }
       // Unfortunately, really slow path.
       // The ranges should always have a common ancestor, hence, be comparable.
-      if (*nsContentUtils::ComparePoints(lastRange->EndRef(),
-                                         range->EndRef()) == -1) {
+      // XXX Should use TreeKind::DOM? Editable state won't cross shadow DOM
+      // boundaries.
+      if (*nsContentUtils::ComparePoints<TreeKind::ShadowIncludingDOM>(
+              lastRange->EndRef(), range->EndRef()) == -1) {
         lastRange = range;
       }
     }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -150,7 +148,8 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::Initialize(DOMSVGNumber& aItem,
   // from this list, and so the InsertItemBefore() call would not insert a
   // clone of newItem, it would actually insert newItem. To prevent that from
   // happening we have to do the clone here, if necessary.
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   Clear(aRv);
   MOZ_ASSERT(!aRv.Failed());
@@ -179,6 +178,13 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::IndexedGetter(
   return nullptr;
 }
 
+void DOMSVGNumberList::IndexedSetter(uint32_t aIndex, DOMSVGNumber& aNewValue,
+                                     ErrorResult& aRv) {
+  // Need to take a ref to the return value so it does not leak.
+  RefPtr<DOMSVGNumber> ignored = ReplaceItem(aNewValue, aIndex, aRv);
+  (void)ignored;
+}
+
 already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
     DOMSVGNumber& aItem, uint32_t index, ErrorResult& aRv) {
   if (IsAnimValList()) {
@@ -186,14 +192,14 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
     return nullptr;
   }
 
-  index = std::min(index, LengthNoFlush());
-  if (index >= DOMSVGNumber::MaxListIndex()) {
-    aRv.ThrowIndexSizeError("Index out of range");
+  if (LengthNoFlush() >= DOMSVGNumber::MaxListIndex()) {
+    aRv.ThrowIndexSizeError("List too long");
     return nullptr;
   }
 
   // must do this before changing anything!
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   // Ensure we have enough memory so we can avoid complex error handling below:
   if (!mItems.SetCapacity(mItems.Length() + 1, fallible) ||
@@ -209,10 +215,15 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::InsertItemBefore(
     }
   }
 
-  AutoChangeNumberListNotifier notifier(this);
-  // Now that we know we're inserting, keep animVal list in sync as necessary.
-  MaybeInsertNullInAnimValListAt(index);
+  index = std::min(index, LengthNoFlush());
 
+  // Keep animVal list in sync as necessary.
+  if (!MaybeInsertNullInAnimValListAt(index)) {
+    aRv.ThrowIndexSizeError("List too long");
+    return nullptr;
+  }
+
+  AutoChangeNumberListNotifier notifier(this);
   InternalList().InsertItem(index, domItem->ToSVGNumber());
   MOZ_ALWAYS_TRUE(mItems.InsertElementAt(index, domItem, fallible));
 
@@ -239,7 +250,8 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::ReplaceItem(
   }
 
   // must do this before changing anything!
-  RefPtr<DOMSVGNumber> domItem = aItem.HasOwner() ? aItem.Clone() : &aItem;
+  RefPtr<DOMSVGNumber> domItem =
+      aItem.HasOwner() ? aItem.Clone() : do_AddRef(&aItem);
 
   AutoChangeNumberListNotifier notifier(this);
   if (mItems[index]) {
@@ -302,21 +314,26 @@ already_AddRefed<DOMSVGNumber> DOMSVGNumberList::GetItemAt(uint32_t aIndex) {
   return result.forget();
 }
 
-void DOMSVGNumberList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
+bool DOMSVGNumberList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
-    return;
+    return true;
+  }
+  DOMSVGNumberList* animVal = mAList->mAnimVal;
+  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
+
+  if (animVal->mItems.Length() >= DOMSVGNumber::MaxListIndex()) {
+    return false;
   }
 
-  DOMSVGNumberList* animVal = mAList->mAnimVal;
-
-  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
   MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex, nullptr, fallible));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
+
+  return true;
 }
 
 void DOMSVGNumberList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex) {

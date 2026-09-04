@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +6,18 @@
 #ifndef mozilla_image_imgRequest_h
 #define mozilla_image_imgRequest_h
 
-#include "nsIChannelEventSink.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIStreamListener.h"
-#include "nsIThreadRetargetableStreamListener.h"
-#include "nsIPrincipal.h"
-
+#include "ImageCacheKey.h"
+#include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
-#include "nsProxyRelease.h"
-#include "nsString.h"
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
-#include "mozilla/Mutex.h"
-#include "ImageCacheKey.h"
+#include "nsIChannelEventSink.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIPrincipal.h"
+#include "nsIStreamListener.h"
+#include "nsIThreadRetargetableStreamListener.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
 
 class imgCacheValidator;
 class imgLoader;
@@ -166,6 +164,10 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
 
   nsITimedChannel* GetTimedChannel() const { return mTimedChannel; }
 
+  /// Returns true if any redirect in the chain that loaded this image was
+  /// cross-origin.
+  bool HadCrossOriginRedirects() const;
+
   imgCacheValidator* GetValidator() const { return mValidator; }
   void SetValidator(imgCacheValidator* aValidator) { mValidator = aValidator; }
 
@@ -250,7 +252,7 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   nsCOMPtr<nsITimedChannel> mTimedChannel;
 
   nsCString mContentType;
-  int64_t mContentLength;
+  int64_t mContentLength = 0;
 
   /* we hold on to this to this so long as we have observers */
   RefPtr<imgCacheEntry> mCacheEntry;
@@ -286,6 +288,8 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   bool mIsCrossSiteNoCORSRequest;
 
   bool mShouldReportRenderTimeForLCP;
+  // True if any redirect in the chain that loaded this image was cross-origin.
+  bool mHadCrossOriginRedirects = false;
   // SVGs can't be OffMainThread for example
   bool mOffMainThreadData = false;
 

@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "vm/FrameIter-inl.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
 #include "mozilla/MaybeOneOf.h"  // mozilla::MaybeOneOf
@@ -31,6 +27,7 @@
 #include "wasm/WasmInstance.h"   // js::wasm::Instance
 
 #include "jit/JSJitFrameIter-inl.h"  // js::jit::JSJitFrameIter::baselineFrame{,NumValueSlots}
+#include "vm/FrameIter-inl.h"
 #include "vm/Stack-inl.h"  // js::AbstractFramePtr::*
 
 namespace JS {
@@ -176,10 +173,10 @@ void JitFrameIter::settle() {
       // The JS-JIT exit frame doesn't support stack switching and will only be
       // used if original wasm func was on the main stack.
 #ifdef ENABLE_WASM_JSPI
-      MOZ_ASSERT(!act_->cx()->wasm().findSuspenderForStackAddress(
-          prevFP->wasmCaller()));
+      MOZ_ASSERT(!act_->cx()->wasm().findStackForAddress(
+          act_->cx(), reinterpret_cast<uintptr_t>(prevFP->wasmCaller())));
 #endif
-      act_->setWasmExitFP(prevFP, nullptr);
+      act_->setWasmExitFP(prevFP);
     }
 
     iter_.destroy();
@@ -375,11 +372,6 @@ FrameIter::FrameIter(JSContext* cx, DebuggerEvalOption debuggerEvalOption,
   }
 }
 
-FrameIter::FrameIter(const FrameIter& other)
-    : data_(other.data_),
-      ionInlineFrames_(other.data_.cx_,
-                       isIonScripted() ? &other.ionInlineFrames_ : nullptr) {}
-
 FrameIter::FrameIter(const Data& data)
     : data_(data),
       ionInlineFrames_(data.cx_, isIonScripted() ? &jsJitFrame() : nullptr) {
@@ -469,8 +461,8 @@ FrameIter& FrameIter::operator++() {
   return *this;
 }
 
-FrameIter::Data* FrameIter::copyData() const {
-  Data* data = data_.cx_->new_<Data>(data_);
+mozilla::UniquePtr<FrameIter::Data> FrameIter::copyData() const {
+  mozilla::UniquePtr<Data> data(data_.cx_->new_<FrameIter::Data>(data_));
   if (!data) {
     return nullptr;
   }
@@ -567,6 +559,18 @@ bool FrameIter::isFunctionFrame() const {
   MOZ_CRASH("Unexpected state");
 }
 
+bool FrameIter::isResumingGenerator() const {
+  MOZ_ASSERT(!done());
+  if (isInterp()) {
+    return interpFrame()->isResumingGenerator();
+  }
+  if (isPhysicalJitFrame()) {
+    return physicalJitFrame()->isResumingGenerator();
+  }
+  // Wasm frames and inlined Ion frames are never resuming a generator.
+  return false;
+}
+
 JSAtom* FrameIter::maybeFunctionDisplayAtom() const {
   switch (data_.state_) {
     case DONE:
@@ -619,7 +623,7 @@ const char16_t* FrameIter::displayURL() const {
     case INTERP:
     case JIT:
       if (isWasm()) {
-        return wasmFrame().displayURL();
+        return nullptr;
       }
       ScriptSource* ss = script()->scriptSource();
       return ss->hasDisplayURL() ? ss->displayURL() : nullptr;
@@ -654,7 +658,7 @@ bool FrameIter::mutedErrors() const {
     case INTERP:
     case JIT:
       if (isWasm()) {
-        return wasmFrame().mutedErrors();
+        return false;
       }
       return script()->mutedErrors();
   }
@@ -786,7 +790,8 @@ void FrameIter::wasmUpdateBytecodeOffset() {
 
   // Relookup the current frame, updating the bytecode offset in the process.
   data_.jitFrames_ = JitFrameIter(data_.activations_->asJit());
-  while (!isWasm() || wasmFrame().debugFrame() != frame) {
+  while (!isWasm() || !wasmFrame().debugEnabled() ||
+         wasmFrame().debugFrame() != frame) {
     ++data_.jitFrames_;
   }
 

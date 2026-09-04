@@ -1,6 +1,3 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +27,7 @@ nsresult nsMacRemoteClient::SendCommandLine(const char* aProgram,
                     length:className.Length()];
 
   CFMessagePortRef messageServer =
-      CFMessagePortCreateRemote(0, (CFStringRef)serverNameString);
+      CFMessagePortCreateRemote(nullptr, (CFStringRef)serverNameString);
 
   if (messageServer) {
     // Getting current process directory
@@ -46,8 +43,8 @@ nsresult nsMacRemoteClient::SendCommandLine(const char* aProgram,
 
     NSData* data = [NSKeyedArchiver archivedDataWithRootObject:dict];
 
-    CFMessagePortSendRequest(messageServer, 0, (CFDataRef)data, 10.0, 0.0, NULL,
-                             NULL);
+    CFMessagePortSendRequest(messageServer, 0, (CFDataRef)data, 10.0, 0.0,
+                             nullptr, nullptr);
 
     CFMessagePortInvalidate(messageServer);
     CFRelease(messageServer);

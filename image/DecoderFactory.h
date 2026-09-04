@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +7,13 @@
 #define mozilla_image_DecoderFactory_h
 
 #include "DecoderFlags.h"
+#include "Orientation.h"
+#include "SurfaceFlags.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/image/ImageUtils.h"
 #include "nsCOMPtr.h"
-#include "Orientation.h"
-#include "SurfaceFlags.h"
 
 namespace mozilla::image {
 

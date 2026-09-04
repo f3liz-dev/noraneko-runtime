@@ -27,6 +27,7 @@
   <string name="teaser">Automaattisesti yksityistä selaamista.\nSelaa. Tyhjennä. Toista.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Selaushistoria tyhjennetty.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">Selaushistoria tyhjennettiin</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Välilehden selaushistoria on poistettu.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Tyhjennä ja avaa %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Hae Klarissa</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Hae Klarissa</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Hae Focus Betassa</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Hae Focus Betassa</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Hae Focus Nightlyssa</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Hae Focus Nightlyssa</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s asettaa sinut ohjaimiin.</p>\n<p>Käytä sitä yksityiseen selaamiseen:\n<ul>\n<li>Hae ja selaa suoraan sovelluksessa</li>\n<li>Estä seuranta (tai muokkaa asetuksia salliaksesi seuraimet)</li>\n<li>Poista evästeet ja haku- sekä selaushistoria</li>\n</ul> </p>\n<p>%1$s on Mozillan kehittämä. Tehtävämme on edesauttaa tervettä, avointa Internetiä<br/>\n<a href=\"%2$s\">Lue lisää</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s asettaa sinut ohjaimiin.</p>\n<p>Käytä sitä yksityiseen selaamiseen:\n<ul>\n<li>Hae ja selaa suoraan sovelluksessa</li>\n<li>Estä seuranta (tai muokkaa asetuksia salliaksesi seuraimet)</li>\n<li>Poista evästeet ja haku- sekä selaushistoria</li>\n</ul> </p>\n<p>%1$s on Mozillan kehittämä. Tehtävämme on edesauttaa tervettä, avointa Internetiä<br/>\n<a href=\"%2$s\">Lue lisää</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Lue lisää</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Liitä tai kirjoita osoite</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Esimerkki: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Esimerkki: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Esimerkki: esimerkki.fi</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Aseta %1$s oletusselaimeksi</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Lähetä käyttötilastoja</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Lisätietoja</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla pyrkii keräämään vain tietoja, jotka ovat tarpeellisia %1$sen jakelun ja kehittämisen kannalta.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla pyrkii keräämään vain tietoja, jotka ovat tarpeellisia %1$sen jakelun ja kehittämisen kannalta.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Päivittäinen käyttöilmoitus</string>
-  <string name="preference_daily_usage_ping_description">Tämä auttaa Mozillaa arvioimaan aktiivisten käyttäjien määrää.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Tämä auttaa Mozillaa arvioimaan aktiivisten käyttäjien määrää.</string>
   <string name="preference_daily_usage_ping_learn_more">Lue lisää</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Tietosuojakäytäntö</string>
@@ -584,6 +588,23 @@
   <string name="security_popup_security_verified">Todentaja: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Sivuston tietoturva</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Varmenne myönnetty taholle %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Asetuksen (EU) 2024/1183 mukaisesti kelvollinen.</string>
   <string name="preference_autocomplete_duplicate_url_error">Osoite on jo olemassa</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Etsi sivulta</string>
@@ -814,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Sulje välilehti</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Lähetä kaatumisraportti Mozillalle</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Lähetä kaatumisraportti Mozillalle</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -879,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s yrittää käyttää HTTPS aina kun mahdollista turvallisuuden lisäämiseksi. <a href=\"%2$s\">Lue lisää</a> <br/><br/> Muuta tätä asetusta kohdassa Asetukset > Tietosuoja ja turvallisuus > Turvallisuus.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Yhteys ei ole suojattu</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">Yhteys ei ole suojattu</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ongelma voi johtua palvelimen asetuksista tai jonkin toisen palvelimen vilpillisestä yrityksestä tekeytyä palvelimeksi. <br/><br/> Jos yhteyden muodostaminen palvelimeen on aiemmin onnistunut, vika voi olla väliaikainen.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[Ongelma voi johtua palvelimen asetuksista tai jonkin toisen palvelimen vilpillisestä yrityksestä tekeytyä palvelimeksi. <br/><br/> Jos yhteyden muodostaminen palvelimeen on aiemmin onnistunut, vika voi olla väliaikainen.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Jokin toinen osapuoli saattaa tekeytyä sivustoksi, jatkaminen voi olla riskialtista.</label> <br><br>\n<label>%1$s ei luota sivustoon <b>%2$s</b>, koska sen varmenteen myöntäjä on tuntematon, varmenne on itse allekirjoitettu tai palvelin ei lähetä oikeita välivarmenteita.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>Jokin toinen osapuoli saattaa tekeytyä sivustoksi, jatkaminen voi olla riskialtista.</label> <br><br>\n<label>%1$s ei luota sivustoon <b>%2$s</b>, koska sen varmenteen myöntäjä on tuntematon, varmenne on itse allekirjoitettu tai palvelin ei lähetä oikeita välivarmenteita.</label>]]></string>
   <!--
     Sessions List
 

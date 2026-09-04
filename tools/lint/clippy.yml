@@ -2,10 +2,12 @@
 clippy:
     description: Lint rust
     include:
+        - browser/components/shell/rust/shell_windows/
         - build/workspace-hack/
         - browser/app/nmhproxy/
         - dom/base/fragmentdirectives/
         - dom/base/rust/
+        - dom/base/speculationrules/
         - dom/fs/parent/rust/data-encoding-ffi/
         - dom/fs/parent/rust/mime-guess-ffi/
         - dom/media/gtest/
@@ -13,11 +15,14 @@ clippy:
         - dom/origin-trials/ffi/
         - dom/webauthn/authrs_bridge/
         - dom/webauthn/libudev-sys/
+        - gfx/harfbuzz_glue/
         - gfx/webrender_bindings/
         - gfx/wr/peek-poke/
         - gfx/wr/peek-poke/peek-poke-derive/
         - gfx/wr/webrender_build/
         - gfx/wr/wr_malloc_size_of/
+        - image/rust/jxl/
+        - intl/app_collator_glue/
         # - intl/bidi/rust/unicode-bidi-ffi/
         - intl/l10n/rust/fluent-ffi/
         - intl/l10n/rust/l10nregistry-ffi/
@@ -25,6 +30,7 @@ clippy:
         - intl/l10n/rust/localization-ffi/
         - intl/locale/rust/oxilangtag-ffi/
         - ipc/rust/ipdl_utils/
+        - js/src/rust/
         - js/src/rust/shared/
         - modules/libpref/init/static_prefs/
         - mozglue/static/rust/
@@ -32,8 +38,10 @@ clippy:
         - netwerk/base/idna_glue/
         - netwerk/base/mozurl/
         - netwerk/base/rust-helper/
+        - netwerk/base/ssl_tokens_cache/
         - netwerk/base/urlpattern_glue/
         - netwerk/base/uritemplate_glue/
+        - netwerk/protocol/http/happy_eyeballs_glue/
         - netwerk/protocol/http/binary_http/
         - netwerk/protocol/http/oblivious_http/
         - netwerk/socket/neqo_glue/
@@ -49,6 +57,8 @@ clippy:
         - security/manager/ssl/rsclientcerts-util/
         - security/manager/ssl/trust_anchors/
         - security/manager/ssl/trust-anchor-build-util/
+        - security/lockstore/lockstore_ffi/
+        - security/lockstore/lockstore_rs/
         - security/mls/mls_gk/
         - servo/components/malloc_size_of/
         - servo/components/selectors/
@@ -71,6 +81,7 @@ clippy:
         - third_party/rust/mp4parse/
         - third_party/rust/mp4parse_capi/
         - toolkit/components/cascade_bloom_filter/
+        - toolkit/components/content-classifier/content_classifier_engine/
         # - toolkit/components/dap/ffi/
         - toolkit/components/gecko-trace/
         - toolkit/components/glean/
@@ -94,6 +105,8 @@ clippy:
         - toolkit/library/rust/
         - toolkit/xre/detect_win32k_conflicts/
         - tools/fuzzing/rust/
+        - tools/lint/mozcheck/
+        - widget/windows/rust/
         # - tools/profiler/rust-api/
         # - xpcom/rust/gecko_logger/
         - xpcom/rust/gecko_tracing/
@@ -151,6 +164,45 @@ clippy:
         - toolkit/components/bitsdownload/bits_client/bits/
         # mac and windows only
         - security/manager/ssl/osclientcerts/
+    # enable the `all`, `cargo` and `pedantic` lint groups plus the `use_self`
+    # nursery lint, then opt back out of the individual lints below. The allows
+    # are emitted as `-A` flags after the group `-W` flags so they take effect.
+    warn:
+        - all
+        - cargo
+        - pedantic
+        - use_self
+        - needless_return
+    allow:
+        - cargo_common_metadata
+        - multiple_crate_versions
+        - missing_errors_doc
+        - missing_panics_doc
+        - must_use_candidate
+        - cast_possible_truncation
+        - too_many_lines
+        - cast_possible_wrap
+        - cast_sign_loss
+        - struct_excessive_bools
+        - cast_precision_loss
+        - cast_lossless
+        - ignored_unit_patterns
+        - similar_names
+        - float_cmp
+        - return_self_not_must_use
+        - fn_params_excessive_bools
+        - used_underscore_items
+        - should_panic_without_expect
+        - doc_markdown
+        - unused_self
+        - enum_glob_use
+        - unnested_or_patterns
+        - implicit_hasher
+        - doc_link_with_quotes
+        - format_push_string
+        - flat_map_option
+        - from_iter_instead_of_collect
+        - large_types_passed_by_value
     extensions:
         - rs
     support-files:

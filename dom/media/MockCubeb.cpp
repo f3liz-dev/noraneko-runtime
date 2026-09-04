@@ -1,9 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MockCubeb.h"
+
+#include <thread>
 
 namespace mozilla {
 
@@ -251,7 +252,10 @@ int MockCubebStream::Stop() {
 
 uint64_t MockCubebStream::Position() {
   MutexAutoLock l(mMutex);
-  return mPosition;
+  // Report the play cursor, which lags the write cursor mPosition by the output
+  // latency and is clamped to 0 while still inside the latency window.
+  return mPosition > mOutputLatencyFrames ? mPosition - mOutputLatencyFrames
+                                          : 0;
 }
 
 void MockCubebStream::Destroy() {
@@ -387,6 +391,11 @@ void MockCubebStream::SetDriftFactor(float aDriftFactor) {
   MOZ_RELEASE_ASSERT(mRunningMode == MockCubeb::RunningMode::Automatic);
   MutexAutoLock l(mMutex);
   mDriftFactor = aDriftFactor;
+}
+
+void MockCubebStream::SetOutputLatencyFrames(uint32_t aFrames) {
+  MutexAutoLock mutex(mMutex);
+  mOutputLatencyFrames = aFrames;
 }
 
 void MockCubebStream::ForceError() {
@@ -802,6 +811,7 @@ int MockCubeb::StreamInit(cubeb* aContext, cubeb_stream** aStream,
       aContext, aStreamName, aInputDevice, aInputStreamParams, aOutputDevice,
       aOutputStreamParams, aDataCallback, aStateCallback, aUserPtr,
       mRunningMode, mStreamStartFreezeEnabled);
+  mockStream->SetOutputLatencyFrames(mDefaultOutputLatencyFrames);
   *aStream = mockStream->AsCubebStream();
   mStreamInitEvent.Notify(mockStream);
   // AddRef the stream to keep it alive. StreamDestroy releases it.

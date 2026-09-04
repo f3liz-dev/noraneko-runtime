@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +19,7 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 
 #include <stdint.h>
@@ -168,7 +167,8 @@ enum class TrapMachineInsn {
   // Any kind of atomic r-m-w or CAS memory transaction, but not including
   // Load-Linked or Store-Checked style insns -- those count as plain LoadX
   // and StoreX.
-  Atomic
+  Atomic,
+  INVALID
 };
 using TrapMachineInsnVector =
     mozilla::Vector<TrapMachineInsn, 0, SystemAllocPolicy>;
@@ -217,33 +217,137 @@ const char* ToString(Trap trap);
 const char* ToString(TrapMachineInsn tmi);
 #endif
 
-// This holds an assembler buffer offset, which indicates the offset of a
-// faulting instruction, and is used for the construction of TrapSites below.
-// It is wrapped up as a new type only to avoid getting it confused with any
-// other uint32_t or with CodeOffset.
+// FaultingCodeRange records the assembler buffer offsets associated with a
+// faulting instruction.  It is used for the construction of TrapSites and
+// associated StackMaps.  It carries both the starting offset and the starting
+// offset of the next instruction; hence, implicitly, the length of this
+// instruction.
+//
+// For targets with fixed length instructions (everything except x86 and x64),
+// the constructor takes only a single offset value, for the start of the
+// instruction, since it would be pointless to (implicitly) specify the length
+// at every call.
+//
+// For targets with variable length instructions (x86, x64) the constructor
+// takes offsets both for the start and the end (+1) of the instruction.  This
+// forces callers to (implicitly) specify length info at every call; it is
+// literally impossible to create a FaultingCodeRange without that.
+//
+// The representation is a bit unusual because the most important requirement is
+// that constructors `FaultingCodeRange(uint32_t, uint32_t)` and
+// `FaultingCodeRange(uint32_t)` are simple enough that they can be optimized
+// away in the case where the assembler is used to create an instruction but the
+// resulting FaultingCodeRange is ignored.  Hence the burden of
+// error/consistency checking is placed on the (infrequently used) access
+// routines rather than the constructors.
 
-class FaultingCodeOffset {
-  static constexpr uint32_t INVALID = UINT32_MAX;
-  uint32_t offset_;
+class FaultingCodeRange {
+  // Definitions that summarise the range of instruction lengths in the code we
+  // generate.  This will need to be updated if we start creating
+  // variable-length insns for one of the architectures currently defined here
+  // as fixed-length.
+ private:
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
+  // These are variable-length-insn targets.
+  static constexpr uint32_t kMinInsnLength = 1;
+  static constexpr uint32_t kMaxInsnLength = 15;
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||    \
+    defined(JS_CODEGEN_RISCV64) || defined(JS_CODEGEN_MIPS64) || \
+    defined(JS_CODEGEN_LOONG64)
+  // These are fixed-length-insn targets, at least for the code we generate.  In
+  // particular, ARM-Thumb2 has both insn lengths 2 and 4, but we don't generate
+  // that.  Same for the RiscV compressed-instruction extension.
+  static constexpr uint32_t kMinInsnLength = 4;
+  static constexpr uint32_t kMaxInsnLength = 4;
+#elif defined(JS_CODEGEN_NONE)
+  // Bogus, but it doesn't matter.
+  static constexpr uint32_t kMinInsnLength = 1;
+  static constexpr uint32_t kMaxInsnLength = 1;
+#else
+#  error "Unknown architecture"
+#endif
+  static_assert(kMinInsnLength >= 1);
+  static_assert(kMinInsnLength <= kMaxInsnLength);
 
  public:
-  FaultingCodeOffset() : offset_(INVALID) {}
-  explicit FaultingCodeOffset(uint32_t offset) : offset_(offset) {
-    MOZ_ASSERT(offset != INVALID);
-  }
-  bool isValid() const { return offset_ != INVALID; }
-  uint32_t get() const {
-    MOZ_ASSERT(isValid());
-    return offset_;
-  }
-};
-static_assert(sizeof(FaultingCodeOffset) == 4);
+  static constexpr uint32_t minInsnLength() { return kMinInsnLength; }
+  static constexpr uint32_t maxInsnLength() { return kMaxInsnLength; }
 
-// And this holds two such offsets.  Needed for 64-bit integer transactions on
+  // The representation.  We store the start and end assembler offsets, with the
+  // end offset not being part of the range.
+ private:
+  static constexpr uint32_t INVALID_OFFSET = UINT32_MAX;
+  uint32_t startOffset_ = INVALID_OFFSET;
+  uint32_t endOffset_ = INVALID_OFFSET;
+
+ public:
+  // Invariants
+  bool isValid() const {
+    return
+        // Both offsets must be valid
+        startOffset_ != INVALID_OFFSET && endOffset_ != INVALID_OFFSET &&
+        // The length must be at least 1 ..
+        startOffset_ < endOffset_ &&
+        // .. and within the limits defined above
+        endOffset_ - startOffset_ >= kMinInsnLength &&
+        endOffset_ - startOffset_ <= kMaxInsnLength;
+  }
+
+  // Constructors.
+  inline FaultingCodeRange() { MOZ_ASSERT(!isValid()); }
+
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
+  // Make a FaultingCodeRange from two offsets.  This is only valid on targets
+  // with variable-length instructions.
+  inline FaultingCodeRange(uint32_t startOffset, uint32_t endOffset)
+      : startOffset_(startOffset), endOffset_(endOffset) {
+    static_assert(kMinInsnLength < kMaxInsnLength);
+    // Requirements on the caller
+    MOZ_ASSERT(startOffset != INVALID_OFFSET && endOffset != INVALID_OFFSET);
+    // If the assembler OOMd, we may have endOffset <= startOffset, but we
+    // tolerate that and later throw out any attempt to query the resulting
+    // FaultingCodeRange.
+  }
+#else
+  // Make a FaultingCodeRange from one offset.  This is only valid on targets
+  // with fixed-length instructions.
+  inline explicit FaultingCodeRange(uint32_t startOffset)
+      : startOffset_(startOffset), endOffset_(startOffset + kMinInsnLength) {
+    static_assert(kMinInsnLength == kMaxInsnLength);
+    // Requirement on the caller
+    MOZ_ASSERT(startOffset != INVALID_OFFSET);
+  }
+#endif
+
+  // Accessors
+  uint32_t offset() const {
+    MOZ_ASSERT(isValid());
+    return startOffset_;
+  }
+  uint32_t length() const {
+    MOZ_ASSERT(isValid());
+    return endOffset_ - startOffset_;
+  }
+  uint32_t resumeOffset() const {
+    MOZ_ASSERT(isValid());
+    return endOffset_;
+  }
+
+  // Be careful with these.  If the creating MacroAssembler OOM'd, they will
+  // likely fail `isValid()`.
+  uint32_t offsetUnchecked() const { return startOffset_; }
+  uint32_t resumeOffsetUnchecked() const { return endOffset_; }
+
+  // Shim to ease migration from FaultingCodeOffset.  This should be removed
+  // eventually.
+  uint32_t get() const { return offset(); }
+};
+static_assert(sizeof(FaultingCodeRange) == 8);
+
+// And this holds two such ranges.  Needed for 64-bit integer transactions on
 // 32-bit targets.
-using FaultingCodeOffsetPair =
-    std::pair<FaultingCodeOffset, FaultingCodeOffset>;
-static_assert(sizeof(FaultingCodeOffsetPair) == 8);
+using FaultingCodeRangePair = std::pair<FaultingCodeRange, FaultingCodeRange>;
+static_assert(sizeof(FaultingCodeRangePair) == 16);
 
 // The bytecode offsets of all the callers of a function that has been inlined.
 // See CallSiteDesc/TrapSiteDesc for uses of this.
@@ -456,15 +560,21 @@ class TrapSitesForKind {
   }
 
   [[nodiscard]]
-  bool append(TrapMachineInsn insn, uint32_t pcOffset,
+  bool append(TrapMachineInsn insn, FaultingCodeRange fcr,
               const TrapSiteDesc& desc) {
     MOZ_ASSERT(desc.bytecodeOffset.isValid());
 
+    // Reserve space in all collections to avoid being in an inconsistent state
+    // in case of failure.
 #ifdef DEBUG
-    if (!machineInsns_.append(insn)) {
+    if (!machineInsns_.reserve(machineInsns_.length() + 1)) {
       return false;
     }
 #endif
+    if (!pcOffsets_.reserve(pcOffsets_.length() + 1) ||
+        !bytecodeOffsets_.reserve(bytecodeOffsets_.length() + 1)) {
+      return false;
+    }
 
     uint32_t index = length();
 
@@ -475,8 +585,13 @@ class TrapSitesForKind {
       return false;
     }
 
-    return pcOffsets_.append(pcOffset) &&
-           bytecodeOffsets_.append(desc.bytecodeOffset);
+#ifdef DEBUG
+    machineInsns_.infallibleAppend(insn);
+#endif
+    pcOffsets_.infallibleAppend(fcr.offsetUnchecked());
+    bytecodeOffsets_.infallibleAppend(desc.bytecodeOffset);
+
+    return true;
   }
 
   [[nodiscard]]
@@ -489,11 +604,22 @@ class TrapSitesForKind {
       return false;
     }
 
+    // Reserve space in all collections to avoid being in an inconsistent state
+    // in case of failure.
 #ifdef DEBUG
-    if (!machineInsns_.appendAll(other.machineInsns_)) {
+    if (!machineInsns_.reserve(newLength.value())) {
       return false;
     }
 #endif
+    if (!pcOffsets_.reserve(newLength.value()) ||
+        !bytecodeOffsets_.reserve(newLength.value())) {
+      return false;
+    }
+    if (!inlinedCallerOffsetsMap_.reserve(
+            inlinedCallerOffsetsMap_.count() +
+            other.inlinedCallerOffsetsMap_.count())) {
+      return false;
+    }
 
     // Copy over the map of `other`s inlined caller offsets. The keys are trap
     // site indices, and must be updated for the base index that `other` is
@@ -507,10 +633,8 @@ class TrapSitesForKind {
       uint32_t newInlinedCallerOffsetIndex =
           iter.get().value().value() + baseInlinedCallerOffsetIndex.value();
 
-      if (!inlinedCallerOffsetsMap_.putNew(newTrapSiteIndex,
-                                           newInlinedCallerOffsetIndex)) {
-        return false;
-      }
+      inlinedCallerOffsetsMap_.putNewInfallible(newTrapSiteIndex,
+                                                newInlinedCallerOffsetIndex);
     }
 
     // Add the baseCodeOffset to the pcOffsets that we are adding to ourselves.
@@ -518,8 +642,15 @@ class TrapSitesForKind {
       pcOffset += baseCodeOffset;
     }
 
-    return pcOffsets_.appendAll(other.pcOffsets_) &&
-           bytecodeOffsets_.appendAll(other.bytecodeOffsets_);
+#ifdef DEBUG
+    machineInsns_.infallibleAppend(other.machineInsns_.begin(),
+                                   other.machineInsns_.end());
+#endif
+    pcOffsets_.infallibleAppend(other.pcOffsets_.begin(),
+                                other.pcOffsets_.end());
+    bytecodeOffsets_.infallibleAppend(other.bytecodeOffsets_.begin(),
+                                      other.bytecodeOffsets_.end());
+    return true;
   }
 
   void clear() {
@@ -595,9 +726,9 @@ class TrapSites {
   }
 
   [[nodiscard]]
-  bool append(Trap trap, TrapMachineInsn insn, uint32_t pcOffset,
+  bool append(Trap trap, TrapMachineInsn insn, FaultingCodeRange fcr,
               const TrapSiteDesc& desc) {
-    return array_[trap].append(insn, pcOffset, desc);
+    return array_[trap].append(insn, fcr, desc);
   }
 
   [[nodiscard]]
@@ -746,6 +877,15 @@ struct TrapData {
   // a signature mismatch may leave us with only one frame. This frame is
   // validly constructed, but has no debug frame yet.
   bool failedUnwindSignatureMismatch;
+
+  struct FaultInfo {
+    uint32_t memoryIndex;
+    uint64_t byteOffset;
+  };
+
+  // For Trap::OutOfBounds triggered by a memory fault, the memory index and
+  // byte offset of the faulting address within the memory's mapped region.
+  mozilla::Maybe<FaultInfo> faultInfo;
 };
 
 // The (,Callable,Func)Offsets classes are used to record the offsets of
@@ -832,6 +972,9 @@ class CodeRange {
     DebugStub,                 // calls C++ to handle debug event
     RequestTierUpStub,         // calls C++ to request tier-2 compilation
     UpdateCallRefMetricsStub,  // updates a CallRefMetrics
+#ifdef ENABLE_WASM_JSPI
+    ContBaseFrame,  // base frame for a cont stack
+#endif
     FarJumpIsland,  // inserted to connect otherwise out-of-range insns
     Throw           // special stack-unwinding stub jumped to by other stubs
   };
@@ -923,6 +1066,9 @@ class CodeRange {
   bool isJitEntry() const { return kind() == JitEntry; }
   bool isInterpEntry() const { return kind() == InterpEntry; }
   bool isEntry() const { return isInterpEntry() || isJitEntry(); }
+#ifdef ENABLE_WASM_JSPI
+  bool isContBaseFrame() const { return kind() == ContBaseFrame; }
+#endif
   bool hasFuncIndex() const {
     return isFunction() || isImportExit() || isEntry();
   }
@@ -1014,7 +1160,7 @@ WASM_DECLARE_POD_VECTOR(CallSiteKind, CallSiteKindVector)
 
 class CallSiteDesc {
   // The line of bytecode offset that this call site is at.
-  uint32_t lineOrBytecode_;
+  uint32_t bytecodeOffset_;
   // If this call site has been inlined into another function, the inlined
   // caller functions. The direct ancestor of this function (i.e. the one
   // directly above it on the stack) is the last entry in the vector.
@@ -1027,52 +1173,52 @@ class CallSiteDesc {
   // the bytecode offset. This should never be confused with a real offset,
   // because the binary format has overhead from the magic number and section
   // headers.
-  static constexpr uint32_t NO_LINE_OR_BYTECODE = 0;
+  static constexpr uint32_t NO_BYTECODE_OFFSET = 0;
   static constexpr uint32_t FIRST_VALID_BYTECODE_OFFSET =
-      NO_LINE_OR_BYTECODE + 1;
-  static_assert(NO_LINE_OR_BYTECODE < sizeof(wasm::MagicNumber));
+      NO_BYTECODE_OFFSET + 1;
+  static_assert(NO_BYTECODE_OFFSET < sizeof(wasm::MagicNumber));
   // Limit lines or bytecodes to the maximum module size.
-  static constexpr uint32_t MAX_LINE_OR_BYTECODE_VALUE = wasm::MaxModuleBytes;
+  static constexpr uint32_t MAX_BYTECODE_OFFSET_VALUE = wasm::MaxModuleBytes;
 
   CallSiteDesc()
-      : lineOrBytecode_(NO_LINE_OR_BYTECODE), kind_(CallSiteKind::Func) {}
+      : bytecodeOffset_(NO_BYTECODE_OFFSET), kind_(CallSiteKind::Func) {}
   explicit CallSiteDesc(CallSiteKind kind)
-      : lineOrBytecode_(NO_LINE_OR_BYTECODE), kind_(kind) {
+      : bytecodeOffset_(NO_BYTECODE_OFFSET), kind_(kind) {
     MOZ_ASSERT(kind == CallSiteKind(kind_));
   }
-  CallSiteDesc(uint32_t lineOrBytecode, CallSiteKind kind)
-      : lineOrBytecode_(lineOrBytecode), kind_(kind) {
+  CallSiteDesc(uint32_t bytecodeOffset, CallSiteKind kind)
+      : bytecodeOffset_(bytecodeOffset), kind_(kind) {
     MOZ_ASSERT(kind == CallSiteKind(kind_));
-    MOZ_ASSERT(lineOrBytecode == lineOrBytecode_);
+    MOZ_ASSERT(bytecodeOffset == bytecodeOffset_);
   }
   CallSiteDesc(BytecodeOffset bytecodeOffset, CallSiteKind kind)
-      : lineOrBytecode_(bytecodeOffset.offset()), kind_(kind) {
+      : bytecodeOffset_(bytecodeOffset.offset()), kind_(kind) {
     MOZ_ASSERT(kind == CallSiteKind(kind_));
-    MOZ_ASSERT(bytecodeOffset.offset() == lineOrBytecode_);
+    MOZ_ASSERT(bytecodeOffset.offset() == bytecodeOffset_);
   }
-  CallSiteDesc(uint32_t lineOrBytecode,
+  CallSiteDesc(uint32_t bytecodeOffset,
                InlinedCallerOffsetIndex inlinedCallerOffsetsIndex,
                CallSiteKind kind)
-      : lineOrBytecode_(lineOrBytecode),
+      : bytecodeOffset_(bytecodeOffset),
         inlinedCallerOffsetsIndex_(inlinedCallerOffsetsIndex),
         kind_(kind) {
     MOZ_ASSERT(kind == CallSiteKind(kind_));
-    MOZ_ASSERT(lineOrBytecode == lineOrBytecode_);
+    MOZ_ASSERT(bytecodeOffset == bytecodeOffset_);
   }
   CallSiteDesc(BytecodeOffset bytecodeOffset,
                uint32_t inlinedCallerOffsetsIndex, CallSiteKind kind)
-      : lineOrBytecode_(bytecodeOffset.offset()),
+      : bytecodeOffset_(bytecodeOffset.offset()),
         inlinedCallerOffsetsIndex_(inlinedCallerOffsetsIndex),
         kind_(kind) {
     MOZ_ASSERT(kind == CallSiteKind(kind_));
-    MOZ_ASSERT(bytecodeOffset.offset() == lineOrBytecode_);
+    MOZ_ASSERT(bytecodeOffset.offset() == bytecodeOffset_);
   }
-  uint32_t lineOrBytecode() const { return lineOrBytecode_; }
+  uint32_t bytecodeOffset() const { return bytecodeOffset_; }
   InlinedCallerOffsetIndex inlinedCallerOffsetsIndex() const {
     return inlinedCallerOffsetsIndex_;
   }
   TrapSiteDesc toTrapSiteDesc() const {
-    return TrapSiteDesc(wasm::BytecodeOffset(lineOrBytecode()),
+    return TrapSiteDesc(wasm::BytecodeOffset(bytecodeOffset()),
                         inlinedCallerOffsetsIndex_);
   }
   CallSiteKind kind() const { return kind_; }
@@ -1129,7 +1275,7 @@ class CallSites {
   using Uint32Vector = Vector<uint32_t, 0, SystemAllocPolicy>;
 
   CallSiteKindVector kinds_;
-  Uint32Vector lineOrBytecodes_;
+  Uint32Vector bytecodeOffsets_;
   Uint32Vector returnAddressOffsets_;
   InlinedCallerOffsetsIndexHashMap inlinedCallerOffsetsMap_;
 
@@ -1155,7 +1301,7 @@ class CallSites {
 
   CallSiteKind kind(size_t index) const { return kinds_[index]; }
   BytecodeOffset bytecodeOffset(size_t index) const {
-    return BytecodeOffset(lineOrBytecodes_[index]);
+    return BytecodeOffset(bytecodeOffsets_[index]);
   }
   uint32_t returnAddressOffset(size_t index) const {
     return returnAddressOffsets_[index];
@@ -1168,7 +1314,7 @@ class CallSites {
       inlinedCallerOffsetsIndex = entry->value();
       inlinedCallerOffsets = inliningContext[entry->value()];
     }
-    return CallSite(CallSiteDesc(lineOrBytecodes_[index],
+    return CallSite(CallSiteDesc(bytecodeOffsets_[index],
                                  inlinedCallerOffsetsIndex, kinds_[index]),
                     returnAddressOffsets_[index], inlinedCallerOffsets);
   }
@@ -1189,14 +1335,25 @@ class CallSites {
     // If there are inline caller offsets, then insert an entry in our hash map.
     InlinedCallerOffsetIndex inlinedCallerOffsetsIndex =
         callSiteDesc.inlinedCallerOffsetsIndex();
+
+    // Reserve space in all collections to avoid being in an inconsistent state
+    // in case of failure.
+    if (!kinds_.reserve(kinds_.length() + 1) ||
+        !bytecodeOffsets_.reserve(bytecodeOffsets_.length() + 1) ||
+        !returnAddressOffsets_.reserve(returnAddressOffsets_.length() + 1)) {
+      return false;
+    }
+
     if (!inlinedCallerOffsetsIndex.isNone() &&
         !inlinedCallerOffsetsMap_.putNew(index, inlinedCallerOffsetsIndex)) {
       return false;
     }
 
-    return kinds_.append(callSiteDesc.kind()) &&
-           lineOrBytecodes_.append(callSiteDesc.lineOrBytecode()) &&
-           returnAddressOffsets_.append(returnAddressOffset);
+    kinds_.infallibleAppend(callSiteDesc.kind());
+    bytecodeOffsets_.infallibleAppend(callSiteDesc.bytecodeOffset());
+    returnAddressOffsets_.infallibleAppend(returnAddressOffset);
+
+    return true;
   }
 
   [[nodiscard]]
@@ -1206,6 +1363,19 @@ class CallSites {
     mozilla::CheckedUint32 newLength =
         mozilla::CheckedUint32(length()) + other.length();
     if (!newLength.isValid() || newLength.value() > MAX_LENGTH) {
+      return false;
+    }
+
+    // Reserve space in all collections to avoid being in an inconsistent state
+    // in case of failure.
+    if (!kinds_.reserve(newLength.value()) ||
+        !bytecodeOffsets_.reserve(newLength.value()) ||
+        !returnAddressOffsets_.reserve(newLength.value())) {
+      return false;
+    }
+    if (!inlinedCallerOffsetsMap_.reserve(
+            inlinedCallerOffsetsMap_.count() +
+            other.inlinedCallerOffsetsMap_.count())) {
       return false;
     }
 
@@ -1221,10 +1391,8 @@ class CallSites {
       uint32_t newInlinedCallerOffsetIndex =
           iter.get().value().value() + baseInlinedCallerOffsetIndex.value();
 
-      if (!inlinedCallerOffsetsMap_.putNew(newCallSiteIndex,
-                                           newInlinedCallerOffsetIndex)) {
-        return false;
-      }
+      inlinedCallerOffsetsMap_.putNewInfallible(newCallSiteIndex,
+                                                newInlinedCallerOffsetIndex);
     }
 
     // Add the baseCodeOffset to the pcOffsets that we are adding to ourselves.
@@ -1232,21 +1400,24 @@ class CallSites {
       pcOffset += baseCodeOffset;
     }
 
-    return kinds_.appendAll(other.kinds_) &&
-           lineOrBytecodes_.appendAll(other.lineOrBytecodes_) &&
-           returnAddressOffsets_.appendAll(other.returnAddressOffsets_);
+    kinds_.infallibleAppend(other.kinds_.begin(), other.kinds_.end());
+    bytecodeOffsets_.infallibleAppend(other.bytecodeOffsets_.begin(),
+                                      other.bytecodeOffsets_.end());
+    returnAddressOffsets_.infallibleAppend(other.returnAddressOffsets_.begin(),
+                                           other.returnAddressOffsets_.end());
+    return true;
   }
 
   void swap(CallSites& other) {
     kinds_.swap(other.kinds_);
-    lineOrBytecodes_.swap(other.lineOrBytecodes_);
+    bytecodeOffsets_.swap(other.bytecodeOffsets_);
     returnAddressOffsets_.swap(other.returnAddressOffsets_);
     inlinedCallerOffsetsMap_.swap(other.inlinedCallerOffsetsMap_);
   }
 
   void clear() {
     kinds_.clear();
-    lineOrBytecodes_.clear();
+    bytecodeOffsets_.clear();
     returnAddressOffsets_.clear();
     inlinedCallerOffsetsMap_.clear();
   }
@@ -1258,27 +1429,27 @@ class CallSites {
       return false;
     }
 
-    return kinds_.reserve(length) && lineOrBytecodes_.reserve(length) &&
+    return kinds_.reserve(length) && bytecodeOffsets_.reserve(length) &&
            returnAddressOffsets_.reserve(length);
   }
 
   void shrinkStorageToFit() {
     kinds_.shrinkStorageToFit();
-    lineOrBytecodes_.shrinkStorageToFit();
+    bytecodeOffsets_.shrinkStorageToFit();
     returnAddressOffsets_.shrinkStorageToFit();
     inlinedCallerOffsetsMap_.compact();
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return kinds_.sizeOfExcludingThis(mallocSizeOf) +
-           lineOrBytecodes_.sizeOfExcludingThis(mallocSizeOf) +
+           bytecodeOffsets_.sizeOfExcludingThis(mallocSizeOf) +
            returnAddressOffsets_.sizeOfExcludingThis(mallocSizeOf) +
            inlinedCallerOffsetsMap_.shallowSizeOfExcludingThis(mallocSizeOf);
   }
 
   void checkInvariants() const {
 #ifdef DEBUG
-    MOZ_ASSERT(kinds_.length() == lineOrBytecodes_.length());
+    MOZ_ASSERT(kinds_.length() == bytecodeOffsets_.length());
     MOZ_ASSERT(kinds_.length() == returnAddressOffsets_.length());
     uint32_t last = 0;
     for (uint32_t returnAddressOffset : returnAddressOffsets_) {
@@ -1515,9 +1686,6 @@ WASM_DECLARE_CACHEABLE_POD(CodeRangeUnwindInfo);
 WASM_DECLARE_POD_VECTOR(CodeRangeUnwindInfo, CodeRangeUnwindInfoVector)
 
 enum class CallIndirectIdKind {
-  // Generate a no-op signature check prologue, asm.js function tables are
-  // homogenous.
-  AsmJS,
   // Use a machine code immediate for the signature check, only works on simple
   // function types, without super types, and without siblings in their
   // recursion group.
@@ -1547,10 +1715,6 @@ class CallIndirectId {
 
  public:
   CallIndirectId() : kind_(CallIndirectIdKind::None) {}
-
-  // Get a CallIndirectId for an asm.js function which will generate a no-op
-  // checked call prologue.
-  static CallIndirectId forAsmJSFunc();
 
   // Get the CallIndirectId for a function in a specific module.
   static CallIndirectId forFunc(const CodeMetadata& codeMeta,
@@ -1583,7 +1747,7 @@ class CallIndirectId {
   }
 };
 
-// CalleeDesc describes how to compile one of the variety of asm.js/wasm calls.
+// CalleeDesc describes how to compile one of the variety of wasm calls.
 // This is hoisted into WasmCodegenTypes.h for sharing between Ion and Baseline.
 
 class CalleeDesc {
@@ -1600,9 +1764,6 @@ class CalleeDesc {
     // Calls a WebAssembly table (heterogeneous, index must be bounds
     // checked, callee instance depends on TableDesc).
     WasmTable,
-
-    // Calls an asm.js table (homogeneous, masked index, same-instance).
-    AsmJSTable,
 
     // Call a C++ function identified by SymbolicAddress.
     Builtin,
@@ -1639,8 +1800,6 @@ class CalleeDesc {
   static CalleeDesc wasmTable(const CodeMetadata& codeMeta,
                               const TableDesc& desc, uint32_t tableIndex,
                               CallIndirectId callIndirectId);
-  static CalleeDesc asmJSTable(const CodeMetadata& codeMeta,
-                               uint32_t tableIndex);
   static CalleeDesc builtin(SymbolicAddress callee);
   static CalleeDesc builtinInstanceMethod(SymbolicAddress callee);
   static CalleeDesc wasmFuncRef();
@@ -1653,7 +1812,7 @@ class CalleeDesc {
     MOZ_ASSERT(which_ == Import);
     return u.import.instanceDataOffset_;
   }
-  bool isTable() const { return which_ == WasmTable || which_ == AsmJSTable; }
+  bool isTable() const { return which_ == WasmTable; }
   uint32_t tableLengthInstanceDataOffset() const {
     MOZ_ASSERT(isTable());
     return u.table.instanceDataOffset_ + offsetof(TableInstanceData, length);

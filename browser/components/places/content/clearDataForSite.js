@@ -6,30 +6,32 @@
 
 let lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  ForgetAboutSite: "resource://gre/modules/ForgetAboutSite.sys.mjs",
+  ForgetAboutSite:
+    "moz-src:///toolkit/components/forgetaboutsite/ForgetAboutSite.sys.mjs",
 });
 
-window.addEventListener("load", () => {
-  let retVals = window.arguments[0];
+let retVals = window.arguments[0];
+const { onAccept, onCancel } = retVals;
 
-  document.addEventListener("dialogaccept", e => {
-    e.preventDefault();
-    lazy.ForgetAboutSite.removeDataFromBaseDomain(retVals.host).catch(
-      console.error
-    );
-    window.close();
-  });
+document.l10n.setArgs(document.getElementById("clear-data-for-site-list"), {
+  site: retVals.hostOrBaseDomain,
+});
 
-  document.addEventListener("dialogcancel", e => {
-    e.preventDefault();
-    window.close();
-  });
-
-  document.l10n.setAttributes(
-    document.getElementById("clear-data-for-site-list"),
-    "clear-data-for-site-list",
-    {
-      site: retVals.hostOrBaseDomain,
-    }
+document.addEventListener("dialogaccept", e => {
+  e.preventDefault();
+  lazy.ForgetAboutSite.removeDataFromBaseDomain(retVals.host).catch(
+    console.error
   );
+  window.close();
+  if (typeof onAccept === "function") {
+    onAccept();
+  }
+});
+
+document.addEventListener("dialogcancel", e => {
+  e.preventDefault();
+  window.close();
+  if (typeof onCancel === "function") {
+    onCancel();
+  }
 });

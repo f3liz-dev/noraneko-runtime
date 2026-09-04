@@ -22,6 +22,7 @@ import {
   PREF_DEFAULT_VALUE_TOPSTORIES_ENABLED,
   PREF_DEFAULT_VALUE_TOPSITES_ENABLED,
 } from "resource://newtab/lib/ActivityStream.sys.mjs";
+import { WIDGET_REGISTRY } from "resource://newtab/common/WidgetsRegistry.mjs";
 
 // eslint-disable-next-line mozilla/use-static-import
 const { AppConstants } = ChromeUtils.importESModule(
@@ -49,6 +50,45 @@ const TOP_SITES_USER_VALUE_TEMP_PREF =
   "activationWindow.temp.topSitesUserValue";
 const TOP_STORIES_USER_VALUE_TEMP_PREF =
   "activationWindow.temp.topStoriesUserValue";
+// Browser-wide Nova gate. Lives off the activity-stream branch, so it is read
+// and observed directly here (not via the branch observer) and broadcast to
+// content to gate the theme picker in the customize panel.
+const BROWSER_NOVA_ENABLED_PREF = "browser.nova.enabled";
+
+/**
+ * @backward-compat { version 155 }
+ * The New Tab theme picker depends on the toolkit `theme-picker` custom element,
+ * its JSWindowActor pair (bug 2050531), and `toolkit/global/theme-picker.ftl` —
+ * all of which only exist in Firefox 155+. When newtab train-hops onto an older
+ * host these are absent (the element never upgrades, the actor is unregistered,
+ * and the ftl resource fails to load), so gate the whole feature off there.
+ * Remove this guard once 155 reaches Release.
+ */
+function isThemePickerHostSupported() {
+  return Services.vc.compare(AppConstants.MOZ_APP_VERSION, "155.0a1") >= 0;
+}
+const PREF_DEFAULTS = [
+  { type: "bool", key: "logowordmark.alwaysVisible", defaultValue: false },
+  { type: "bool", key: "feeds.section.topstories", defaultValue: false },
+  { type: "bool", key: "discoverystream.enabled", defaultValue: false },
+  {
+    type: "bool",
+    key: "discoverystream.hardcoded-basic-layout",
+    defaultValue: false,
+  },
+  { type: "string", key: "discoverystream.spocs-endpoint", defaultValue: "" },
+  {
+    type: "string",
+    key: "discoverystream.spocs-endpoint-query",
+    defaultValue: "",
+  },
+  {
+    type: "string",
+    key: "discoverystream.sections.personalization.inferred.debug.override",
+    defaultValue: "",
+  },
+  { type: "string", key: "newNewtabExperience.colors", defaultValue: "" },
+];
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
   return console.createInstance({
@@ -66,6 +106,8 @@ export class PrefsFeed {
   constructor(prefMap) {
     this._prefMap = prefMap;
     this._prefs = new Prefs();
+    // Buffers broadcast prefs during a SET_MULTIPLE_PREFS transaction; null otherwise.
+    this._prefsTransaction = null;
     this.onExperimentUpdated = this.onExperimentUpdated.bind(this);
     this.onTrainhopExperimentUpdated =
       this.onTrainhopExperimentUpdated.bind(this);
@@ -76,6 +118,7 @@ export class PrefsFeed {
     this.onOhttpImagesUpdated = this.onOhttpImagesUpdated.bind(this);
     this.onInferredPersonalizationExperimentUpdated =
       this.onInferredPersonalizationExperimentUpdated.bind(this);
+    this.onAdsBackendUpdated = this.onAdsBackendUpdated.bind(this);
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
@@ -106,12 +149,22 @@ export class PrefsFeed {
         }
       }
 
-      this.store.dispatch(
-        ac[action]({
-          type: at.PREF_CHANGED,
-          data: { name, value },
-        })
-      );
+      // Buffer broadcast prefs into one MULTIPLE_PREFS_CHANGED for content, but still
+      // emit a main-only PREF_CHANGED so feeds (e.g. WeatherFeed) react per pref.
+      // skipBroadcast prefs keep their individual routing.
+      if (this._prefsTransaction && action === "BroadcastToContent") {
+        this._prefsTransaction[name] = value;
+        this.store.dispatch(
+          ac.OnlyToMain({ type: at.PREF_CHANGED, data: { name, value } })
+        );
+      } else {
+        this.store.dispatch(
+          ac[action]({
+            type: at.PREF_CHANGED,
+            data: { name, value },
+          })
+        );
+      }
     }
 
     if (isUserChange && this.inActivationWindowState) {
@@ -225,6 +278,114 @@ export class PrefsFeed {
       return accumulator;
     }, {});
 
+    // Bug 2021055: Write weather.display to the default branch so Nimbus sets
+    // the initial value without overriding an explicit user choice (user branch
+    // always takes precedence over the default branch).
+    if (valueObj.widgets?.weatherForecastEnabled && valueObj.weather?.display) {
+      Services.prefs
+        .getDefaultBranch(this._prefs._branchStr)
+        .setStringPref("weather.display", valueObj.weather.display);
+    }
+
+    // Write widgets.weather.size to the default branch so trainhop overrides
+    // the migration default computed by getWeatherWidgetSize() while a user's
+    // explicit size pick (user branch) still wins.
+    if (
+      typeof valueObj.widgets?.weatherSize === "string" &&
+      valueObj.widgets.weatherSize
+    ) {
+      Services.prefs
+        .getDefaultBranch(this._prefs._branchStr)
+        .setStringPref("widgets.weather.size", valueObj.widgets.weatherSize);
+    }
+
+    // Write topSitesRows to the default branch to enable experiments with
+    // the default row count without overriding an explicit user choice.
+    if (valueObj.topSites?.topSitesRows) {
+      Services.prefs
+        .getDefaultBranch(this._prefs._branchStr)
+        .setIntPref("topSitesRows", valueObj.topSites.topSitesRows);
+    }
+
+    // Write initialWallpaper to the user branch so it persists after the
+    // experiment ends. The guard prevents overwriting an existing value or a
+    // user's explicit wallpaper choice that has already cleared it.
+    if (
+      valueObj.wallpaper?.initialWallpaper &&
+      !this._prefs.get("newtabWallpapers.initialWallpaper")
+    ) {
+      this._prefs.set(
+        "newtabWallpapers.initialWallpaper",
+        valueObj.wallpaper.initialWallpaper
+      );
+    }
+
+    // Override per-widget default enabled values from widgetsSettings. Writing
+    // to the default branch lets a trainhop flip a widget's default (e.g. ship
+    // it off) while an explicit user toggle (user branch) still wins. Toggle
+    // VISIBILITY is handled separately by the widgetsSettings.*Visible terms in
+    // WidgetsRegistry — this only affects the on/off default value.
+    if (valueObj.widgetsSettings) {
+      const defaultBranch = Services.prefs.getDefaultBranch(
+        this._prefs._branchStr
+      );
+      for (const widget of WIDGET_REGISTRY) {
+        const value =
+          valueObj.widgetsSettings[widget.widgetsSettingsEnabledKey];
+        if (typeof value === "boolean") {
+          defaultBranch.setBoolPref(widget.enabledPref, value);
+        }
+      }
+    }
+
+    // A widget with a dedicated trainhop namespace ships its whole config in one
+    // object (trainhopConfig.<namespace>). Its `enabled` overrides the default
+    // value of the widget's user-facing enabled pref on the default branch (an
+    // explicit user toggle still wins), the same effect widgetsSettings.*Enabled
+    // has but isolated to this widget's payload. Revealing the widget is a
+    // separate concern handled by the `visible` field in isWidgetAddable; the
+    // remaining fields are read directly from trainhopConfig by their consumers.
+    // Adding another widget only takes a trainhopNamespace on its registry entry.
+    for (const widget of WIDGET_REGISTRY) {
+      const enabled = widget.trainhopNamespace
+        ? valueObj[widget.trainhopNamespace]?.enabled
+        : undefined;
+      if (typeof enabled === "boolean") {
+        Services.prefs
+          .getDefaultBranch(this._prefs._branchStr)
+          .setBoolPref(widget.enabledPref, enabled);
+      }
+    }
+
+    return valueObj;
+  }
+
+  /**
+   * Computes the adsBackend features by processing all enrollments.
+   * This only looks at the flags variable within the adsBackend feature
+   * and merges each flags object, preferring an experiment over a rollout.
+   *
+   */
+  _getAdsBackendFeatures() {
+    const allEnrollments =
+      lazy.NimbusFeatures.adsBackend.getAllEnrollments() || [];
+
+    const valueObj = {};
+    allEnrollments.reduce((accumulator, currentValue) => {
+      if (currentValue?.value?.flags) {
+        for (const [key, value] of Object.entries(currentValue.value.flags)) {
+          if (
+            !accumulator[key] ||
+            (accumulator[key].meta.isRollout && !currentValue.meta.isRollout)
+          ) {
+            accumulator[key] = currentValue;
+            valueObj[key] = value;
+          }
+        }
+      }
+      return accumulator;
+    }, {});
+
     return valueObj;
   }
 
@@ -250,6 +411,17 @@ export class PrefsFeed {
    */
   onPocketExperimentUpdated(event, reason) {
     const value = lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {};
+
+    if (
+      value.currentWallpaper &&
+      !this._prefs.get("newtabWallpapers.initialWallpaper")
+    ) {
+      this._prefs.set(
+        "newtabWallpapers.initialWallpaper",
+        value.currentWallpaper
+      );
+    }
+
     // Loaded experiments are set up inside init()
     if (
       reason !== "feature-experiment-loaded" &&
@@ -333,6 +505,23 @@ export class PrefsFeed {
     );
   }
 
+  /**
+   * Handler for when adsBackend experiment data updates.
+   */
+  onAdsBackendUpdated() {
+    const valueObj = this._getAdsBackendFeatures();
+
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "adsBackendConfig",
+          value: valueObj,
+        },
+      })
+    );
+  }
+
   init() {
     this._prefs.observeBranch(this);
     lazy.NimbusFeatures.newtab.onUpdate(this.onExperimentUpdated);
@@ -348,6 +537,7 @@ export class PrefsFeed {
     );
     lazy.NimbusFeatures.newtabWidgets.onUpdate(this.onWidgetsUpdated);
     lazy.NimbusFeatures.newtabOhttpImages.onUpdate(this.onOhttpImagesUpdated);
+    lazy.NimbusFeatures.adsBackend.onUpdate(this.onAdsBackendUpdated);
 
     // Get the initial value of each activity stream pref
     const values = {};
@@ -397,24 +587,43 @@ export class PrefsFeed {
       "browser.topsites.useRemoteSetting"
     );
 
+    // Read the browser-wide Nova gate and observe it so later changes are
+    // broadcast to content (see observe()).
+    values.browserNovaEnabled =
+      isThemePickerHostSupported() &&
+      Services.prefs.getBoolPref(BROWSER_NOVA_ENABLED_PREF, false);
+    Services.prefs.addObserver(BROWSER_NOVA_ENABLED_PREF, this);
+
     // Add experiment values and default values
     values.featureConfig = lazy.NimbusFeatures.newtab.getAllVariables() || {};
     values.pocketConfig =
       lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    if (
+      values.pocketConfig.currentWallpaper &&
+      !this._prefs.get("newtabWallpapers.initialWallpaper")
+    ) {
+      this._prefs.set(
+        "newtabWallpapers.initialWallpaper",
+        values.pocketConfig.currentWallpaper
+      );
+    }
     values.smartShortcutsConfig =
       lazy.NimbusFeatures.newtabSmartShortcuts.getAllVariables() || {};
     values.widgetsConfig =
       lazy.NimbusFeatures.newtabWidgets.getAllVariables() || {};
     values.trainhopConfig = this._getTrainhopConfig();
-    this._setBoolPref(values, "logowordmark.alwaysVisible", false);
-    this._setBoolPref(values, "feeds.section.topstories", false);
-    this._setBoolPref(values, "discoverystream.enabled", false);
-    this._setBoolPref(values, "discoverystream.hardcoded-basic-layout", false);
-    this._setStringPref(values, "discoverystream.spocs-endpoint", "");
-    this._setStringPref(values, "discoverystream.spocs-endpoint-query", "");
-    this._setStringPref(values, "newNewtabExperience.colors", "");
-    this._setBoolPref(values, "search.useHandoffComponent", false);
-    this._setBoolPref(values, "externalComponents.enabled", false);
+    values.trainhopVersion =
+      globalThis.WebExtensionPolicy?.getByID("newtab@mozilla.org")?.version ??
+      null;
+    values.nimbusDebug = Services.prefs.getBoolPref("nimbus.debug", false);
+    values.adsBackendConfig = this._getAdsBackendFeatures();
+    for (const { type, key, defaultValue } of PREF_DEFAULTS) {
+      if (type === "bool") {
+        this._setBoolPref(values, key, defaultValue);
+      } else if (type === "string") {
+        this._setStringPref(values, key, defaultValue);
+      }
+    }
 
     // Set the initial state of all prefs in redux
     this.store.dispatch(
@@ -449,10 +658,12 @@ export class PrefsFeed {
     );
     lazy.NimbusFeatures.newtabWidgets.offUpdate(this.onWidgetsUpdated);
     lazy.NimbusFeatures.newtabOhttpImages.offUpdate(this.onOhttpImagesUpdated);
+    lazy.NimbusFeatures.adsBackend.offUpdate(this.onAdsBackendUpdated);
 
     if (this.geo === "") {
       Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
     }
+    Services.prefs.removeObserver(BROWSER_NOVA_ENABLED_PREF, this);
   }
 
   /**
@@ -715,7 +926,7 @@ export class PrefsFeed {
     lazy.logConsole.log("Activation window exit complete");
   }
 
-  observe(subject, topic) {
+  observe(subject, topic, data) {
     switch (topic) {
       case lazy.Region.REGION_TOPIC:
         this.store.dispatch(
@@ -724,6 +935,21 @@ export class PrefsFeed {
             data: { name: "region", value: lazy.Region.home },
           })
         );
+        break;
+      case "nsPref:changed":
+        if (data === BROWSER_NOVA_ENABLED_PREF) {
+          this.store.dispatch(
+            ac.BroadcastToContent({
+              type: at.PREF_CHANGED,
+              data: {
+                name: "browserNovaEnabled",
+                value:
+                  isThemePickerHostSupported() &&
+                  Services.prefs.getBoolPref(BROWSER_NOVA_ENABLED_PREF, false),
+              },
+            })
+          );
+        }
         break;
     }
   }
@@ -742,6 +968,29 @@ export class PrefsFeed {
       case at.SET_PREF:
         this._prefs.set(action.data.name, action.data.value);
         break;
+      case at.SET_MULTIPLE_PREFS: {
+        // Set all prefs in a transaction, then flush one combined MULTIPLE_PREFS_CHANGED.
+        this._prefsTransaction = {};
+        try {
+          for (const [name, value] of Object.entries(
+            action.data.values ?? {}
+          )) {
+            this._prefs.set(name, value);
+          }
+        } finally {
+          const values = this._prefsTransaction;
+          this._prefsTransaction = null;
+          if (Object.keys(values).length) {
+            this.store.dispatch(
+              ac.BroadcastToContent({
+                type: at.MULTIPLE_PREFS_CHANGED,
+                data: { values },
+              })
+            );
+          }
+        }
+        break;
+      }
       case at.NEW_TAB_STATE_REQUEST: {
         this.checkForActivationWindow();
         break;

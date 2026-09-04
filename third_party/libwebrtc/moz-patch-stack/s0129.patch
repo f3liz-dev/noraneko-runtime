@@ -1,25 +1,23 @@
-From: Landry Breuil <landry@rhaalovely.net>
-Date: Mon, 27 Oct 2025 17:42:00 +0000
-Subject: Bug 1994630: fix build on OpenBSD/arm64 after bug 1988042 r=mjf
+From: Michael Froman <mfroman@mozilla.com>
+Date: Mon, 6 Apr 2026 18:41:00 -0500
+Subject: Bug 2029247 - (fix-4520c7897c) fix new usage of GetRealTimeClock in
+ bitrate_adjuster.h
 
-we return false on BSD in Supports(), so no need to include something which doesn't exist
-
-Differential Revision: https://phabricator.services.mozilla.com/D268827
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6bcf80824ecafc424e41b136705ba08370d66254
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a88b1959591bc4ddbf6deb88ff76dcc24fd8ae5d
 ---
- rtc_base/cpu_info.cc | 2 +-
+ common_video/include/bitrate_adjuster.h | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
-index b51c9e950e..d8469535c6 100644
---- a/rtc_base/cpu_info.cc
-+++ b/rtc_base/cpu_info.cc
-@@ -38,7 +38,7 @@
- #if defined(WEBRTC_ARCH_X86_FAMILY) && defined(_MSC_VER)
- #include <intrin.h>
- #endif
--#if defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD))
-+#if defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_LINUX)
- #include <asm/hwcap.h>
- #include <sys/auxv.h>
- #endif
+diff --git a/common_video/include/bitrate_adjuster.h b/common_video/include/bitrate_adjuster.h
+index 6cd92b7deb..d414fb7e25 100644
+--- a/common_video/include/bitrate_adjuster.h
++++ b/common_video/include/bitrate_adjuster.h
+@@ -40,7 +40,7 @@ class RTC_EXPORT BitrateAdjuster {
+   ABSL_DEPRECATE_AND_INLINE()
+   BitrateAdjuster(float min_adjusted_bitrate_pct,
+                   float max_adjusted_bitrate_pct)
+-      : BitrateAdjuster(Clock::GetRealTimeClock(),
++      : BitrateAdjuster(Clock::GetRealTimeClockRaw(),
+                         min_adjusted_bitrate_pct,
+                         max_adjusted_bitrate_pct) {}
+   virtual ~BitrateAdjuster() = default;

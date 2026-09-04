@@ -1,16 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteBackbuffer.h"
-#include "GeckoProfiler.h"
-#include "nsThreadUtils.h"
-#include "mozilla/Span.h"
-#include "mozilla/gfx/Point.h"
-#include "WinUtils.h"
+
 #include <algorithm>
 #include <type_traits>
+
+#include "GeckoProfiler.h"
+#include "WinUtils.h"
+#include "mozilla/Span.h"
+#include "mozilla/gfx/Point.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace widget {
@@ -210,11 +211,7 @@ class SharedImage {
 
 class PresentableSharedImage {
  public:
-  PresentableSharedImage()
-      : mSharedImage(),
-        mDeviceContext(nullptr),
-        mDIBSection(nullptr),
-        mSavedObject(nullptr) {}
+  PresentableSharedImage() = default;
 
   ~PresentableSharedImage() {
     if (mSavedObject) {
@@ -305,10 +302,10 @@ class PresentableSharedImage {
   PresentableSharedImage& operator=(PresentableSharedImage&&) = delete;
 
  private:
-  SharedImage mSharedImage;
-  HDC mDeviceContext;
-  HBITMAP mDIBSection;
-  HGDIOBJ mSavedObject;
+  SharedImage mSharedImage{};
+  HDC mDeviceContext{nullptr};
+  HBITMAP mDIBSection{nullptr};
+  HGDIOBJ mSavedObject{nullptr};
 };
 
 Provider::Provider()

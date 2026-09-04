@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108,9 +106,12 @@ class nsLineLayout {
   void RemoveMarkerFrame(nsIFrame* aFrame);
 
   /**
-   * Place frames in the block direction (CSS property vertical-align)
+   * Place frames in the block direction (CSS property vertical-align).
+   * Also performs text box trimming if requested on the start edge
+   * or on the end edge (if aIsLastFormattedLine is true).
    */
-  void VerticalAlignLine();
+  void VerticalAlignLine(nsFlowAreaRect* aFlowArea = nullptr,
+                         bool aIsLastFormattedLine = false);
 
   bool TrimTrailingWhiteSpace();
 
@@ -340,6 +341,15 @@ class nsLineLayout {
    */
   void SetUsedOverflowWrap() { mUsedOverflowWrap = true; }
 
+  /**
+   * If trimming was requested on the block-end side of the current line's
+   * block (or an ancestor), this returns the amount that the line would be
+   * trimmed by.
+   */
+  nscoord PotentialTextBoxTrimEndAmount() const {
+    return mPotentialTextBoxTrimEndAmount;
+  }
+
  protected:
   // This state is constant for a given block frame doing line layout
 
@@ -566,6 +576,10 @@ class nsLineLayout {
   // the block has been called.
   nscoord mFinalLineBSize = 0;
 
+  // The amount that the current line would be trimmed by, whether
+  // or not the trim was actually applied to this line.
+  nscoord mPotentialTextBoxTrimEndAmount = 0;
+
   // Amount of trimmable whitespace inline size for the trailing text
   // frame, if any
   nscoord mTrimmableISize = 0;
@@ -653,6 +667,11 @@ class nsLineLayout {
                                   const nsSize& aContainerSize,
                                   nscoord aBStartEdge);
   void VerticalAlignFrames(PerSpanData* psd);
+
+  void ApplyBlockTextBoxTrim(PerSpanData* psd, mozilla::WritingMode aLineWM,
+                             nscoord* aLineBSize, nscoord* aBaselineBCoord,
+                             nsFlowAreaRect* aFlowArea,
+                             bool aIsLastFormattedLine);
 
   nscoord ComputeTopAlignFrameStart(const PerFrameData* pfd,
                                     const mozilla::WritingMode& aWM,

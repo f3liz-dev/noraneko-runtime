@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "SandboxTestingChild.h"
+
 #include "SandboxTestingChildTests.h"
 #include "SandboxTestingThread.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/ipc/UtilityProcessChild.h"
+#include "mozilla/ipc/UtilityProcessSandboxing.h"
 
 #ifdef XP_LINUX
 #  include "mozilla/Sandbox.h"
@@ -24,7 +23,7 @@ StaticRefPtr<SandboxTestingChild> SandboxTestingChild::sInstance;
 bool SandboxTestingChild::IsTestThread() { return mThread->IsOnThread(); }
 
 void SandboxTestingChild::PostToTestThread(
-    already_AddRefed<nsIRunnable>&& runnable) {
+    already_AddRefed<nsIRunnable> runnable) {
   mThread->Dispatch(std::move(runnable));
 }
 

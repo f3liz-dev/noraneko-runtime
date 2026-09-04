@@ -10,6 +10,7 @@
     <item android:title="@string/new_tab" android:id="@+id/action_new_tab"/>
     <item android:title="@string/install_addon" android:id="@+id/install_addon"/>
     <item android:title="@string/update_addon" android:id="@+id/update_addon"/>
+    <item android:title="@string/take_screenshot" android:id="@+id/take_screenshot"/>
     <item android:title="@string/close_tab" android:id="@+id/action_close_tab"/>
     <item android:title="@string/forward" android:id="@+id/action_forward"/>
     <item android:title="@string/reload" android:id="@+id/action_reload"/>
@@ -18,6 +19,8 @@
     <item android:title="@string/translate" android:id="@+id/translate"/>
     <item android:title="@string/translate_restore" android:id="@+id/translate_restore"/>
     <item android:title="@string/translate_manage" android:id="@+id/translate_manage"/>
+    <item android:title="@string/translate_disable" android:id="@+id/translate_disable"/>
+    <item android:title="@string/translate_enable" android:id="@+id/translate_enable"/>
     <item android:title="@string/webcompat_info" android:id="@+id/webcompat_info"/>
     <item android:title="@string/settings" android:id="@+id/settings" app:showAsAction="never" />
 </menu>

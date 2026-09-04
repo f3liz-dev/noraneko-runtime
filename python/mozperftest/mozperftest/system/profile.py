@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from condprof.client import ProfileNotFoundError, get_profile
-from condprof.util import get_current_platform
+from condprof.util import download_file, get_current_platform
 from mozprofile import create_profile
 from mozprofile.prefs import Preferences
 
@@ -106,15 +106,53 @@ class Profile(Layer):
         # apply custom user prefs if any
         user_js = self.get_arg("user-js")
         if user_js is not None:
-            self.info("Applying use prefs from %s" % user_js)
+            self.info(f"Applying use prefs from {user_js}")
             default_prefs = dict(Preferences.read_prefs(user_js))
             prefs.update(default_prefs)
 
         profile.set_preferences(prefs)
-        self.info("Created profile at %s" % profile.profile)
+        self._install_extensions(profile)
+        self.info(f"Created profile at {profile.profile}")
         self._created_dirs.append(profile.profile)
         self.set_arg("profile-directory", profile.profile)
         return metadata
+
+    def _install_extensions(self, profile):
+        # `--install-extension` is a general option (also forwarded from
+        # `mach try ... --extensions` via PERF_FLAGS). A single value may be a
+        # comma-separated list, which is how it arrives through PERF_FLAGS.
+        entries = [
+            entry
+            for value in (self.get_arg("install-extension") or [])
+            for entry in value.split(",")
+            if entry
+        ]
+        if not entries:
+            return
+
+        # Sideloaded extensions are disabled by default; these prefs make them
+        # install and enable on startup.
+        profile.set_preferences({
+            "extensions.autoDisableScopes": 0,
+            "extensions.enabledScopes": 1,
+            "extensions.startupScanScopes": 1,
+        })
+
+        xpis = []
+        for entry in entries:
+            if os.path.exists(entry):
+                xpis.append(entry)
+            else:
+                self.info(f"Downloading webextension from {entry}")
+                xpis.append(download_file(entry))
+
+        profile.addons.install(xpis)
+        for xpi in xpis:
+            details = profile.addons.addon_details(xpi)
+            self.info(
+                f"Installed webextension {details['id']} "
+                f"({details['version']}) into the test profile"
+            )
 
     def teardown(self):
         for dir in self._created_dirs:

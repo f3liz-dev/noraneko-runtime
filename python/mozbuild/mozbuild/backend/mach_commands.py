@@ -5,6 +5,7 @@
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import sys
 
@@ -194,8 +195,6 @@ def setup_zed(command_context, interactive):
 
     # Our C/C++ tab size does not match the default
     new_settings["languages"] = {"C": {"tab_size": 2}, "C++": {"tab_size": 2}}
-    # FIXME: Remove once modelines are supported:
-    # https://github.com/zed-industries/zed/issues/4762
     new_settings["file_types"] = {
         "Python": [
             "**/moz.build",
@@ -245,20 +244,9 @@ def rust_analyzer_config(command_context):
     # if we're building Firefox.
     commtopsrcdir = command_context.substs.get("commtopsrcdir")
 
-    if commtopsrcdir:
-        # Thunderbird uses its own Rust workspace, located in comm/rust/ - we
-        # set it as the main workspace to build a little further below. The
-        # working directory for cargo check commands is the workspace's root.
-        if sys.platform == "win32":
-            cargo_check_command = [sys.executable, "../../mach"]
-        else:
-            cargo_check_command = ["../../mach"]
-    elif sys.platform == "win32":
-        cargo_check_command = [sys.executable, "mach"]
-    else:
-        cargo_check_command = ["./mach"]
-
-    cargo_check_command += [
+    cargo_check_command = [
+        sys.executable,
+        mozpath.join(command_context.topsrcdir, "mach"),
         "--log-no-times",
         "cargo",
         "check",
@@ -266,10 +254,15 @@ def rust_analyzer_config(command_context):
         str(cpu_count() // 2),
         "--all-crates",
         "--message-format-json",
+        "--workspace",
+        "--keep-going",
     ]
 
     config = {
         "cargo": {
+            # Ensure that cargo uses our vendored sources, even when ran from outside
+            # the objdir.
+            "configPath": f"{command_context.topobjdir}/.cargo/config.toml",
             "extraEnv": {
                 # Point rust-analyzer at the real target directory used by our
                 # build, so it can discover the files created when we run `./mach
@@ -532,11 +525,18 @@ def setup_clangd_rust_in_vscode(command_context):
     clangd_cfg = {
         "CompileFlags": {
             "CompilationDatabase": clangd_cc_path,
-        }
+        },
+        "Completion": {
+            # NOTE(emilio): This got ported from previous code, but it's unclear if it's
+            # what we want...
+            "HeaderInsertion": "Never",
+        },
     }
 
     with open(".clangd", "w") as file:
         yaml.dump(clangd_cfg, file)
+
+    shutil.copyfile(".clangd", mozpath.join(command_context.topobjdir, ".clangd"))
 
     config = {
         "clangd.path": clangd_path,
@@ -547,14 +547,6 @@ def setup_clangd_rust_in_vscode(command_context):
             "0",
             "--completion-style",
             "detailed",
-            "--background-index",
-            "--all-scopes-completion",
-            "--log",
-            "info",
-            "--pch-storage",
-            "disk",
-            "--clang-tidy",
-            "--header-insertion=never",
         ],
     }
 

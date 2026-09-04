@@ -5,6 +5,12 @@
 
 const CLOSED_URI = "https://www.example.com/";
 
+const FirefoxViewTestUtils = ChromeUtils.importESModule(
+  "resource://testing-common/FirefoxViewTestUtils.sys.mjs"
+);
+FirefoxViewTestUtils.init(this);
+FirefoxViewTestUtils.enableFirefoxViewButton(window);
+
 add_task(async function test_TODO() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, CLOSED_URI);
 
@@ -19,7 +25,7 @@ add_task(async function test_TODO() {
   // SessionStore uses one-based indexes
   Assert.equal(state.windows[0].selected, 2);
 
-  await EventUtils.synthesizeMouseAtCenter(
+  EventUtils.synthesizeMouseAtCenter(
     window.document.getElementById("firefox-view-button"),
     { type: "mousedown" },
     window

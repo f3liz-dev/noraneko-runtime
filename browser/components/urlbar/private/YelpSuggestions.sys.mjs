@@ -13,8 +13,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   YelpSubjectType:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
 });
@@ -24,11 +24,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 const RESULT_MENU_COMMAND = {
+  DISMISS: "dismiss",
   HELP: "help",
   INACCURATE_LOCATION: "inaccurate_location",
   MANAGE: "manage",
   NOT_INTERESTED: "not_interested",
-  NOT_RELEVANT: "not_relevant",
   SHOW_LESS_FREQUENTLY: "show_less_frequently",
 };
 
@@ -183,9 +183,9 @@ export class YelpSuggestions extends SuggestProvider {
     url.searchParams.set("utm_source", "mozilla");
 
     let resultProperties = {
-      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-      isNovaSuggestion: true,
+      type: lazy.UrlbarShared.RESULT_TYPE.URL,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
+      isBottomUrlSuggestion: true,
       isBestMatch: lazy.UrlbarPrefs.get("yelpSuggestPriority"),
     };
 
@@ -247,7 +247,7 @@ export class YelpSuggestions extends SuggestProvider {
       {
         name: RESULT_MENU_COMMAND.INACCURATE_LOCATION,
         l10n: {
-          id: "urlbar-result-menu-report-inaccurate-location",
+          id: "urlbar-result-menu-report-inaccurate-location2",
         },
       },
     ];
@@ -256,29 +256,29 @@ export class YelpSuggestions extends SuggestProvider {
       commands.push({
         name: RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY,
         l10n: {
-          id: "urlbar-result-menu-show-less-frequently",
+          id: "urlbar-result-menu-show-less-frequently2",
         },
       });
     }
 
     commands.push(
       {
-        name: RESULT_MENU_COMMAND.NOT_RELEVANT,
+        name: RESULT_MENU_COMMAND.DISMISS,
         l10n: {
-          id: "urlbar-result-menu-dismiss-suggestion",
+          id: "urlbar-result-menu-dismiss-suggestion2",
         },
       },
       { name: "separator" },
       {
         name: RESULT_MENU_COMMAND.MANAGE,
         l10n: {
-          id: "urlbar-result-menu-manage-firefox-suggest",
+          id: "urlbar-result-menu-manage-firefox-suggest2",
         },
       },
       {
         name: RESULT_MENU_COMMAND.HELP,
         l10n: {
-          id: "urlbar-result-menu-learn-more",
+          id: "urlbar-result-menu-learn-more2",
         },
       }
     );
@@ -302,27 +302,24 @@ export class YelpSuggestions extends SuggestProvider {
         controller.view.acknowledgeFeedback(result);
         break;
       // selType == "dismiss" when the user presses the dismiss key shortcut.
-      case "dismiss":
-      case RESULT_MENU_COMMAND.NOT_RELEVANT:
+      case RESULT_MENU_COMMAND.DISMISS:
         lazy.QuickSuggest.dismissResult(result);
-        result.acknowledgeDismissalL10n = {
-          id: "firefox-suggest-dismissal-acknowledgment-one-yelp",
-        };
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: {
+            id: "firefox-suggest-dismissal-acknowledgment-one-yelp",
+          },
+        });
         break;
       case RESULT_MENU_COMMAND.NOT_INTERESTED:
         lazy.UrlbarPrefs.set("suggest.yelp", false);
-        result.acknowledgeDismissalL10n = {
-          id: "firefox-suggest-dismissal-acknowledgment-all-yelp",
-        };
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: {
+            id: "firefox-suggest-dismissal-acknowledgment-all-yelp",
+          },
+        });
         break;
       case RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY:
-        controller.view.acknowledgeFeedback(result);
-        this.incrementShowLessFrequentlyCount();
-        if (!this.canShowLessFrequently) {
-          controller.view.invalidateResultMenuCommands();
-        }
+        this.handleShowLessFrequently(controller, result);
         lazy.UrlbarPrefs.set("yelp.minKeywordLength", searchString.length + 1);
         break;
     }

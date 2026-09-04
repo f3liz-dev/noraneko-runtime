@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,7 +11,8 @@
 
 #include <stddef.h>  // for size_t
 
-#include "NamespaceImports.h"   // for Value, MutableHandleValue, HandleObject
+#include "NamespaceImports.h"  // for Value, MutableHandleValue, HandleObject
+
 #include "debugger/DebugAPI.h"  // for ResumeMode
 #include "debugger/Debugger.h"  // for ResumeMode, Handler, Debugger
 #include "gc/Barrier.h"         // for HeapPtr
@@ -138,6 +137,19 @@ class DebuggerFrame : public NativeObject {
     // there is a corresponding entry in generatorFrames.
     GENERATOR_INFO_SLOT,
 
+    // This is an AbstractFramePtr pointing at a wasm::DebugFrame that is on a
+    // wasm::ContStack (see "Wasm Stack Switching" in WasmStacks.cpp).
+    //
+    // We use this in place of FRAME_ITER_SLOT when a debug frame is on a
+    // wasm::ContStack because the stack may be suspended which will invalidate
+    // any FrameIter pointing at it (cached JitActivation's are no longer
+    // valid).
+    //
+    // Instead we lazily create a FrameIter when the stack owning this frame is
+    // active, or else return !isOnStack() which prevents the debugger from
+    // asking for a FrameIter.
+    WASM_CONT_FRAME_PTR_SLOT,
+
     RESERVED_SLOTS,
   };
 
@@ -176,7 +188,7 @@ class DebuggerFrame : public NativeObject {
       MutableHandle<SavedFrame*> result);
   [[nodiscard]] static bool getThis(JSContext* cx, Handle<DebuggerFrame*> frame,
                                     MutableHandleValue result);
-  static DebuggerFrameType getType(Handle<DebuggerFrame*> frame);
+  static DebuggerFrameType getType(JSContext* cx, Handle<DebuggerFrame*> frame);
   static DebuggerFrameImplementation getImplementation(
       Handle<DebuggerFrame*> frame);
   [[nodiscard]] static bool setOnStepHandler(JSContext* cx,
@@ -190,10 +202,29 @@ class DebuggerFrame : public NativeObject {
 
   [[nodiscard]] static DebuggerFrame* check(JSContext* cx, HandleValue thisv);
 
-  bool isOnStack() const;
+  bool isOnStack(JSContext* cx) const;
   bool isOnStackOrSuspendedWasmStack() const;
 
-  bool isSuspended() const;
+  // True if this frame is on a wasm::ContStack (has WASM_CONT_FRAME_PTR_SLOT
+  // set). Note this does not imply the frame is currently suspended.
+  bool isWasmContFrame() const;
+
+  // True if this frame is a suspended generator/async frame, i.e. it has
+  // generator info and the generator object reports itself as suspended. This
+  // only covers JS generator/async suspension, not wasm continuations; see
+  // isSuspendedWasmFrame() for those, and isSuspended() for either.
+  bool isSuspendedGeneratorFrame() const;
+
+  // True if this frame is a wasm continuation that is currently suspended (e.g.
+  // a JSPI continuation waiting on a promise) and may be resumed later. Unlike
+  // isSuspendedGeneratorFrame(), which only covers generator/async suspension,
+  // this covers wasm stack-switching continuations.
+  bool isSuspendedWasmFrame(JSContext* cx) const;
+
+  // True if this frame is suspended in any sense, i.e. it is either a suspended
+  // generator/async frame or a suspended-resumable wasm continuation. A frame
+  // that is neither on-stack nor suspended is terminated.
+  bool isSuspended(JSContext* cx) const;
 
   OnStepHandler* onStepHandler() const;
   OnPopHandler* onPopHandler() const;
@@ -254,7 +285,7 @@ class DebuggerFrame : public NativeObject {
   bool resume(const FrameIter& iter);
 
   /*
-   * Called when JS PI sets aside the suspendable stack frames.
+   * Called when JS PI sets aside the cont stack frames.
    */
   void suspendWasmFrame(JS::GCContext* gcx);
 
@@ -294,7 +325,7 @@ class DebuggerFrame : public NativeObject {
 
   void terminate(JS::GCContext* gcx, AbstractFramePtr frame);
   void onGeneratorClosed(JS::GCContext* gcx);
-  void suspend(JS::GCContext* gcx);
+  void suspendGeneratorFrame(JS::GCContext* gcx);
 
   [[nodiscard]] bool replaceFrameIterData(JSContext* cx, const FrameIter&);
 

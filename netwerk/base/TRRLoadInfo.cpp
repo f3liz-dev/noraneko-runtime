@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TRRLoadInfo.h"
+
+#include "LoadInfo.h"
 #include "mozilla/dom/ClientSource.h"
-#include "mozilla/dom/FeaturePolicy.h"
 #include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/FeaturePolicy.h"
 #include "nsContentUtils.h"
 #include "nsIRedirectHistoryEntry.h"
-#include "LoadInfo.h"
 
 using namespace mozilla::dom;
 
@@ -241,16 +240,6 @@ LOADINFO_FOR_EACH_FIELD(DEFINE_GETTER, DEFINE_SETTER);
 #undef DEFINE_SETTER
 
 NS_IMETHODIMP
-TRRLoadInfo::GetWorkerAssociatedBrowsingContextID(uint64_t* aResult) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::SetWorkerAssociatedBrowsingContextID(uint64_t aResult) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 TRRLoadInfo::GetTargetBrowsingContextID(uint64_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -261,8 +250,7 @@ TRRLoadInfo::GetBrowsingContext(dom::BrowsingContext** aResult) {
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::GetWorkerAssociatedBrowsingContext(
-    dom::BrowsingContext** aResult) {
+TRRLoadInfo::GetAssociatedBrowsingContext(dom::BrowsingContext** aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -365,6 +353,12 @@ TRRLoadInfo::SetLoadTriggeredFromExternal(bool aLoadTriggeredFromExternal) {
 
 NS_IMETHODIMP
 TRRLoadInfo::GetLoadTriggeredFromExternal(bool* aLoadTriggeredFromExternal) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetServiceWorkerTaintingSynthesized(
+    bool* aServiceWorkerTaintingSynthesized) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

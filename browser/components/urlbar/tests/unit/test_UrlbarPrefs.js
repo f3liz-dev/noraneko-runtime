@@ -29,13 +29,13 @@ add_task(function test() {
   UrlbarPrefs.set("maxRichResults", 6);
   Assert.deepEqual(UrlbarPrefs.get("maxRichResults"), 6);
 
-  Assert.deepEqual(UrlbarPrefs.get("autoFill.stddevMultiplier"), 0.0);
-  UrlbarPrefs.set("autoFill.stddevMultiplier", 0.01);
+  Assert.deepEqual(UrlbarPrefs.get("intentThreshold"), 0.5);
+  UrlbarPrefs.set("intentThreshold", 0.75);
   // Due to rounding errors, floats are slightly imprecise, so we can't
   // directly compare what we set to what we retrieve.
   Assert.deepEqual(
-    parseFloat(UrlbarPrefs.get("autoFill.stddevMultiplier").toFixed(2)),
-    0.01
+    parseFloat(UrlbarPrefs.get("intentThreshold").toFixed(2)),
+    0.75
   );
 });
 
@@ -45,24 +45,24 @@ const EXPECTED_SUGGESTIONS_FIRST_GROUPS = {
     {
       maxResultCount: 1,
       children: [
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_EXTENSION },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_OMNIBOX },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
         {
-          group: UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+          group: UrlbarShared.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
         },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK },
       ],
     },
     // extensions using the omnibox API
     {
-      group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
+      group: UrlbarShared.RESULT_GROUP.OMNIBOX,
     },
     // main group
     {
@@ -77,56 +77,56 @@ const EXPECTED_SUGGESTIONS_FIRST_GROUPS = {
               children: [
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                  group: UrlbarShared.RESULT_GROUP.FORM_HISTORY,
                 },
                 {
                   flex: 99,
-                  group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
+                  group: UrlbarShared.RESULT_GROUP.RECENT_SEARCH,
                 },
                 {
                   flex: 4,
-                  group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION,
                 },
               ],
             },
             {
-              group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+              group: UrlbarShared.RESULT_GROUP.TAIL_SUGGESTION,
             },
           ],
         },
         // general
         {
-          group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+          group: UrlbarShared.RESULT_GROUP.GENERAL_PARENT,
           flex: 1,
           children: [
             {
               availableSpan: 3,
-              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
             },
             {
               flexChildren: true,
               children: [
                 {
                   flex: 1,
-                  group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_TAB,
                 },
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.GENERAL,
+                  group: UrlbarShared.RESULT_GROUP.GENERAL,
                   orderBy: "frecency",
                 },
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+                  group: UrlbarShared.RESULT_GROUP.ABOUT_PAGES,
                 },
                 {
                   flex: 99,
-                  group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
+                  group: UrlbarShared.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
                 },
               ],
             },
             {
-              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
             },
           ],
         },
@@ -141,24 +141,24 @@ const EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS = {
     {
       maxResultCount: 1,
       children: [
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_EXTENSION },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_OMNIBOX },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
         {
-          group: UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+          group: UrlbarShared.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
         },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
-        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK },
       ],
     },
     // extensions using the omnibox API
     {
-      group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
+      group: UrlbarShared.RESULT_GROUP.OMNIBOX,
     },
     // main group
     {
@@ -166,37 +166,37 @@ const EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS = {
       children: [
         // general
         {
-          group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+          group: UrlbarShared.RESULT_GROUP.GENERAL_PARENT,
           flex: 2,
           children: [
             {
               availableSpan: 3,
-              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
             },
             {
               flexChildren: true,
               children: [
                 {
                   flex: 1,
-                  group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_TAB,
                 },
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.GENERAL,
+                  group: UrlbarShared.RESULT_GROUP.GENERAL,
                   orderBy: "frecency",
                 },
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+                  group: UrlbarShared.RESULT_GROUP.ABOUT_PAGES,
                 },
                 {
                   flex: 99,
-                  group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
+                  group: UrlbarShared.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
                 },
               ],
             },
             {
-              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
             },
           ],
         },
@@ -209,20 +209,188 @@ const EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS = {
               children: [
                 {
                   flex: 2,
-                  group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                  group: UrlbarShared.RESULT_GROUP.FORM_HISTORY,
                 },
                 {
                   flex: 99,
-                  group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
+                  group: UrlbarShared.RESULT_GROUP.RECENT_SEARCH,
                 },
                 {
                   flex: 4,
-                  group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION,
                 },
               ],
             },
             {
-              group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+              group: UrlbarShared.RESULT_GROUP.TAIL_SUGGESTION,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const EXPECTED_SMARTBAR_SUGGESTIONS_FIRST_GROUPS = {
+  children: [
+    // heuristic
+    {
+      maxResultCount: 1,
+      children: [
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AI_CHAT },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK },
+      ],
+    },
+    // main group
+    {
+      flexChildren: true,
+      children: [
+        // suggestions
+        {
+          flex: 2,
+          children: [
+            {
+              availableSpan: 2,
+              group: UrlbarShared.RESULT_GROUP.AI,
+            },
+            {
+              flexChildren: true,
+              children: [
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.FORM_HISTORY,
+                },
+                {
+                  flex: 99,
+                  group: UrlbarShared.RESULT_GROUP.RECENT_SEARCH,
+                },
+                {
+                  flex: 4,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION,
+                },
+              ],
+            },
+            {
+              group: UrlbarShared.RESULT_GROUP.TAIL_SUGGESTION,
+            },
+          ],
+        },
+        // general
+        {
+          flex: 1,
+          group: UrlbarShared.RESULT_GROUP.GENERAL_PARENT,
+          children: [
+            {
+              availableSpan: 3,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
+            },
+            {
+              flexChildren: true,
+              children: [
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.GENERAL,
+                  orderBy: "frecency",
+                },
+                {
+                  flex: 1,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_TAB,
+                },
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.ABOUT_PAGES,
+                },
+              ],
+            },
+            {
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const EXPECTED_SMARTBAR_NOT_SUGGESTIONS_FIRST_GROUPS = {
+  children: [
+    // heuristic
+    {
+      maxResultCount: 1,
+      children: [
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AI_CHAT },
+        { group: UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK },
+      ],
+    },
+    // main group
+    {
+      flexChildren: true,
+      children: [
+        // general
+        {
+          flex: 1,
+          group: UrlbarShared.RESULT_GROUP.GENERAL_PARENT,
+          children: [
+            {
+              availableSpan: 3,
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
+            },
+            {
+              flexChildren: true,
+              children: [
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.GENERAL,
+                  orderBy: "frecency",
+                },
+                {
+                  flex: 1,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_TAB,
+                },
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.ABOUT_PAGES,
+                },
+              ],
+            },
+            {
+              group: UrlbarShared.RESULT_GROUP.INPUT_HISTORY,
+            },
+          ],
+        },
+        // suggestions
+        {
+          flex: 2,
+          children: [
+            {
+              availableSpan: 2,
+              group: UrlbarShared.RESULT_GROUP.AI,
+            },
+            {
+              flexChildren: true,
+              children: [
+                {
+                  flex: 2,
+                  group: UrlbarShared.RESULT_GROUP.FORM_HISTORY,
+                },
+                {
+                  flex: 99,
+                  group: UrlbarShared.RESULT_GROUP.RECENT_SEARCH,
+                },
+                {
+                  flex: 4,
+                  group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION,
+                },
+              ],
+            },
+            {
+              group: UrlbarShared.RESULT_GROUP.TAIL_SUGGESTION,
             },
           ],
         },
@@ -291,12 +459,67 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
   );
 });
 
+// Tests interaction between showSearchSuggestionsFirst,
+// smartbar.showSearchSuggestionsFirst and smartbar resultGroups.
+add_task(function showSearchSuggestionsFirst_smartbar_resultGroups() {
+  Assert.equal(
+    UrlbarPrefs.get("smartbar.showSearchSuggestionsFirst"),
+    false,
+    "smartbar.showSearchSuggestionsFirst is false by default"
+  );
+  Assert.deepEqual(
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "smartbar", searchString: "test" },
+    }),
+    EXPECTED_SMARTBAR_NOT_SUGGESTIONS_FIRST_GROUPS,
+    "smartbar resultGroups has general results first"
+  );
+
+  UrlbarPrefs.set("smartbar.showSearchSuggestionsFirst", true);
+  Assert.deepEqual(
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "smartbar", searchString: "test" },
+    }),
+    EXPECTED_SMARTBAR_SUGGESTIONS_FIRST_GROUPS,
+    "smartbar resultGroups has suggestions first when smartbar.showSearchSuggestionsFirst is true"
+  );
+
+  UrlbarPrefs.set("showSearchSuggestionsFirst", false);
+  Assert.deepEqual(
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "smartbar", searchString: "test" },
+    }),
+    EXPECTED_SMARTBAR_SUGGESTIONS_FIRST_GROUPS,
+    "smartbar resultGroups is unaffected by the pref showSearchSuggestionsFirst"
+  );
+
+  // Clear showSearchSuggestionsFirst prefs.
+  Services.prefs.clearUserPref("browser.urlbar.showSearchSuggestionsFirst");
+  Services.prefs.clearUserPref(
+    "browser.urlbar.smartbar.showSearchSuggestionsFirst"
+  );
+  Assert.deepEqual(
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "smartbar", searchString: "test" },
+    }),
+    EXPECTED_SMARTBAR_NOT_SUGGESTIONS_FIRST_GROUPS,
+    "smartbar resultGroups is updated immediately after clearing prefs"
+  );
+  Assert.equal(
+    UrlbarPrefs.get("showSearchSuggestionsFirst"),
+    true,
+    "showSearchSuggestionsFirst defaults to true after clearing it"
+  );
+  Assert.equal(
+    UrlbarPrefs.get("smartbar.showSearchSuggestionsFirst"),
+    false,
+    "smartbar.showSearchSuggestionsFirst defaults to false after clearing it"
+  );
+});
+
 // Tests whether observer.onNimbusChanged works.
 add_task(async function onNimbusChanged() {
-  Services.prefs.setBoolPref(
-    "browser.urlbar.autoFill.adaptiveHistory.enabled",
-    false
-  );
+  Services.prefs.setBoolPref("browser.urlbar.addons.featureGate", false);
 
   // Add an observer that throws an Error and an observer that does not define
   // anything to check whether the other observers can get notifications.
@@ -323,24 +546,19 @@ add_task(async function onNimbusChanged() {
   UrlbarPrefs.addObserver(observer);
 
   const doCleanup = await UrlbarTestUtils.initNimbusFeature({
-    autoFillAdaptiveHistoryEnabled: true,
+    addonsFeatureGate: true,
   });
   Assert.equal(observer.prefChangedList.length, 0);
-  Assert.ok(
-    observer.nimbusChangedList.includes("autoFillAdaptiveHistoryEnabled")
-  );
+  Assert.ok(observer.nimbusChangedList.includes("addonsFeatureGate"));
   await doCleanup();
 });
 
 // Tests whether observer.onPrefChanged works.
 add_task(async function onPrefChanged() {
   const doCleanup = await UrlbarTestUtils.initNimbusFeature({
-    autoFillAdaptiveHistoryEnabled: false,
+    addonsFeatureGate: false,
   });
-  Services.prefs.setBoolPref(
-    "browser.urlbar.autoFill.adaptiveHistory.enabled",
-    false
-  );
+  Services.prefs.setBoolPref("browser.urlbar.addons.featureGate", false);
 
   // Add an observer that throws an Error and an observer that does not define
   // anything to check whether the other observers can get notifications.
@@ -369,18 +587,13 @@ add_task(async function onPrefChanged() {
   observer.nimbusChangedList = [];
   UrlbarPrefs.addObserver(observer);
 
-  Services.prefs.setBoolPref(
-    "browser.urlbar.autoFill.adaptiveHistory.enabled",
-    true
-  );
+  Services.prefs.setBoolPref("browser.urlbar.addons.featureGate", true);
   await deferred.promise;
   Assert.equal(observer.prefChangedList.length, 1);
-  Assert.equal(observer.prefChangedList[0], "autoFill.adaptiveHistory.enabled");
+  Assert.equal(observer.prefChangedList[0], "addons.featureGate");
   Assert.equal(observer.nimbusChangedList.length, 0);
 
-  Services.prefs.clearUserPref(
-    "browser.urlbar.autoFill.adaptiveHistory.enabled"
-  );
+  Services.prefs.clearUserPref("browser.urlbar.addons.featureGate");
   await doCleanup();
 });
 

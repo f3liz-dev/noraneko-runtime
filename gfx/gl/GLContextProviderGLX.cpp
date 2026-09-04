@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,33 +11,31 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include "X11UndefineNone.h"
 
-#include "mozilla/StaticPtr.h"
-#include "mozilla/layers/CompositorOptions.h"
+#include "GLContextGLX.h"
+#include "GLContextProvider.h"
+#include "GLLibraryLoader.h"
+#include "GLScreenBuffer.h"
+#include "GLXLibrary.h"
+#include "X11UndefineNone.h"
+#include "gfx2DGlue.h"
+#include "gfxContext.h"
+#include "gfxCrashReporterUtils.h"
+#include "gfxEnv.h"
+#include "gfxPlatform.h"
+#include "gfxUtils.h"
 #include "mozilla/Range.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/GtkCompositorWidget.h"
-
-#include "prenv.h"
-#include "GLContextProvider.h"
-#include "GLLibraryLoader.h"
 #include "nsDebug.h"
 #include "nsIWidget.h"
-#include "GLXLibrary.h"
-#include "gfxContext.h"
-#include "gfxEnv.h"
-#include "gfxPlatform.h"
-#include "GLContextGLX.h"
-#include "gfxUtils.h"
-#include "gfx2DGlue.h"
-#include "GLScreenBuffer.h"
-
-#include "gfxCrashReporterUtils.h"
+#include "prenv.h"
 
 #ifdef MOZ_WIDGET_GTK
 #  include "gfxPlatformGtk.h"
@@ -49,7 +46,7 @@ namespace mozilla::gl {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
-MOZ_RUNINIT GLXLibrary sGLXLibrary;
+MOZ_GLOBINIT GLXLibrary sGLXLibrary;
 
 static inline bool HasExtension(const char* aExtensions,
                                 const char* aRequiredExtension) {
@@ -552,7 +549,7 @@ GLContextGLX::GLContextGLX(const GLContextDesc& desc,
                            bool aDoubleBuffered, Drawable aOwnedPixmap)
     : GLContext(desc, nullptr),
       mContext(aContext),
-      mDisplay(aDisplay),
+      mDisplay(std::move(aDisplay)),
       mDrawable(aDrawable),
       mOwnedPixmap(aOwnedPixmap),
       mDoubleBuffered(aDoubleBuffered),
@@ -683,7 +680,7 @@ static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
 
     int visid;
     if (glx->fGetFBConfigAttrib(display, curConfig, LOCAL_GLX_VISUAL_ID,
-                                &visid) != Success) {
+                                &visid) != X11Success) {
       continue;
     }
 

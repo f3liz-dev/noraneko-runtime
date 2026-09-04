@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsEnvironment.h"
-#include "prenv.h"
-#include "nsBaseHashtable.h"
-#include "nsHashKeys.h"
-#include "nsPromiseFlatString.h"
-#include "nsDependentString.h"
-#include "nsNativeCharsetUtils.h"
+
 #include "mozilla/Printf.h"
 #include "mozilla/StaticMutex.h"
+#include "nsBaseHashtable.h"
+#include "nsDependentString.h"
+#include "nsHashKeys.h"
+#include "nsNativeCharsetUtils.h"
+#include "nsPromiseFlatString.h"
+#include "prenv.h"
 
 using namespace mozilla;
 

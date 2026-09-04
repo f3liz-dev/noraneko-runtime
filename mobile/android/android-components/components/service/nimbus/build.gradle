@@ -13,13 +13,11 @@ buildscript {
 }
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
     id 'org.mozilla.nimbus-gradle-plugin'
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     buildFeatures {
@@ -55,7 +53,7 @@ dependencies {
     implementation ComponentsDependencies.mozilla_appservices_nimbus
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.coordinatorlayout
-    implementation libs.androidx.core.ktx
+    implementation libs.androidx.core
     implementation libs.androidx.recyclerview
     implementation libs.androidx.work.runtime
     implementation libs.kotlinx.coroutines
@@ -66,11 +64,12 @@ dependencies {
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
-    testImplementation libs.mockwebserver
     testImplementation libs.mozilla.glean
     testImplementation libs.mozilla.glean.forUnitTests
     testImplementation libs.robolectric
+    testRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

@@ -92,6 +92,15 @@ interface WebExtensionPolicy {
   readonly attribute DOMString extensionPageCSP;
 
   /**
+   * The content security policy string to apply to all sandboxed pages loaded from the
+   * extension. This is set in the extension manifest.
+   * If one is not provided by the extension it falls back to:
+   * "sandbox allow-scripts; script-src 'self';".
+   */
+  [Constant]
+  readonly attribute DOMString sandboxPageCSP;
+
+  /**
    * The list of currently-active permissions for the extension, as specified
    * in its manifest.json file. May be updated to reflect changes in the
    * extension's optional permissions.
@@ -106,6 +115,27 @@ interface WebExtensionPolicy {
    */
   [Pure]
   attribute MatchPatternSet allowedOrigins;
+
+  /**
+   * Whether access to the file scheme is allowed, independently of whether
+   * the extension's host permissions permit it.
+   * If false, file access is never allowed. If true, file access may be
+   * allowed if allowedOrigins contains `<all_urls>` or a `file:`-permission.
+   * The value may change at runtime through changes to permissions.
+   */
+  [Pure]
+  readonly attribute boolean fileSchemeAllowed;
+
+  /**
+   * An ordered list of guards matching URLs this extension can't access.
+   */
+  [Cached, Frozen, Pure]
+  attribute sequence<ExtensionGuardSet> guardSets;
+
+  /**
+   * Returns the source of the first matching guard or null if none.
+   */
+  ExtensionGuardSource? checkGuarded(URI uri);
 
   /**
    * The set of content scripts active for this extension.
@@ -355,6 +385,9 @@ dictionary WebExtensionInit {
   // The use of a content script csp is determined by the manifest version.
   unsigned long manifestVersion = 2;
   DOMString? extensionPageCSP = null;
+
+  DOMString? sandboxPageCSP = null;
+  sequence<MatchGlobOrString>? sandboxPages = null;
 
   sequence<DOMString>? backgroundScripts = null;
   DOMString? backgroundWorkerScript = null;

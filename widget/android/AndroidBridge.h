@@ -1,5 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,16 +7,12 @@
 
 #include <unistd.h>  // for gettid
 
-#include "nsCOMPtr.h"
-
 #include "mozilla/jni/Refs.h"
-
-#include "nsIMutableArray.h"
-#include "nsIMIMEInfo.h"
-
-#include "nsIGeckoViewBridge.h"
-
 #include "mozilla/jni/Utils.h"
+#include "nsCOMPtr.h"
+#include "nsIGeckoViewBridge.h"
+#include "nsIMIMEInfo.h"
+#include "nsIMutableArray.h"
 
 // Some debug #defines
 // #define DEBUG_ANDROID_EVENTS
@@ -77,7 +72,6 @@ class AndroidBridge final {
   ~AndroidBridge();
 
   jni::Object::GlobalRef mMessageQueue;
-  jfieldID mMessageQueueMessages;
   jmethodID mMessageQueueNext;
 };
 

@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -23,7 +22,7 @@ namespace a11y {
 struct TextMarkerData {
   TextMarkerData(uintptr_t aDoc, uintptr_t aID, int32_t aOffset)
       : mDoc(aDoc), mID(aID), mOffset(aOffset) {}
-  TextMarkerData() {}
+  TextMarkerData() = default;
   uintptr_t mDoc;
   uintptr_t mID;
   int32_t mOffset;
@@ -551,7 +550,9 @@ NSValue* GeckoTextMarkerRange::Bounds() const {
   return [NSValue valueWithRect:r];
 }
 
-void GeckoTextMarkerRange::Select() const { mRange.SetSelection(0); }
+void GeckoTextMarkerRange::Select(bool aSetFocus) const {
+  mRange.SetSelection(0, aSetFocus);
+}
 
 }  // namespace a11y
 }  // namespace mozilla

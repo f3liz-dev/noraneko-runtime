@@ -71,7 +71,7 @@ public:
   {
     if (pos > length_)
     {
-#  if __EXCEPTIONS
+#  if OPENTELEMETRY_HAVE_EXCEPTIONS
       throw std::out_of_range{"opentelemetry::nostd::string_view"};
 #  else
       std::terminate();
@@ -124,7 +124,7 @@ public:
       auto found = Traits::find(data() + pos, length() - pos, ch);
       if (found)
       {
-        res = found - data();
+        res = static_cast<size_type>(found - data());
       }
     }
     return res;

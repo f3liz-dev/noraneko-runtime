@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -160,6 +158,28 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
 
   void MaybeUnblockOnload();
 
+  // Set for a <link rel=modulepreload> whose module is fetching, fetched or
+  // cached, i.e. one that doesn't create a channel to start a network request,
+  // and so has to report its own result through
+  // NotifyPreloadCoalescingResult(). See ScriptLoader::NotifyPreloadCoalescing.
+  void SetIsCoalescedModulePreload() { mIsCoalescedModulePreload = true; }
+
+  // Called by the module loader when this request stopped waiting on an
+  // in-progress fetch of the same URL. Only a coalesced module preload has
+  // anything to report at that point.
+  void NotifyModuleWaitFinished() {
+    if (mIsCoalescedModulePreload) {
+      NotifyPreloadCoalescingResult();
+    }
+  }
+
+  // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+  //
+  // Fires the load/error event of a coalesced module preload from the top-level
+  // module's result. Fires nothing while the module is still fetching; the
+  // caller notifies us again once the fetch resolves or is canceled.
+  void NotifyPreloadCoalescingResult();
+
   enum class ScriptMode : uint8_t {
     eBlocking,
     eDeferred,
@@ -286,8 +306,14 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   bool mInCompilingList;  // True if we are in mOffThreadCompilingRequests.
   bool mWasCompiledOMT;   // True if the script has been compiled off main
                           // thread.
-  // Set on scripts and top level modules.
+  // Set on preloading scripts or modules.
   bool mIsPreload;
+
+  // Set on a coalesced <link rel=modulepreload> request, i.e. the preloading
+  // module is already fetching, or fetched, or cached. Unlike the eLinkPreload
+  // script mode, this isn't cleared when a <script> element steals the preload,
+  // because the element that coalesced onto it is still waiting for its event.
+  bool mIsCoalescedModulePreload;
 
   // For preload requests, we defer reporting errors to the console until the
   // request is used.

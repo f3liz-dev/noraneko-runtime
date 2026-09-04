@@ -27,6 +27,7 @@
   <string name="teaser">自動私隱瀏覽\n睇完 · 刪咗佢 · 再嚟過</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">你嘅瀏覽歷史已被刪除。</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">已清除瀏覽歷史</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Tab 嘅瀏覽歷史記錄已被刪除。</string>
@@ -62,6 +63,7 @@
   <string name="menu_settings">設定</string>
   <string name="menu_about">關於</string>
   <string name="menu_help">說明</string>
+  <string name="menu_terms_of_use">使用条款</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -128,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">刪除並開啟 %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -138,19 +143,21 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">喺 Klar 度搜尋</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">喺 Klar 度搜尋</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">喺 Focus Beta 度搜尋</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">喺 Focus Beta 度搜尋</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">喺 Focus Nightly 度搜尋</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">喺 Focus Nightly 度搜尋</string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">想知多啲</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">私隱同安全</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -183,6 +190,11 @@
   <string name="preference_category_search">搜尋</string>
   <!-- Title of "switch" preference that enables/disables search suggestions -->
   <string name="preference_show_search_suggestions">獲得搜尋建議</string>
+  <!--
+    Description of the preference that enables/disables search suggestions
+    %1$s will be replaced by the app name (e.g. Firefox Focus)
+  -->
+  <string name="preference_show_search_suggestions_summary">%1$s 會將你喺網址列打嘅嘢傳送畀你用緊嘅搜尋引擎</string>
   <!-- This label is shown below the name of the default search engine in settings -->
   <string name="preference_search_engine_default">預設值</string>
   <!-- This label is shown above the currently selected search engine in settings -->
@@ -195,8 +207,18 @@
   <string name="preference_subitem_autocomplete">自動完成網址</string>
   <!-- Title of "switch" preference that enables/disables autocomplete for the default list -->
   <string name="preference_switch_autocomplete_topsites">熱門網站</string>
+  <!--
+    Summary for the toggle to enable autocomplete for the topsites list
+    %s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
+  -->
+  <string name="preference_autocomplete_topsite_summary2">啟用等 %s 喺網址列自動填寫超過 450 個流行網址。</string>
   <!-- Title of "switch" preference that enables/disables autocomplete for the user-defined list -->
   <string name="preference_switch_autocomplete_user_list">你加入嘅網站</string>
+  <!--
+    Summary for the toggle to enable autocomplete for the user-defined list
+    %s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
+  -->
+  <string name="preference_autocomplete_user_list_summary2">啟用等 %s 自動完成你最鍾意嘅網址。</string>
   <!-- Preference category: Manage (user-defined) sites -->
   <string name="preference_category_autocomplete_manage_sites">管理網站</string>
   <!-- Item in autocomplete settings that will open a new preference screen for adding and removing URLs to the user-defined list -->
@@ -228,7 +250,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">貼上或輸入網址</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">例如：mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">例如：mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">例如：example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -251,6 +273,7 @@
   <string name="preference_privacy_block_analytics">阻擋分析追蹤器</string>
   <string name="preference_privacy_block_analytics_summary">用嚟收集、分析並測量點擊同捲動之類嘅活動</string>
   <string name="preference_privacy_block_social">阻擋社交媒體追蹤器</string>
+  <string name="preference_privacy_block_social_summary">內嵌咗喺網站度，用嚟追蹤你同顯示「分享」掣之類嘅功能</string>
   <string name="preference_privacy_block_content">阻擋其他內容追蹤器</string>
   <string name="preference_privacy_block_content_summary2">開咗佢可能會導致某啲頁面出現異常行為</string>
   <string name="preference_privacy_category_cookies">阻擋 Cookies</string>
@@ -265,6 +288,13 @@
   <string name="preference_privacy_should_block_cookies_yes_option2">好吖，唔該晒</string>
   <!-- Preference Title: Biometrics can be used to unlock Focus if the previous session's data was not erased by the user. -->
   <string name="preference_security_biometric">用指紋去解鎖個 app</string>
+  <!--
+    Preference Summary: Biometrics (iris scan, fingerprint, or facial scan) can be used to unlock Focus if the app had a URL
+    open when the app was last run to ensure that only the phone's owner can view a previous session.
+    %s is the name of the app (for example "Firefox Focus" or "Firefox Klar")
+    Shortcuts is a feature that allows the user to pin his favorite websites to Focus home screen so he can quickly access them.
+  -->
+  <string name="preference_security_biometric_summary2">喺用咗 %s 嚟開啟網站或者加入咗捷徑嘅時候，可以直接用指紋解鎖。</string>
   <!--
     Preference Title: Secure Mode is a setting that prevents the app's content to show up in the "recent apps" screen
     and prevents the user from taking screenshots or casting the app to other displays.
@@ -292,15 +322,24 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">將 %1$s 設定為預設瀏覽器</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">傳送使用狀況數據</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">想知多啲</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla 致力只收集大家足以提供並改進 %1$s所需嘅資料。</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla 致力只收集大家足以提供並改進 %1$s所需嘅資料。</string>
+  <!-- Preference switch for daily usage ping data collection -->
+  <string name="preference_daily_usage_ping_title">每日使用率上報</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">噉樣做會幫 Mozilla 估計活躍用戶嘅數目。</string>
   <string name="preference_daily_usage_ping_learn_more">想知多啲</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">私隱權告示</string>
+  <!-- In-app link (in settings) to Focus licensing information. -->
+  <string name="preference_licensing_info">版權資料</string>
+  <!-- Link to Focus licensing information from other libraries that we use. -->
+  <string name="preference_libraries_we_use">我哋用咗嘅 libraries</string>
+  <!-- Link to Focus Crash reports list. -->
+  <string name="preference_crashes">單機事故</string>
   <!-- Open Source Licenses page title. %s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="open_source_licenses_title">%s | 開放原始碼嘅軟件庫</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -333,6 +372,7 @@
   <string name="search_add_error_empty_name">輸入搜尋引擎名稱</string>
   <string name="search_add_error_duplicate_name">有一個已安裝嘅搜尋引擎已經用咗呢個名。</string>
   <string name="search_add_error_empty_search">輸入搜尋字串</string>
+  <string name="search_add_error_format">請檢查搜尋字串符合範例格式</string>
   <!-- Content description (not visible, for screen readers etc.): Clear text in URL bar -->
   <string name="content_description_clear_input">清除輸入</string>
   <!--
@@ -403,12 +443,19 @@
   <string name="external_app_prompt">你可以跳出 %1$s 以 %2$s 開啟呢個連結。</string>
   <!-- This text is the title of a dialog shown if no app could be found for a custom link protocol. -->
   <string name="external_app_prompt_no_app_title">搵個可以開啟連結嘅 app</string>
+  <!--
+    This text is shown in a dialog if no app could be found for a custom link protocol. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar") and %2$s is the name of
+    the app store installed on the device (usually that's Google Play).
+  -->
+  <string name="external_app_prompt_no_app">你嘅裝置冇一個 app 開到呢個連結。你可以跳出 %1$s 去 %2$s 搵下有冇 app 開得到。</string>
   <!-- This label is shown above a list of apps that can be used to open a given link -->
   <string name="external_multiple_apps_matched_exit">係咪要離開私隱瀏覽？</string>
   <!-- Snackbar that will be displayed after a download has completed. %1$s is the file name. -->
   <string name="download_snackbar_finished">%1$s 已完成</string>
   <!-- Snackbar action to immediately open the successfully downloaded file. -->
   <string name="download_snackbar_open">開啟</string>
+  <!-- Snackbar that will be displayed after a website has been added to shortcuts. -->
+  <string name="snackbar_added_to_shortcuts">加咗落捷徑啦！</string>
   <string name="error_hostLookup_title">搵唔到伺服器</string>
   <!--
     New Onboarding flow first screen title
@@ -418,6 +465,24 @@
   <string name="onboarding_first_screen_title">歡迎使用 %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">快速、私隱、簡潔。</string>
+  <!--
+    New Onboarding flow first screen 'terms of use' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">繼續使用嘅話，就代表你同意%1$s。</string>
+  <!--
+    New Onboarding flow first screen 'terms of use link'
+
+    Text for the link used in onboarding_first_screen_terms_of_use_text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox 使用條款</string>
+  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
+  <string name="onboarding_first_screen_privacy_notice_link_2">私隱聲明</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">繼續</string>
+  <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
+  <string name="a11y_link_available">鏈結可用</string>
   <!--
     Onboarding second screen: Title
 
@@ -438,12 +503,16 @@
   <string name="onboarding_second_screen_skip_button_text">略過</string>
   <!-- First run tour (Default browser): Title -->
   <string name="firstrun_defaultbrowser_title">升級你嘅個人私隱</string>
+  <!-- First run tour (Default browser): Text. -->
+  <string name="firstrun_defaultbrowser_text2">私隱瀏覽再創新境界。阻擋廣告以及其他內容，費事佢哋追蹤你去過咩網站，又拖慢網頁載入嘅時間。</string>
   <!-- First run tour (Search): Title -->
   <string name="firstrun_search_title">你想點搜尋，就點搜尋</string>
   <!-- First run tour (Search): Text -->
   <string name="firstrun_search_text">想搜尋吓啲唔同嘅嘢？喺設定度揀選另一個預設嘅搜尋引擎啦。</string>
   <!-- First run tour (Shortcut): Title -->
   <string name="firstrun_shortcut_title">喺你嘅主頁加入捷徑</string>
+  <!-- First run tour (Shortcut): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
+  <string name="firstrun_shortcut_text">快速返回你喺 %1$s 嘅喜愛網站。只需喺 %1$s 功能表揀選「加入去主畫面」。</string>
   <!-- First run tour (Privacy): Title -->
   <string name="firstrun_privacy_title">私隱就習以為常</string>
   <!-- First run tour (Privacy): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
@@ -708,7 +777,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">關閉 Tab</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">傳送冧檔報告畀 Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">傳送冧檔報告畀 Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -768,12 +837,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s 會盡量用 HTTPS 嚟提高安全性。 <a href=\"%2$s\">知多啲</a> <br/><br/> 喺「設定」>「私隱及安全」>「安全」到可以更改設定。]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">連線唔安全</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">連線唔安全</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[呢個可能係伺服器嘅設定問題，或者有人試圖冒充伺服器。<br/><br/> 如果你曾經成功連接到，就好可能只係暫時性嘅問題。]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[呢個可能係伺服器嘅設定問題，或者有人試圖冒充伺服器。<br/><br/> 如果你曾經成功連接到，就好可能只係暫時性嘅問題。]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>有人可能企圖冒充呢個網站，繼續嘅話會有風險。</label> <br><br>\n<label>%1$s 唔信任 <b>%2$s</b> 因為佢用咗未知嘅證書頒發者、自我簽發嘅證書，或者未發送正確嘅中介證書。</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>有人可能企圖冒充呢個網站，繼續嘅話會有風險。</label> <br><br>\n<label>%1$s 唔信任 <b>%2$s</b> 因為佢用咗未知嘅證書頒發者、自我簽發嘅證書，或者未發送正確嘅中介證書。</label>]]></string>
   <!--
     Sessions List
 

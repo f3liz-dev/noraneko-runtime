@@ -46,7 +46,6 @@ class ReleaseParser(BaseTryParser):
                 "choices": [
                     "main-to-beta",
                     "beta-to-release",
-                    "early-to-late-beta",
                     "release-to-esr",
                 ],
                 "help": "Migration to run for the release (can be specified multiple times).",
@@ -65,7 +64,14 @@ class ReleaseParser(BaseTryParser):
             {
                 "choices": TARGET_TASKS.keys(),
                 "default": "staging",
-                "help": "Which tasks to run on-push.",
+                "help": (
+                    "Which tasks to run on-push. "
+                    "'staging' (default): shippable build-phase tasks only (builds, signing, "
+                    "repackaging) — the minimal set before triggering a staging release via "
+                    "https://shipit.staging.mozilla-releng.net/. "
+                    "'release-sim': simulates a full release branch push including tests — "
+                    "used by sheriffs to check for branch-dependent test failures."
+                ),
             },
         ],
     ]
@@ -107,9 +113,6 @@ def run(
         "current_weave_version": current_version.major_number + 2,
         "next_weave_version": version.major_number + 2,
     }
-
-    if "beta-to-release" in migrations and "early-to-late-beta" not in migrations:
-        migrations.append("early-to-late-beta")
 
     release_type = version.version_type.name.lower()
     if release_type not in ("beta", "release", "esr"):

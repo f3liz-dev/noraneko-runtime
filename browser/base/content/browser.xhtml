@@ -1,6 +1,5 @@
 #filter substitution
 <?xml version="1.0"?>
-# -*- Mode: HTML -*-
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -23,7 +22,7 @@
         data-l10n-sync="true">
 <head>
   <!-- CSP might be disabled by C++ code. -->
-  <meta http-equiv="Content-Security-Policy" content="script-src chrome: moz-src: resource: 'report-sample'" />
+  <meta http-equiv="Content-Security-Policy" content="script-src chrome: moz-src: resource:; frame-src chrome:; object-src 'none';" />
 
   <!-- The "global.css" stylesheet is imported first to allow other stylesheets to
       override rules using selectors with the same specificity. This applies to
@@ -52,6 +51,10 @@
   <link rel="stylesheet" href="chrome://browser/skin/places/editBookmark.css" />
   <link
     rel="stylesheet"
+    href="chrome://browser/skin/usercontext/container-editor.css"
+  />
+  <link
+    rel="stylesheet"
     href="chrome://global/content/resistfingerprinting/letterboxing.css"
   />
 
@@ -71,10 +74,12 @@
   <link rel="localization" href="browser/originControls.ftl"/>
   <link rel="localization" href="browser/panelUI.ftl"/>
   <link rel="localization" href="browser/places.ftl"/>
+  <link rel="localization" href="browser/preferences/containers.ftl"/>
   <link rel="localization" href="browser/protectionsPanel.ftl"/>
   <link rel="localization" href="browser/reportBrokenSite.ftl"/>
   <link rel="localization" href="browser/screenshots.ftl"/>
   <link rel="localization" href="browser/search.ftl"/>
+  <link rel="localization" href="browser/sharePanel.ftl"/>
   <link rel="localization" href="browser/sidebarMenu.ftl"/>
   <link rel="localization" href="browser/tabbrowser.ftl"/>
   <link rel="localization" href="browser/taskbartabs.ftl"/>
@@ -87,16 +92,18 @@
   <link rel="localization" href="toolkit/global/contextual-identity.ftl"/>
   <link rel="localization" href="toolkit/global/textActions.ftl"/>
   <link rel="localization" href="toolkit/printing/printUI.ftl"/>
+  <link rel="localization" href="browser/sidebar.ftl"/>
+  <link rel="localization" href="browser/syncedTabs.ftl"/>
+  <link rel="localization" href="browser/profiles.ftl"/>
   <!-- Untranslated FTL files -->
   <link rel="localization" href="preview/credentialChooser.ftl" />
   <link rel="localization" href="preview/enUS-searchFeatures.ftl" />
   <link rel="localization" href="preview/interventions.ftl" />
-  <link rel="localization" href="browser/sidebar.ftl"/>
-  <link rel="localization" href="browser/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
   <link rel="localization" href="preview/smartTabGroups.ftl"/>
   <link rel="localization" href="preview/genai.ftl"/>
-  <link rel="localization" href="preview/aiWindow.ftl" />
+  <link rel="localization" href="preview/autoTabGrouping.ftl"/>
+  <link rel="localization" href="browser/aiWindow.ftl" />
 
   <title data-l10n-id="browser-main-window-default-title"></title>
 
@@ -105,9 +112,9 @@
 </head>
 <html:body xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 # All sets except for popupsets (commands, keys, and stringbundles)
-# *must* go into the browser-sets.inc file so that they can be shared with other
-# top level windows in macWindow.inc.xhtml.
-#include browser-sets.inc
+# *must* go into the browser-sets.inc.xhtml file so that they can be shared with
+# other top level windows in macWindow.inc.xhtml.
+#include browser-sets.inc.xhtml
 
 #include main-popupset.inc.xhtml
 

@@ -10,13 +10,13 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.os.Build
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.MediaSessionState
@@ -26,6 +26,8 @@ import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.concept.engine.mediasession.MediaSession
 import mozilla.components.concept.engine.mediasession.MediaSession.Metadata
 import mozilla.components.concept.engine.mediasession.MediaSession.PlaybackState
+import mozilla.components.feature.media.MediaNimbus
+import mozilla.components.feature.media.MediaNotificationImprovements
 import mozilla.components.feature.media.ext.toPlaybackState
 import mozilla.components.feature.media.facts.MediaFacts
 import mozilla.components.feature.media.notification.MediaNotification
@@ -43,9 +45,9 @@ import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
 import mozilla.components.support.utils.ext.stopForegroundCompat
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -56,15 +58,22 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
-import org.robolectric.util.ReflectionHelpers.setStaticField
-import kotlin.reflect.jvm.javaField
+import org.mockito.Mockito.verifyNoMoreInteractions
+import org.robolectric.annotation.Config
+import kotlin.test.assertNotNull
 import android.media.session.PlaybackState as AndroidPlaybackState
 
 @RunWith(AndroidJUnit4::class)
 class MediaSessionServiceDelegateTest {
 
     private val notificationId = SharedIdsHelper.getIdForTag(testContext, AbstractMediaSessionService.NOTIFICATION_TAG)
+
+    @After
+    fun tearDown() {
+        MediaNimbus.features.mediaNotificationImprovements.withCachedValue(null)
+    }
 
     @Test
     fun `WHEN the service is created THEN create a new notification scope audio focus manager`() = runTest {
@@ -127,6 +136,42 @@ class MediaSessionServiceDelegateTest {
     }
 
     @Test
+    fun `GIVEN media playing started WHEN a next-track command is received THEN forward to controller and emit telemetry`() = runTest {
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.controller = mock()
+
+        CollectionProcessor.withFactCollection { facts ->
+            delegate.onStartCommand(Intent(AbstractMediaSessionService.ACTION_NEXT_TRACK))
+
+            verify(delegate.controller)!!.nextTrack()
+            assertEquals(1, facts.size)
+            with(facts[0]) {
+                assertEquals(Component.FEATURE_MEDIA, component)
+                assertEquals(Action.NEXT, action)
+                assertEquals(MediaFacts.Items.NOTIFICATION, item)
+            }
+        }
+    }
+
+    @Test
+    fun `GIVEN media playing started WHEN a previous-track command is received THEN forward to controller and emit telemetry`() = runTest {
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.controller = mock()
+
+        CollectionProcessor.withFactCollection { facts ->
+            delegate.onStartCommand(Intent(AbstractMediaSessionService.ACTION_PREV_TRACK))
+
+            verify(delegate.controller)!!.previousTrack()
+            assertEquals(1, facts.size)
+            with(facts[0]) {
+                assertEquals(Component.FEATURE_MEDIA, component)
+                assertEquals(Action.PREVIOUS, action)
+                assertEquals(MediaFacts.Items.NOTIFICATION, item)
+            }
+        }
+    }
+
+    @Test
     fun `WHEN the task is removed THEN stop media in all tabs and shutdown`() = runTest {
         val notificationManagerCompat: NotificationManagerCompat = mock()
         val notificationsDelegate: NotificationsDelegate = mock()
@@ -182,7 +227,7 @@ class MediaSessionServiceDelegateTest {
     }
 
     @Test
-    fun `GIVEN the service is already in foreground WHEN handling playing media THEN setup internal properties`() = runTest {
+    fun `GIVEN the service is already in foreground WHEN handling playing media THEN request audio focus and update notification`() = runTest {
         val mediaTab = getMediaTab()
         val notificationsDelegate: NotificationsDelegate = mock()
         val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), notificationsDelegate, this)
@@ -193,8 +238,60 @@ class MediaSessionServiceDelegateTest {
         delegate.handleMediaPlaying(mediaTab)
         testScheduler.advanceUntilIdle()
 
+        verify(delegate.audioFocus).request(eq(mediaTab.id), any())
         verify(notificationsDelegate).notify(any(), eq(delegate.notificationId), any(), any(), any(), eq(false))
     }
+
+    // The delegate reads the audio-session type from the session state at
+    // request time, and the feature re-runs this on every mediaSessionState
+    // change, so a type that arrives after playback started is picked up on the
+    // next request rather than being stuck at the default. Every type must be
+    // forwarded to the focus request exactly once, with no default request made
+    // first. One case per type so each runs in a fresh test environment.
+    private fun TestScope.assertFocusRequestUsesType(type: MediaSession.AudioSessionType) {
+        val mediaTab = createTab(
+            url = "https://www.mozilla.org",
+            mediaSessionState = MediaSessionState(
+                mock(),
+                playbackState = PlaybackState.PLAYING,
+                audioSessionType = type,
+            ),
+        )
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.onCreate()
+        delegate.audioFocus = mock()
+        delegate.isForegroundService = true
+
+        delegate.handleMediaPlaying(mediaTab)
+        testScheduler.advanceUntilIdle()
+
+        verify(delegate.audioFocus, times(1)).request(mediaTab.id, type)
+        verifyNoMoreInteractions(delegate.audioFocus)
+    }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with auto type THEN focus is requested as auto`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.AUTO) }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with playback type THEN focus is requested as playback`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.PLAYBACK) }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with transient type THEN focus is requested as transient`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.TRANSIENT) }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with transient-solo type THEN focus is requested as transient-solo`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.TRANSIENT_SOLO) }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with ambient type THEN focus is requested as ambient`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.AMBIENT) }
+
+    @Test
+    fun `GIVEN a foreground service WHEN playing media with play-and-record type THEN focus is requested as play-and-record`() =
+        runTest { assertFocusRequestUsesType(MediaSession.AudioSessionType.PLAY_AND_RECORD) }
 
     @Test
     fun `GIVEN the service is not in foreground WHEN handling playing media THEN start the media service as foreground`() = runTest {
@@ -209,6 +306,22 @@ class MediaSessionServiceDelegateTest {
 
         verify(delegate.service).startForeground(eq(delegate.notificationId), any())
         assertTrue(delegate.isForegroundService)
+    }
+
+    @Test
+    fun `GIVEN the service is not in foreground WHEN handling playing media THEN audio focus is requested after foreground service is started`() = runTest {
+        val mediaTab = getMediaTab()
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.onCreate()
+        delegate.audioFocus = mock()
+        delegate.isForegroundService = false
+
+        delegate.handleMediaPlaying(mediaTab)
+        testScheduler.advanceUntilIdle()
+
+        val inOrder = org.mockito.Mockito.inOrder(delegate.service, delegate.audioFocus)
+        inOrder.verify(delegate.service).startForeground(eq(delegate.notificationId), any())
+        inOrder.verify(delegate.audioFocus).request(eq(mediaTab.id), any())
     }
 
     @Test
@@ -233,6 +346,7 @@ class MediaSessionServiceDelegateTest {
         val mediaTab = getMediaTab()
         val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
         delegate.onCreate()
+        delegate.audioFocus = mock()
         val notification: Notification = mock()
         delegate.notificationHelper = coMock {
             doReturn(notification).`when`(this).create(mediaTab, delegate.mediaSession)
@@ -243,6 +357,7 @@ class MediaSessionServiceDelegateTest {
 
         verify(delegate.service).startForeground(eq(delegate.notificationId), eq(notification))
         assertTrue(delegate.isForegroundService)
+        verify(delegate.audioFocus).request(eq(mediaTab.id), any())
     }
 
     @Test
@@ -300,6 +415,8 @@ class MediaSessionServiceDelegateTest {
         delegate.isForegroundService = true
         delegate.mediaSession = mediaSession
         delegate.notificationHelper = notificationHelper
+        delegate.audioFocus = mock()
+        delegate.isTransientAudioFocusLoss = false
 
         doReturn(notification).`when`(notificationHelper).create(mediaTab, mediaSession)
 
@@ -313,6 +430,37 @@ class MediaSessionServiceDelegateTest {
         verify(delegate.service).stopForegroundCompat(false)
         verify(notificationsDelegate).notify(null, notificationId, notification)
         assertFalse(delegate.isForegroundService)
+    }
+
+    @Test
+    fun `GIVEN transient audio focus loss WHEN handling paused media THEN keep foreground service running`() = runTest {
+        val mediaTab = getMediaTab(PlaybackState.PAUSED)
+        val notificationManagerCompat = spy(NotificationManagerCompat.from(testContext))
+        val notificationsDelegate = spy(NotificationsDelegate(notificationManagerCompat))
+        doReturn(true).`when`(notificationManagerCompat).areNotificationsEnabled()
+
+        val notificationHelper: MediaNotification = mock()
+        val notification: Notification = mock()
+        val mediaSession: MediaSessionCompat = mock()
+
+        val delegate = spy(MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), notificationsDelegate, this))
+        delegate.isForegroundService = true
+        delegate.mediaSession = mediaSession
+        delegate.notificationHelper = notificationHelper
+        delegate.audioFocus = mock()
+        delegate.isTransientAudioFocusLoss = true
+
+        doReturn(notification).`when`(notificationHelper).create(mediaTab, mediaSession)
+
+        delegate.onCreate()
+
+        delegate.handleMediaPaused(mediaTab)
+        testScheduler.advanceUntilIdle()
+
+        verify(delegate).updateMediaSession(mediaTab)
+        verify(delegate, never()).unregisterBecomingNoisyListenerIfNeeded()
+        verify(delegate.service, never()).stopForegroundCompat(false)
+        assertTrue(delegate.isForegroundService)
     }
 
     @Test
@@ -341,6 +489,7 @@ class MediaSessionServiceDelegateTest {
 
         val delegate = spy(MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), notificationsDelegate, this))
         delegate.isForegroundService = true
+        delegate.audioFocus = mock()
         delegate.onCreate()
 
         delegate.handleMediaStopped(mediaTab)
@@ -349,6 +498,7 @@ class MediaSessionServiceDelegateTest {
         verify(delegate).updateMediaSession(mediaTab)
         verify(delegate).unregisterBecomingNoisyListenerIfNeeded()
         verify(delegate.service).stopForegroundCompat(false)
+        verify(delegate.audioFocus).abandon()
         verify(notificationManagerCompat).cancel(eq(notificationId))
         assertFalse(delegate.isForegroundService)
     }
@@ -425,6 +575,53 @@ class MediaSessionServiceDelegateTest {
         assertEquals(bitmap, metadataCaptor.value.bundle.getParcelable(MediaMetadataCompat.METADATA_KEY_ART))
         assertEquals(-1L, metadataCaptor.value.bundle.getLong(MediaMetadataCompat.METADATA_KEY_DURATION))
     }
+
+    @Test
+    fun `GIVEN improvements enabled WHEN handling the first media update THEN the real position is reported`() = runTest {
+        MediaNimbus.features.mediaNotificationImprovements.withCachedValue(
+            MediaNotificationImprovements(enabled = true),
+        )
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.mediaSession = mock()
+        delegate.onCreate()
+        val playbackStateCaptor = argumentCaptor<PlaybackStateCompat>()
+
+        delegate.updateMediaSession(mediaTabWith(title = "Song", position = 30.0))
+
+        verify(delegate.mediaSession).setPlaybackState(playbackStateCaptor.capture())
+        assertEquals(30_000L, playbackStateCaptor.value.position)
+    }
+
+    @Test
+    fun `GIVEN improvements enabled WHEN the title changes THEN report position 0 until a fresh positionState arrives`() = runTest {
+        MediaNimbus.features.mediaNotificationImprovements.withCachedValue(
+            MediaNotificationImprovements(enabled = true),
+        )
+        val delegate = MediaSessionServiceDelegate(testContext, mock(), BrowserStore(), mock(), mock(), this)
+        delegate.mediaSession = mock()
+        delegate.onCreate()
+        val playbackStateCaptor = argumentCaptor<PlaybackStateCompat>()
+
+        delegate.updateMediaSession(mediaTabWith(title = "A", position = 30.0))
+        delegate.updateMediaSession(mediaTabWith(title = "B", position = 30.0))
+        delegate.updateMediaSession(mediaTabWith(title = "B", position = 2.0))
+
+        verify(delegate.mediaSession, times(3)).setPlaybackState(playbackStateCaptor.capture())
+        assertEquals(
+            listOf(30_000L, 0L, 2_000L),
+            playbackStateCaptor.allValues.map { it.position },
+        )
+    }
+
+    private fun mediaTabWith(title: String, position: Double) = createTab(
+        url = "https://www.mozilla.org",
+        mediaSessionState = MediaSessionState(
+            mock(),
+            metadata = Metadata(title, null, null, null),
+            playbackState = PlaybackState.PLAYING,
+            positionState = MediaSession.PositionState(duration = 100.0, position = position),
+        ),
+    )
 
     @Test
     fun `WHEN stopping running in foreground THEN stop the foreground service`() = runTest {
@@ -527,11 +724,13 @@ class MediaSessionServiceDelegateTest {
     }
 
     @Test
+    @Config(sdk = [31])
     fun `GIVEN device is at least API level 31 WHEN startForeground throws an exception THEN catch and pass the exception to the crash reporter`() = runTest {
         val crashReporter: CrashReporting = mock()
         val service: AbstractMediaSessionService = mock()
         val delegate = MediaSessionServiceDelegate(testContext, service, BrowserStore(), crashReporter, mock(), this)
         delegate.onCreate()
+        delegate.audioFocus = mock()
         val notification: Notification = mock()
         delegate.notificationHelper = coMock {
             doReturn(notification).`when`(this).create(mock(), delegate.mediaSession)
@@ -539,15 +738,16 @@ class MediaSessionServiceDelegateTest {
 
         val exception = ForegroundServiceStartNotAllowedException("Test thrown exception")
         doThrow(exception).`when`(service).startForeground(anyInt(), any())
-        setSdkInt(31)
 
         delegate.startForeground(mock(), coroutineContext)
         testScheduler.advanceUntilIdle()
 
         verify(crashReporter).submitCaughtException(exception)
+        verify(delegate.audioFocus, never()).request(any(), any())
     }
 
-    @Test(expected = ForegroundServiceStartNotAllowedException::class)
+    @Test(expected = RuntimeException::class)
+    @Config(sdk = [30])
     fun `GIVEN device is less than 31 WHEN startForeground throws an exception THEN rethrow the exception`() =
         runTest {
             var throwable: Throwable? = null
@@ -571,9 +771,8 @@ class MediaSessionServiceDelegateTest {
                 doReturn(notification).`when`(this).create(mock(), delegate.mediaSession)
             }
 
-            val exception = ForegroundServiceStartNotAllowedException("Test thrown exception")
+            val exception = RuntimeException("Test thrown exception")
             doThrow(exception).`when`(service).startForeground(anyInt(), any())
-            setSdkInt(30)
 
             delegate.startForeground(mock(), exceptionHandler)
 
@@ -585,8 +784,4 @@ class MediaSessionServiceDelegateTest {
         url = "https://www.mozilla.org",
         mediaSessionState = MediaSessionState(mock(), playbackState = playbackState),
     )
-
-    private fun setSdkInt(sdkVersion: Int) {
-        setStaticField(Build.VERSION::SDK_INT.javaField, sdkVersion)
-    }
 }

@@ -69,6 +69,12 @@
   <string name="mozac_feature_prompts_before_unload_stay">Aros</string>
   <!-- Leave button of the dialog shown when a user is leaving a website and there is still data not saved yet, this indicates that the user wants to leave in the website. -->
   <string name="mozac_feature_prompts_before_unload_leave">Gadael</string>
+  <!-- Message shown when a site wants to create a passkey for a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_create_message">Mae %1$s eisiau creu cyfrinallwedd ar gyfer %2$s.</string>
+  <!-- Message shown when a site wants to use a passkey from a related domain. %1$s is the requesting site, %2$s is the related domain the passkey is for. -->
+  <string name="webauthn_related_origin_use_message">Mae %1$s eisiau defnyddio cyfrinallwedd ar gyfer %2$s.</string>
+  <!-- Continue button label for WebAuthn related origin prompt. -->
+  <string name="webauthn_continue">Parhau</string>
   <!-- Title of the month chooser dialog. -->
   <string name="mozac_feature_prompts_set_month">Dewis mis</string>
   <!-- January (short description), used on the month chooser dialog. -->
@@ -135,7 +141,7 @@
   <!-- Pressing this will dismiss the dialog and allow to upload folder -->
   <string name="mozac_feature_prompt_folder_upload_confirm_positive_button_text">Llwytho i fyny</string>
   <!-- Pressing this will dismiss the dialog and disallow to upload folder -->
-  <string name="mozac_feature_prompt_folder_upload_confirm_negative_button_text">Diddymu</string>
+  <string name="mozac_feature_prompt_folder_upload_confirm_negative_button_text">Na</string>
   <!--
     Credit Card Autofill
 
@@ -151,7 +157,7 @@
   <!-- Text for the title of a save credit card dialog. -->
   <string name="mozac_feature_prompts_save_credit_card_prompt_title">Cadw’r cerdyn hwn yn ddiogel?</string>
   <!-- Text for the title of an update credit card dialog. -->
-  <string name="mozac_feature_prompts_update_credit_card_prompt_title">Diweddaru dyddiad dod i ben cerdyn?</string>
+  <string name="mozac_feature_prompts_update_credit_card_prompt_title">Diweddaru dyddiad daw i ben cerdyn?</string>
   <!-- Subtitle text displayed under the title of the saved card dialog. %s is the name of the app (for example "Firefox"). -->
   <string name="mozac_feature_prompts_save_credit_card_prompt_body_2">Mae %s yn amgryptio rhif eich cerdyn. Ni fydd eich cod diogelwch yn cael ei gadw.</string>
   <!--
@@ -166,6 +172,10 @@
   <string name="mozac_feature_prompts_collapse_address_content_description_2">Cau cyfeiriadau sydd wedi\'u cadw</string>
   <!-- Text for the manage addresses button. -->
   <string name="mozac_feature_prompts_manage_address">Rheoli cyfeiriadau</string>
+  <!-- Text for the title of a save address dialog. -->
+  <string name="mozac_feature_prompts_save_address_prompt_title">Cadw cyfeiriad?</string>
+  <!-- Text for the title of an update address dialog, shown when the address adds information to an already saved address. -->
+  <string name="mozac_feature_prompts_update_address_prompt_title">Diweddaru\'r cyfeiriad?</string>
   <!--
     Federated Credential Management prompts
 

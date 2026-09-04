@@ -31,6 +31,7 @@ let JSPROCESSACTORS = {
         "recording-window-ended",
       ],
     },
+    safeForUntrustedWebProcess: true,
   },
 
   MozCachedOHTTP: {
@@ -39,6 +40,7 @@ let JSPROCESSACTORS = {
         "moz-src:///browser/components/mozcachedohttp/actors/MozCachedOHTTPParent.sys.mjs",
     },
     includeParent: true,
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   RefreshBlockerObserver: {
@@ -67,6 +69,7 @@ let JSPROCESSACTORS = {
         }
       });
     },
+    safeForUntrustedWebProcess: true,
   },
 };
 
@@ -90,6 +93,7 @@ let JSWINDOWACTORS = {
     matches: ["chrome://global/content/megalist/megalist.html"],
     allFrames: true,
     enablePreference: "browser.contextual-password-manager.enabled",
+    remoteTypes: ["parent"],
   },
 
   AboutLogins: {
@@ -187,6 +191,7 @@ let JSWINDOWACTORS = {
       },
     },
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
 
   AboutTabCrashed: {
@@ -201,6 +206,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:tabcrashed*"],
+    remoteTypes: ["parent"],
   },
 
   AboutWelcome: {
@@ -232,15 +238,22 @@ let JSWINDOWACTORS = {
       esModuleURI:
         "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentChild.sys.mjs",
       events: {
-        "AIChatContent:DispatchSearch": { wantUntrusted: true },
         "AIChatContent:DispatchFollowUp": { wantUntrusted: true },
         "AIChatContent:Ready": { wantUntrusted: true },
         "AIChatContent:DispatchAction": { wantUntrusted: true },
         "AIChatContent:OpenLink": { wantUntrusted: true },
+        "AIChatContent:DispatchNewChat": { wantUntrusted: true },
+        "AIChatContent:AccountSignIn": { wantUntrusted: true },
+        "AIChatContent:ToolUIUpdate": { wantUntrusted: true },
+        "AIChatContent:RequestAssets": { wantUntrusted: true },
+        "AIChatContent:HistoryGridRender": { wantUntrusted: true },
+        "AIChatContent:HistoryGridItemClick": { wantUntrusted: true },
+        "AIChatContent:ClientError": { wantUntrusted: true },
       },
     },
     allFrames: true,
     matches: ["about:aichatcontent"],
+    remoteTypes: ["privilegedabout"],
     enablePreference: "browser.smartwindow.enabled",
   },
 
@@ -256,6 +269,34 @@ let JSWINDOWACTORS = {
     matches: ["chrome://browser/content/aiwindow/aiWindow.html"],
     includeChrome: true,
     allFrames: true,
+    enablePreference: "browser.smartwindow.enabled",
+    remoteTypes: ["parent"],
+  },
+
+  SmartWindowTasks: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/SmartWindowTasksParent.sys.mjs",
+    },
+    child: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/SmartWindowTasksChild.sys.mjs",
+      events: {
+        "SmartWindowTasks:RequestListMonitors": { wantUntrusted: true },
+        "SmartWindowTasks:RequestCreateMonitor": { wantUntrusted: true },
+        "SmartWindowTasks:RequestDeleteMonitor": { wantUntrusted: true },
+        "SmartWindowTasks:RequestUpdateMonitor": { wantUntrusted: true },
+        "SmartWindowTasks:RequestRunMonitor": { wantUntrusted: true },
+        "SmartWindowTasks:RequestPauseMonitor": { wantUntrusted: true },
+        "SmartWindowTasks:RequestConstants": { wantUntrusted: true },
+      },
+    },
+    allFrames: true,
+    // TODO: Remove chrome:// URL and "parent" remoteType before landing
+    // These are only for development while about:smartwindowtasks registration lands
+    matches: ["about:smartwindowtasks"],
+    includeChrome: true,
+    remoteTypes: ["privilegedabout"],
     enablePreference: "browser.smartwindow.enabled",
   },
 
@@ -277,12 +318,14 @@ let JSWINDOWACTORS = {
         "BackupUI:EnableEncryption": { wantUntrusted: true },
         "BackupUI:DisableEncryption": { wantUntrusted: true },
         "BackupUI:ShowBackupLocation": { wantUntrusted: true },
-        "BackupUI:EditBackupLocation": { wantUntrusted: true },
         "BackupUI:SetEmbeddedComponentPersistentData": { wantUntrusted: true },
         "BackupUI:FlushEmbeddedComponentPersistentData": {
           wantUntrusted: true,
         },
         "BackupUI:ErrorBarDismissed": { wantUntrusted: true },
+        "BackupUI:FindBackupsInWellKnownLocations": { wantUntrusted: true },
+        "BackupUI:ProbeDefaultBackupDir": { wantUntrusted: true },
+        "BackupUI:PrepareRestoreDialog": { wantUntrusted: true },
       },
     },
     includeChrome: true,
@@ -292,7 +335,10 @@ let JSWINDOWACTORS = {
       "about:settings*",
       "about:welcome*",
       "chrome://browser/content/spotlight.html",
+      "about:newtab*",
+      "about:home*",
     ],
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   BlockedSite: {
@@ -308,6 +354,7 @@ let JSWINDOWACTORS = {
     },
     matches: ["about:blocked?*"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   BrowserTab: {
@@ -316,6 +363,7 @@ let JSWINDOWACTORS = {
     },
 
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
 
   CanonicalURL: {
@@ -344,6 +392,7 @@ let JSWINDOWACTORS = {
         );
       }
     },
+    safeForUntrustedWebProcess: true,
   },
 
   ClickHandler: {
@@ -358,6 +407,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   /* Note: this uses the same JSMs as ClickHandler, but because it
@@ -379,6 +429,7 @@ let JSWINDOWACTORS = {
     enablePreference: "middlemouse.contentLoadURL",
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   ContentSearch: {
@@ -414,6 +465,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   CustomKeys: {
@@ -442,6 +494,7 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   DOMFullscreen: {
@@ -457,11 +510,14 @@ let JSWINDOWACTORS = {
         "MozDOMFullscreen:NewOrigin": {},
         "MozDOMFullscreen:Exit": {},
         "MozDOMFullscreen:Exited": {},
+        "MozDOMFullscreen:WarnAboutKeyboardLock": {},
+        "MozDOMFullscreen:UpdateKeyboardLock": {},
       },
     },
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   EncryptedMedia: {
@@ -476,6 +532,7 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   FormValidation: {
@@ -494,6 +551,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   GenAI: {
@@ -511,11 +569,13 @@ let JSWINDOWACTORS = {
     onAddActor(register, unregister) {
       let isRegistered = false;
 
-      // Register the actor if we have a provider or support provider-less
+      // Register the actor if an external chat provider is set, page summarization is enabled, or shortcuts are enabled
       const maybeRegister = () => {
         if (
           Services.prefs.getCharPref("browser.ml.chat.provider", "") ||
-          Services.prefs.getBoolPref("browser.ml.chat.page")
+          Services.prefs.getBoolPref("browser.ml.chat.page") ||
+          Services.prefs.getBoolPref("browser.ml.chat.shortcuts") ||
+          Services.prefs.getBoolPref("browser.ml.chat.shortcuts.smartwindow")
         ) {
           if (!isRegistered) {
             register();
@@ -529,8 +589,14 @@ let JSWINDOWACTORS = {
 
       Services.prefs.addObserver("browser.ml.chat.page", maybeRegister);
       Services.prefs.addObserver("browser.ml.chat.provider", maybeRegister);
+      Services.prefs.addObserver("browser.ml.chat.shortcuts", maybeRegister);
+      Services.prefs.addObserver(
+        "browser.ml.chat.shortcuts.smartwindow",
+        maybeRegister
+      );
       maybeRegister();
     },
+    safeForUntrustedWebProcess: true,
   },
 
   LightweightTheme: {
@@ -551,16 +617,20 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/syncedtabs/sidebar.xhtml",
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
+      "chrome://browser/content/sidebar/sidebar-bookmarks.html",
       "chrome://browser/content/sidebar/sidebar-history.html",
       "chrome://browser/content/sidebar/sidebar-customize.html",
       "chrome://browser/content/sidebar/sidebar-syncedtabs.html",
+      "chrome://browser/content/sidebar/sidebar-opentabs.html",
       "chrome://browser/content/genai/chat.html",
       "about:firefoxview",
       "about:editprofile",
       "about:deleteprofile",
       "about:newprofile",
       "about:opentabs",
+      "about:aichatcontent",
     ],
+    remoteTypes: ["parent", "privilegedabout"],
   },
 
   LinkHandler: {
@@ -581,6 +651,7 @@ let JSWINDOWACTORS = {
     },
 
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
 
   LinkPreview: {
@@ -592,6 +663,7 @@ let JSWINDOWACTORS = {
     },
     includeChrome: true,
     enablePreference: "browser.ml.linkPreview.enabled",
+    safeForUntrustedWebProcess: true,
   },
 
   PageAssist: {
@@ -603,6 +675,7 @@ let JSWINDOWACTORS = {
     },
     includeChrome: true,
     enablePreference: "browser.ml.pageAssist.enabled",
+    safeForUntrustedWebProcess: true,
   },
 
   PageInfo: {
@@ -611,12 +684,14 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   PageInfoPreview: {
     child: {
       esModuleURI: "resource:///actors/PageInfoPreviewChild.sys.mjs",
     },
+    safeForUntrustedWebProcess: true,
   },
 
   PageStyle: {
@@ -632,6 +707,7 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   Pdfjs: {
@@ -642,6 +718,7 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource://pdf.js/PdfjsChild.sys.mjs",
     },
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   // GMP crash reporting
@@ -657,6 +734,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   PointerLock: {
@@ -673,6 +751,7 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   Profiles: {
@@ -689,12 +768,36 @@ let JSWINDOWACTORS = {
     remoteTypes: ["privilegedabout"],
   },
 
+  ThemePicker: {
+    parent: {
+      esModuleURI: "resource:///actors/ThemePickerParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/ThemePickerChild.sys.mjs",
+      events: {
+        ThemePickerGetInitialState: { wantUntrusted: true },
+        ThemePickerUpdateTheme: { wantUntrusted: true },
+        ThemePickerUpdateAppearance: { wantUntrusted: true },
+        ThemePickerUpdateNativeTheme: { wantUntrusted: true },
+      },
+    },
+    matches: [
+      "about:editprofile",
+      "about:newprofile",
+      "about:newtab",
+      "about:home",
+      "about:welcome",
+    ],
+    remoteTypes: ["privilegedabout"],
+  },
+
   Prompt: {
     parent: {
       esModuleURI: "resource:///actors/PromptParent.sys.mjs",
     },
     includeChrome: true,
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   RefreshBlocker: {
@@ -707,11 +810,13 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     enablePreference: "accessibility.blockautorefresh",
+    safeForUntrustedWebProcess: true,
   },
 
   ScreenshotsComponent: {
     parent: {
-      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
     },
     child: {
       esModuleURI: "resource:///actors/ScreenshotsComponentChild.sys.mjs",
@@ -727,17 +832,21 @@ let JSWINDOWACTORS = {
       },
     },
     enablePreference: "screenshots.browser.component.enabled",
+    safeForUntrustedWebProcess: true,
   },
 
   ScreenshotsHelper: {
     parent: {
-      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
     },
     child: {
-      esModuleURI: "resource:///modules/ScreenshotsHelperChild.sys.mjs",
+      esModuleURI:
+        "moz-src:///browser/components/screenshots/ScreenshotsHelperChild.sys.mjs",
     },
     allFrames: true,
     enablePreference: "screenshots.browser.component.enabled",
+    safeForUntrustedWebProcess: true,
   },
 
   SearchSERPTelemetry: {
@@ -756,6 +865,7 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["https://*/*"],
+    safeForUntrustedWebProcess: true,
   },
 
   ShieldFrame: {
@@ -771,6 +881,55 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:studies*"],
+    safeForUntrustedWebProcess: true,
+  },
+
+  SmartFormFill: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/SmartFormFillParent.sys.mjs",
+    },
+    child: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/SmartFormFillChild.sys.mjs",
+      events: {
+        DOMContentLoaded: {},
+      },
+    },
+    safeForUntrustedWebProcess: true,
+
+    // SmartFormFill should only work on HTTPS urls
+    matches: ["https://*/*"],
+    messageManagerGroups: ["browsers"],
+
+    onAddActor(register, unregister) {
+      let isRegistered = false;
+
+      const maybeRegister = () => {
+        if (
+          Services.prefs.getBoolPref("browser.smartwindow.enabled") &&
+          Services.prefs.getBoolPref(
+            "browser.smartwindow.smartformfill.enabled",
+            false
+          )
+        ) {
+          if (!isRegistered) {
+            register();
+            isRegistered = true;
+          }
+        } else if (isRegistered) {
+          unregister();
+          isRegistered = false;
+        }
+      };
+
+      Services.prefs.addObserver("browser.smartwindow.enabled", maybeRegister);
+      Services.prefs.addObserver(
+        "browser.smartwindow.smartformfill.enabled",
+        maybeRegister
+      );
+      maybeRegister();
+    },
   },
 
   SpeechDispatcher: {
@@ -785,6 +944,7 @@ let JSWINDOWACTORS = {
 
     messageManagerGroups: ["browsers"],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 
   ASRouter: {
@@ -799,7 +959,13 @@ let JSWINDOWACTORS = {
         DOMDocElementInserted: {},
       },
     },
-    matches: ["about:asrouter*", "about:welcome*", "about:privatebrowsing*"],
+    matches: [
+      "about:asrouter*",
+      "about:welcome*",
+      "about:privatebrowsing*",
+      "about:newtab*",
+      "about:home*",
+    ],
     remoteTypes: ["privilegedabout"],
   },
 
@@ -809,14 +975,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
-  },
-
-  TLSCertificateBinding: {
-    child: {
-      esModuleURI: "resource:///actors/TLSCertificateBindingChild.sys.mjs",
-    },
-
-    messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
 
   UITour: {
@@ -832,6 +991,19 @@ let JSWINDOWACTORS = {
 
     enablePreference: "browser.uitour.enabled",
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
+  },
+
+  Urlbar: {
+    parent: {
+      esModuleURI: "resource:///actors/UrlbarParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/UrlbarChild.sys.mjs",
+    },
+    includeChrome: true,
+    matches: ["chrome://browser/content/browser.xhtml"],
+    remoteTypes: ["parent"],
   },
 
   WebRTC: {
@@ -843,6 +1015,7 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 };
 

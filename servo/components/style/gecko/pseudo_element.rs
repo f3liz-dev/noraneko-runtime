@@ -11,7 +11,7 @@
 use crate::gecko_bindings::structs::PseudoStyleType;
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::{ComputedValues, PropertyFlags};
-use crate::selector_parser::{PseudoElementCascadeType, SelectorImpl};
+use crate::selector_parser::PseudoElementCascadeType;
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::string_cache::Atom;
 use crate::values::serialize_atom_identifier;
@@ -47,17 +47,22 @@ bitflags! {
         const IS_FLEX_OR_GRID_ITEM = 1 << 7;
         /// Whether we're backed by a real element.
         const IS_ELEMENT_BACKED = 1 << 8;
+        /// Whether we're a tree-abiding pseudo as per
+        /// https://drafts.csswg.org/css-pseudo-4/#treelike
+        const IS_TREE_ABIDING = 1 << 9;
         /// Whether we support user-action state pseudo-classes after the pseudo-element.
-        const SUPPORTS_USER_ACTION_STATE = 1 << 9;
+        const SUPPORTS_USER_ACTION_STATE = 1 << 10;
         /// Whether we are an inheriting anon-box.
-        const IS_INHERITING_ANON_BOX = 1 << 10;
+        const IS_INHERITING_ANON_BOX = 1 << 11;
         /// Whether we are a non-inheriting anon box.
-        const IS_NON_INHERITING_ANON_BOX = 1 << 11;
+        const IS_NON_INHERITING_ANON_BOX = 1 << 12;
         /// Combo of the above to cover all anon boxes.
         const IS_ANON_BOX = Self::IS_INHERITING_ANON_BOX.bits() |
                             Self::IS_NON_INHERITING_ANON_BOX.bits();
         /// Whether we're a wrapping anon box.
-        const IS_WRAPPER_ANON_BOX = 1 << 12;
+        const IS_WRAPPER_ANON_BOX = 1 << 13;
+        /// Whether we parse as an element-backed pseudo-element.
+        const PARSES_AS_ELEMENT_BACKED = 1 << 14;
     }
 }
 
@@ -211,22 +216,13 @@ impl ToCss for PtNameAndClassSelector {
 }
 
 impl PseudoElementTrait for PseudoElement {
-    type Impl = SelectorImpl;
-
     // ::slotted() should support all tree-abiding pseudo-elements, see
     // https://drafts.csswg.org/css-scoping/#slotted-pseudo
     // https://drafts.csswg.org/css-pseudo-4/#treelike
     #[inline]
     fn valid_after_slotted(&self) -> bool {
-        matches!(
-            *self,
-            Self::Before
-                | Self::After
-                | Self::Marker
-                | Self::Placeholder
-                | Self::FileSelectorButton
-                | Self::DetailsContent
-        )
+        self.flags()
+            .intersects(PseudoStyleTypeFlags::IS_TREE_ABIDING)
     }
 
     // ::before/::after should support ::marker, but no others.
@@ -255,13 +251,9 @@ impl PseudoElementTrait for PseudoElement {
         self.is_named_view_transition()
     }
 
-    /// Whether this pseudo-element is "element-backed", which means that it inherits from its regular
-    /// flat tree parent, which might not be the originating element.
-    #[inline]
-    fn is_element_backed(&self) -> bool {
-        // Note: We don't include ::view-transition here because it inherits from the originating
-        // element, instead of the snapshot containing block.
-        self.is_named_view_transition() || *self == PseudoElement::DetailsContent
+    fn parses_as_element_backed(&self) -> bool {
+        self.flags()
+            .intersects(PseudoStyleTypeFlags::PARSES_AS_ELEMENT_BACKED)
     }
 
     /// Whether the current pseudo element is ::before or ::after.
@@ -272,6 +264,14 @@ impl PseudoElementTrait for PseudoElement {
 }
 
 impl PseudoElement {
+    /// Whether this pseudo-element is "element-backed", which means that it inherits from its regular
+    /// flat tree parent, which might not be the originating element.
+    #[inline]
+    pub fn is_element_backed(&self) -> bool {
+        self.flags()
+            .intersects(PseudoStyleTypeFlags::IS_ELEMENT_BACKED)
+    }
+
     /// Returns the kind of cascade type that a given pseudo is going to use.
     ///
     /// In Gecko we only compute ::before and ::after eagerly. We save the rules
@@ -456,9 +456,24 @@ impl PseudoElement {
             .intersects(PseudoStyleTypeFlags::SUPPORTS_USER_ACTION_STATE)
     }
 
+    /// Returns true if the given pseudo-element is enabled for the document
+    /// represented by `url_data`, according to its `enabled_domains_pref` toml
+    /// setting. A pseudo-element without such a pref is enabled everywhere, an
+    /// empty list is enabled nowhere, and `*` is enabled everywhere.
+    fn is_pseudo_enabled_for_url(&self, url_data: &crate::stylesheets::UrlExtraData) -> bool {
+        let Some(list) = self.enabled_domains() else {
+            return true;
+        };
+        if list == "*" {
+            return true;
+        }
+        unsafe { crate::gecko_bindings::bindings::Gecko_IsURIInList(url_data.ptr(), &*list) }
+    }
+
     /// Whether this pseudo-element is enabled for all content.
-    pub fn enabled_in_content(&self) -> bool {
+    pub fn enabled_in_content(&self, url_data: &crate::stylesheets::UrlExtraData) -> bool {
         Self::type_enabled_in_content(self.pseudo_type())
+            && self.is_pseudo_enabled_for_url(url_data)
     }
 
     /// Whether this pseudo is enabled explicitly in UA sheets.
@@ -495,9 +510,7 @@ impl PseudoElement {
             PseudoElement::FirstLine => PropertyFlags::APPLIES_TO_FIRST_LINE,
             PseudoElement::Placeholder => PropertyFlags::APPLIES_TO_PLACEHOLDER,
             PseudoElement::Cue => PropertyFlags::APPLIES_TO_CUE,
-            PseudoElement::Marker if static_prefs::pref!("layout.css.marker.restricted") => {
-                PropertyFlags::APPLIES_TO_MARKER
-            },
+            PseudoElement::Marker => PropertyFlags::APPLIES_TO_MARKER,
             _ => return None,
         })
     }
@@ -540,7 +553,7 @@ impl PseudoElement {
                 Token::Ident(name) if is_css2_pseudo_element(&name) => name,
                 _ => return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
             };
-            return PseudoElement::from_slice(&name, false).ok_or(location.new_custom_error(
+            return PseudoElement::from_slice(&name).ok_or(location.new_custom_error(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name.clone()),
             ));
         }
@@ -549,7 +562,7 @@ impl PseudoElement {
         match input.next_including_whitespace()?.clone() {
             Token::Ident(name) => {
                 // We don't need to parse unknown ::-webkit-* pseudo-elements in this function.
-                PseudoElement::from_slice(&name, false).ok_or(input.new_custom_error(
+                PseudoElement::from_slice(&name).ok_or(input.new_custom_error(
                     SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name),
                 ))
             },
@@ -558,7 +571,7 @@ impl PseudoElement {
                 // https://drafts.csswg.org/cssom/#dom-window-getcomputedstyle
                 input.parse_nested_block(|input| {
                     selector_parser::parse_functional_pseudo_element_with_name(
-                        name,
+                        &name,
                         input,
                         Target::Cssom,
                     )

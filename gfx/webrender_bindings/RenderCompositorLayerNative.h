@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +10,9 @@
 
 #include "GLTypes.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/layers/ScreenshotGrabber.h"
 #include "mozilla/webrender/RenderCompositor.h"
-#include "mozilla/TimeStamp.h"
 
 namespace mozilla {
 
@@ -47,8 +45,9 @@ class RenderCompositorLayerNative : public RenderCompositor {
   bool ShouldUseNativeCompositor() override;
   bool ShouldUseLayerCompositor() const override;
   bool UseLayerCompositor() const override;
-
+  bool EnableAsyncScreenshot() override;
   void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
+  void GetWindowProperties(WindowProperties* aProperties) override;
 
   bool SurfaceOriginIsTopLeft() override { return true; }
 
@@ -134,7 +133,17 @@ class RenderCompositorLayerNative : public RenderCompositor {
   gfx::IntRect mVisibleBounds;
   std::unordered_map<wr::NativeSurfaceId, Surface, SurfaceIdHashFn> mSurfaces;
   TimeStamp mBeginFrameTimeStamp;
-  std::deque<RefPtr<layers::GpuFence>> mPendingGpuFeces;
+  std::deque<RefPtr<layers::GpuFence>> mPendingGpuFences;
+  // Used when platform does not support to take screenshot with multiple
+  // layers. By GetWindowProperties(), it notifies WebRender layer manager to
+  // use single layer for taking screenshot. By EnableAsyncScreenshot(), it
+  // notifies if taking screenshot is ready.
+  bool mEnableAsyncScreenshot = false;
+  // The flag for enabling screenshot with WebRender layer compositor in next
+  // composite.
+  bool mEnableAsyncScreenshotInNextFrame = false;
+  int mCurrentFrame = 0;
+  int mAsyncScreenshotLastFrameUsed = 0;
 };
 
 // RenderCompositorLayerNativeOGL is a layer compositor that exposes an
@@ -174,11 +183,11 @@ class RenderCompositorLayerNativeOGL : public RenderCompositorLayerNative {
 
   struct BackPressureFences {
     explicit BackPressureFences(
-        std::deque<RefPtr<layers::GpuFence>>&& aGpuFeces)
-        : mGpuFeces(std::move(aGpuFeces)) {}
+        std::deque<RefPtr<layers::GpuFence>>&& aGpuFences)
+        : mGpuFences(std::move(aGpuFences)) {}
 
     GLsync mSync = nullptr;
-    std::deque<RefPtr<layers::GpuFence>> mGpuFeces;
+    std::deque<RefPtr<layers::GpuFence>> mGpuFences;
   };
 
   // Used to apply back-pressure in WaitForGPU().

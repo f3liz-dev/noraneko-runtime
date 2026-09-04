@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,11 @@
 #ifndef GLCONTEXTEGL_H_
 #define GLCONTEXTEGL_H_
 
+#include <memory>
+
 #include "GLContext.h"
 #include "GLLibraryEGL.h"
 #include "nsRegion.h"
-#include <memory>
 
 namespace mozilla {
 namespace layers {
@@ -36,7 +35,18 @@ inline std::shared_ptr<EglDisplay> CreateSoftwareEglDisplay(
   if (!lib) {
     return nullptr;
   }
-  return lib->CreateDisplay(false, true, out_failureId);
+  return lib->CreateDisplay(EGLCreateDisplayFlags{.mForceSoftware = true},
+                            out_failureId);
+}
+
+inline std::shared_ptr<EglDisplay> CreateHighPowerEglDisplay(
+    nsACString* const out_failureId) {
+  const auto lib = GLLibraryEGL::Get(out_failureId);
+  if (!lib) {
+    return nullptr;
+  }
+  return lib->CreateDisplay(EGLCreateDisplayFlags{.mPreferHighPower = true},
+                            out_failureId);
 }
 
 // -
@@ -73,6 +83,7 @@ class GLContextEGL final : public GLContext {
 
   virtual bool IsANGLE() const override { return mEgl->mLib->IsANGLE(); }
   virtual bool IsWARP() const override { return mEgl->mIsWARP; }
+  virtual bool IsD3DANGLE() const override { return mEgl->mLib->IsD3DANGLE(); }
 
   virtual bool BindTexImage() override;
 
@@ -103,6 +114,13 @@ class GLContextEGL final : public GLContext {
 
   bool HasExtBufferAge() const;
   bool HasKhrPartialUpdate() const;
+  // Returns which EGL texture target (e.g. EGL_TEXTURE_2D) should be used for
+  // binding MacIOSurface PBuffers on ANGLE. Requires the extension
+  // ANGLE_iosurface_client_buffer.
+  EGLint GetBindToTextureTargetANGLE() const;
+  // Same as above, but returns the corresponding GL texture target, e.g.
+  // GL_TEXTURE_2D.
+  GLenum GetPreferredMacIOSurfaceTextureTarget() const override;
 
   bool BindTex2DOffscreen(GLContext* aOffscreen);
   void UnbindTex2DOffscreen(GLContext* aOffscreen);
@@ -149,6 +167,7 @@ class GLContextEGL final : public GLContext {
   bool mCanBindToTexture = false;
   bool mShareWithEGLImage = false;
   bool mOwnsContext = true;
+  mutable Maybe<EGLint> mBindToTextureTargetANGLE;
 
   nsIntRegion mDamageRegion;
 

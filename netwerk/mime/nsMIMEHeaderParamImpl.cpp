@@ -1,21 +1,21 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <string.h>
-#include "prprf.h"
-#include "prmem.h"
-#include "plbase64.h"
-#include "nsCRT.h"
-#include "nsTArray.h"
-#include "nsEscape.h"
 #include "nsMIMEHeaderParamImpl.h"
-#include "nsNativeCharsetUtils.h"
+
+#include <string.h>
+
 #include "mozilla/Encoding.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
+#include "nsCRT.h"
+#include "nsEscape.h"
+#include "nsNativeCharsetUtils.h"
+#include "nsTArray.h"
+#include "plbase64.h"
+#include "prmem.h"
+#include "prprf.h"
 
 using mozilla::Encoding;
 using mozilla::IsAscii;
@@ -757,14 +757,10 @@ nsresult nsMIMEHeaderParamImpl::DoParameterInternal(
   if (*aResult) {
     // then return charset and lang as well
     if (aLang && !lang.IsEmpty()) {
-      uint32_t len = lang.Length();
-      *aLang = (char*)moz_xmemdup(lang.BeginReading(), len + 1);
-      *(*aLang + len) = 0;
+      *aLang = ToNewCString(lang);
     }
     if (aCharset && !charset.IsEmpty()) {
-      uint32_t len = charset.Length();
-      *aCharset = (char*)moz_xmemdup(charset.BeginReading(), len + 1);
-      *(*aCharset + len) = 0;
+      *aCharset = ToNewCString(charset);
     }
   }
 
@@ -801,7 +797,7 @@ nsresult internalDecodeRFC2047Header(const char* aHeaderVal,
     temp.ReplaceSubstring("\n\t", " ");
     temp.ReplaceSubstring("\r\t", " ");
     temp.StripCRLF();
-    aResult = temp;
+    aResult = std::move(temp);
   }
 
   return NS_OK;
@@ -967,7 +963,7 @@ nsresult internalDecodeParameter(const nsACString& aParamValue,
     rv = internalDecodeRFC2047Header(unQuoted.get(), aDefaultCharset,
                                      aOverrideCharset, true, decoded);
 
-    if (NS_SUCCEEDED(rv) && !decoded.IsEmpty()) aResult = decoded;
+    if (NS_SUCCEEDED(rv) && !decoded.IsEmpty()) aResult = std::move(decoded);
   }
 
   return rv;

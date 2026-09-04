@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef mozilla_net_SocketProcessChild_h
 #define mozilla_net_SocketProcessChild_h
 
-#include "mozilla/net/PSocketProcessChild.h"
-#include "mozilla/ipc/InputStreamUtils.h"
-#include "mozilla/psm/IPCClientCertsChild.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "mozilla/net/PSocketProcessChild.h"
+#include "mozilla/psm/IPCClientCertsChild.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTHashMap.h"
 
@@ -67,9 +66,6 @@ class SocketProcessChild final : public PSocketProcessChild {
 #endif
   mozilla::ipc::IPCResult RecvSocketProcessTelemetryPing();
 
-  PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
-  bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
-
   already_AddRefed<PHttpTransactionChild> AllocPHttpTransactionChild();
 
   void CleanUp();
@@ -113,6 +109,8 @@ class SocketProcessChild final : public PSocketProcessChild {
 
   mozilla::ipc::IPCResult RecvClearSessionCache(
       ClearSessionCacheResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvClearPrivateBrowsingSessionCache(
+      ClearPrivateBrowsingSessionCacheResolver&& aResolve);
 
   already_AddRefed<PTRRServiceChild> AllocPTRRServiceChild(
       const bool& aCaptiveIsPassed, const bool& aParentalControlEnabled,
@@ -137,6 +135,8 @@ class SocketProcessChild final : public PSocketProcessChild {
       GetHttpConnectionDataResolver&& aResolve);
   mozilla::ipc::IPCResult RecvGetHttp3ConnectionStatsData(
       GetHttp3ConnectionStatsDataResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvGetSSLTokensCacheData(
+      GetSSLTokensCacheDataResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvInitProxyAutoConfigChild(
       Endpoint<PProxyAutoConfigChild>&& aEndpoint);
@@ -145,6 +145,10 @@ class SocketProcessChild final : public PSocketProcessChild {
   mozilla::ipc::IPCResult RecvRecheckDNS();
 
   mozilla::ipc::IPCResult RecvFlushFOGData(FlushFOGDataResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvLoadSSLTokensCache(ByteBuf&& aBuf);
+  mozilla::ipc::IPCResult RecvFlushSSLTokensCache(
+      FlushSSLTokensCacheResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvTestTriggerMetrics(
       TestTriggerMetricsResolver&& aResolve);
@@ -177,9 +181,9 @@ class SocketProcessChild final : public PSocketProcessChild {
   RefPtr<ChildProfilerController> mProfilerController;
 
   // Protect the table below.
-  Mutex mMutex MOZ_UNANNOTATED{"SocketProcessChild::mMutex"};
+  Mutex mMutex{"SocketProcessChild::mMutex"};
   nsTHashMap<uint64_t, RefPtr<BackgroundDataBridgeParent>>
-      mBackgroundDataBridgeMap;
+      mBackgroundDataBridgeMap MOZ_GUARDED_BY(mMutex);
 
   bool mShuttingDown MOZ_GUARDED_BY(mMutex) = false;
 

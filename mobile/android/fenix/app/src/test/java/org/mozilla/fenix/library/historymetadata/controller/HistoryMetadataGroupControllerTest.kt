@@ -26,7 +26,6 @@ import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,17 +35,19 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.share.ShareSheetChooserAction
+import org.mozilla.fenix.components.share.ShareSource
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.components.usecases.ShareUseCases
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.directionsEq
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.library.history.History
 import org.mozilla.fenix.library.history.HistoryItemTimeGroup
 import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentAction
-import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentDirections
 import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentStore
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 import org.mozilla.fenix.GleanMetrics.History as GleanHistory
 
 @RunWith(RobolectricTestRunner::class)
@@ -64,6 +65,7 @@ class HistoryMetadataGroupControllerTest {
     private val fenixBrowserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
     private val navController: NavController = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
+    private val shareUseCases: ShareUseCases = mockk(relaxed = true)
     private val historyStorage: PlacesHistoryStorage = mockk(relaxed = true)
 
     private val appStore: AppStore = AppStore()
@@ -185,23 +187,38 @@ class HistoryMetadataGroupControllerTest {
     }
 
     @Test
-    fun handleShare() {
-        controller.handleShare(setOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem))
-
-        val data = arrayOf(
-            ShareData(
-                title = mozillaHistoryMetadataItem.title,
-                url = mozillaHistoryMetadataItem.url,
-            ),
-            ShareData(
-                title = firefoxHistoryMetadataItem.title,
-                url = firefoxHistoryMetadataItem.url,
-            ),
+    fun `WHEN handleShare is invoked on a single tab THEN share use case is called with the selected items and send to devices and QR code chooser actions`() {
+        val expected = listOf(
+            ShareData(url = mozillaHistoryMetadataItem.url, title = mozillaHistoryMetadataItem.title),
         )
 
+        controller.handleShare(setOf(mozillaHistoryMetadataItem))
+
         verify {
-            navController.navigate(
-                directionsEq(HistoryMetadataGroupFragmentDirections.actionGlobalShareFragment(data)),
+            shareUseCases.shareItems(
+                items = expected,
+                source = ShareSource.HISTORY_METADATA_GROUP,
+                chooserActions = listOf(ShareSheetChooserAction.SEND_TO_DEVICES, ShareSheetChooserAction.QR_CODE),
+                navigateToShareFragment = any(),
+            )
+        }
+    }
+
+    @Test
+    fun `WHEN handleShare is invoked on multiple tabs THEN share use case is called with the selected items and only send to devices chooser action`() {
+        val expected = listOf(
+            ShareData(url = mozillaHistoryMetadataItem.url, title = mozillaHistoryMetadataItem.title),
+            ShareData(url = firefoxHistoryMetadataItem.url, title = firefoxHistoryMetadataItem.title),
+        )
+
+        controller.handleShare(setOf(mozillaHistoryMetadataItem, firefoxHistoryMetadataItem))
+
+        verify {
+            shareUseCases.shareItems(
+                items = expected,
+                source = ShareSource.HISTORY_METADATA_GROUP,
+                chooserActions = listOf(ShareSheetChooserAction.SEND_TO_DEVICES),
+                navigateToShareFragment = any(),
             )
         }
     }
@@ -365,6 +382,7 @@ class HistoryMetadataGroupControllerTest {
             fenixBrowserUseCases = fenixBrowserUseCases,
             navController = navController,
             settings = settings,
+            shareUseCases = shareUseCases,
             scope = TestScope(testDispatcher),
             searchTerm = searchTerm,
             deleteSnackbar = deleteSnackbar,

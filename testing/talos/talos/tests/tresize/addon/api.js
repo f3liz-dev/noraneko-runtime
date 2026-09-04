@@ -9,14 +9,20 @@ this.tresize = class extends ExtensionAPI {
     let { baseURI } = this.extension;
 
     this.listener = function listener({ target, data }) {
-      let win = target.ownerGlobal;
-      Services.scriptloader.loadSubScript(
+      let win = target.documentGlobal;
+      Services.scriptloader.loadSubScriptWithOptions(
         baseURI.resolve("/content/Profiler.js"),
-        win
+        {
+          target: win,
+          allowUnsafeURL: true,
+        }
       );
-      Services.scriptloader.loadSubScript(
+      Services.scriptloader.loadSubScriptWithOptions(
         baseURI.resolve("/content/tresize.js"),
-        win
+        {
+          target: win,
+          allowUnsafeURL: true,
+        }
       );
 
       function sendResult(result) {

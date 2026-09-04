@@ -87,16 +87,225 @@ media.audio:
       - media-alerts@mozilla.com
     expires: never
 
+media.audio_focus:
+  interrupt_count:
+    type: labeled_counter
+    labels:
+      - system_transient
+      - system_permanent
+    description: >
+      Number of audio-session interruptions, by cause.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  interrupt_outcome:
+    type: event
+    description: >
+      Terminal outcome of an audio-session interruption for a top-level
+      browsing context.
+    extra_keys:
+      outcome:
+        description: >
+          `recovered` (focus returned and the session resumed),
+          `ended_permanent` (a permanent loss inactivated it), or
+          `unresolved_at_teardown` (a transient interruption never resolved
+          before the controller went away).
+        type: string
+      cause:
+        description: The interruption cause, `system_transient` or `system_permanent`.
+        type: string
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  resume_decision:
+    type: labeled_counter
+    labels:
+      - media
+      - web_audio
+      - web_speech
+    description: >
+      When an interruption ends, the number of times each suspended audible
+      source (media element, Web Audio, or Web Speech) was dispatched its resume
+      signal. Sources the interruption never suspended, or that the page took
+      over during the interruption, are not counted.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  platform_focus_type:
+    type: labeled_counter
+    labels:
+      - auto
+      - ambient
+      - transient
+      - transient_solo
+      - playback
+      - play_and_record
+    description: >
+      Android only: the effective audio-session type Firefox forwards to the
+      embedder to shape the platform audio-focus request, by value. This is the
+      type actually used on the platform, including the source-derived fallback
+      (e.g. ambient for Web Audio, transient for Web Speech) when no page set a
+      type explicitly.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+media.audio_session:
+  api_used:
+    type: counter
+    description: >
+      Incremented once per document that accesses `navigator.audioSession`
+      (recorded in the content process, so it counts accessing documents).
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  type_set:
+    type: labeled_counter
+    labels:
+      - auto
+      - playback
+      - transient
+      - transient_solo
+      - ambient
+      - play_and_record
+    description: >
+      Number of explicit `audioSession.type` assignments, by value.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  effective_auto_type:
+    type: labeled_counter
+    labels:
+      - auto
+      - playback
+      - transient
+      - transient_solo
+      - ambient
+      - play_and_record
+    description: >
+      The concrete type an `auto`-typed selected session resolves to under the
+      audio-session type priority ranking.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  selected_changed:
+    type: counter
+    description: >
+      Number of times the selected audio session changed for a top-level
+      browsing context.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
+  inactivated_by_arbitration:
+    type: counter
+    description: >
+      Number of times audio-session arbitration inactivates one or more active
+      sessions because another session takes over. Counted once per arbitration
+      pass that displaces a session, not once per displaced session.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2054517
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
 media.playback:
   first_frame_loaded:
     type: event
     description:
       The time that the media pipeline takes to load the first video frame.
+      Only recorded on pre-release builds (Nightly and Beta).
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1882205
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1882205
     data_sensitivity:
@@ -199,39 +408,138 @@ media.playback:
       - media-alerts@mozilla.com
     expires: never
 
-  decode_error:
-    type: event
+  unencrypted_sw_decode_error:
+    type: dual_labeled_counter
     description: >
-      Record the decode error details.
+      Count of decode errors for unencrypted software media playback,
+      keyed by codec and error name. Only fires when the decoder gives up
+      after exhausting retries. Does not cover encrypted (EME) playback; see
+      media.playback.encrypted_decode_error for that.
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
     data_sensitivity:
       - technical
     notification_emails:
       - media-alerts@mozilla.com
-    extra_keys:
-      mime_type:
-        description: The mime type of the media track when the error occurred.
-        type: string
-      error_name:
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_vp8
+          - video_hevc
+          - video_theora
+          - audio_mpeg
+          - audio_opus
+          - audio_flac
+          - audio_vorbis
+          - audio_wave
+          - audio_other
+          - video_other
+      category:
         description: The name of the error.
-        type: string
-      key_system:
-        description: >
-          The value indicates the key system in use when the error occurred. It
-          will be null if the error is related to non-EME playback.
-        type : string
-      decoder_name:
-        description: The name of the decoder when the error occurred.
-        type: string
-      is_hardware_accelerated:
-        description: True if the decoder used when the error occurred is a hardware decoder.
-        type: boolean
+        labels:
+          - decode_err
+          - fatal_err
+          - metadata_err
+          - demuxer_err
+          - crash
+          - unexpected_err
+          - oom_err
+          - other
+    expires: never
+
+  unencrypted_hw_decode_error:
+    type: dual_labeled_counter
+    description: >
+      Count of decode errors for unencrypted hardware-accelerated media
+      playback, keyed by codec and error name. Only fires when the decoder
+      gives up after exhausting retries. Tracked separately from software
+      errors to measure hw decoder failure rates and inform decisions on
+      whether to retain this probe long-term.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_vp8
+          - video_hevc
+          - video_theora
+          - audio_mpeg
+          - audio_opus
+          - audio_flac
+          - audio_vorbis
+          - audio_wave
+          - audio_other
+          - video_other
+      category:
+        description: The name of the error.
+        labels:
+          - decode_err
+          - fatal_err
+          - metadata_err
+          - demuxer_err
+          - crash
+          - unexpected_err
+          - oom_err
+          - other
+    expires: never
+
+  encrypted_decode_error:
+    type: dual_labeled_counter
+    description: >
+      Count of fatal decode errors for encrypted (EME) media playback, keyed
+      by codec and key system. Only fires when the decoder gives up after
+      exhausting retries.
+    metadata:
+      tags:
+        - 'Core :: Audio/Video: Playback'
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - media-alerts@mozilla.com
+    dual_labels:
+      key:
+        description: The codec mime type of the media track when the error occurred.
+        labels:
+          - video_avc
+          - video_av1
+          - video_vp9
+          - video_hevc
+          - audio_aac
+          - audio_other
+          - video_other
+      category:
+        description: The key system in use when the error occurred.
+        labels:
+          - widevine
+          - playready
+          - clearkey
     expires: never
 
 media.recorder:
@@ -320,12 +628,12 @@ media:
       This metric does not determine whether the MKV file is valid; it is simply
       a count based on the sniffed MIME type.
     bugs:
-      - https://bugzil.la/2016198
+      - https://bugzil.la/2057069
     data_reviews:
-      - https://bugzil.la/2016198
+      - https://bugzil.la/2057069
     notification_emails:
       - media-alerts@mozilla.com
-    expires: 156
+    expires: 162
 
   mkv_codec_type:
     type: labeled_counter
@@ -345,12 +653,28 @@ media:
       - AudioPcm
       - NoCodecSpecified
     bugs:
-      - https://bugzil.la/2016198
+      - https://bugzil.la/2057069
     data_reviews:
-      - https://bugzil.la/2016198
+      - https://bugzil.la/2057069
     notification_emails:
       - media-alerts@mozilla.com
-    expires: 156
+    expires: 162
+
+  muted_by_content_attribute_runtime:
+    type: counter
+    description: >
+      How often a media element whose muted state is "default" is muted only by
+      a muted content attribute that was added at runtime, measured at playback
+      when the element would otherwise be audible (has an audio track, non-zero
+      volume, is playing, and is not otherwise muted). Recorded at most once per
+      resource, to measure how often pages rely on this pattern across channels.
+    bugs:
+      - https://bugzil.la/2053586
+    data_reviews:
+      - https://bugzil.la/2053586
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: 160
 
   video_hardware_decoding_support:
     type: labeled_boolean
@@ -398,32 +722,36 @@ media:
     telemetry_mirror: MEDIA_VIDEO_HD_HARDWARE_DECODING_SUPPORT
 
   error:
-    type: event
+    type: dual_labeled_counter
     description: >
-      Record the error details happened on a media element.
+      Count of errors surfaced on a media element, keyed by error type and
+      whether the playback is encrypted. Serves as a high-level signal for
+      all media error categories.
     metadata:
       tags:
         - 'Core :: Audio/Video: Playback'
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2021157
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1929335
     data_sensitivity:
       - technical
     notification_emails:
       - media-alerts@mozilla.com
-    extra_keys:
-      error_type:
-        description: The error type defined in MediaError.webidl.
-        type: string
-      error_name:
-        description: The name of the internal error.
-        type: string
-      key_system:
-        description: >
-          The value indicates the key system in use when the error occurred. It
-          will be null if the error is related to non-EME playback.
-        type : string
+    dual_labels:
+      key:
+        description: The error type as defined by the HTML MediaError spec.
+        labels:
+          - abort_error
+          - network_error
+          - decode_error
+          - not_supported_error
+      category:
+        description: Whether the media playback is encrypted.
+        labels:
+          - encrypted
+          - non_encrypted
     expires: never
 
   video_play_time:

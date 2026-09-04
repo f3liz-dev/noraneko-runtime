@@ -9,10 +9,10 @@
 #include <windows.h>
 #include <wrl.h>
 
-#include "content_decryption_module.h"
 #include "MFCDMExtra.h"
 #include "RefCounted.h"
 #include "WMFClearKeyUtils.h"
+#include "content_decryption_module.h"
 
 namespace mozilla {
 
@@ -56,6 +56,12 @@ class WMFClearKeySession final
                     const BYTE* aMessage, DWORD aMessageSize);
   void OnKeyStatusChanged(const cdm::KeyInformation* aKeysInfo,
                           uint32_t aKeysInfoCount);
+
+#ifdef ENABLE_TESTS
+  void SetSessionIdForTesting(std::string aSessionId) {
+    mSessionId = std::move(aSessionId);
+  }
+#endif
 
  private:
   cdm::SessionType mSessionType;

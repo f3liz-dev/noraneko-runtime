@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "xpcprivate.h"
-#include "StaticComponents.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ProfilerLabels.h"
+
+#include "nsJSUtils.h"
+#include "StaticComponents.h"
+#include "xpcprivate.h"
+
 #include "js/Debug.h"               // JS::dbg::ShouldAvoidSideEffects
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
 #include "js/String.h"              // JS::LinearStringHasLatin1Chars
-#include "nsJSUtils.h"
 
 using namespace mozilla;
 using namespace JS;
@@ -27,16 +27,9 @@ static bool Services_MayResolve(const JSAtomState& names, jsid id,
                                 JSObject* maybeObj);
 
 static const JSClassOps sServices_ClassOps = {
-    nullptr,                // addProperty
-    nullptr,                // delProperty
-    nullptr,                // enumerate
-    Services_NewEnumerate,  // newEnumerate
-    Services_Resolve,       // resolve
-    Services_MayResolve,    // mayResolve
-    nullptr,                // finalize
-    nullptr,                // call
-    nullptr,                // construct
-    nullptr,                // trace
+    .newEnumerate = Services_NewEnumerate,
+    .resolve = Services_Resolve,
+    .mayResolve = Services_MayResolve,
 };
 
 static const JSClass sServices_Class = {"JSServices", 0, &sServices_ClassOps};

@@ -64,10 +64,6 @@ impl<'a> FeatureList<'a> {
 pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
     let mut shaders = ShaderFeatures::new();
 
-    // Clip shaders
-    shaders.insert("cs_clip_rectangle", vec![String::new(), "FAST_PATH".to_string()]);
-    shaders.insert("cs_clip_box_shadow", vec!["TEXTURE_2D".to_string()]);
-
     // Cache shaders
     shaders.insert("cs_blur", vec!["ALPHA_TARGET".to_string(), "COLOR_TARGET".to_string()]);
 
@@ -75,7 +71,6 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
 
     for name in &[
         "cs_line_decoration",
-        "cs_fast_linear_gradient",
         "cs_border_segment",
         "cs_border_solid",
         "cs_svg_filter_node",
@@ -83,59 +78,8 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
         shaders.insert(name, vec![String::new()]);
     }
 
-    for name in &[
-        "cs_linear_gradient",
-        "cs_radial_gradient",
-        "cs_conic_gradient",
-    ] {
-        let mut features = Vec::new();
-        features.push(String::new());
-        if flags.contains(ShaderFeatureFlags::DITHERING) {
-            features.push("DITHERING".to_string());
-        }
-        shaders.insert(name, features);
-    }
-
     let mut base_prim_features = FeatureList::new();
 
-    // Brush shaders
-    let mut brush_alpha_features = base_prim_features.with("ALPHA_PASS");
-    for name in &["brush_solid", "brush_blend", "brush_mix_blend"] {
-        let features: Vec<String> = vec![
-            base_prim_features.finish(),
-            brush_alpha_features.finish(),
-            "DEBUG_OVERDRAW".to_string(),
-        ];
-        shaders.insert(name, features);
-    }
-
-    #[allow(clippy::single_element_loop)]
-    for name in &["brush_linear_gradient"] {
-        let mut list = FeatureList::new();
-        if flags.contains(ShaderFeatureFlags::DITHERING) {
-            list.add("DITHERING");
-        }
-        let features: Vec<String> = vec![
-            list.concat(&base_prim_features).finish(),
-            list.concat(&brush_alpha_features).finish(),
-            list.with("DEBUG_OVERDRAW").finish(),
-        ];
-        shaders.insert(name, features);
-    }
-
-    {
-        let features: Vec<String> = vec![
-            base_prim_features.finish(),
-            brush_alpha_features.finish(),
-            base_prim_features.with("ANTIALIASING").finish(),
-            brush_alpha_features.with("ANTIALIASING").finish(),
-            "ANTIALIASING,DEBUG_OVERDRAW".to_string(),
-            "DEBUG_OVERDRAW".to_string(),
-        ];
-        shaders.insert("brush_opacity", features);
-    }
-
-    // Image brush shaders
     let mut texture_types = vec!["TEXTURE_2D"];
     if flags.contains(ShaderFeatureFlags::GL) {
         texture_types.push("TEXTURE_RECT");
@@ -146,33 +90,6 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
     if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL_BT709) {
         texture_types.push("TEXTURE_EXTERNAL_BT709");
     }
-    let mut image_features: Vec<String> = Vec::new();
-    for texture_type in &texture_types {
-        let mut fast = FeatureList::new();
-        if !texture_type.is_empty() {
-            fast.add(texture_type);
-        }
-        image_features.push(fast.concat(&base_prim_features).finish());
-        image_features.push(fast.concat(&brush_alpha_features).finish());
-        image_features.push(fast.with("DEBUG_OVERDRAW").finish());
-        let mut slow = fast.clone();
-        slow.add("REPETITION");
-        slow.add("ANTIALIASING");
-        image_features.push(slow.concat(&base_prim_features).finish());
-        image_features.push(slow.concat(&brush_alpha_features).finish());
-        image_features.push(slow.with("DEBUG_OVERDRAW").finish());
-        if flags.contains(ShaderFeatureFlags::ADVANCED_BLEND_EQUATION) {
-            let advanced_blend_features = brush_alpha_features.with("ADVANCED_BLEND");
-            image_features.push(fast.concat(&advanced_blend_features).finish());
-            image_features.push(slow.concat(&advanced_blend_features).finish());
-        }
-        if flags.contains(ShaderFeatureFlags::DUAL_SOURCE_BLENDING) {
-            let dual_source_features = brush_alpha_features.with("DUAL_SOURCE_BLENDING");
-            image_features.push(fast.concat(&dual_source_features).finish());
-            image_features.push(slow.concat(&dual_source_features).finish());
-        }
-    }
-    shaders.insert("brush_image", image_features);
 
     let mut composite_texture_types = texture_types.clone();
     if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL_ESSL1) {
@@ -185,8 +102,7 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
     }
     shaders.insert("cs_scale", composite_features.clone());
 
-    // YUV image brush and composite shaders
-    let mut yuv_features: Vec<String> = Vec::new();
+    // YUV composite shaders
     for texture_type in &texture_types {
         let mut list = FeatureList::new();
         if !texture_type.is_empty() {
@@ -194,11 +110,7 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
         }
         list.add("YUV");
         composite_features.push(list.finish());
-        yuv_features.push(list.concat(&base_prim_features).finish());
-        yuv_features.push(list.concat(&brush_alpha_features).finish());
-        yuv_features.push(list.with("DEBUG_OVERDRAW").finish());
     }
-    shaders.insert("brush_yuv_image", yuv_features);
 
     // Fast path composite shaders
     for texture_type in &composite_texture_types {
@@ -239,7 +151,44 @@ pub fn get_shader_features(flags: ShaderFeatureFlags) -> ShaderFeatures {
 
     shaders.insert("ps_split_composite", vec![base_prim_features.finish()]);
 
-    shaders.insert("ps_quad_textured", vec![base_prim_features.finish()]);
+    // ps_quad_textured needs per-texture-kind variants so that external image
+    // sources (e.g. ANGLE DXGI textures) are sampled with the correct sampler
+    // type.
+    let mut ps_quad_textured_features: Vec<String> = vec!["TEXTURE_2D".to_string()];
+    if flags.contains(ShaderFeatureFlags::GL) {
+        ps_quad_textured_features.push("TEXTURE_RECT".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL) {
+        ps_quad_textured_features.push("TEXTURE_EXTERNAL".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL_BT709) {
+        ps_quad_textured_features.push("TEXTURE_EXTERNAL_BT709".to_string());
+    }
+    shaders.insert("ps_quad_textured", ps_quad_textured_features);
+
+    shaders.insert("ps_quad_repeat", vec![base_prim_features.finish()]);
+
+    shaders.insert("ps_quad_box_shadow", vec![base_prim_features.finish()]);
+
+    // Like ps_quad_textured, ps_quad_yuv needs per-texture-kind variants so that
+    // the YUV planes are sampled with the correct sampler type.
+    let mut ps_quad_yuv_features: Vec<String> = vec!["TEXTURE_2D".to_string()];
+    if flags.contains(ShaderFeatureFlags::GL) {
+        ps_quad_yuv_features.push("TEXTURE_RECT".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL) {
+        ps_quad_yuv_features.push("TEXTURE_EXTERNAL".to_string());
+    }
+    if flags.contains(ShaderFeatureFlags::TEXTURE_EXTERNAL_BT709) {
+        ps_quad_yuv_features.push("TEXTURE_EXTERNAL_BT709".to_string());
+    }
+    shaders.insert("ps_quad_yuv", ps_quad_yuv_features);
+
+    shaders.insert("ps_quad_backdrop", vec!["TEXTURE_2D".to_string()]);
+
+    shaders.insert("ps_quad_blend", vec!["TEXTURE_2D".to_string()]);
+
+    shaders.insert("ps_quad_mix_blend", vec!["TEXTURE_2D".to_string()]);
 
     let mut maybe_dithering = FeatureList::new();
     if flags.contains(ShaderFeatureFlags::DITHERING) {

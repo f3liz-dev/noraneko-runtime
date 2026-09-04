@@ -58,7 +58,7 @@ async function testWatchingCssMessages() {
   // We need to wait for the first CSS Warning as it is not a cached message; when we
   // start watching, the `cssErrorReportingEnabled` is checked on the target docShell, and
   // if it is false, we re-parse the stylesheets to get the messages.
-  await BrowserTestUtils.waitForCondition(() => receivedMessages.length === 1);
+  await TestUtils.waitForCondition(() => receivedMessages.length === 1);
 
   info("Trigger a CSS Warning");
   triggerCSSWarning(tab);
@@ -207,7 +207,7 @@ function setupOnAvailableFunction(
  * Sets invalid values for width and height on the document's body style attribute.
  */
 function triggerCSSWarning(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, null, function frameScript() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function frameScript() {
     content.document.body.style.width = "red";
     content.document.body.style.height = "blue";
   });

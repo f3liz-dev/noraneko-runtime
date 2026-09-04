@@ -1,18 +1,16 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GeckoNetworkManager_h
 #define GeckoNetworkManager_h
 
+#include "mozilla/Services.h"
+#include "mozilla/java/GeckoNetworkManagerNatives.h"
 #include "nsAppShell.h"
 #include "nsCOMPtr.h"
 #include "nsINetworkLinkService.h"
 #include "nsISystemProxySettings.h"
-
-#include "mozilla/java/GeckoNetworkManagerNatives.h"
-#include "mozilla/Services.h"
 
 namespace mozilla {
 

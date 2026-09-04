@@ -296,19 +296,19 @@ async function selectThisFirefoxPage(doc, store) {
  * Navigate to the Connect page. Resolves when the Connect page is rendered.
  */
 async function selectConnectPage(doc) {
-  const sidebarItems = doc.querySelectorAll(".qa-sidebar-item");
-  const connectSidebarItem = [...sidebarItems].find(element => {
-    return element.textContent === "Setup";
-  });
-  ok(connectSidebarItem, "Sidebar contains a Connect item");
-  const connectLink = connectSidebarItem.querySelector(".qa-sidebar-link");
-  ok(connectLink, "Sidebar contains a Connect link");
-
-  info("Click on the Connect link in the sidebar");
-  connectLink.click();
+  info("Click on the Setup item in the sidebar");
+  selectSidebarItemPage("Setup", doc);
 
   info("Wait until Connect page is displayed");
   await waitUntil(() => doc.querySelector(".qa-connect-page"));
+}
+
+function selectSidebarItemPage(text, doc) {
+  const sidebarItem = findSidebarItemByText(text, doc);
+  ok(sidebarItem, `Sidebar contains a "${text}" item`);
+
+  info(`Click on the "${text}" item in the sidebar`);
+  EventUtils.synthesizeMouseAtCenter(sidebarItem, {}, doc.defaultView);
 }
 
 function getDebugTargetPane(title, document) {
@@ -336,8 +336,12 @@ function findDebugTargetByText(text, document) {
   return targets.find(target => target.textContent.includes(text));
 }
 
+function getSidebarItems(document) {
+  return Array.from(document.querySelectorAll(".qa-sidebar-item"));
+}
+
 function findSidebarItemByText(text, document) {
-  const sidebarItems = document.querySelectorAll(".qa-sidebar-item");
+  const sidebarItems = getSidebarItems(document);
   return [...sidebarItems].find(element => {
     return element.textContent.includes(text);
   });
@@ -348,6 +352,13 @@ function findSidebarItemLinkByText(text, document) {
   return [...links].find(element => {
     return element.textContent.includes(text);
   });
+}
+
+function isSidebarItemSelected(item) {
+  if (item.matches("moz-page-nav-button")) {
+    return item.selected;
+  }
+  return item.classList.contains("qa-sidebar-item-selected");
 }
 
 async function connectToRuntime(deviceName, document) {
@@ -580,3 +591,40 @@ async function disconnectFromLocalFirefox({
   await waitUntilUsbDeviceIsUnplugged(deviceName, doc);
 }
 /* exported disconnectFromLocalFirefox */
+
+async function assertDebugTargetCollapsed(paneEl, title) {
+  info("Check debug target is collapsed");
+  // check that its parent details element is closed
+  const targetEl = paneEl.querySelector(".qa-debug-target-pane__collapsable");
+  is(targetEl.closest("details").open, false, "Debug target pane is collapsed");
+  // check title
+  const titleEl = paneEl.querySelector(".qa-debug-target-pane-title");
+  const expectedTitle = `${title} (${
+    targetEl.querySelectorAll(".qa-debug-target-item").length
+  })`;
+  is(
+    titleEl.textContent,
+    expectedTitle,
+    `Collapsed title "${title}" is correct`
+  );
+}
+/* exported assertDebugTargetCollapsed */
+
+async function assertDebugTargetExpanded(paneEl, title) {
+  info("Check debug target is expanded");
+
+  // check that its parent details element is open
+  const targetEl = paneEl.querySelector(".qa-debug-target-pane__collapsable");
+  is(targetEl.closest("details").open, true, "Debug target pane is expanded");
+  // check title
+  const titleEl = paneEl.querySelector(".qa-debug-target-pane-title");
+  const expectedTitle = `${title} (${
+    targetEl.querySelectorAll(".qa-debug-target-item").length
+  })`;
+  is(
+    titleEl.textContent,
+    expectedTitle,
+    `Expanded title "${title}" is correct`
+  );
+}
+/* exported assertDebugTargetExpanded */

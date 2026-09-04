@@ -1,4 +1,3 @@
-# -*- Mode: Makefile -*-
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -48,7 +47,6 @@ MOZ_OPTIMIZE	= @MOZ_OPTIMIZE@
 MOZ_DEBUG	= @MOZ_DEBUG@
 MOZ_DEBUG_SYMBOLS = @MOZ_DEBUG_SYMBOLS@
 
-USE_CPLUS	= @USE_CPLUS@
 USE_IPV6	= @USE_IPV6@
 USE_N32		= @USE_N32@
 USE_X32		= @USE_X32@

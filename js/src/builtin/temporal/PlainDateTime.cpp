@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -130,15 +128,15 @@ static PlainDateTimeObject* CreateTemporalDateTime(
   // Step 4.
   auto packedDate = PackedDate::pack(isoDateTime.date);
   auto packedTime = PackedTime::pack(isoDateTime.time);
-  object->initFixedSlot(PlainDateTimeObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
-  object->initFixedSlot(
+  object->initFixedSlotTyped(PlainDateTimeObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(
       PlainDateTimeObject::PACKED_TIME_SLOT,
       DoubleValue(mozilla::BitwiseCast<double>(packedTime.value)));
 
   // Step 5.
-  object->initFixedSlot(PlainDateTimeObject::CALENDAR_SLOT,
-                        calendar.toSlotValue());
+  object->initFixedSlotTyped(PlainDateTimeObject::CALENDAR_SLOT,
+                             calendar.toSlotValue());
 
   // Step 6.
   return object;
@@ -168,15 +166,15 @@ PlainDateTimeObject* js::temporal::CreateTemporalDateTime(
   // Step 4.
   auto packedDate = PackedDate::pack(isoDateTime.date);
   auto packedTime = PackedTime::pack(isoDateTime.time);
-  object->initFixedSlot(PlainDateTimeObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
-  object->initFixedSlot(
+  object->initFixedSlotTyped(PlainDateTimeObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(
       PlainDateTimeObject::PACKED_TIME_SLOT,
       DoubleValue(mozilla::BitwiseCast<double>(packedTime.value)));
 
   // Step 5.
-  object->initFixedSlot(PlainDateTimeObject::CALENDAR_SLOT,
-                        calendar.toSlotValue());
+  object->initFixedSlotTyped(PlainDateTimeObject::CALENDAR_SLOT,
+                             calendar.toSlotValue());
 
   // Step 6.
   return object;

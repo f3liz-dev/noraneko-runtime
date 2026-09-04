@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -278,6 +276,11 @@ void NodeController::DropPeer(NodeName aNodeName) {
   MOZ_FUZZING_IPC_DROP_PEER("NodeController::DropPeer");
 #endif
 
+  // This may cause many error tasks to be dispatched.
+  // We batch them together to reduce locking contention when destroying a large
+  // number of actors due to a peer disconnecting.
+  MessageChannel::ErrorNotifyBatcher autoBatchNotify;
+
   Invite invite;
   RefPtr<NodeChannel> channel;
   nsTArray<PortRef> pendingMerges;
@@ -312,6 +315,12 @@ void NodeController::DropPeer(NodeName aNodeName) {
 
 void NodeController::ContactRemotePeer(const NodeName& aNode,
                                        UniquePtr<Event> aEvent) {
+  // Any attempt to contact a remote peer during CleanUp() is doomed to fail.
+  if (XRE_GetAsyncIOEventTarget()->IsOnCurrentThread() &&
+      MessageLoop::current() && !MessageLoop::current()->IsAcceptingTasks()) {
+    return;
+  }
+
   // On Windows and macOS, messages holding HANDLEs or mach ports must be
   // relayed via the broker process so it can transfer ownership.
   bool needsRelay = false;
@@ -731,7 +740,8 @@ void NodeController::OnAcceptInvite(const NodeName& aFromNode,
     return;
   }
 
-  if (aRealName == mojo::core::ports::kInvalidNodeName ||
+  if (aRealName == kBrokerNodeName ||
+      aRealName == mojo::core::ports::kInvalidNodeName ||
       aInitialPort == mojo::core::ports::kInvalidPortName) {
     NODECONTROLLER_WARNING("Invalid name in AcceptInvite message");
     DropPeer(aFromNode);
@@ -871,6 +881,8 @@ void NodeController::CleanUp() {
 
   RefPtr<NodeController> nodeController = gNodeController;
   gNodeController = nullptr;
+
+  MessageChannel::ErrorNotifyBatcher autoBatchNotify;
 
   // Collect all objects from our state which need to be cleaned up.
   nsTArray<NodeName> lostConnections;

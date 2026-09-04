@@ -14,7 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.clearPackageData
-import org.mozilla.fenix.benchmark.utils.completeOnboarding
+import org.mozilla.fenix.benchmark.utils.onboardingJourney
 import org.mozilla.fenix.benchmark.utils.revokeNotificationPermission
 
 /**
@@ -48,16 +48,16 @@ class OnboardingBaselineProfileGenerator {
     @get:Rule
     val rule = BaselineProfileRule()
 
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
+    @Ignore("Failing due to new nightly config: https://bugzilla.mozilla.org/show_bug.cgi?id=2031266")
     @Test
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
+            maxIterations = baselineProfileMaxIterations(),
         ) {
             device.clearPackageData(packageName = packageName)
             device.revokeNotificationPermission(packageName = packageName)
-            startActivityAndWait()
-            device.completeOnboarding()
+            onboardingJourney()
         }
     }
 }

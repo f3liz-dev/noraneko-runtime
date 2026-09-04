@@ -5,15 +5,13 @@ use {
     common::*,
     error_graph::ErrorList,
     minidump_writer::minidump_writer::MinidumpWriterConfig,
-    nix::{
-        sys::mman::{mmap, MapFlags, ProtFlags},
-        sys::signal::Signal,
-    },
     std::{
         convert::TryInto,
+        ffi::c_void,
         io::{BufRead, BufReader},
         mem::size_of,
         os::unix::process::ExitStatusExt,
+        ptr,
     },
 };
 
@@ -38,18 +36,18 @@ macro_rules! assert_no_soft_errors(($n: ident, $e: expr) => {{
 }});
 
 #[test]
-fn test_setup() {
+fn setup() {
     spawn_child("setup", &[]);
 }
 
 #[test]
-fn test_thread_list_from_child() {
+fn thread_list_from_child() {
     // Child spawns and looks in the parent (== this process) for its own thread-ID
 
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
 
-    // // We also spawn another thread that we send a SIGHUP to to ensure that the
-    // // ptracedumper correctly handles it
+    // We also spawn another thread that we send a SIGHUP to to ensure that the
+    // ptracedumper correctly handles it
     let _thread = std::thread::Builder::new()
         .name("sighup-thread".into())
         .spawn(move || {
@@ -82,7 +80,7 @@ fn test_thread_list_from_child() {
         }
 
         act.sa_flags = libc::SA_SIGINFO;
-        act.sa_sigaction = on_sig as usize;
+        act.sa_sigaction = on_sig as *const () as _;
 
         // Register the action with the signal handler
         if libc::sigaction(libc::SIGHUP, &act, std::ptr::null_mut()) != 0 {
@@ -101,7 +99,7 @@ fn test_thread_list_from_child() {
 }
 
 #[test]
-fn test_thread_list_from_parent() {
+fn thread_list_from_parent() {
     let num_of_threads = 5;
     let mut child = start_child_and_wait_for_threads(num_of_threads);
     let pid = child.id() as i32;
@@ -139,8 +137,6 @@ fn test_thread_list_from_parent() {
         let process_tid_location = info.regs.uregs[3];
         #[cfg(target_arch = "aarch64")]
         let process_tid_location = info.regs.regs[3];
-        #[cfg(target_arch = "mips")]
-        let process_tid_location = info.mcontext.gregs[1];
 
         let thread_id_data = PtraceDumper::copy_from_process(
             *curr_thread,
@@ -167,7 +163,7 @@ fn test_thread_list_from_parent() {
     let waitres = child.wait().expect("Failed to wait for child");
     let status = waitres.signal().expect("Child did not die due to signal");
     assert_eq!(waitres.code(), None);
-    assert_eq!(status, Signal::SIGKILL as i32);
+    assert_eq!(status, libc::SIGKILL);
 
     // We clean up the child process before checking the final result
     // TODO: I currently know of no way to write the thread_id into the registers using Rust,
@@ -175,25 +171,25 @@ fn test_thread_list_from_parent() {
     // assert_eq!(matching_threads, num_of_threads);
 }
 
-// #[cfg(not(any(target_arch = "mips", target_arch = "arm-eabi"))]
-#[cfg(not(target_arch = "mips"))]
+#[cfg(not(target_os = "android"))]
 #[test]
 // Ensure that the linux-gate VDSO is included in the mapping list.
-fn test_mappings_include_linux_gate() {
+fn mappings_include_linux_gate() {
     spawn_child("mappings_include_linux_gate", &[]);
 }
 
 #[test]
-fn test_linux_gate_mapping_id() {
+fn linux_gate_mapping_id() {
     disabled_on_ci_and_android!();
     spawn_child("linux_gate_mapping_id", &[]);
 }
 
 #[test]
-fn test_merged_mappings() {
-    let page_size = nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE).unwrap();
-    let page_size = std::num::NonZeroUsize::new(page_size.unwrap() as usize).unwrap();
-    let map_size = std::num::NonZeroUsize::new(3 * page_size.get()).unwrap();
+fn merges_mappings() {
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    assert!(page_size > 0);
+    let page_size = usize::try_from(page_size).unwrap();
+    let map_size = 3 * page_size;
 
     let path: String = if let Ok(p) = std::env::var("TEST_HELPER") {
         p
@@ -205,30 +201,31 @@ fn test_merged_mappings() {
     // mmap two segments out of the helper binary, one
     // enclosed in the other, but with different protections.
     let mapped_mem = unsafe {
-        mmap(
-            None,
+        let ptr = libc::mmap(
+            ptr::null_mut(),
             map_size,
-            ProtFlags::PROT_READ,
-            MapFlags::MAP_SHARED,
-            &file,
+            libc::PROT_READ,
+            libc::MAP_SHARED,
+            std::os::fd::AsRawFd::as_raw_fd(&file),
             0,
-        )
-        .unwrap()
+        );
+        assert!(ptr != libc::MAP_FAILED);
+        ptr
     };
 
-    let mapped = mapped_mem.as_ptr() as usize;
+    let mapped = mapped_mem as usize;
 
     // Carve a page out of the first mapping with different permissions.
     let _inside_mapping = unsafe {
-        mmap(
-            std::num::NonZeroUsize::new(mapped + 2 * page_size.get()),
+        libc::mmap(
+            (mapped + 2 * page_size) as *mut c_void,
             page_size,
-            ProtFlags::PROT_NONE,
-            MapFlags::MAP_SHARED | MapFlags::MAP_FIXED,
-            &file,
+            libc::PROT_NONE,
+            libc::MAP_SHARED | libc::MAP_FIXED,
+            std::os::fd::AsRawFd::as_raw_fd(&file),
             // Map a different offset just to
             // better test real-world conditions.
-            page_size.get().try_into().unwrap(), // try_into() in order to work for 32 and 64 bit
+            page_size.try_into().unwrap(),
         )
     };
 
@@ -238,15 +235,16 @@ fn test_merged_mappings() {
     );
 }
 
-#[test]
 // Ensure that the linux-gate VDSO is included in the mapping list.
-fn test_file_id() {
+#[test]
+fn file_id() {
     disabled_on_ci_and_android!();
     spawn_child("file_id", &[]);
 }
 
+#[cfg(not(target_os = "android"))]
 #[test]
-fn test_find_mapping() {
+fn finds_mappings() {
     spawn_child(
         "find_mappings",
         &[
@@ -257,7 +255,7 @@ fn test_find_mapping() {
 }
 
 #[test]
-fn test_copy_from_process_self() {
+fn copies_from_process_self() {
     disabled_on_ci_and_android!();
 
     let stack_var: libc::c_long = 0x11223344;
@@ -271,8 +269,9 @@ fn test_copy_from_process_self() {
     );
 }
 
+// Ensures that we sanitize the stack properly
 #[test]
-fn test_sanitize_stack_copy() {
+fn sanitizes_stack_copies() {
     let num_of_threads = 1;
     let mut child = start_child_and_return(&["spawn_alloc_wait"]);
     let pid = child.id() as i32;
@@ -375,8 +374,6 @@ fn test_sanitize_stack_copy() {
     // let heap_addr = thread_info.regs.uregs[3] as usize;
     // #[cfg(target_arch = "aarch64")]
     // let heap_addr = thread_info.regs.regs[3] as usize;
-    // #[cfg(target_arch = "mips")]
-    // let heap_addr = thread_info.mcontext.gregs[1] as usize;
 
     simulated_stack = vec![0u8; 2 * size_of::<usize>()];
 
@@ -395,5 +392,5 @@ fn test_sanitize_stack_copy() {
     let waitres = child.wait().expect("Failed to wait for child");
     let status = waitres.signal().expect("Child did not die due to signal");
     assert_eq!(waitres.code(), None);
-    assert_eq!(status, Signal::SIGKILL as i32);
+    assert_eq!(status, libc::SIGKILL);
 }

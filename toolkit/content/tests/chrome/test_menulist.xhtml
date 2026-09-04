@@ -22,7 +22,7 @@
   <richlistitem allowevents="true">
     <menulist id="menulist-in-listbox" onpopupshown="test_menulist_open(this, this.parentNode.parentNode)"
               onpopuphidden="SimpleTest.executeSoon(() => checkScrollAndFinish().catch(ex => ok(false, ex)));">
-      <menupopup id="menulist-in-listbox-popup">
+      <menupopup id="menulist-in-listbox-popup" nonnative="">
         <menuitem label="One" value="one"/>
         <menuitem label="Two" value="two"/>
       </menupopup>
@@ -59,7 +59,7 @@
 </menulist>
 
 <menulist id="menulist-clipped">
-  <menupopup style="height: 65px">
+  <menupopup style="height: 65px" nonnative="">
     <menuitem label="One" value="one"/>
     <menuitem label="Two" value="two"/>
     <menuitem label="Three" value="three"/>
@@ -109,6 +109,7 @@ function testtag_menulist_UI_finish(element)
   element.value = "";
 
   test_nsIDOMXULSelectControlElement(element, "menuitem", null);
+  element.menupopup.toggleAttribute("nonnative", true);
 
   $("menulist").open = true;
 }
@@ -268,8 +269,12 @@ async function dragScroll()
   synthesizeMouseAtPoint(popupRect.left + 5, popupRect.top - 10, { type: "mousemove" });
   is(getScrollPos(), scrollPos, "scroll position after mousemove over button should not change");
 
-  synthesizeMouseAtPoint(popupRect.left + 20, popupRect.top + 10, { type: "mousemove" });
-  synthesizeMouseAtPoint(popupRect.left + 20, popupRect.top + 10, { type: "mousedown", buttons: 1 });
+  // Press on an item to start dragging. Use the popup's vertical center so the
+  // point lands on a menuitem regardless of the popup's padding, which varies
+  // between themes.
+  let pressY = popupRect.top + popupRect.height / 2;
+  synthesizeMouseAtPoint(popupRect.left + 20, pressY, { type: "mousemove" });
+  synthesizeMouseAtPoint(popupRect.left + 20, pressY, { type: "mousedown", buttons: 1 });
 
   // Dragging above the popup scrolls it up.
   let scrolledPromise = waitForEvent(popup, "scroll", false,

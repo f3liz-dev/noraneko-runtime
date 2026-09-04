@@ -1,36 +1,35 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ipc/IPCMessageUtils.h"
-
-#include "nsASCIIMask.h"
 #include "nsStandardURL.h"
-#include "nsCRT.h"
-#include "nsEscape.h"
-#include "nsIFile.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIIDNService.h"
+
+#include <string.h>
+
+#include "IPv4Parser.h"
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/Logging.h"
-#include "nsIURLParser.h"
-#include "nsPrintfCString.h"
-#include "nsNetCID.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
-#include "nsContentUtils.h"
-#include "prprf.h"
-#include "nsReadableUtils.h"
-#include "mozilla/net/MozURL_ffi.h"
 #include "mozilla/Utf8.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/MozURL_ffi.h"
+#include "nsASCIIMask.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsEscape.h"
 #include "nsIClassInfoImpl.h"
-#include <string.h>
-#include "IPv4Parser.h"
+#include "nsIFile.h"
+#include "nsIIDNService.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIURLParser.h"
+#include "nsNetCID.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
+#include "prprf.h"
 
 //
 // setenv MOZ_LOG nsStandardURL:5
@@ -199,8 +198,9 @@ const nsACString& nsStandardURL::nsSegmentEncoder::EncodeSegment(
 //----------------------------------------------------------------------------
 
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
-static StaticMutex gAllURLsMutex MOZ_UNANNOTATED;
-MOZ_RUNINIT static LinkedList<nsStandardURL> gAllURLs;
+static StaticMutex gAllURLsMutex;
+constinit static LinkedList<nsStandardURL> gAllURLs
+    MOZ_GUARDED_BY(gAllURLsMutex);
 #endif
 
 nsStandardURL::nsStandardURL(bool aSupportsFileURL, bool aTrackURL)
@@ -225,7 +225,26 @@ nsStandardURL::nsStandardURL(bool aSupportsFileURL, bool aTrackURL)
 #endif
 }
 
-bool nsStandardURL::IsValid() {
+// Reason codes reported by IsValid() to identify the first failing check.
+// Used to disambiguate SanityCheck() crashes in the field.
+enum InvalidURLReason : uint32_t {
+  eURLValid = 0,
+  eURLSegmentBadLen = 1,
+  eURLSegmentOutOfString = 2,
+  eURLSegmentOverflow = 3,
+  eURLSchemeNotAtStart = 4,
+  eURLEmbeddedNul = 5,
+  eURLSchemeNoColon = 6,
+};
+
+bool nsStandardURL::IsValid(uint32_t* aFailReason) {
+  auto fail = [&](uint32_t aReason) {
+    if (aFailReason) {
+      *aFailReason = aReason;
+    }
+    return false;
+  };
+
   auto checkSegment = [&](const nsStandardURL::URLSegment& aSeg) {
 #ifdef EARLY_BETA_OR_EARLIER
     // If the parity is not the same, we assume that this is caused by a memory
@@ -238,7 +257,7 @@ bool nsStandardURL::IsValid() {
 #endif
     // Bad value
     if (NS_WARN_IF(aSeg.mLen < -1)) {
-      return false;
+      return fail(eURLSegmentBadLen);
     }
     if (aSeg.mLen == -1) {
       return true;
@@ -246,12 +265,12 @@ bool nsStandardURL::IsValid() {
 
     // Points out of string
     if (NS_WARN_IF(aSeg.mPos + aSeg.mLen > mSpec.Length())) {
-      return false;
+      return fail(eURLSegmentOutOfString);
     }
 
     // Overflow
     if (NS_WARN_IF(aSeg.mPos + aSeg.mLen < aSeg.mPos)) {
-      return false;
+      return fail(eURLSegmentOverflow);
     }
 
     return true;
@@ -268,30 +287,42 @@ bool nsStandardURL::IsValid() {
   }
 
   if (mScheme.mPos != 0) {
-    return false;
+    return fail(eURLSchemeNotAtStart);
+  }
+
+  // mSpec must not contain embedded NULs
+  if (NS_WARN_IF(mSpec.FindChar('\0') != -1)) {
+    return fail(eURLEmbeddedNul);
+  }
+
+  // The character immediately after the scheme must be ':', e.g. "http:".
+  if (mScheme.mLen > 0 && NS_WARN_IF(mSpec.CharAt(mScheme.mLen) != ':')) {
+    return fail(eURLSchemeNoColon);
   }
 
   return true;
 }
 
 void nsStandardURL::SanityCheck() {
-  if (!IsValid()) {
+  // Record which check failed so field crashes can be disambiguated
+  uint32_t failReason = eURLValid;
+  if (!IsValid(&failReason)) {
     nsPrintfCString msg(
-        "mLen:%zX, mScheme (%X,%X), mAuthority (%X,%X), mUsername (%X,%X), "
-        "mPassword (%X,%X), mHost (%X,%X), mPath (%X,%X), mFilepath (%X,%X), "
-        "mDirectory (%X,%X), mBasename (%X,%X), mExtension (%X,%X), mQuery "
-        "(%X,%X), mRef (%X,%X)",
-        mSpec.Length(), (uint32_t)mScheme.mPos, (int32_t)mScheme.mLen,
-        (uint32_t)mAuthority.mPos, (int32_t)mAuthority.mLen,
-        (uint32_t)mUsername.mPos, (int32_t)mUsername.mLen,
-        (uint32_t)mPassword.mPos, (int32_t)mPassword.mLen, (uint32_t)mHost.mPos,
-        (int32_t)mHost.mLen, (uint32_t)mPath.mPos, (int32_t)mPath.mLen,
-        (uint32_t)mFilepath.mPos, (int32_t)mFilepath.mLen,
-        (uint32_t)mDirectory.mPos, (int32_t)mDirectory.mLen,
-        (uint32_t)mBasename.mPos, (int32_t)mBasename.mLen,
-        (uint32_t)mExtension.mPos, (int32_t)mExtension.mLen,
-        (uint32_t)mQuery.mPos, (int32_t)mQuery.mLen, (uint32_t)mRef.mPos,
-        (int32_t)mRef.mLen);
+        "reason:%X, mLen:%zX, mScheme (%X,%X), mAuthority (%X,%X), mUsername "
+        "(%X,%X), mPassword (%X,%X), mHost (%X,%X), mPath (%X,%X), mFilepath "
+        "(%X,%X), mDirectory (%X,%X), mBasename (%X,%X), mExtension (%X,%X), "
+        "mQuery (%X,%X), mRef (%X,%X)",
+        failReason, mSpec.Length(), (uint32_t)mScheme.mPos,
+        (int32_t)mScheme.mLen, (uint32_t)mAuthority.mPos,
+        (int32_t)mAuthority.mLen, (uint32_t)mUsername.mPos,
+        (int32_t)mUsername.mLen, (uint32_t)mPassword.mPos,
+        (int32_t)mPassword.mLen, (uint32_t)mHost.mPos, (int32_t)mHost.mLen,
+        (uint32_t)mPath.mPos, (int32_t)mPath.mLen, (uint32_t)mFilepath.mPos,
+        (int32_t)mFilepath.mLen, (uint32_t)mDirectory.mPos,
+        (int32_t)mDirectory.mLen, (uint32_t)mBasename.mPos,
+        (int32_t)mBasename.mLen, (uint32_t)mExtension.mPos,
+        (int32_t)mExtension.mLen, (uint32_t)mQuery.mPos, (int32_t)mQuery.mLen,
+        (uint32_t)mRef.mPos, (int32_t)mRef.mLen);
     CrashReporter::RecordAnnotationNSCString(
         CrashReporter::Annotation::URLSegments, msg);
 
@@ -373,6 +404,7 @@ void nsStandardURL::ShutdownGlobalObjects() {
 
 void nsStandardURL::Clear() {
   mSpec.Truncate();
+  ResetSpecHash();
 
   mPort = -1;
 
@@ -415,7 +447,7 @@ nsresult nsStandardURL::NormalizeIDN(const nsACString& aHost,
   if (aResult.IsEmpty()) {
     aResult.Assign(displayHost);
   } else {
-    mDisplayHost = displayHost;
+    mDisplayHost = std::move(displayHost);
   }
   return NS_OK;
 }
@@ -778,8 +810,20 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     CoalescePath(buf + mDirectory.mPos);
   }
   mSpec.Truncate(strlen(buf));
-  NS_ASSERTION(mSpec.Length() <= approxLen,
-               "We've overflowed the mSpec buffer!");
+  ResetSpecHash();
+
+  if (MOZ_UNLIKELY(mSpec.Length() > approxLen)) {
+    nsPrintfCString msg(
+        "approxLen:%X, mSpecLen:%zX, scheme (%X,%X), host (%X,%X), path "
+        "(%X,%X)",
+        approxLen, mSpec.Length(), (uint32_t)mScheme.mPos,
+        (int32_t)mScheme.mLen, (uint32_t)mHost.mPos, (int32_t)mHost.mLen,
+        (uint32_t)mPath.mPos, (int32_t)mPath.mLen);
+    CrashReporter::RecordAnnotationNSCString(
+        CrashReporter::Annotation::URLSegments, msg);
+    MOZ_CRASH("nsStandardURL::BuildNormalizedSpec overflowed mSpec");
+  }
+
   MOZ_ASSERT(mSpec.Length() <= StaticPrefs::network_standard_url_max_length(),
              "The spec should never be this long, we missed a check.");
 
@@ -796,15 +840,14 @@ bool nsStandardURL::SegmentIs(const URLSegment& seg, const char* val,
   if (seg.mLen < 0) {
     return false;
   }
-  // if the first |seg.mLen| chars of |val| match, then |val| must
-  // also be null terminated at |seg.mLen|.
-  if (ignoreCase) {
-    return !nsCRT::strncasecmp(mSpec.get() + seg.mPos, val, seg.mLen) &&
-           (val[seg.mLen] == '\0');
+  size_t vlen = strlen(val);
+  if (static_cast<uint32_t>(seg.mLen) != vlen) {
+    return false;
   }
-
-  return !strncmp(mSpec.get() + seg.mPos, val, seg.mLen) &&
-         (val[seg.mLen] == '\0');
+  if (ignoreCase) {
+    return !nsCRT::strncasecmp(mSpec.get() + seg.mPos, val, vlen);
+  }
+  return !strncmp(mSpec.get() + seg.mPos, val, vlen);
 }
 
 bool nsStandardURL::SegmentIs(const char* spec, const URLSegment& seg,
@@ -816,14 +859,14 @@ bool nsStandardURL::SegmentIs(const char* spec, const URLSegment& seg,
   if (seg.mLen < 0) {
     return false;
   }
-  // if the first |seg.mLen| chars of |val| match, then |val| must
-  // also be null terminated at |seg.mLen|.
-  if (ignoreCase) {
-    return !nsCRT::strncasecmp(spec + seg.mPos, val, seg.mLen) &&
-           (val[seg.mLen] == '\0');
+  size_t vlen = strlen(val);
+  if (static_cast<uint32_t>(seg.mLen) != vlen) {
+    return false;
   }
-
-  return !strncmp(spec + seg.mPos, val, seg.mLen) && (val[seg.mLen] == '\0');
+  if (ignoreCase) {
+    return !nsCRT::strncasecmp(spec + seg.mPos, val, vlen);
+  }
+  return !strncmp(spec + seg.mPos, val, vlen);
 }
 
 bool nsStandardURL::SegmentIs(const URLSegment& seg1, const char* val,
@@ -1137,6 +1180,8 @@ NS_INTERFACE_MAP_BEGIN(nsStandardURL)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
   NS_IMPL_QUERY_CLASSINFO(nsStandardURL)
   NS_INTERFACE_MAP_ENTRY(nsISensitiveInfoHiddenURI)
+  NS_INTERFACE_MAP_ENTRY(nsIIPCSerializableURI)
+  NS_INTERFACE_MAP_ENTRY(nsIURIWithSizeOf)
   // see nsStandardURL::Equals
   if (aIID.Equals(kThisImplCID)) {
     foundInterface = static_cast<nsIURI*>(this);
@@ -1155,6 +1200,8 @@ nsStandardURL::GetSpec(nsACString& result) {
   result = mSpec;
   return NS_OK;
 }
+
+uint32_t nsStandardURL::SpecHash() { return CachedSpecHash(mSpec); }
 
 // result may contain unescaped UTF-8 characters
 NS_IMETHODIMP
@@ -1201,7 +1248,7 @@ nsresult nsStandardURL::CheckIfHostIsAscii() {
   }
 
   if (!mozilla::IsAscii(displayHost)) {
-    mDisplayHost = displayHost;
+    mDisplayHost = std::move(displayHost);
   }
 
   return NS_OK;
@@ -1514,8 +1561,9 @@ nsresult nsStandardURL::SetScheme(const nsACString& input) {
   } else if (Scheme() == "https"_ns || Scheme() == "wss"_ns) {
     mDefaultPort = 443;
   }
-  if (mPort == mDefaultPort) {
-    MOZ_ALWAYS_SUCCEEDS(SetPort(-1));
+  if (mPort == mDefaultPort && mAuthority.mLen >= 0) {
+    nsresult rv = SetPort(-1);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   return NS_OK;
@@ -1932,7 +1980,7 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
       if (NS_FAILED(rv)) {
         return rv;
       }
-      hostBuf = ipString;
+      hostBuf = std::move(ipString);
     }
   }
 
@@ -1988,6 +2036,10 @@ nsresult nsStandardURL::SetPort(int32_t port) {
   if (mURLType == URLTYPE_NO_AUTHORITY) {
     NS_WARNING("cannot set port on no-auth url");
     return NS_ERROR_UNEXPECTED;
+  }
+  if (mAuthority.mLen < 0) {
+    NS_WARNING("uninitialized");
+    return NS_ERROR_NOT_INITIALIZED;
   }
   if (mAuthority.mLen == 0) {
     // If the URL doesn't have a hostname then setting the port to
@@ -2951,7 +3003,7 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
     mRef.mLen = 0;
   }
 
-  // If precent encoding is necessary, `ref` will point to `buf`'s content.
+  // If percent encoding is necessary, `ref` will point to `buf`'s content.
   // `buf` needs to outlive any use of the `ref` pointer.
   nsAutoCString buf;
   // encode ref if necessary
@@ -3434,6 +3486,19 @@ nsresult nsStandardURL::ReadPrivate(nsIObjectInputStream* stream) {
     mExtension.Merge(mSpec, ';', old_param);
   }
 
+  NS_ENSURE_TRUE(mScheme.mPos == 0, NS_ERROR_MALFORMED_URI);
+  NS_ENSURE_TRUE(mScheme.mLen > 0, NS_ERROR_MALFORMED_URI);
+  // Make sure scheme is followed by :// (3 characters)
+  NS_ENSURE_TRUE(mScheme.mLen < INT32_MAX - 3,
+                 NS_ERROR_MALFORMED_URI);  // avoid overflow
+  NS_ENSURE_TRUE(mSpec.Length() >= (uint32_t)mScheme.mLen + 3,
+                 NS_ERROR_MALFORMED_URI);
+  NS_ENSURE_TRUE(
+      nsDependentCSubstring(mSpec, mScheme.mLen, 3).EqualsLiteral("://"),
+      NS_ERROR_MALFORMED_URI);
+
+  NS_ENSURE_TRUE(CheckSegmentInvariants(), NS_ERROR_MALFORMED_URI);
+
   rv = CheckIfHostIsAscii();
   if (NS_FAILED(rv)) {
     return rv;
@@ -3623,6 +3688,53 @@ void nsStandardURL::Serialize(URIParams& aParams) {
   aParams = params;
 }
 
+bool nsStandardURL::CheckSegmentInvariants() const {
+  NS_ENSURE_TRUE(mPath.mLen != -1 && mSpec.CharAt(mPath.mPos) == '/', false);
+  NS_ENSURE_TRUE(mPath.mPos == mFilepath.mPos, false);
+  NS_ENSURE_TRUE(mQuery.mLen == -1 || (mQuery.mPos > mPath.mPos &&
+                                       mSpec.CharAt(mQuery.mPos - 1) == '?'),
+                 false);
+  NS_ENSURE_TRUE(mRef.mLen == -1 || (mRef.mPos > mPath.mPos &&
+                                     mSpec.CharAt(mRef.mPos - 1) == '#'),
+                 false);
+  NS_ENSURE_TRUE(mQuery.mLen == -1 || mRef.mLen == -1 ||
+                     mQuery.mPos + mQuery.mLen < mRef.mPos,
+                 false);
+
+  // mDirectory, mBasename, mExtension must be sub-ranges of mFilepath,
+  // which must be a sub-range of mPath.
+  auto isSubSegment = [](const URLSegment& inner, const URLSegment& outer) {
+    if (inner.mLen == -1) return true;
+    if (outer.mLen == -1) return false;
+    return inner.mPos >= outer.mPos &&
+           inner.mPos + inner.mLen <= outer.mPos + outer.mLen;
+  };
+  NS_ENSURE_TRUE(isSubSegment(mFilepath, mPath), false);
+  NS_ENSURE_TRUE(isSubSegment(mDirectory, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mBasename, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mExtension, mFilepath), false);
+  NS_ENSURE_TRUE(isSubSegment(mHost, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mUsername, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mPassword, mAuthority), false);
+  NS_ENSURE_TRUE(isSubSegment(mQuery, mPath), false);
+  NS_ENSURE_TRUE(isSubSegment(mRef, mPath), false);
+
+  // mPath must immediately follow mAuthority. If mAuthority is absent, that is
+  // only valid for URLTYPE_NO_AUTHORITY (e.g. file: URLs parsed without an
+  // authority component); for all other URL types a missing authority while
+  // mPath is present indicates a malformed or crafted URL.
+  if (mPath.mLen >= 0) {
+    if (mAuthority.mLen >= 0) {
+      NS_ENSURE_TRUE(mPath.mPos == mAuthority.mPos + mAuthority.mLen, false);
+    } else {
+      NS_ENSURE_TRUE(mURLType == URLTYPE_NO_AUTHORITY, false);
+    }
+  }
+
+  NS_ENSURE_TRUE(mAuthority.mLen >= 0 || mPort == -1, false);
+  return true;
+}
+
 bool nsStandardURL::Deserialize(const URIParams& aParams) {
   MOZ_ASSERT(mDisplayHost.IsEmpty(), "Shouldn't have cached unicode host");
   MOZ_ASSERT(!mFile, "Shouldn't have cached file");
@@ -3657,6 +3769,7 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
   mPort = params.port();
   mDefaultPort = params.defaultPort();
   mSpec = params.spec();
+  ResetSpecHash();
   NS_ENSURE_TRUE(
       mSpec.Length() <= StaticPrefs::network_standard_url_max_length(), false);
   NS_ENSURE_TRUE(FromIPCSegment(mSpec, params.scheme(), mScheme), false);
@@ -3683,14 +3796,7 @@ bool nsStandardURL::Deserialize(const URIParams& aParams) {
   NS_ENSURE_TRUE(
       nsDependentCSubstring(mSpec, mScheme.mLen, 3).EqualsLiteral("://"),
       false);
-  NS_ENSURE_TRUE(mPath.mLen != -1 && mSpec.CharAt(mPath.mPos) == '/', false);
-  NS_ENSURE_TRUE(mPath.mPos == mFilepath.mPos, false);
-  NS_ENSURE_TRUE(mQuery.mLen == -1 ||
-                     (mQuery.mPos > 0 && mSpec.CharAt(mQuery.mPos - 1) == '?'),
-                 false);
-  NS_ENSURE_TRUE(
-      mRef.mLen == -1 || (mRef.mPos > 0 && mSpec.CharAt(mRef.mPos - 1) == '#'),
-      false);
+  NS_ENSURE_TRUE(CheckSegmentInvariants(), false);
 
   if (!IsValid()) {
     return false;

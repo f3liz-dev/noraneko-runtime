@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -147,7 +145,7 @@ void LIRGeneratorMIPSShared::lowerDivI(MDiv* div) {
     // possible; division by negative powers of two can be optimized in a
     // similar manner as positive powers of two, and division by other
     // constants can be optimized by a reciprocal multiplication technique.
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LDivPowTwoI* lir =
           new (alloc()) LDivPowTwoI(useRegister(div->lhs()), temp(), shift);
@@ -189,7 +187,7 @@ void LIRGeneratorMIPSShared::lowerMulI(MMul* mul, MDefinition* lhs,
 void LIRGeneratorMIPSShared::lowerModI(MMod* mod) {
   if (mod->rhs()->isConstant()) {
     int32_t rhs = mod->rhs()->toConstant()->toInt32();
-    int32_t shift = FloorLog2(rhs);
+    int32_t shift = FloorLog2(uint32_t(rhs));
     if (rhs > 0 && 1 << shift == rhs) {
       LModPowTwoI* lir =
           new (alloc()) LModPowTwoI(useRegister(mod->lhs()), shift);
@@ -426,56 +424,6 @@ void LIRGenerator::visitWasmUnsignedToFloat32(MWasmUnsignedToFloat32* ins) {
   define(lir, ins);
 }
 
-void LIRGenerator::visitAsmJSLoadHeap(MAsmJSLoadHeap* ins) {
-  MOZ_ASSERT(ins->access().offset32() == 0);
-
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-  LAllocation baseAlloc;
-  LAllocation limitAlloc;
-  // For MIPS it is best to keep the 'base' in a register if a bounds check
-  // is needed.
-  if (base->isConstant() && !ins->needsBoundsCheck()) {
-    // A bounds check is only skipped for a positive index.
-    MOZ_ASSERT(base->toConstant()->toInt32() >= 0);
-    baseAlloc = LAllocation(base->toConstant());
-  } else {
-    baseAlloc = useRegisterAtStart(base);
-    if (ins->needsBoundsCheck()) {
-      MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-      MOZ_ASSERT(boundsCheckLimit->type() == MIRType::Int32);
-      limitAlloc = useRegisterAtStart(boundsCheckLimit);
-    }
-  }
-
-  define(new (alloc()) LAsmJSLoadHeap(baseAlloc, limitAlloc, LAllocation()),
-         ins);
-}
-
-void LIRGenerator::visitAsmJSStoreHeap(MAsmJSStoreHeap* ins) {
-  MOZ_ASSERT(ins->access().offset32() == 0);
-
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-  LAllocation baseAlloc;
-  LAllocation limitAlloc;
-  if (base->isConstant() && !ins->needsBoundsCheck()) {
-    MOZ_ASSERT(base->toConstant()->toInt32() >= 0);
-    baseAlloc = LAllocation(base->toConstant());
-  } else {
-    baseAlloc = useRegisterAtStart(base);
-    if (ins->needsBoundsCheck()) {
-      MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-      MOZ_ASSERT(boundsCheckLimit->type() == MIRType::Int32);
-      limitAlloc = useRegisterAtStart(boundsCheckLimit);
-    }
-  }
-
-  add(new (alloc()) LAsmJSStoreHeap(baseAlloc, useRegisterAtStart(ins->value()),
-                                    limitAlloc, LAllocation()),
-      ins);
-}
-
 void LIRGenerator::visitSubstr(MSubstr* ins) {
   LSubstr* lir = new (alloc())
       LSubstr(useRegister(ins->string()), useRegister(ins->begin()),
@@ -585,9 +533,9 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc()) LWasmCompareExchangeI64(
@@ -619,9 +567,9 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc()) LWasmAtomicExchangeI64(
@@ -650,9 +598,9 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   MDefinition* base = ins->base();
   // See comment in visitWasmLoad re the type of 'base'.
   MOZ_ASSERT(base->type() == MIRType::Int32 || base->type() == MIRType::Int64);
-  LAllocation memoryBase =
-      ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
-                           : LGeneralReg(HeapReg);
+  LAllocation memoryBase = ins->hasMemoryBase()
+                               ? LAllocation(useRegister(ins->memoryBase()))
+                               : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
     auto* lir = new (alloc())

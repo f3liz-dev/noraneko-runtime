@@ -5,6 +5,8 @@
 
 import os
 import re
+import shutil
+import subprocess
 import sys
 from collections import defaultdict
 
@@ -14,13 +16,40 @@ from mach.util import get_state_dir
 from mozbuild.base import MozbuildObject
 from mozpack.files import FileFinder
 from moztest.resolve import TestManifestLoader, TestResolver, get_suite_definition
-from taskgraph.generator import TaskGraphGenerator
+from taskgraph.generator import TaskGraphGenerator, load_graph_config
 from taskgraph.parameters import ParameterMismatch, parameters_loader
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.util import json
+from taskgraph.util.vcs import get_repository
+
+from tryselect.util.project import get_project_topsrcdir
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
+
+
+def comm_parameter_overrides(comm_topsrcdir):
+    """Parameters required to generate the comm taskgraph locally.
+
+    The comm_* parameters have no defaults (they are normally injected by the
+    decision task), so derive head/base from the comm checkout and hardcode the
+    repositories for try."""
+    repo = get_repository(comm_topsrcdir)
+    rev = repo.head_rev
+    ref = repo.branch or rev
+    src_path = os.path.relpath(comm_topsrcdir, build.topsrcdir).replace(os.sep, "/")
+    return {
+        "project": "try-comm-central",
+        "comm_head_repository": "https://hg.mozilla.org/comm-central",
+        "comm_head_rev": rev,
+        "comm_head_ref": ref,
+        "comm_base_repository": "https://hg.mozilla.org/comm-central",
+        "comm_base_rev": rev,
+        "comm_base_ref": ref,
+        "comm_src_path": f"{src_path}/",
+        "message": "",
+    }
+
 
 PARAMETER_MISMATCH = """
 ERROR - The parameters being used to generate tasks differ from those expected
@@ -51,6 +80,55 @@ def invalidate(cache):
 
     if tmod > cmod:
         os.remove(cache)
+
+
+WATCHMAN_TRIGGER_NAME = "rebuild-taskgraph-cache"
+
+WATCHMAN_HINT = """\
+Tip: this ~20s wait happens whenever a file under taskcluster/ changes (e.g.
+after pulling firefox-main or switching branches). watchman can rebuild the
+taskgraph cache in the background so `mach try` stays fast. Since watchman is
+already watching this checkout, enable it with:
+
+    watchman -j < {watchman_json}
+
+See https://firefox-source-docs.mozilla.org/tools/try/tasks.html for details.
+"""
+
+
+def suggest_watchman_setup():
+    """On an interactive cache miss, nudge the user toward the watchman trigger
+    that keeps the taskgraph cache warm in the background.
+
+    Only shown when stdout is a terminal (so the background watchman trigger and
+    CI runs stay silent), watchman is installed and already watching the
+    checkout, and the trigger is not already registered."""
+    if not sys.stdout.isatty():
+        return
+
+    watchman = shutil.which("watchman")
+    if not watchman:
+        return
+
+    try:
+        proc = subprocess.run(
+            [watchman, "trigger-list", build.topsrcdir],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+    # Only suggest when watchman is already watching this checkout (a failed
+    # `trigger-list` means it is not) and our trigger is not registered yet, so
+    # we never provoke inotify-limit issues by watching the firefox checkout here.
+    if proc.returncode != 0 or WATCHMAN_TRIGGER_NAME in proc.stdout:
+        return
+
+    watchman_json = os.path.join(here, "watchman.json")
+    print(WATCHMAN_HINT.format(watchman_json=watchman_json))
 
 
 def cache_key(attr, params, disable_target_task_filter, target_tasks_method):
@@ -114,9 +192,26 @@ def generate_tasks(
         overrides["target_tasks_method"] = target_tasks_method
         overrides["filters"].insert(0, "target_tasks_method")
 
+    project_topsrcdir = get_project_topsrcdir(build)
+    comm = project_topsrcdir != build.topsrcdir
+    if comm:
+        overrides.update(comm_parameter_overrides(project_topsrcdir))
+        root = os.path.join(project_topsrcdir, "taskcluster")
+    else:
+        root = os.path.join(build.topsrcdir, "taskcluster")
+
     params = parameters_loader(param_spec, strict=False, overrides=overrides)
-    root = os.path.join(build.topsrcdir, "taskcluster")
     taskgraph.fast = True
+
+    if comm:
+        # The generator only runs the root graph_config's register hook
+        # (comm_taskgraph:register). Gecko's extensions (try_select_tasks
+        # filter, target task methods, transforms) must be registered first,
+        # mirroring the comm decision task in taskcluster/mach_commands.py.
+        from gecko_taskgraph import register as register_gecko_taskgraph
+
+        register_gecko_taskgraph(load_graph_config(root))
+
     generator = TaskGraphGenerator(root_dir=root, parameters=params)
 
     cache_dir = os.path.join(
@@ -136,6 +231,7 @@ def generate_tasks(
         os.makedirs(cache_dir)
 
     print("Task configuration changed, generating {}".format(attr.replace("_", " ")))
+    suggest_watchman_setup()
 
     cwd = os.getcwd()
     os.chdir(build.topsrcdir)

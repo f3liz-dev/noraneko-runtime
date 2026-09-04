@@ -1,21 +1,53 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* The "Components" xpcom objects for JavaScript. */
 
-#include "xpcprivate.h"
-#include "xpc_make_class.h"
-#include "XPCJSWeakReference.h"
+#include "mozilla/AppShutdown.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/RemoteObjectProxy.h"
+#include "mozilla/dom/StructuredCloneTags.h"
+#include "mozilla/dom/WindowBinding.h"
+#include "mozilla/EditorSpellCheck.h"
+#include "mozilla/LoadContext.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ResultExtensions.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/Try.h"
+#include "mozilla/URLPreloader.h"
+
 #include "AccessCheck.h"
-#include "WrapperFactory.h"
-#include "nsJSUtils.h"
+#include "GeckoProfiler.h"
+#include "jsfriendapi.h"
 #include "mozJSModuleLoader.h"
+#include "nsCommandLine.h"
+#include "nsCommandParams.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
-#include "jsfriendapi.h"
+#include "nsGlobalWindowInner.h"
+#include "nsICycleCollectorListener.h"
+#include "nsIDocumentEncoder.h"
+#include "nsIException.h"
+#include "nsIScriptError.h"
+#include "nsJSEnvironment.h"
+#include "nsJSUtils.h"
+#include "nsPersistentProperties.h"
+#include "nsPIDOMWindow.h"
+#include "nsScriptError.h"
+#include "nsWindowMemoryReporter.h"
+#include "nsZipArchive.h"
+#include "ProfilerControl.h"
+#include "WrapperFactory.h"
+#include "xpc_make_class.h"
+#include "XPCJSWeakReference.h"
+#include "xpcprivate.h"
+
 #include "js/Array.h"  // JS::IsArrayObject
 #include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionName, JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
@@ -24,38 +56,6 @@
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetProperty, JS_SetPropertyById
 #include "js/SavedFrameAPI.h"
 #include "js/StructuredClone.h"
-#include "mozilla/AppShutdown.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/LoadContext.h"
-#include "mozilla/Preferences.h"
-#include "nsJSEnvironment.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/Try.h"
-#include "mozilla/URLPreloader.h"
-#include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/dom/Exceptions.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/RemoteObjectProxy.h"
-#include "mozilla/dom/StructuredCloneTags.h"
-#include "mozilla/dom/WindowBinding.h"
-#include "nsZipArchive.h"
-#include "nsWindowMemoryReporter.h"
-#include "nsICycleCollectorListener.h"
-#include "nsIException.h"
-#include "nsIScriptError.h"
-#include "nsPIDOMWindow.h"
-#include "nsGlobalWindowInner.h"
-#include "nsScriptError.h"
-#include "GeckoProfiler.h"
-#include "ProfilerControl.h"
-#include "mozilla/EditorSpellCheck.h"
-#include "nsCommandLine.h"
-#include "nsCommandParams.h"
-#include "nsPersistentProperties.h"
-#include "nsIDocumentEncoder.h"
 
 using namespace mozilla;
 using namespace JS;
@@ -155,9 +155,7 @@ nsXPCComponents_Interfaces::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_Interfaces::nsXPCComponents_Interfaces() = default;
 
-nsXPCComponents_Interfaces::~nsXPCComponents_Interfaces() {
-  // empty
-}
+nsXPCComponents_Interfaces::~nsXPCComponents_Interfaces() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_Interfaces, nsIXPCComponents_Interfaces,
                   nsIXPCScriptable, nsIClassInfo);
@@ -308,9 +306,7 @@ nsXPCComponents_Classes::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_Classes::nsXPCComponents_Classes() = default;
 
-nsXPCComponents_Classes::~nsXPCComponents_Classes() {
-  // empty
-}
+nsXPCComponents_Classes::~nsXPCComponents_Classes() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_Classes, nsIXPCComponents_Classes,
                   nsIXPCScriptable, nsIClassInfo)
@@ -449,9 +445,7 @@ nsXPCComponents_Results::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_Results::nsXPCComponents_Results() = default;
 
-nsXPCComponents_Results::~nsXPCComponents_Results() {
-  // empty
-}
+nsXPCComponents_Results::~nsXPCComponents_Results() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_Results, nsIXPCComponents_Results,
                   nsIXPCScriptable, nsIClassInfo)
@@ -590,9 +584,7 @@ nsXPCComponents_ID::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_ID::nsXPCComponents_ID() = default;
 
-nsXPCComponents_ID::~nsXPCComponents_ID() {
-  // empty
-}
+nsXPCComponents_ID::~nsXPCComponents_ID() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_ID, nsIXPCComponents_ID, nsIXPCScriptable,
                   nsIClassInfo)
@@ -645,13 +637,13 @@ nsresult nsXPCComponents_ID::CallOrConstruct(nsIXPConnectWrappedNative* wrapper,
     return ThrowAndFail(NS_ERROR_XPC_BAD_ID_STRING, cx, _retval);
   }
 
-  JS::UniqueChars bytes = JS_EncodeStringToLatin1(cx, jsstr);
-  if (!bytes) {
+  JS::UniqueChars chars = JS_EncodeStringToLatin1(cx, jsstr);
+  if (!chars) {
     return ThrowAndFail(NS_ERROR_XPC_BAD_ID_STRING, cx, _retval);
   }
 
   nsID id;
-  if (!id.Parse(bytes.get())) {
+  if (!id.Parse(nsDependentCString(chars.get()))) {
     return ThrowAndFail(NS_ERROR_XPC_BAD_ID_STRING, cx, _retval);
   }
 
@@ -741,9 +733,7 @@ nsXPCComponents_Exception::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_Exception::nsXPCComponents_Exception() = default;
 
-nsXPCComponents_Exception::~nsXPCComponents_Exception() {
-  // empty
-}
+nsXPCComponents_Exception::~nsXPCComponents_Exception() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_Exception, nsIXPCComponents_Exception,
                   nsIXPCScriptable, nsIClassInfo)
@@ -1034,9 +1024,7 @@ nsXPCComponents_Constructor::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
 
 nsXPCComponents_Constructor::nsXPCComponents_Constructor() = default;
 
-nsXPCComponents_Constructor::~nsXPCComponents_Constructor() {
-  // empty
-}
+nsXPCComponents_Constructor::~nsXPCComponents_Constructor() = default;
 
 NS_IMPL_ISUPPORTS(nsXPCComponents_Constructor, nsIXPCComponents_Constructor,
                   nsIXPCScriptable, nsIClassInfo)
@@ -1478,12 +1466,8 @@ nsXPCComponents_Utils::EvalInSandbox(
 NS_IMETHODIMP
 nsXPCComponents_Utils::GetUAWidgetScope(nsIPrincipal* principal, JSContext* cx,
                                         MutableHandleValue rval) {
-  rval.set(UndefinedValue());
-
   JSObject* scope = xpc::GetUAWidgetScope(cx, principal);
-
-  rval.set(JS::ObjectValue(*scope));
-
+  rval.setObject(*scope);
   return NS_OK;
 }
 
@@ -2599,3 +2583,8 @@ ComponentsSH::PreCreate(nsISupports* nativeObj, JSContext* cx,
   *parentObj = self->GetScope()->GetGlobalForWrappedNatives();
   return NS_OK;
 }
+
+// These functions are used in the implementation of ffi bindings for
+// xpcom::xpc from Rust.
+
+extern "C" bool Gecko_IsInAutomation() { return xpc::IsInAutomation(); }

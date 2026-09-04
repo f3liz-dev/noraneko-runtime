@@ -4,6 +4,7 @@
 
 import os
 
+import yaml
 from android_taskgraph import register as register_android_taskgraph
 from mozilla_taskgraph import register as register_mozilla_taskgraph
 from taskgraph import config as taskgraph_config
@@ -12,14 +13,27 @@ from taskgraph import morph as taskgraph_morph
 from taskgraph.transforms.task import payload_builders
 from taskgraph.util import docker, schema
 from taskgraph.util import taskcluster as tc_util
+from taskgraph.util.readonlydict import ReadOnlyDict
 
-from gecko_taskgraph.config import graph_config_schema
+from gecko_taskgraph.config import GraphConfigSchema
 
 GECKO = os.path.normpath(os.path.realpath(os.path.join(__file__, "..", "..", "..")))
 TEST_CONFIGS = os.path.join(GECKO, "taskcluster", "test_configs")
 
 # Overwrite Taskgraph's default graph_config_schema with a custom one.
-taskgraph_config.graph_config_schema = graph_config_schema
+taskgraph_config.graph_config_schema = GraphConfigSchema
+
+
+def _represent_ro_dict(dumper, data):
+    return dumper.represent_dict(dict(data))
+
+
+# Teach the default SafeDumper how to serialize ReadOnlyDict. Registering here
+# (rather than on a one-off Dumper subclass) ensures the representer is present
+# in worker processes spawned by ProcessPoolExecutor, which on macOS use the
+# "spawn" start method and therefore do not inherit registrations made in the
+# parent process.
+yaml.SafeDumper.add_representer(ReadOnlyDict, _represent_ro_dict)
 
 # Overwrite Taskgraph's RUN_TASK_SNIPPET to place the binaries in Gecko
 # specific locations.
@@ -74,6 +88,7 @@ def register(graph_config):
         target_tasks,  # trigger target task method registration
     )
     from gecko_taskgraph.parameters import register_parameters
+    from gecko_taskgraph import task_context  # noqa - trigger custom task-context registration
     from gecko_taskgraph.util import (
         dependencies,  # noqa - trigger group_by registration
     )

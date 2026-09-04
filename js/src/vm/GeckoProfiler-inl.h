@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -31,18 +29,34 @@ inline void GeckoProfilerThread::updatePC(JSContext* cx, JSScript* script,
 }
 
 /*
+ * Whether ProfilingStackFrame::script() may still read tenured script data
+ * while sampling is suppressed.
+ *
+ * The default is Deny: the script pointer is treated as unsafe, as it may be
+ * in the middle of being relocated by a compacting GC. A site that guarantees
+ * scripts are not moving may pass Allow so the sampler can still resolve
+ * line/column attribution for JS frames. Note that the script's JSFunction may
+ * still be in the nursery and moving, so ProfilingStackFrame::function()
+ * remains suppressed regardless of this option.
+ */
+enum class ProfilerScriptAccess { Deny, Allow };
+
+/*
  * This class is used to suppress profiler sampling during
  * critical sections where stack state is not valid.
  */
 class MOZ_RAII AutoSuppressProfilerSampling {
  public:
-  explicit AutoSuppressProfilerSampling(JSContext* cx);
+  explicit AutoSuppressProfilerSampling(
+      JSContext* cx,
+      ProfilerScriptAccess scriptAccess = ProfilerScriptAccess::Deny);
 
   ~AutoSuppressProfilerSampling();
 
  private:
   JSContext* cx_;
   bool previouslyEnabled_;
+  bool previousScriptAccess_;
 };
 
 MOZ_ALWAYS_INLINE

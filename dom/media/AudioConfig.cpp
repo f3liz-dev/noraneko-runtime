@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,10 +56,10 @@ auto AudioConfig::ChannelLayout::Map() const -> ChannelMap {
   }
   ChannelMap map = UNKNOWN_MAP;
   for (size_t i = 0; i < mChannels.Length(); i++) {
-    if (uint32_t(mChannels[i]) > sizeof(ChannelMap) * 8) {
+    if (uint32_t(mChannels[i]) >= sizeof(ChannelMap) * 8) {
       return UNKNOWN_MAP;
     }
-    ChannelMap mask = 1 << mChannels[i];
+    ChannelMap mask = 1u << mChannels[i];
     if (mChannels[i] == CHANNEL_INVALID || (mChannelMap & mask)) {
       // Invalid configuration.
       return UNKNOWN_MAP;

@@ -53,6 +53,7 @@ def do_delayed_imports(paths):
             "ro.test_harness=true",
             "-no-snapstorage",
             "-no-snapshot",
+            "-no-metrics",
             "-skin",
             "800x1280"
         ],
@@ -207,7 +208,11 @@ def get_emulator(paths, device_serial=None):
     if android_device is None:
         do_delayed_imports(paths)
 
-    substs = {"top_srcdir": wpt_root, "TARGET_CPU": "x86"}
+    substs = {
+        "top_srcdir": wpt_root,
+        "TARGET_CPU": platform.uname().machine,
+        "HOST_CPU_ARCH": platform.uname().machine
+    }
     emulator = android_device.AndroidEmulator(substs=substs,
                                               device_serial=device_serial,
                                               verbose=True)
@@ -252,8 +257,8 @@ def install(logger, dest=None, reinstall=False, prompt=True):
 
         if new_install:
             packages = ["platform-tools",
-                        "build-tools;36.1.0",
-                        "platforms;android-36.1",
+                        "build-tools;37.0.0",
+                        "platforms;android-37.1",
                         "emulator"]
 
             install_android_packages(logger, paths, packages, prompt=prompt)
@@ -300,28 +305,16 @@ def start(logger, dest=None, reinstall=False, prompt=True, device_serial=None):
 
 
 def run_install(venv, **kwargs):
-    try:
-        import logging
-        logging.basicConfig()
-        logger = logging.getLogger()
+    import logging
+    logging.basicConfig()
+    logger = logging.getLogger()
 
-        install(logger, **kwargs)
-    except Exception:
-        import traceback
-        traceback.print_exc()
-        import pdb
-        pdb.post_mortem()
+    install(logger, **kwargs)
 
 
 def run_start(venv, **kwargs):
-    try:
-        import logging
-        logging.basicConfig()
-        logger = logging.getLogger()
+    import logging
+    logging.basicConfig()
+    logger = logging.getLogger()
 
-        start(logger, **kwargs)
-    except Exception:
-        import traceback
-        traceback.print_exc()
-        import pdb
-        pdb.post_mortem()
+    start(logger, **kwargs)

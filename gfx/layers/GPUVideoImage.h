@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,10 @@
 #ifndef GFX_GPU_VIDEO_IMAGE_H
 #define GFX_GPU_VIDEO_IMAGE_H
 
-#include "mozilla/RefPtr.h"
 #include "ImageContainer.h"
-#include "mozilla/layers/GPUVideoTextureClient.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/layers/CompositableClient.h"
+#include "mozilla/layers/GPUVideoTextureClient.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 
 namespace mozilla {
@@ -55,6 +53,8 @@ class GPUVideoImage final : public Image {
         mColorDepth(aColorDepth),
         mColorSpace(aColorPrimaries),
         mYUVColorSpace(aYUVColorSpace),
+        mManager(aManager),
+        mSD(aSD),
         mTransferFunction(aTransferFunction),
         mColorRange(aColorRange) {
     // Create the TextureClient immediately since the GPUVideoTextureData
@@ -84,36 +84,23 @@ class GPUVideoImage final : public Image {
   gfx::ColorRange GetColorRange() const { return mColorRange; }
 
   Maybe<SurfaceDescriptor> GetDesc() override {
-    return GetDescFromTexClient(mTextureClient);
+    return Some(SurfaceDescriptor(mSD));
   }
+
+  const SurfaceDescriptorGPUVideo& SD() const { return mSD; }
 
   void OnSetCurrent() override {
-    GPUVideoTextureData* data = GetData();
-    if (NS_WARN_IF(!data)) {
+    if (NS_WARN_IF(!mManager)) {
       return;
     }
-    data->OnSetCurrent();
+    mManager->OnSetCurrent(mSD);
   }
 
- private:
-  GPUVideoTextureData* GetData() const {
-    if (!mTextureClient) {
-      return nullptr;
-    }
-    TextureData* data = mTextureClient->GetInternalData();
-    if (!data) {
-      return nullptr;
-    }
-    return data->AsGPUVideoTextureData();
-  }
-
- public:
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override {
-    GPUVideoTextureData* data = GetData();
-    if (!data) {
+    if (!mManager) {
       return nullptr;
     }
-    return data->GetAsSourceSurface();
+    return mManager->Readback(mSD);
   }
 
   TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override {
@@ -127,6 +114,8 @@ class GPUVideoImage final : public Image {
   gfx::ColorDepth mColorDepth;
   gfx::ColorSpace2 mColorSpace;
   gfx::YUVColorSpace mYUVColorSpace;
+  RefPtr<IGPUVideoSurfaceManager> mManager;
+  SurfaceDescriptorGPUVideo mSD;
   RefPtr<TextureClient> mTextureClient;
   gfx::TransferFunction mTransferFunction;
   gfx::ColorRange mColorRange;

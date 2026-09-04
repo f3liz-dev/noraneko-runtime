@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/WakeLockBinding.h"
 
 namespace mozilla::dom {
@@ -24,9 +21,7 @@ namespace mozilla::dom {
 class WakeLockSentinel final : public DOMEventTargetHelper {
  public:
   WakeLockSentinel(nsIGlobalObject* aOwnerWindow, WakeLockType aType)
-      : DOMEventTargetHelper(aOwnerWindow),
-        mType(aType),
-        mCreationTime(TimeStamp::Now()) {}
+      : DOMEventTargetHelper(aOwnerWindow), mType(aType) {}
 
  protected:
   ~WakeLockSentinel() {
@@ -69,9 +64,6 @@ class WakeLockSentinel final : public DOMEventTargetHelper {
    * https://w3c.github.io/screen-wake-lock/#the-request-method
    */
   bool mHoldsActualLock = false;
-
-  // Time when this object was created
-  TimeStamp mCreationTime;
 };
 
 }  // namespace mozilla::dom

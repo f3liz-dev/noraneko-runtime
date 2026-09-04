@@ -60,7 +60,7 @@ var gDraggingInToolbars;
 var gTab;
 
 function closeGlobalTab() {
-  let win = gTab.ownerGlobal;
+  let win = gTab.documentGlobal;
   if (win.gBrowser.browsers.length == 1) {
     win.BrowserCommands.openTab();
   }
@@ -87,7 +87,7 @@ var gTabsProgressListener = {
 
 function unregisterGlobalTab() {
   gTab.removeEventListener("TabClose", unregisterGlobalTab);
-  let win = gTab.ownerGlobal;
+  let win = gTab.documentGlobal;
   win.removeEventListener("unload", unregisterGlobalTab);
   win.gBrowser.removeTabsProgressListener(gTabsProgressListener);
 
@@ -356,7 +356,7 @@ export class CustomizeMode {
       gTab.linkedBrowser.stop();
     }
 
-    let win = gTab.ownerGlobal;
+    let win = gTab.documentGlobal;
 
     win.gBrowser.setTabTitle(gTab);
     win.gBrowser.setIcon(gTab, "chrome://browser/skin/customize.svg");
@@ -440,10 +440,10 @@ export class CustomizeMode {
     if (!gTab.selected) {
       // This will force another .enter() to be called via the
       // onlocationchange handler of the tabbrowser, so we return early.
-      gTab.ownerGlobal.gBrowser.selectedTab = gTab;
+      gTab.documentGlobal.gBrowser.selectedTab = gTab;
       return;
     }
-    gTab.ownerGlobal.focus();
+    gTab.documentGlobal.focus();
     if (gTab.ownerDocument != this.#document) {
       return;
     }
@@ -834,7 +834,7 @@ export class CustomizeMode {
       this.#window.requestAnimationFrame(() => {
         this.#window.requestAnimationFrame(() => {
           animationNode.classList.add("animate-out");
-          animationNode.ownerGlobal.gNavToolbox.addEventListener(
+          animationNode.documentGlobal.gNavToolbox.addEventListener(
             "customizationending",
             cleanupCustomizationExit
           );
@@ -1480,11 +1480,11 @@ export class CustomizeMode {
       let commandID = aWrapper.getAttribute("itemcommand");
       toolbarItem.setAttribute("command", commandID);
 
-      // XXX Bug 309953 - toolbarbuttons aren't in sync with their commands after customizing
       let command = this.$(commandID);
-      if (command?.hasAttribute("disabled")) {
-        toolbarItem.setAttribute("disabled", command.getAttribute("disabled"));
-      }
+      toolbarItem.toggleAttribute(
+        "disabled",
+        !!command?.hasAttribute("disabled")
+      );
     }
 
     let wrappedContext = toolbarItem.getAttribute("wrapped-context");
@@ -1792,7 +1792,7 @@ export class CustomizeMode {
    *   case of an overflowable toolbar).
    */
   onWidgetBeforeDOMChange(aNodeToChange, aSecondaryNode, aContainer) {
-    if (aContainer.ownerGlobal != this.#window || this.resetting) {
+    if (aContainer.documentGlobal != this.#window || this.resetting) {
       return;
     }
     // If we get called for widgets that aren't in the window yet, they might not have
@@ -1818,7 +1818,7 @@ export class CustomizeMode {
    *   case of an overflowable toolbar).
    */
   onWidgetAfterDOMChange(aNodeToChange, aSecondaryNode, aContainer) {
-    if (aContainer.ownerGlobal != this.#window || this.resetting) {
+    if (aContainer.documentGlobal != this.#window || this.resetting) {
       return;
     }
     // If the node is still attached to the container, wrap it again:
@@ -1926,6 +1926,45 @@ export class CustomizeMode {
   }
 
   /**
+   * Opens about:preferences#appearance to the Window Density section in a new tab.
+   */
+  #openUIDensityPreferences() {
+    this.#window.openPreferences("appearance-windowDensity");
+  }
+
+  /**
+   * Updates the visible state of the UI density controls. When Nova is enabled,
+   * a link to the Window Density section of about:preferences is shown instead
+   * of the density dropdown, regardless of the compact mode pref. Otherwise the
+   * dropdown is shown following the legacy compact mode visibility rules.
+   */
+  #updateDensityMenu() {
+    let button = this.#document.getElementById(
+      "customization-uidensity-button"
+    );
+    let link = this.#document.getElementById("customization-uidensity-link");
+
+    if (this.#window.gUIDensity.novaEnabled) {
+      button.hidden = true;
+      link.hidden = false;
+      return;
+    }
+
+    link.hidden = true;
+
+    // If we're entering Customize Mode, and we're using compact mode,
+    // then show the button after that.
+    let gUIDensity = this.#window.gUIDensity;
+    if (gUIDensity.getCurrentDensity().mode == gUIDensity.MODE_COMPACT) {
+      Services.prefs.setBoolPref(kCompactModeShowPref, true);
+    }
+
+    button.hidden =
+      !Services.prefs.getBoolPref(kCompactModeShowPref) &&
+      !button.querySelector("#customization-uidensity-menuitem-touch");
+  }
+
+  /**
    * Opens about:addons in a new tab, showing the themes list.
    */
   #openAddonsManagerThemes() {
@@ -1966,16 +2005,9 @@ export class CustomizeMode {
   setUIDensity(mode) {
     let win = this.#window;
     let gUIDensity = win.gUIDensity;
-    let currentDensity = gUIDensity.getCurrentDensity();
     let panel = win.document.getElementById("customization-uidensity-menu");
 
     Services.prefs.setIntPref(gUIDensity.uiDensityPref, mode);
-
-    // If the user is choosing a different UI density mode while
-    // the mode is overriden to Touch, remove the override.
-    if (currentDensity.overridden) {
-      Services.prefs.setBoolPref(gUIDensity.autoTouchModePref, false);
-    }
 
     this.#onUIChange();
     panel.hidePopup();
@@ -2146,25 +2178,6 @@ export class CustomizeMode {
     let isTouchBarInitialized = lazy.gTouchBarUpdater.isTouchBarInitialized();
     touchBarButton.hidden = !isTouchBarInitialized;
     touchBarSpacer.hidden = !isTouchBarInitialized;
-  }
-
-  /**
-   * Updates the hidden / visible state of the UI density button.
-   */
-  #updateDensityMenu() {
-    // If we're entering Customize Mode, and we're using compact mode,
-    // then show the button after that.
-    let gUIDensity = this.#window.gUIDensity;
-    if (gUIDensity.getCurrentDensity().mode == gUIDensity.MODE_COMPACT) {
-      Services.prefs.setBoolPref(kCompactModeShowPref, true);
-    }
-
-    let button = this.#document.getElementById(
-      "customization-uidensity-button"
-    );
-    button.hidden =
-      !Services.prefs.getBoolPref(kCompactModeShowPref) &&
-      !button.querySelector("#customization-uidensity-menuitem-touch");
   }
 
   /**
@@ -2383,6 +2396,10 @@ export class CustomizeMode {
     };
     densityMenu.addEventListener("blur", resetDensity);
     densityMenu.addEventListener("mouseout", resetDensity);
+
+    this.$("customization-uidensity-link").addEventListener("click", () => {
+      this.#openUIDensityPreferences();
+    });
 
     this.$("customization-lwtheme-link").addEventListener("click", () => {
       this.#openAddonsManagerThemes();
@@ -3066,7 +3083,7 @@ export class CustomizeMode {
     let mozSourceNode = aEvent.dataTransfer.mozSourceNode;
     // mozSourceNode is null in the dragStart event handler or if
     // the drag event originated in an external application.
-    return !mozSourceNode || mozSourceNode.ownerGlobal != this.#window;
+    return !mozSourceNode || mozSourceNode.documentGlobal != this.#window;
   }
 
   /**
@@ -3096,7 +3113,7 @@ export class CustomizeMode {
     if (aDraggedOverItem.getAttribute("dragover") != aValue) {
       aDraggedOverItem.setAttribute("dragover", aValue);
 
-      let window = aDraggedOverItem.ownerGlobal;
+      let window = aDraggedOverItem.documentGlobal;
       let draggedItem = window.document.getElementById(aDraggedItemId);
       if (aPlace == "palette") {
         // We mostly delegate the complexity of grid placeholder effects to
@@ -3507,7 +3524,7 @@ export class CustomizeMode {
     doc.getElementById("customizationPanelItemContextMenuPin").hidden =
       inPermanentArea;
 
-    doc.ownerGlobal.MozXULElement.insertFTLIfNeeded(
+    doc.documentGlobal.MozXULElement.insertFTLIfNeeded(
       "browser/toolbarContextMenu.ftl"
     );
     event.target.querySelectorAll("[data-lazy-l10n-id]").forEach(el => {

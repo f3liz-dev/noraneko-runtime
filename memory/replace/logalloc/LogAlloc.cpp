@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@
 #include "Mutex.h"
 
 static malloc_table_t sFuncs;
-static platform_handle_t sFd = 0;
+static platform_handle_t sFd;
 static bool sStdoutOrStderr = false;
 
 static Mutex sMutex MOZ_UNANNOTATED;
@@ -184,7 +182,7 @@ void replace_init(malloc_table_t* aTable, ReplaceMallocBridge** aBridge) {
   }
 
   // Don't initialize if we weren't passed a valid MALLOC_LOG.
-  if (sFd == 0) {
+  if (!sFd) {
     return;
   }
 

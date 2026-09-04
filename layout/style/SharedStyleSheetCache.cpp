@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -60,6 +58,19 @@ void SharedStyleSheetCache::LoadCompleted(SharedStyleSheetCache* aCache,
     } while ((data = data->mNext));
   }
 
+  // The only way of getting a load with mMustNotify = false before or inside
+  // one with mMustNotify = true should be when we try to kick off a deferred
+  // load from a non-deferred one, and the load fails right away. In that case,
+  // it's not sound to try to fire events synchronously.
+  const bool canFireEvents = [&] {
+    for (auto* data = &aData; data; data = data->mParentData) {
+      if (!data->mMustNotify) {
+        return false;
+      }
+    }
+    return true;
+  }();
+
   // 8 is probably big enough for all our common cases.  It's not likely that
   // imports will nest more than 8 deep, and multiple sheets with the same URI
   // are rare.
@@ -69,7 +80,7 @@ void SharedStyleSheetCache::LoadCompleted(SharedStyleSheetCache* aCache,
   // Now it's safe to go ahead and notify observers
   for (RefPtr<css::SheetLoadData>& data : datasToNotify) {
     auto status = data->IsCancelled() ? cancelledStatus : aStatus;
-    data->mLoader->NotifyObservers(*data, status);
+    data->mLoader->NotifyObservers(*data, status, canFireEvents);
   }
 }
 
@@ -266,6 +277,54 @@ void SharedStyleSheetCache::Clear(
     sSingleton->ClearInProcess(aChrome, aPrincipal, aSchemelessSite, aPattern,
                                aURL);
   }
+}
+
+void SharedStyleSheetCache::GC() {
+  MOZ_ASSERT(mGCScheduled);
+  for (auto iter = mInlineSheets.Iter(); !iter.Done(); iter.Next()) {
+    for (auto subiter = iter.Data().Iter(); !subiter.Done(); subiter.Next()) {
+      subiter.Data().RemoveElementsBy([](InlineSheetEntry& aEntry) {
+        return aEntry.mSheet->HasUniqueInner();
+      });
+      if (subiter.Data().IsEmpty()) {
+        subiter.Remove();
+      }
+    }
+    if (iter.Data().IsEmpty()) {
+      iter.Remove();
+    }
+  }
+
+  for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
+    if (iter.Data().mResource->HasUniqueInner()) {
+      iter.Remove();
+    }
+  }
+  mGCScheduled = false;
+}
+
+void SharedStyleSheetCache::DoScheduleGC() {
+  MOZ_ASSERT(!mGCScheduled);
+  if (!mGCTimer) {
+    mGCTimer = NS_NewTimer();
+  }
+  mGCScheduled = NS_SUCCEEDED(mGCTimer->InitWithNamedFuncCallback(
+      [](nsITimer*, void*) {
+        if (sSingleton) {
+          sSingleton->mGCScheduled =
+              NS_SUCCEEDED(NS_DispatchToCurrentThreadQueue(
+                  NS_NewRunnableFunction("SharedStyleSheetCache GC Idle",
+                                         [] {
+                                           if (sSingleton) {
+                                             sSingleton->GC();
+                                           }
+                                         }),
+                  EventQueuePriority::Idle));
+        }
+      },
+      nullptr, StaticPrefs::layout_css_stylesheet_cache_timeout_ms(),
+      nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
+      "SharedStyleSheetCache::GC timer"_ns));
 }
 
 }  // namespace mozilla

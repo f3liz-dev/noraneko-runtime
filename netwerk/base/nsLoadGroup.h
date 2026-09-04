@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,14 @@
 #ifndef nsLoadGroup_h_
 #define nsLoadGroup_h_
 
+#include "mozilla/TimeStamp.h"
+#include "nsCOMPtr.h"
 #include "nsILoadGroup.h"
 #include "nsILoadGroupChild.h"
 #include "nsIObserver.h"
-#include "nsCOMPtr.h"
-#include "nsWeakReference.h"
 #include "nsISupportsPriority.h"
 #include "nsTHashSet.h"
-#include "mozilla/TimeStamp.h"
+#include "nsWeakReference.h"
 
 class nsIRequestContext;
 class nsIRequestContextService;

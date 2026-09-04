@@ -12,7 +12,6 @@ import android.os.Environment
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationManagerCompat
-import mozilla.components.browser.engine.gecko.cookiebanners.GeckoCookieBannersStorage
 import mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.state.engine.EngineMiddleware
@@ -72,6 +71,7 @@ import mozilla.components.support.remotesettings.RemoteSettingsService
 import mozilla.components.support.remotesettings.into
 import mozilla.components.support.utils.DateTimeProvider
 import mozilla.components.support.utils.DefaultDateTimeProvider
+import mozilla.components.support.utils.DefaultDownloadFileUtils
 import org.mozilla.focus.activity.MainActivity
 import org.mozilla.focus.browser.BlockedTrackersMiddleware
 import org.mozilla.focus.cfr.CfrMiddleware
@@ -142,7 +142,7 @@ class Components(
     val remoteSettingsSyncScheduler by lazy {
         DefaultRemoteSettingsSyncScheduler(
             context,
-            Frequency(24, TimeUnit.HOURS),
+            Frequency(2, TimeUnit.HOURS),
         )
     }
 
@@ -155,11 +155,10 @@ class Components(
             webFontsEnabled = !settings.shouldBlockWebFonts(),
             httpsOnlyMode = settings.getHttpsOnlyMode(),
             preferredColorScheme = settings.getPreferredColorScheme(),
-            cookieBannerHandlingModePrivateBrowsing = settings.getCurrentCookieBannerOptionFromSharePref().mode,
             certificateTransparencyMode = FocusNimbus.features.pki.value().certificateTransparencyMode,
             downloadDelegate = EngineDownloadDelegate(
                 context = context,
-                downloadLocationGetter = {
+                downloadLocation = {
                     Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_DOWNLOADS,
                     ).absolutePath
@@ -201,6 +200,9 @@ class Components(
                     applicationContext = context,
                     downloadServiceClass = DownloadService::class.java,
                     deleteFileFromStorage = { false },
+                    downloadFileUtils = DefaultDownloadFileUtils(
+                        context = context,
+                    ),
                 ),
                 SanityCheckMiddleware(),
                 // We are currently using the default location service. We should consider using
@@ -244,8 +246,6 @@ class Components(
 
     val tabsUseCases: TabsUseCases by lazy { TabsUseCases(store) }
 
-    val cookieBannerStorage: GeckoCookieBannersStorage by lazy { EngineProvider.createCookieBannerStorage(context) }
-
     val publicSuffixList by lazy { PublicSuffixList(context) }
 
     val searchUseCases: SearchUseCases by lazy {
@@ -254,7 +254,14 @@ class Components(
 
     val contextMenuUseCases: ContextMenuUseCases by lazy { ContextMenuUseCases(store) }
 
-    val downloadsUseCases: DownloadsUseCases by lazy { DownloadsUseCases(store, context.applicationContext) }
+    val downloadsUseCases: DownloadsUseCases by lazy {
+        DownloadsUseCases(
+            store = store,
+            downloadFileUtils = DefaultDownloadFileUtils(
+                context = context.applicationContext,
+            ),
+        )
+    }
 
     val appLinksUseCases: AppLinksUseCases by lazy { AppLinksUseCases(context.applicationContext) }
 
@@ -369,6 +376,9 @@ private fun createCrashReporter(context: Context): CrashReporter {
                 appChannel = org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL,
                 appVersion = org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION,
                 appBuildId = org.mozilla.geckoview.BuildConfig.MOZ_APP_BUILDID,
+                // There's no need to call `CrashReporter.setTelemetryEnabled`: there's no path for the telemetry
+                // setting to change (it is always false).
+                isUploadEnabled = GleanMetricsService.isTelemetryEnabled(context),
             ),
         ),
         promptConfiguration = CrashReporter.PromptConfiguration(

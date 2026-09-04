@@ -10,13 +10,13 @@
 #include <string>
 
 #include "base/check.h"
-#include "base/notreached.h"
 #include "sandbox/win/src/ipc_tags.h"
 #include "sandbox/win/src/policy_engine_opcodes.h"
 #include "sandbox/win/src/policy_params.h"
-#include "sandbox/win/src/sandbox_types.h"
+#include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/win_utils.h"
 
+namespace sandbox {
 namespace {
 
 struct ObjectAttribs : public OBJECT_ATTRIBUTES {
@@ -63,39 +63,6 @@ NTSTATUS TranslateMaximumAllowed(OBJECT_ATTRIBUTES* obj_attributes,
   return STATUS_SUCCESS;
 }
 
-NTSTATUS NtCreateKeyInTarget(HANDLE* target_key_handle,
-                             ACCESS_MASK desired_access,
-                             OBJECT_ATTRIBUTES* obj_attributes,
-                             ULONG title_index,
-                             UNICODE_STRING* class_name,
-                             ULONG create_options,
-                             ULONG* disposition,
-                             HANDLE target_process) {
-  *target_key_handle = nullptr;
-  NtCreateKeyFunction NtCreateKey = nullptr;
-  ResolveNTFunctionPtr("NtCreateKey", &NtCreateKey);
-
-  if (MAXIMUM_ALLOWED & desired_access) {
-    NTSTATUS status = TranslateMaximumAllowed(obj_attributes, &desired_access);
-    if (!NT_SUCCESS(status))
-      return STATUS_ACCESS_DENIED;
-  }
-
-  HANDLE local_handle = INVALID_HANDLE_VALUE;
-  NTSTATUS status =
-      NtCreateKey(&local_handle, desired_access, obj_attributes, title_index,
-                  class_name, create_options, disposition);
-  if (!NT_SUCCESS(status))
-    return status;
-
-  if (!::DuplicateHandle(::GetCurrentProcess(), local_handle, target_process,
-                         target_key_handle, 0, false,
-                         DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS)) {
-    return STATUS_ACCESS_DENIED;
-  }
-  return STATUS_SUCCESS;
-}
-
 NTSTATUS NtOpenKeyInTarget(HANDLE* target_key_handle,
                            ACCESS_MASK desired_access,
                            OBJECT_ATTRIBUTES* obj_attributes,
@@ -106,15 +73,17 @@ NTSTATUS NtOpenKeyInTarget(HANDLE* target_key_handle,
 
   if (MAXIMUM_ALLOWED & desired_access) {
     NTSTATUS status = TranslateMaximumAllowed(obj_attributes, &desired_access);
-    if (!NT_SUCCESS(status))
+    if (!NT_SUCCESS(status)) {
       return STATUS_ACCESS_DENIED;
+    }
   }
 
   HANDLE local_handle = INVALID_HANDLE_VALUE;
   NTSTATUS status = NtOpenKey(&local_handle, desired_access, obj_attributes);
 
-  if (!NT_SUCCESS(status))
+  if (!NT_SUCCESS(status)) {
     return status;
+  }
 
   if (!::DuplicateHandle(::GetCurrentProcess(), local_handle, target_process,
                          target_key_handle, 0, false,
@@ -124,18 +93,57 @@ NTSTATUS NtOpenKeyInTarget(HANDLE* target_key_handle,
   return STATUS_SUCCESS;
 }
 
-}  // namespace
+// Holds the information about a known registry key.
+struct KnownReservedKey {
+  const wchar_t* name;
+  HKEY key;
+};
 
-namespace sandbox {
+// Contains all the known registry key by name and by handle.
+const KnownReservedKey kKnownKey[] = {
+    {L"HKEY_CLASSES_ROOT", HKEY_CLASSES_ROOT},
+    {L"HKEY_CURRENT_USER", HKEY_CURRENT_USER},
+    {L"HKEY_LOCAL_MACHINE", HKEY_LOCAL_MACHINE},
+    {L"HKEY_USERS", HKEY_USERS},
+    {L"HKEY_PERFORMANCE_DATA", HKEY_PERFORMANCE_DATA},
+    {L"HKEY_PERFORMANCE_TEXT", HKEY_PERFORMANCE_TEXT},
+    {L"HKEY_PERFORMANCE_NLSTEXT", HKEY_PERFORMANCE_NLSTEXT},
+    {L"HKEY_CURRENT_CONFIG", HKEY_CURRENT_CONFIG},
+    {L"HKEY_DYN_DATA", HKEY_DYN_DATA}};
+
+std::optional<std::wstring> ResolveRegistryName(const std::wstring& name) {
+  for (auto i : kKnownKey) {
+    if (name.find(i.name) == 0) {
+      HKEY key;
+      DWORD disposition;
+      if (ERROR_SUCCESS != ::RegCreateKeyEx(i.key, L"", 0, nullptr, 0,
+                                            MAXIMUM_ALLOWED, nullptr, &key,
+                                            &disposition)) {
+        return std::nullopt;
+      }
+
+      auto result = sandbox::GetPathFromHandle(key);
+      ::RegCloseKey(key);
+
+      if (!result) return std::nullopt;
+
+      result->append(name.substr(wcslen(i.name)));
+      return result;
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
 
 bool RegistryPolicy::GenerateRules(const wchar_t* name,
                                    LowLevelPolicy* policy) {
-  std::wstring nane_str(name);
-  if (nane_str.empty()) {
+  std::wstring name_str(name);
+  if (name_str.empty()) {
     return false;
   }
 
-  auto resolved_name = ResolveRegistryName(nane_str);
+  auto resolved_name = ResolveRegistryName(name_str);
   if (!resolved_name) {
     return false;
   }
@@ -152,49 +160,16 @@ bool RegistryPolicy::GenerateRules(const wchar_t* name,
   open.AddNumberMatch(IF_NOT, OpenKey::ACCESS, restricted_flags, AND);
   create.AddNumberMatch(IF_NOT, OpenKey::ACCESS, restricted_flags, AND);
 
-  if (!create.AddStringMatch(IF, OpenKey::NAME, resolved_name->c_str(),
-                             CASE_INSENSITIVE) ||
+  if (!create.AddStringMatch(IF, OpenKey::NAME, resolved_name->c_str()) ||
       !policy->AddRule(IpcTag::NTCREATEKEY, &create)) {
     return false;
   }
 
-  if (!open.AddStringMatch(IF, OpenKey::NAME, resolved_name->c_str(),
-                           CASE_INSENSITIVE) ||
+  if (!open.AddStringMatch(IF, OpenKey::NAME, resolved_name->c_str()) ||
       !policy->AddRule(IpcTag::NTOPENKEY, &open)) {
     return false;
   }
 
-  return true;
-}
-
-bool RegistryPolicy::CreateKeyAction(EvalResult eval_result,
-                                     const ClientInfo& client_info,
-                                     const std::wstring& key,
-                                     uint32_t attributes,
-                                     HANDLE root_directory,
-                                     uint32_t desired_access,
-                                     uint32_t title_index,
-                                     uint32_t create_options,
-                                     HANDLE* handle,
-                                     NTSTATUS* nt_status,
-                                     ULONG* disposition) {
-  // The only action supported is ASK_BROKER which means create the requested
-  // file as specified.
-  if (ASK_BROKER != eval_result) {
-    *nt_status = STATUS_ACCESS_DENIED;
-    return false;
-  }
-
-  // We don't support creating link keys, volatile keys or backup/restore.
-  if (create_options) {
-    *nt_status = STATUS_ACCESS_DENIED;
-    return false;
-  }
-
-  ObjectAttribs obj_attributes(key, attributes, root_directory);
-  *nt_status = NtCreateKeyInTarget(handle, desired_access, &obj_attributes,
-                                   title_index, nullptr, create_options,
-                                   disposition, client_info.process);
   return true;
 }
 

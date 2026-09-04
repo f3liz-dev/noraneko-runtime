@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,6 +64,8 @@ class nsSpeechTask : public nsISpeechTask,
 
   bool IsSpeaking() const { return mState == STATE_SPEAKING; }
 
+  bool IsPaused() const;
+
   bool IsPending() const { return mState == STATE_PENDING; }
 
  protected:
@@ -89,6 +89,11 @@ class nsSpeechTask : public nsISpeechTask,
 
   virtual nsresult DispatchMarkImpl(const nsAString& aName, float aElapsedTime,
                                     uint32_t aCharIndex);
+
+  // Let a subclass start and stop media control for as long as this task is
+  // speaking. No-ops in the base.
+  virtual void StartMediaControl() {}
+  virtual void StopMediaControl() {}
 
   RefPtr<SpeechSynthesisUtterance> mUtterance;
 

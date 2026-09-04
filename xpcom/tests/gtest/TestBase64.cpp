@@ -1,17 +1,15 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "gtest/gtest.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Base64.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIScriptableBase64Encoder.h"
-#include "nsIInputStream.h"
-#include "nsString.h"
-
-#include "gtest/gtest.h"
 #include "mozilla/gtest/MozAssertions.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIInputStream.h"
+#include "nsIScriptableBase64Encoder.h"
+#include "nsString.h"
 
 struct Chunk {
   Chunk(uint32_t l, const char* c) : mLength(l), mData(c) {}
@@ -184,7 +182,7 @@ bool FakeInputStream::NextTest() {
 }
 
 void FakeInputStream::CheckTest(nsACString& aResult) {
-  ASSERT_STREQ(aResult.BeginReading(), mTest->mResult);
+  ASSERT_STREQ(PromiseFlatCString(aResult).get(), mTest->mResult);
 }
 
 void FakeInputStream::CheckTest(nsAString& aResult) {
@@ -199,7 +197,7 @@ TEST(Base64, StreamEncoder)
       do_CreateInstance("@mozilla.org/scriptablebase64encoder;1");
   ASSERT_TRUE(encoder);
 
-  RefPtr<FakeInputStream> stream = new FakeInputStream();
+  RefPtr stream = mozilla::MakeRefPtr<FakeInputStream>();
   do {
     nsString wideString;
     nsCString string;

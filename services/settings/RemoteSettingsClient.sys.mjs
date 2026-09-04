@@ -20,11 +20,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://services-settings/RemoteSettingsWorker.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SharedUtils: "resource://services-settings/SharedUtils.sys.mjs",
-  UptakeTelemetry: "resource://services-common/uptake-telemetry.sys.mjs",
+  UptakeTelemetry: "resource://services-settings/UptakeTelemetry.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
 });
-
-const TELEMETRY_COMPONENT = "Remotesettings";
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => lazy.Utils.log);
 
@@ -195,6 +193,11 @@ class AttachmentDownloader extends Downloader {
       delete: async attachmentId => {
         return this._client.db.saveAttachment(attachmentId, null);
       },
+      deleteMultiple: async attachmentIds => {
+        return this._client.db.saveAttachments(
+          attachmentIds.map(id => [id, null])
+        );
+      },
       prune: async excludeIds => {
         return this._client.db.pruneAttachments(excludeIds);
       },
@@ -213,7 +216,6 @@ class AttachmentDownloader extends Downloader {
    */
   async download(record, options) {
     await lazy.UptakeTelemetry.report(
-      TELEMETRY_COMPONENT,
       lazy.UptakeTelemetry.STATUS.DOWNLOAD_START,
       {
         source: this._client.identifier,
@@ -231,7 +233,7 @@ class AttachmentDownloader extends Downloader {
         status = lazy.UptakeTelemetry.STATUS.NETWORK_ERROR;
       }
       // If the file failed to be downloaded, report it as such in Telemetry.
-      await lazy.UptakeTelemetry.report(TELEMETRY_COMPONENT, status, {
+      await lazy.UptakeTelemetry.report(status, {
         source: this._client.identifier,
         errorName: err.name,
       });
@@ -247,9 +249,10 @@ class AttachmentDownloader extends Downloader {
    */
   async deleteAll() {
     let allRecords = await this._client.db.list();
-    return Promise.all(
-      allRecords.filter(r => !!r.attachment).map(r => this.deleteDownloaded(r))
-    );
+    const idsToDelete = allRecords.filter(r => !!r.attachment).map(r => r.id);
+    if (idsToDelete.length) {
+      await this.cacheImpl.deleteMultiple(idsToDelete);
+    }
   }
 }
 
@@ -648,8 +651,8 @@ export class RemoteSettingsClient extends EventEmitter {
    * @param {object} options See #maybeSync() options.
    */
   async sync(options) {
-    if (lazy.Utils.shouldSkipRemoteActivityDueToTests) {
-      lazy.console.debug(`${this.identifier} Skip sync() due to tests.`);
+    if (lazy.Utils.shouldSkipRemoteActivity) {
+      lazy.console.debug(`${this.identifier} Skip remote sync.`);
       return;
     }
 
@@ -716,14 +719,10 @@ export class RemoteSettingsClient extends EventEmitter {
 
     this._syncRunning = true;
 
-    await lazy.UptakeTelemetry.report(
-      TELEMETRY_COMPONENT,
-      lazy.UptakeTelemetry.STATUS.SYNC_START,
-      {
-        source: this.identifier,
-        trigger,
-      }
-    );
+    await lazy.UptakeTelemetry.report(lazy.UptakeTelemetry.STATUS.SYNC_START, {
+      source: this.identifier,
+      trigger,
+    });
 
     let importedFromDump = [];
     const startedAt = new Date();
@@ -965,11 +964,7 @@ export class RemoteSettingsClient extends EventEmitter {
         reportArgs = { ...reportArgs, errorName: thrownError.name };
       }
 
-      await lazy.UptakeTelemetry.report(
-        TELEMETRY_COMPONENT,
-        reportStatus,
-        reportArgs
-      );
+      await lazy.UptakeTelemetry.report(reportStatus, reportArgs);
 
       lazy.console.debug(`${this.identifier} sync status is ${reportStatus}`);
       this._syncRunning = false;
@@ -1231,21 +1226,26 @@ export class RemoteSettingsClient extends EventEmitter {
         lazy.console.error(
           `${this.identifier} Signature failed ${retry ? "again" : ""} ${e}`
         );
-        if (!(e instanceof InvalidSignatureError)) {
-          // If it failed for any other kind of error (eg. shutdown)
-          // then give up quickly.
-          throw e;
-        }
 
-        // In order to distinguish signature errors that happen
-        // during sync, from hijacks of local DBs, we will verify
-        // the signature on the data that we had before syncing
-        // (if any).
+        // Any verification failure, invalid signature, malformed signature,
+        // or a failed x5u cert-chain fetch, must roll back the records just
+        // imported above, which are still unverified.
         if (!hasLocalData) {
           lazy.console.debug(`${this.identifier} No previous data to restore`);
         }
-        const localTrustworthy =
-          hasLocalData && (await new Promise(verifySignatureLocalData));
+
+        let localTrustworthy = false;
+        if (hasLocalData) {
+          try {
+            localTrustworthy = await new Promise(verifySignatureLocalData);
+          } catch (_) {
+            // We either throw a CorruptedDataError below which will lead to a
+            // telemetry event, or we have retried already and this is the second
+            // failure. We will reset to dump, clear everything, and throw the error
+            // so that the caller can report the sync status.
+          }
+        }
+
         if (!localTrustworthy && !retry) {
           // Signature failed, clear local DB because it contains
           // bad data (local + remote changes).

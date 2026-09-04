@@ -405,6 +405,11 @@ var gIdentityHandler = {
   },
   get _httpsFirstModeEnabled() {
     delete this._httpsFirstModeEnabled;
+    // [pref-trie-audit] "dom.security.https_first" is an ambiguous prefix of
+    // "dom.security.https_first_add_exception_on_failure", "dom.security.https_first_exception_lifetime",
+    // "dom.security.https_first_for_custom_ports", "dom.security.https_first_for_local_addresses",
+    // "dom.security.https_first_for_unknown_suffixes", "dom.security.https_first_schemeless";
+    // triggers only for the exact pref (all siblings have their own registrations).
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "_httpsFirstModeEnabled",
@@ -818,9 +823,16 @@ var gIdentityHandler = {
   /**
    * Returns whether the issuer of the current certificate chain is
    * built-in (returns false) or imported (returns true).
+   * Can only be true for secure connections and where there isn't a
+   * user-added error override.
    */
   _hasCustomRoot() {
-    return !this._secInfo.isBuiltCertChainRootBuiltInRoot;
+    return (
+      this._isSecureConnection &&
+      !this._isCertUserOverridden &&
+      this._secInfo &&
+      !this._secInfo.isBuiltCertChainRootBuiltInRoot
+    );
   },
 
   /**
@@ -1043,13 +1055,8 @@ var gIdentityHandler = {
       });
     }
 
-    let customRoot = false;
-
     // Determine connection security information.
     let connection = this.getConnectionSecurityInformation();
-    if (this._isSecureConnection) {
-      customRoot = this._hasCustomRoot();
-    }
 
     let securityButtonNode = document.getElementById(
       "identity-popup-security-button"
@@ -1156,7 +1163,7 @@ var gIdentityHandler = {
       this._updateAttribute(element, "ciphers", ciphers);
       this._updateAttribute(element, "mixedcontent", mixedcontent);
       this._updateAttribute(element, "isbroken", this._isBrokenConnection);
-      this._updateAttribute(element, "customroot", customRoot);
+      element.toggleAttribute("customroot", this._hasCustomRoot());
       this._updateAttribute(element, "httpsonlystatus", httpsOnlyStatus);
     }
 

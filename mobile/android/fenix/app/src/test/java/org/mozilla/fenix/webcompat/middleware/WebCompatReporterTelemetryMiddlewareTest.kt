@@ -6,7 +6,6 @@ package org.mozilla.fenix.webcompat.middleware
 
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -17,6 +16,7 @@ import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState
 import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class WebCompatReporterTelemetryMiddlewareTest {
@@ -33,18 +33,6 @@ class WebCompatReporterTelemetryMiddlewareTest {
         assertNotNull(Webcompatreporting.reasonDropdown.testGetValue())
         val snapshot = Webcompatreporting.reasonDropdown.testGetValue()!!
         assertEquals(WebCompatReporterState.BrokenSiteReason.Media.name, snapshot)
-    }
-
-    @Test
-    fun `WHEN send more info button is clicked THEN record send more info button telemetry`() {
-        val store = createStore()
-        assertNull(Webcompatreporting.addMoreInfo.testGetValue())
-
-        store.dispatch(WebCompatReporterAction.AddMoreInfoClicked)
-
-        val snapshot = Webcompatreporting.addMoreInfo.testGetValue()!!
-        assertEquals(1, snapshot.size)
-        assertEquals("add_more_info", snapshot.single().name)
     }
 
     @Test

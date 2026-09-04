@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,12 +6,14 @@
 #define jit_JitcodeMap_h
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
+#include "mozilla/Maybe.h"
 
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint8_t, uint32_t, uint64_t
 
-#include "ds/AvlTree.h"         // AvlTree
-#include "jit/CompactBuffer.h"  // CompactBufferReader, CompactBufferWriter
+#include "ds/AvlTree.h"             // AvlTree
+#include "jit/CompactBuffer.h"      // CompactBufferReader, CompactBufferWriter
+#include "jit/JitCodeSourceInfo.h"  // JitCodeSourceInfoVector
 #include "jit/shared/Assembler-shared.h"  // CodeOffset
 #include "js/AllocPolicy.h"               // SystemAllocPolicy
 #include "js/ProfilingFrameIterator.h"    // CallStackFrameInfo
@@ -106,7 +106,10 @@ class RealmIndependentSharedEntry;
 // Base class for all entries.
 class JitcodeGlobalEntry : public JitCodeRange {
  protected:
+  // May be null if the JitCode has been collected by the GC but the entry
+  // is kept alive because it is still referenced from the profiler buffer.
   JitCode* jitcode_;
+  JS::Zone* zone_;
   // If this entry is referenced from the profiler buffer, this is the
   // position where the most recent sample that references it starts.
   // Otherwise set to kNoSampleInBuffer.
@@ -125,24 +128,18 @@ class JitcodeGlobalEntry : public JitCodeRange {
 
  protected:
   Kind kind_;
+  bool inTree_ = false;
 
   JitcodeGlobalEntry(Kind kind, JitCode* code, void* nativeStartAddr,
-                     void* nativeEndAddr)
-      : JitCodeRange(nativeStartAddr, nativeEndAddr),
-        jitcode_(code),
-        kind_(kind) {
-    MOZ_ASSERT(code);
-    MOZ_ASSERT(nativeStartAddr);
-    MOZ_ASSERT(nativeEndAddr);
-  }
+                     void* nativeEndAddr);
 
   // Protected destructor to ensure this is called through DestroyPolicy.
   ~JitcodeGlobalEntry() = default;
 
+ public:
   JitcodeGlobalEntry(const JitcodeGlobalEntry& other) = delete;
   void operator=(const JitcodeGlobalEntry& other) = delete;
 
- public:
   struct DestroyPolicy {
     void operator()(JitcodeGlobalEntry* entry);
   };
@@ -156,6 +153,9 @@ class JitcodeGlobalEntry : public JitCodeRange {
       return false;
     }
     return bufferRangeStart <= samplePositionInBuffer_;
+  }
+  bool isReferencedByProfiler(const mozilla::Maybe<uint64_t>& rangeStart) {
+    return rangeStart && isSampled(*rangeStart);
   }
 
   Kind kind() const { return kind_; }
@@ -186,12 +186,15 @@ class JitcodeGlobalEntry : public JitCodeRange {
 
   JitCode* jitcode() const { return jitcode_; }
   JitCode** jitcodePtr() { return &jitcode_; }
-  Zone* zone() const { return jitcode()->zone(); }
+  bool hasJitcode() const { return jitcode_ != nullptr; }
+  Zone* zone() const {
+    // The zone may have been destroyed after detaching.
+    MOZ_ASSERT(hasJitcode());
+    return zone_;
+  }
+  bool isInTree() const { return inTree_; }
+  void setInTree(bool v) { inTree_ = v; }
 
-  bool traceJitcode(JSTracer* trc);
-  bool isJitcodeMarkedFromAnyThread(JSRuntime* rt);
-
-  bool trace(JSTracer* trc);
   uint64_t realmID(JSRuntime* rt) const;
   void* canonicalNativeAddrFor(JSRuntime* rt, void* ptr) const;
 
@@ -216,34 +219,63 @@ inline UniqueJitcodeGlobalEntry MakeJitcodeGlobalEntry(JSContext* cx,
   return res;
 }
 
-struct ScriptSourceAndExtent {
+// Whether script's baseline JitCode is realm-independent: when the self-hosted
+// code cache is enabled, self-hosted scripts are compiled once with no realm
+// set and the resulting code is shared across realms.
+bool IsRealmIndependentBaselineCode(JSScript* script);
+
+// Register a JitcodeGlobalEntry describing script's baseline JitCode so the
+// profiler can resolve its frames, and mark the code as having a bytecode map.
+// On failure returns false with an error pending on cx; callers for which
+// registration is best-effort should clear it with recoverFromOutOfMemory.
+//
+// sourceInfo is the table used for sampler line/column lookups that's
+// constructed by PerfSpewer.
+//
+// FIXME: It is only available from the compile-time path. The enable-time path
+// for code already on the stack has no such data and registers an entry with an
+// empty table. We should generate this data without PerfSpewer for cases like
+// this. See bug 2054900.
+[[nodiscard]] bool AddBaselineJitcodeGlobalEntry(
+    JSContext* cx, JSScript* script, JitCode* code,
+    JitCodeSourceInfoVector&& sourceInfo = {});
+
+// Identity key used by the profiler to refer to a script after the JSScript
+// may have gone away.
+//
+// Note: sharedData is part of the key because a private instance accessor
+// (get #x() {...}) and its parser-synthesized private-method initializer lambda
+// share the same (scriptSource, toStringStart, toStringEnd) while having
+// different bytecode.
+struct JitcodeScriptKey {
   RefPtr<ScriptSource> scriptSource;
+  RefPtr<SharedImmutableScriptData> sharedData;
   uint32_t toStringStart;
   uint32_t toStringEnd;
 
-  explicit ScriptSourceAndExtent(JSScript* script)
+  explicit JitcodeScriptKey(JSScript* script)
       : scriptSource(script->scriptSource()),
+        sharedData(script->sharedData()),
         toStringStart(script->toStringStart()),
-        toStringEnd(script->toStringEnd()) {}
+        toStringEnd(script->toStringEnd()) {
+    MOZ_ASSERT(sharedData);
+  }
 
   bool matches(JSScript* script) const {
     return scriptSource == script->scriptSource() &&
+           sharedData == script->sharedData() &&
            toStringStart == script->toStringStart() &&
            toStringEnd == script->toStringEnd();
   }
 };
 
 struct IonScriptData {
-  ScriptSourceAndExtent sourceAndExtent;
-  RefPtr<SharedImmutableScriptData> sharedData;
+  JitcodeScriptKey scriptKey;
   uint32_t lineno;
   JS::LimitedColumnNumberOneOrigin column;
 
   explicit IonScriptData(JSScript* script)
-      : sourceAndExtent(script),
-        sharedData(script->sharedData()),
-        lineno(script->lineno()),
-        column(script->column()) {}
+      : scriptKey(script), lineno(script->lineno()), column(script->column()) {}
 };
 
 class IonEntry : public JitcodeGlobalEntry {
@@ -286,9 +318,9 @@ class IonEntry : public JitcodeGlobalEntry {
 
   size_t numScripts() const { return scriptList_.length(); }
 
-  const ScriptSourceAndExtent& getScriptSource(unsigned idx) const {
+  const JitcodeScriptKey& getScriptKey(unsigned idx) const {
     MOZ_ASSERT(idx < numScripts());
-    return scriptList_[idx].scriptData.sourceAndExtent;
+    return scriptList_[idx].scriptData.scriptKey;
   }
 
   const IonScriptData& getScriptData(unsigned idx) const {
@@ -312,46 +344,63 @@ class IonEntry : public JitcodeGlobalEntry {
 };
 
 class IonICEntry : public JitcodeGlobalEntry {
-  // Address for this IC in the IonScript code. Most operations on IonICEntry
-  // use this to forward to the IonEntry.
+  // Address in the parent IonEntry's native code that this IC rejoins to,
+  // used as the offset when resolving call stacks.
   void* rejoinAddr_;
+
+  // Parent IonEntry, cached so we don't need a tree lookup by rejoinAddr_.
+  // The parent may be removed from the AVL tree (when executable memory is
+  // reused by a new JitCode) while this IC is still referenced from the
+  // profiler buffer, so a tree lookup is unreliable. lookupForSampler
+  // propagates sample positions through this pointer to keep the parent alive
+  // in entries_ for at least as long as this IC.
+  IonEntry* ionEntry_;
 
  public:
   IonICEntry(JitCode* code, void* nativeStartAddr, void* nativeEndAddr,
-             void* rejoinAddr)
+             void* rejoinAddr, IonEntry* ionEntry)
       : JitcodeGlobalEntry(Kind::IonIC, code, nativeStartAddr, nativeEndAddr),
-        rejoinAddr_(rejoinAddr) {
+        rejoinAddr_(rejoinAddr),
+        ionEntry_(ionEntry) {
     MOZ_ASSERT(rejoinAddr_);
+    MOZ_ASSERT(ionEntry_);
   }
 
   void* rejoinAddr() const { return rejoinAddr_; }
+  IonEntry& ionEntry() const { return *ionEntry_; }
 
   void* canonicalNativeAddrFor(void* ptr) const;
 
-  uint32_t callStackAtAddr(JSRuntime* rt, void* ptr,
-                           CallStackFrameInfo* results,
+  uint32_t callStackAtAddr(void* ptr, CallStackFrameInfo* results,
                            uint32_t maxResults) const;
 
-  uint64_t realmID(JSRuntime* rt) const;
+  uint64_t realmID() const;
 };
 
 class BaselineEntry : public JitcodeGlobalEntry {
-  ScriptSourceAndExtent scriptSource_;
+  JitcodeScriptKey scriptKey_;
   UniqueChars str_;
   uint64_t realmId_;
+  // Native-offset -> source-position table for sampler line/column lookup.
+  // Populated by the PerfSpewer during compile-time.
+  // TODO: This is currently Baseline-only but we should move it to
+  // JitcodeGlobalEntry once other entries start using it.
+  JitCodeSourceInfoVector sourceInfo_;
 
  public:
   BaselineEntry(JitCode* code, void* nativeStartAddr, void* nativeEndAddr,
-                JSScript* script, UniqueChars str, uint64_t realmId)
+                JSScript* script, UniqueChars str, uint64_t realmId,
+                JitCodeSourceInfoVector&& sourceInfo)
       : JitcodeGlobalEntry(Kind::Baseline, code, nativeStartAddr,
                            nativeEndAddr),
-        scriptSource_(script),
+        scriptKey_(script),
         str_(std::move(str)),
-        realmId_(realmId) {
+        realmId_(realmId),
+        sourceInfo_(std::move(sourceInfo)) {
     MOZ_ASSERT(str_);
   }
 
-  const ScriptSourceAndExtent& scriptSource() const { return scriptSource_; }
+  const JitcodeScriptKey& scriptKey() const { return scriptKey_; }
 
   const char* str() const { return str_.get(); }
 
@@ -514,13 +563,12 @@ class JitcodeGlobalTable {
 
   JitcodeGlobalEntry* lookup(void* ptr) { return lookupInternal(ptr); }
 
-  const JitcodeGlobalEntry* lookupForSampler(void* ptr, JSRuntime* rt,
+  const JitcodeGlobalEntry* lookupForSampler(void* ptr,
                                              uint64_t samplePosInBuffer);
 
   [[nodiscard]] bool addEntry(UniqueJitcodeGlobalEntry entry);
 
   void setAllEntriesAsExpired();
-  [[nodiscard]] bool markIteratively(GCMarker* marker);
   void traceWeak(JSRuntime* rt, JSTracer* trc);
 
  private:

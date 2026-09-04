@@ -29,6 +29,7 @@
 #include "api/field_trials.h"
 #include "api/function_view.h"
 #include "api/make_ref_counted.h"
+#include "api/rtp_header_extension_id.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
 #include "api/test/mock_frame_encryptor.h"
@@ -80,8 +81,8 @@ constexpr float kTolerance = 0.0001f;
 constexpr uint32_t kSsrc = 1234;
 constexpr char kCName[] = "foo_name";
 constexpr std::array<uint32_t, 2> kCsrcs = {5678, 9012};
-constexpr int kAudioLevelId = 2;
-constexpr int kTransportSequenceNumberId = 4;
+constexpr RtpHeaderExtensionId kAudioLevelId(2);
+constexpr RtpHeaderExtensionId kTransportSequenceNumberId(4);
 constexpr int32_t kEchoDelayMedian = 254;
 constexpr int32_t kEchoDelayStdDev = -3;
 constexpr double kDivergentFilterFraction = 0.2f;
@@ -238,7 +239,7 @@ class ConfigHelper {
     EXPECT_CALL(rtp_rtcp_, SetExtmapAllowMixed(false)).Times(1);
     EXPECT_CALL(*channel_send_, SetCsrcs(ElementsAreArray(kCsrcs))).Times(1);
     EXPECT_CALL(*channel_send_,
-                SetSendAudioLevelIndicationStatus(true, kAudioLevelId))
+                SetSendAudioLevelIndicationStatus(kAudioLevelId))
         .Times(1);
     EXPECT_CALL(rtp_transport_, GetRtcpObserver)
         .WillRepeatedly(Return(&rtcp_observer_));
@@ -831,6 +832,50 @@ TEST(AudioSendStreamTest, ReconfigureTransportCcResetsFirst) {
   }
 }
 
+TEST(AudioSendStreamTest, ReconfigureTransportCcDeregistersExtension) {
+  for (bool use_null_audio_processing : {false, true}) {
+    ConfigHelper helper(false, true, use_null_audio_processing);
+    helper.config().rtp.extensions.push_back(RtpExtension(
+        RtpExtension::kTransportSequenceNumberUri, kTransportSequenceNumberId));
+
+    EXPECT_CALL(*helper.rtp_rtcp(),
+                RegisterRtpHeaderExtension(TransportSequenceNumber::Uri(),
+                                           kTransportSequenceNumberId))
+        .Times(1);
+    auto send_stream = helper.CreateAudioSendStream();
+
+    // Reconfigure with a different transport-cc extension ID.
+    constexpr RtpHeaderExtensionId kNewTransportSequenceNumberId(
+        kTransportSequenceNumberId.value() + 1);
+    auto new_config = helper.config();
+    new_config.rtp.extensions.clear();
+    new_config.rtp.extensions.push_back(
+        RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelId));
+    new_config.rtp.extensions.push_back(
+        RtpExtension(RtpExtension::kTransportSequenceNumberUri,
+                     kNewTransportSequenceNumberId));
+
+    // Expect deregistration before re-registration with the new ID.
+    EXPECT_CALL(*helper.rtp_rtcp(), DeregisterSendRtpHeaderExtension(
+                                        TransportSequenceNumber::Uri()))
+        .Times(1);
+    EXPECT_CALL(*helper.rtp_rtcp(),
+                RegisterRtpHeaderExtension(TransportSequenceNumber::Uri(),
+                                           kNewTransportSequenceNumberId))
+        .Times(1);
+    {
+      ::testing::InSequence seq;
+      EXPECT_CALL(*helper.channel_send(), ResetSenderCongestionControlObjects())
+          .Times(1);
+      EXPECT_CALL(*helper.channel_send(),
+                  RegisterSenderCongestionControlObjects(helper.transport()))
+          .Times(1);
+    }
+
+    send_stream->Reconfigure(new_config, nullptr);
+  }
+}
+
 TEST(AudioSendStreamTest, OnTransportOverheadChanged) {
   for (bool use_null_audio_processing : {false, true}) {
     ConfigHelper helper(false, true, use_null_audio_processing);
@@ -1025,6 +1070,42 @@ TEST(AudioSendStreamTest, UseEncoderBitrateRange) {
           });
   EXPECT_CALL(*helper.channel_send(), StartSend());
   send_stream->Start();
+  EXPECT_CALL(*helper.channel_send(), StopSend());
+  send_stream->Stop();
+}
+
+// Verifies that ReconfigureBitrateObserver() preserves the
+// BitrateAllocator registration when the WebRTC-Audio-ABWENoTWCC field trial
+// is enabled and TWCC is not negotiated for audio (i.e.
+// `include_in_congestion_control_allocation` is false). The Start() path
+// already short-circuits on `allocate_audio_without_feedback_`; this test
+// ensures the Reconfigure() path applies the same short-circuit.
+TEST(AudioSendStreamTest, AbweNoTwccTrialKeepsBaRegistrationOnReconfigure) {
+  ConfigHelper helper(/*audio_bwe_enabled=*/false,
+                      /*expect_set_encoder_call=*/true,
+                      /*use_null_audio_processing=*/true);
+  helper.field_trials().Set("WebRTC-Audio-ABWENoTWCC", "Enabled");
+  auto send_stream = helper.CreateAudioSendStream();
+
+  // Start() registers the stream with the BitrateAllocator.
+  EXPECT_CALL(*helper.bitrate_allocator(), AddObserver(send_stream.get(), _))
+      .Times(1);
+  EXPECT_CALL(*helper.channel_send(), StartSend());
+  send_stream->Start();
+
+  // Reconfigure with a different bitrate range. The observer should be
+  // re-added (update path) and must not be removed.
+  auto new_config = helper.config();
+  new_config.min_bitrate_bps = 12000;
+  new_config.max_bitrate_bps = 80000;
+  EXPECT_CALL(*helper.bitrate_allocator(), AddObserver(send_stream.get(), _))
+      .Times(1);
+  EXPECT_CALL(*helper.bitrate_allocator(), RemoveObserver(send_stream.get()))
+      .Times(0);
+  send_stream->Reconfigure(new_config, nullptr);
+
+  EXPECT_CALL(*helper.bitrate_allocator(), RemoveObserver(send_stream.get()))
+      .Times(1);
   EXPECT_CALL(*helper.channel_send(), StopSend());
   send_stream->Stop();
 }

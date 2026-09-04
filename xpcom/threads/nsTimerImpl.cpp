@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -750,12 +748,16 @@ void nsTimerImpl::Fire(uint64_t aTimerSeq) {
       [&](const FuncCallback& f) { f.mFunc(timer, f.mClosure); },
       [&](const ClosureCallback& c) { c(timer); });
 
-  TimeStamp now = TimeStamp::Now();
+  MOZ_LOG(GetTimerLog(), LogLevel::Debug,
+          ("[this=%p] Took %fms to fire timer callback\n", this,
+           (TimeStamp::Now() - fireTime).ToMilliseconds()));
 
   MutexAutoLock lock(mMutex);
   // Someone else could have re-initialized us while the callback ran.
   if (aTimerSeq == mTimerSeq) {
     if (IsRepeating()) {
+      const TimeStamp now = TimeStamp::Now();
+
       // Repeating timer has not been re-init or canceled; reschedule
       if (IsSlack()) {
         mTimeout = now + mDelay;
@@ -783,10 +785,6 @@ void nsTimerImpl::Fire(uint64_t aTimerSeq) {
   }
 
   --mFiring;
-
-  MOZ_LOG(GetTimerLog(), LogLevel::Debug,
-          ("[this=%p] Took %fms to fire timer callback\n", this,
-           (now - fireTime).ToMilliseconds()));
 }
 
 // See the big comment above GetTimerFiringsLog() to understand this code.

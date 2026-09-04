@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WinEventObserver.h"
+
+// clang-format off
 #include <windows.h>
 #include <winternl.h>
 #include <winuser.h>
 #include <wtsapi32.h>
 #include <dbt.h>
-
-#include "WinEventObserver.h"
+// clang-format on
 
 #include "InputDeviceUtils.h"
 #include "ScreenHelperWin.h"
-#include "WindowsUIUtils.h"
 #include "WinWindowOcclusionTracker.h"
-
+#include "WindowsUIUtils.h"
 #include "gfxDWriteFonts.h"
 #include "gfxPlatform.h"
 #include "mozilla/Assertions.h"
@@ -27,8 +26,8 @@
 #include "nsLookAndFeel.h"
 #include "nsStringFwd.h"
 #include "nsWindowDbg.h"
-#include "nsdefs.h"
 #include "nsXULAppAPI.h"
+#include "nsdefs.h"
 
 // borrowed from devblogs.microsoft.com/oldnewthing/20041025-00/?p=37483, by way
 // of the Chromium sandboxing code's "current_module.h"
@@ -231,7 +230,8 @@ static void OnSettingsChange(WPARAM wParam, LPARAM lParam) {
   if (lParamString == u"ConvertibleSlateMode"_ns) {
     // Documentation implies, and testing shows, that this is not seen on Win10.
     (void)NS_WARN_IF(!mozilla::IsWin11OrLater());
-    WindowsUIUtils::UpdateInWin11TabletMode();
+    WindowsUIUtils::UpdateInWin11TabletMode(
+        WindowsUIUtils::TabletModeUpdateReason::Notification);
     NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
     return;
   }

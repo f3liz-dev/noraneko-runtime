@@ -21,7 +21,8 @@ pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/properties.rs"));
 }
 
-use crate::custom_properties::{self, ComputedCustomProperties};
+use crate::applicable_declarations::RevertKind;
+use crate::custom_properties::{self, ComputedSubstitutionFunctions, SubstitutionResult};
 use crate::derives::*;
 use crate::dom::AttributeTracker;
 #[cfg(feature = "gecko")]
@@ -31,6 +32,7 @@ use crate::parser::ParserContext;
 use crate::stylesheets::CssRuleType;
 use crate::stylesheets::Origin;
 use crate::stylist::Stylist;
+use crate::typed_om::{ToTyped, TypedValue};
 use crate::values::{computed, serialize_atom_name};
 use arrayvec::{ArrayVec, Drain as ArrayVecDrain};
 use cssparser::{match_ignore_ascii_case, Parser, ParserInput};
@@ -43,8 +45,8 @@ use std::{
 };
 use style_traits::{
     CssString, CssWriter, KeywordsCollectFn, ParseError, ParsingMode, SpecifiedValueInfo, ToCss,
-    ToTyped, TypedValue,
 };
+use thin_vec::ThinVec;
 
 bitflags! {
     /// A set of flags for properties.
@@ -64,6 +66,8 @@ bitflags! {
         ///
         /// https://drafts.csswg.org/css-cascade/#legacy-shorthand
         const IS_LEGACY_SHORTHAND = 1 << 6;
+       /// This shorthand remains enabled even if some subproperties are pref-disabled.
+        const ALLOWS_DISABLED_SUBPROPERTIES = 1 << 7;
 
         /* The following flags are currently not used in Rust code, they
          * only need to be listed in corresponding properties so that
@@ -95,30 +99,32 @@ pub enum CSSWideKeyword {
     Revert,
     /// The `revert-layer` keyword.
     RevertLayer,
+    /// The `revert-rule` keyword.
+    RevertRule,
 }
 
 impl CSSWideKeyword {
     /// Returns the string representation of the keyword.
     pub fn to_str(&self) -> &'static str {
         match *self {
-            CSSWideKeyword::Initial => "initial",
-            CSSWideKeyword::Inherit => "inherit",
-            CSSWideKeyword::Unset => "unset",
-            CSSWideKeyword::Revert => "revert",
-            CSSWideKeyword::RevertLayer => "revert-layer",
+            Self::Initial => "initial",
+            Self::Inherit => "inherit",
+            Self::Unset => "unset",
+            Self::Revert => "revert",
+            Self::RevertLayer => "revert-layer",
+            Self::RevertRule => "revert-rule",
         }
     }
-}
 
-impl CSSWideKeyword {
     /// Parses a CSS wide keyword from a CSS identifier.
     pub fn from_ident(ident: &str) -> Result<Self, ()> {
         Ok(match_ignore_ascii_case! { ident,
-            "initial" => CSSWideKeyword::Initial,
-            "inherit" => CSSWideKeyword::Inherit,
-            "unset" => CSSWideKeyword::Unset,
-            "revert" => CSSWideKeyword::Revert,
-            "revert-layer" => CSSWideKeyword::RevertLayer,
+            "initial" => Self::Initial,
+            "inherit" => Self::Inherit,
+            "unset" => Self::Unset,
+            "revert" => Self::Revert,
+            "revert-layer" => Self::RevertLayer,
+            "revert-rule" if static_prefs::pref!("layout.css.revert-rule.enabled") => Self::RevertRule,
             _ => return Err(()),
         })
     }
@@ -131,6 +137,16 @@ impl CSSWideKeyword {
         };
         input.expect_exhausted().map_err(|_| ())?;
         Ok(keyword)
+    }
+
+    /// Returns the revert kind for this wide keyword.
+    pub fn revert_kind(self) -> Option<RevertKind> {
+        Some(match self {
+            Self::Initial | Self::Inherit | Self::Unset => return None,
+            Self::Revert => RevertKind::Origin,
+            Self::RevertLayer => RevertKind::Layer,
+            Self::RevertRule => RevertKind::Rule,
+        })
     }
 }
 
@@ -146,8 +162,8 @@ pub struct WideKeywordDeclaration {
 // XXX Switch back to ToTyped derive once it can automatically handle structs
 // Tracking in bug 1991631
 impl ToTyped for WideKeywordDeclaration {
-    fn to_typed(&self) -> Option<TypedValue> {
-        self.keyword.to_typed()
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        self.keyword.to_typed(dest)
     }
 }
 
@@ -164,7 +180,7 @@ pub struct VariableDeclaration {
 
 /// A custom property declaration value is either an unparsed value or a CSS
 /// wide-keyword.
-#[derive(Clone, PartialEq, ToCss, ToShmem)]
+#[derive(Clone, PartialEq, ToCss, ToShmem, ToTyped)]
 pub enum CustomDeclarationValue {
     /// An unparsed value.
     Unparsed(Arc<custom_properties::SpecifiedValue>),
@@ -374,7 +390,7 @@ impl PropertyId {
     pub fn is_animatable(&self) -> bool {
         match self {
             Self::NonCustom(id) => id.is_animatable(),
-            Self::Custom(_) => cfg!(feature = "gecko"),
+            Self::Custom(_) => true,
         }
     }
 
@@ -610,7 +626,8 @@ impl LonghandId {
     /// Returns whether this property is animatable in a discrete way.
     #[inline]
     pub fn is_discrete_animatable(self) -> bool {
-        LonghandIdSet::discrete_animatable().contains(self)
+        // `display` is discrete but has a custom Animate impl, so it's not in the set.
+        LonghandIdSet::discrete_animatable().contains(self) || self == LonghandId::Display
     }
 
     /// Converts from a LonghandId to an adequate NonCustomCSSPropertyId.
@@ -718,6 +735,22 @@ impl ShorthandId {
     pub fn is_legacy_shorthand(self) -> bool {
         self.flags().contains(PropertyFlags::IS_LEGACY_SHORTHAND)
     }
+
+    /// Returns whether this shorthand remains enabled even if some subproperties are pref-disabled.
+    #[inline]
+    pub fn allows_disabled_subproperties(self) -> bool {
+        self.flags()
+            .contains(PropertyFlags::ALLOWS_DISABLED_SUBPROPERTIES)
+    }
+}
+
+/// Return the names of arbitrary substitution functions that are enabled.
+pub fn enabled_arbitrary_substitution_functions() -> &'static [&'static str] {
+    if static_prefs::pref!("layout.css.attr.enabled") {
+        &["var", "env", "attr"]
+    } else {
+        &["var", "env"]
+    }
 }
 
 fn parse_non_custom_property_declaration_value_into<'i>(
@@ -751,18 +784,16 @@ fn parse_non_custom_property_declaration_value_into<'i>(
     };
 
     input.reset(&start);
-    input.look_for_arbitrary_substitution_functions(
-        if static_prefs::pref!("layout.css.attr.enabled") {
-            &["var", "env", "attr"]
-        } else {
-            &["var", "env"]
-        },
-    );
+    input.look_for_arbitrary_substitution_functions(enabled_arbitrary_substitution_functions());
 
+    let mut saw_arbitrary_substitution_functions = false;
     let err = match parse_entirely_into(declarations, input) {
         Ok(()) => {
-            input.seen_arbitrary_substitution_functions();
-            return Ok(());
+            saw_arbitrary_substitution_functions = input.seen_arbitrary_substitution_functions();
+            if !saw_arbitrary_substitution_functions {
+                return Ok(());
+            }
+            input.new_custom_error(style_traits::StyleParseErrorKind::UnspecifiedError)
         },
         Err(e) => e,
     };
@@ -783,11 +814,17 @@ fn parse_non_custom_property_declaration_value_into<'i>(
         }
         at_start = false;
     }
-    if !input.seen_arbitrary_substitution_functions() || invalid {
+    saw_arbitrary_substitution_functions =
+        saw_arbitrary_substitution_functions || input.seen_arbitrary_substitution_functions();
+    if !saw_arbitrary_substitution_functions || invalid {
         return Err(err);
     }
     input.reset(start);
-    let value = custom_properties::VariableValue::parse(input, &context.url_data)?;
+    let value = custom_properties::VariableValue::parse(
+        input,
+        Some(&context.namespaces.prefixes),
+        &context.url_data,
+    )?;
     parsed_custom(declarations, value);
     Ok(())
 }
@@ -882,7 +919,11 @@ impl PropertyDeclaration {
                 let value = match input.try_parse(CSSWideKeyword::parse) {
                     Ok(keyword) => CustomDeclarationValue::CSSWideKeyword(keyword),
                     Err(()) => CustomDeclarationValue::Unparsed(Arc::new(
-                        custom_properties::VariableValue::parse(input, &context.url_data)?,
+                        custom_properties::VariableValue::parse(
+                            input,
+                            Some(&context.namespaces.prefixes),
+                            &context.url_data,
+                        )?,
                     )),
                 };
                 declarations.push(PropertyDeclaration::Custom(CustomDeclaration {
@@ -1118,7 +1159,7 @@ impl<'a> PropertyDeclarationId<'a> {
     pub fn is_animatable(&self) -> bool {
         match self {
             Self::Longhand(id) => id.is_animatable(),
-            Self::Custom(_) => cfg!(feature = "gecko"),
+            Self::Custom(_) => true,
         }
     }
 
@@ -1128,7 +1169,7 @@ impl<'a> PropertyDeclarationId<'a> {
         match self {
             Self::Longhand(longhand) => longhand.is_discrete_animatable(),
             // TODO(bug 1885995): Refine this.
-            Self::Custom(_) => cfg!(feature = "gecko"),
+            Self::Custom(_) => true,
         }
     }
 
@@ -1167,63 +1208,175 @@ impl<'a> PropertyDeclarationId<'a> {
     }
 }
 
-/// A set of all properties.
-#[derive(Clone, PartialEq, Default)]
-pub struct NonCustomPropertyIdSet {
-    storage: [u32; ((property_counts::NON_CUSTOM as usize) - 1 + 32) / 32],
+/// A trait for property-id-like types that can be stored compactly in an
+/// `IdSet` bitfield.
+pub trait IndexedId: Copy {
+    /// The number of distinct ids, i.e. the number of bits the set needs.
+    const COUNT: usize;
+    /// Builds an id from its index in the set. The caller must guarantee that
+    /// `index < Self::COUNT`.
+    unsafe fn from_index_release_unchecked(index: usize) -> Self;
+    /// Returns the index of this id in the set.
+    fn to_index(self) -> usize;
 }
 
-impl NonCustomPropertyIdSet {
-    /// Creates an empty `NonCustomPropertyIdSet`.
-    pub fn new() -> Self {
+impl IndexedId for NonCustomPropertyId {
+    const COUNT: usize = property_counts::NON_CUSTOM;
+
+    #[inline(always)]
+    unsafe fn from_index_release_unchecked(index: usize) -> Self {
+        debug_assert!(index < Self::COUNT);
+        NonCustomPropertyId(index as u16)
+    }
+
+    #[inline(always)]
+    fn to_index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl IndexedId for PrioritaryPropertyId {
+    const COUNT: usize = property_counts::PRIORITARY;
+
+    #[inline(always)]
+    unsafe fn from_index_release_unchecked(index: usize) -> Self {
+        debug_assert!(index < Self::COUNT);
+        std::mem::transmute(index as u8)
+    }
+
+    #[inline(always)]
+    fn to_index(self) -> usize {
+        self as usize
+    }
+}
+
+impl IndexedId for LonghandId {
+    const COUNT: usize = property_counts::LONGHANDS;
+
+    #[inline(always)]
+    unsafe fn from_index_release_unchecked(index: usize) -> Self {
+        debug_assert!(index < Self::COUNT);
+        std::mem::transmute(index as u16)
+    }
+
+    #[inline(always)]
+    fn to_index(self) -> usize {
+        self as usize
+    }
+}
+
+/// A set of non-custom properties.
+pub type NonCustomPropertyIdSet =
+    IdSet<NonCustomPropertyId, { (property_counts::NON_CUSTOM - 1 + 32) / 32 }>;
+/// An iterator over non-custom properties.
+pub type NonCustomPropertyIdSetIterator<'a> = IdSetIterator<'a, NonCustomPropertyId>;
+/// A set of prioritary properties.
+pub type PrioritaryPropertyIdSet =
+    IdSet<PrioritaryPropertyId, { (property_counts::PRIORITARY - 1 + 32) / 32 }>;
+/// An iterator over prioritary properties.
+pub type PrioritaryPropertyIdSetIterator<'a> = IdSetIterator<'a, PrioritaryPropertyId>;
+/// A set of longhand properties.
+pub type LonghandIdSet = IdSet<LonghandId, { (property_counts::LONGHANDS - 1 + 32) / 32 }>;
+/// An iterator over longhand properties.
+pub type LonghandIdSetIterator<'a> = IdSetIterator<'a, LonghandId>;
+
+/// A set of ids indexed in a bitfield. `W` is the number of `u32` chunks needed to store
+/// `Id::COUNT` bits, and is filled in by the type aliases above.
+///
+/// TODO(emilio): It'd be nice for the const parameter to be COUNT (or even not be there and pull
+/// from Id::COUNT), but that can't be done in stable rust yet, see:
+/// https://github.com/rust-lang/rust/issues/76560
+pub struct IdSet<Id: IndexedId, const W: usize> {
+    storage: [u32; W],
+    _phantom: std::marker::PhantomData<Id>,
+}
+
+impl<Id: IndexedId, const W: usize> Clone for IdSet<Id, W> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Id: IndexedId, const W: usize> Copy for IdSet<Id, W> {}
+
+impl<Id: IndexedId, const W: usize> Default for IdSet<Id, W> {
+    #[inline]
+    fn default() -> Self {
         Self {
-            storage: Default::default(),
+            storage: [0; W],
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Id: IndexedId, const W: usize> PartialEq for IdSet<Id, W> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.storage == other.storage
+    }
+}
+
+impl<Id: IndexedId, const W: usize> fmt::Debug for IdSet<Id, W> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.storage.fmt(f)
+    }
+}
+
+impl<Id: IndexedId, const W: usize> malloc_size_of::MallocSizeOf for IdSet<Id, W> {
+    #[inline(always)]
+    fn size_of(&self, _: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        0
+    }
+}
+
+impl<Id: IndexedId, const W: usize> IdSet<Id, W> {
+    /// Creates an empty `IdSet`.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a set from its raw bitfield storage.
+    pub(crate) const fn from_storage(storage: [u32; W]) -> Self {
+        Self {
+            storage,
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    /// Insert a non-custom-property in the set.
+    /// Insert an id in the set.
     #[inline]
-    pub fn insert(&mut self, id: NonCustomPropertyId) {
-        let bit = id.0 as usize;
+    pub fn insert(&mut self, id: Id) {
+        let bit = id.to_index();
         self.storage[bit / 32] |= 1 << (bit % 32);
     }
 
-    /// Return whether the given property is in the set
+    /// Remove the given id from the set.
     #[inline]
-    pub fn contains(&self, id: NonCustomPropertyId) -> bool {
-        let bit = id.0 as usize;
+    pub fn remove(&mut self, id: Id) {
+        let bit = id.to_index();
+        self.storage[bit / 32] &= !(1 << (bit % 32));
+    }
+
+    /// Return whether the given id is in the set.
+    #[inline]
+    pub fn contains(&self, id: Id) -> bool {
+        let bit = id.to_index();
         (self.storage[bit / 32] & (1 << (bit % 32))) != 0
     }
-}
 
-/// A set of longhand properties
-#[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq)]
-pub struct LonghandIdSet {
-    storage: [u32; ((property_counts::LONGHANDS as usize) - 1 + 32) / 32],
-}
-
-to_shmem::impl_trivial_to_shmem!(LonghandIdSet);
-
-impl LonghandIdSet {
-    /// Return an empty LonghandIdSet.
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            storage: Default::default(),
-        }
-    }
-
-    /// Iterate over the current longhand id set.
-    pub fn iter(&self) -> LonghandIdSetIterator<'_> {
-        LonghandIdSetIterator {
+    /// Iterate over the current id set.
+    pub fn iter(&self) -> IdSetIterator<'_, Id> {
+        IdSetIterator {
             chunks: &self.storage,
             cur_chunk: 0,
             cur_bit: 0,
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    /// Returns whether this set contains at least every longhand that `other`
-    /// also contains.
+    /// Returns whether this set contains at least every id that `other` also contains.
     pub fn contains_all(&self, other: &Self) -> bool {
         for (self_cell, other_cell) in self.storage.iter().zip(other.storage.iter()) {
             if (*self_cell & *other_cell) != *other_cell {
@@ -1233,7 +1386,7 @@ impl LonghandIdSet {
         true
     }
 
-    /// Returns whether this set contains any longhand that `other` also contains.
+    /// Returns whether this set contains any id that `other` also contains.
     pub fn contains_any(&self, other: &Self) -> bool {
         for (self_cell, other_cell) in self.storage.iter().zip(other.storage.iter()) {
             if (*self_cell & *other_cell) != 0 {
@@ -1243,39 +1396,12 @@ impl LonghandIdSet {
         false
     }
 
-    /// Remove all the given properties from the set.
+    /// Remove all the given ids from the set.
     #[inline]
     pub fn remove_all(&mut self, other: &Self) {
         for (self_cell, other_cell) in self.storage.iter_mut().zip(other.storage.iter()) {
             *self_cell &= !*other_cell;
         }
-    }
-
-    /// Return whether the given property is in the set
-    #[inline]
-    pub fn contains(&self, id: LonghandId) -> bool {
-        let bit = id as usize;
-        (self.storage[bit / 32] & (1 << (bit % 32))) != 0
-    }
-
-    /// Return whether this set contains any reset longhand.
-    #[inline]
-    pub fn contains_any_reset(&self) -> bool {
-        self.contains_any(Self::reset())
-    }
-
-    /// Add the given property to the set
-    #[inline]
-    pub fn insert(&mut self, id: LonghandId) {
-        let bit = id as usize;
-        self.storage[bit / 32] |= 1 << (bit % 32);
-    }
-
-    /// Remove the given property from the set
-    #[inline]
-    pub fn remove(&mut self, id: LonghandId) {
-        let bit = id as usize;
-        self.storage[bit / 32] &= !(1 << (bit % 32));
     }
 
     /// Clear all bits
@@ -1293,15 +1419,25 @@ impl LonghandIdSet {
     }
 }
 
-/// An iterator over a set of longhand ids.
-pub struct LonghandIdSetIterator<'a> {
+to_shmem::impl_trivial_to_shmem!(LonghandIdSet);
+impl LonghandIdSet {
+    /// Return whether this set contains any reset longhand.
+    #[inline]
+    pub fn contains_any_reset(&self) -> bool {
+        self.contains_any(Self::reset())
+    }
+}
+
+/// An iterator over a set of ids.
+pub struct IdSetIterator<'a, Id: IndexedId> {
     chunks: &'a [u32],
     cur_chunk: u32,
     cur_bit: u32, // [0..31], note that zero means the end-most bit
+    _phantom: std::marker::PhantomData<Id>,
 }
 
-impl<'a> Iterator for LonghandIdSetIterator<'a> {
-    type Item = LonghandId;
+impl<'a, Id: IndexedId> Iterator for IdSetIterator<'a, Id> {
+    type Item = Id;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -1317,9 +1453,9 @@ impl<'a> Iterator for LonghandIdSetIterator<'a> {
                 continue;
             }
             debug_assert!(cur_bit + next_bit < 32);
-            let longhand_id = cur_chunk * 32 + cur_bit + next_bit;
-            debug_assert!(longhand_id as usize <= property_counts::LONGHANDS);
-            let id: LonghandId = unsafe { mem::transmute(longhand_id as u16) };
+            let index = (cur_chunk * 32 + cur_bit + next_bit) as usize;
+            debug_assert!(index < Id::COUNT);
+            let id = unsafe { Id::from_index_release_unchecked(index) };
             self.cur_bit += next_bit + 1;
             if self.cur_bit == 32 {
                 self.cur_bit = 0;
@@ -1417,6 +1553,16 @@ impl ToCss for UnparsedValue {
     }
 }
 
+impl ToTyped for UnparsedValue {
+    fn to_typed(&self, dest: &mut ThinVec<TypedValue>) -> Result<(), ()> {
+        if self.from_shorthand.is_none() {
+            self.variable_value.to_typed(dest)?;
+            return Ok(());
+        }
+        Err(())
+    }
+}
+
 /// A simple cache for properties that come from a shorthand and have variable
 /// references.
 ///
@@ -1430,7 +1576,7 @@ impl UnparsedValue {
     fn substitute_variables<'cache>(
         &self,
         longhand_id: LonghandId,
-        custom_properties: &ComputedCustomProperties,
+        substitution_functions: &ComputedSubstitutionFunctions,
         stylist: &Stylist,
         computed_context: &computed::Context,
         shorthand_cache: &'cache mut ShorthandsWithPropertyReferencesCache,
@@ -1464,9 +1610,9 @@ impl UnparsedValue {
             }
         }
 
-        let css = match custom_properties::substitute(
+        let SubstitutionResult { css, attr_taint } = match custom_properties::substitute(
             &self.variable_value,
-            custom_properties,
+            substitution_functions,
             stylist,
             computed_context,
             attribute_tracker,
@@ -1494,6 +1640,7 @@ impl UnparsedValue {
             /* namespaces = */ Default::default(),
             None,
             None,
+            attr_taint,
         );
 
         let mut input = ParserInput::new(&css);

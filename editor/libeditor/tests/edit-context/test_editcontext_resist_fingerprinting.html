@@ -1,0 +1,42 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test that IME styling is not exposed when privacy.resistFingerprinting is enabled.</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<div></div>
+<script>
+'use strict';
+
+async function doTest(preference, enabled) {
+  await SimpleTest.promiseFocus();
+  await SpecialPowers.pushPrefEnv({ set: [[preference, enabled]] });
+  // Document::mShouldResistFingerprinting is not updated when pref is set,
+  // so we need to create a new document.
+  const waitForMessage = new Promise(r => onmessage = e => r(e.data));
+  const iframe = document.createElement('iframe');
+  iframe.focus();
+  iframe.src = 'file_editcontext_resist_fingerprinting.html';
+  document.body.append(iframe);
+  const formats = await waitForMessage;
+  is(formats.length, 2, 'Expected 2 textformatupdates with 1 format each');
+  is(formats[0], enabled ? 'thick solid' : 'none none',
+     enabled ? `Thick solid underline should always be reported for selected clause when ${preference} is enabled.`
+             : 'Ordinarily, synthesized composition events have no underline.');
+  is(formats[1], enabled ? 'thin solid' : 'none none',
+     enabled ? `Thin solid underline should always be reported for raw clause when ${preference} is enabled.`
+             : 'Ordinarily, synthesized composition events have no underline.');
+}
+
+add_task(() => doTest('privacy.resistFingerprinting', true));
+add_task(() => doTest('privacy.resistFingerprinting', false));
+add_task(() => doTest('privacy.fingerprintingProtection', true));
+add_task(() => doTest('privacy.fingerprintingProtection', false));
+
+</script>
+</body>
+</html>

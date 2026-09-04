@@ -1,18 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_image_encoders_webp_nsWebPEncoder_h
 #define mozilla_image_encoders_webp_nsWebPEncoder_h
 
-#include "webp/encode.h"
-
 #include "imgIEncoder.h"
-#include "nsCOMPtr.h"
-
 #include "mozilla/Attributes.h"
 #include "mozilla/ReentrantMonitor.h"
+#include "nsCOMPtr.h"
+#include "webp/encode.h"
 
 #define NS_WEBPENCODER_CID                    \
   {/* a8e5a8e5-bebf-4512-9f50-e41e4748ce28 */ \

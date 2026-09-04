@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -14,8 +13,8 @@
 
 #include <objc/objc.h>
 
-#include "nsCOMPtr.h"
 #include "LocalAccessible.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla {
 namespace a11y {

@@ -1,39 +1,39 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Theme.h"
-#include <utility>
-#include "ThemeCocoa.h"
 
-#include "ThemeDrawing.h"
-#include "Units.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLMeterElement.h"
-#include "mozilla/dom/HTMLProgressElement.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/Types.h"
-#include "mozilla/gfx/Filters.h"
-#include "mozilla/RelativeLuminanceUtils.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/webrender/WebRenderAPI.h"
-#include "nsCSSColorUtils.h"
-#include "nsCSSRendering.h"
-#include "nsScrollbarFrame.h"
-#include "nsIScrollbarMediator.h"
-#include "nsDeviceContext.h"
-#include "nsLayoutUtils.h"
-#include "nsRangeFrame.h"
+#include <utility>
+
 #include "PathHelpers.h"
-#include "nsComboboxControlFrame.h"
 #include "ScrollbarDrawingAndroid.h"
 #include "ScrollbarDrawingCocoa.h"
 #include "ScrollbarDrawingGTK.h"
 #include "ScrollbarDrawingWin.h"
 #include "ScrollbarDrawingWin11.h"
+#include "ThemeCocoa.h"
+#include "ThemeDrawing.h"
+#include "Units.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/RelativeLuminanceUtils.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLMeterElement.h"
+#include "mozilla/dom/HTMLProgressElement.h"
+#include "mozilla/gfx/Filters.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/gfx/Types.h"
+#include "mozilla/webrender/WebRenderAPI.h"
+#include "nsCSSColorUtils.h"
+#include "nsCSSRendering.h"
+#include "nsComboboxControlFrame.h"
+#include "nsDeviceContext.h"
+#include "nsIScrollbarMediator.h"
+#include "nsLayoutUtils.h"
+#include "nsRangeFrame.h"
+#include "nsScrollbarFrame.h"
 
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
@@ -437,7 +437,7 @@ std::pair<sRGBColor, sRGBColor> Theme::ComputeProgressColors(
     const Colors& aColors) {
   if (aColors.HighContrast()) {
     return aColors.SystemPair(StyleSystemColor::Selecteditem,
-                              StyleSystemColor::Buttontext);
+                              StyleSystemColor::Windowtext);
   }
   return std::make_pair(aColors.Accent().Get(), aColors.Accent().GetDark());
 }
@@ -445,8 +445,8 @@ std::pair<sRGBColor, sRGBColor> Theme::ComputeProgressColors(
 std::pair<sRGBColor, sRGBColor> Theme::ComputeProgressTrackColors(
     const Colors& aColors) {
   if (aColors.HighContrast()) {
-    return aColors.SystemPair(StyleSystemColor::Buttonface,
-                              StyleSystemColor::Buttontext);
+    return aColors.SystemPair(StyleSystemColor::Selecteditemtext,
+                              StyleSystemColor::Windowtext);
   }
   return std::make_pair(sColorGrey10, sColorGrey40);
 }
@@ -896,7 +896,7 @@ void Theme::PaintRange(nsIFrame* aFrame, PaintBackendData& aPaintData,
   tickMarkOrigin -=
       LayoutDevicePoint(tickMarkSize.width, tickMarkSize.height) / 2;
   auto tickMarkRect = LayoutDeviceRect(tickMarkOrigin, tickMarkSize);
-  for (auto tickMark : tickMarks) {
+  for (const auto& tickMark : tickMarks) {
     auto tickMarkOffset =
         tickMarkDirection *
         float(rangeFrame->GetDoubleAsFractionOfRange(tickMark));

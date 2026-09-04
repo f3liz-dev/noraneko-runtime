@@ -10,7 +10,7 @@ extern crate winit;
 #[path = "common/boilerplate.rs"]
 mod boilerplate;
 
-use crate::boilerplate::{Example, HandyDandyRectBuilder};
+use crate::boilerplate::{Example, HandyDandyRectBuilder, AU_PER_DEV_PX};
 use webrender::api::*;
 use webrender::render_api::*;
 use webrender::api::units::*;
@@ -38,10 +38,9 @@ impl Example for App {
         let sub_pipeline_id = PipelineId(pipeline_id.0, 42);
         let mut sub_builder = DisplayListBuilder::new(sub_pipeline_id);
         let mut space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
-        sub_builder.begin();
+        sub_builder.begin(AU_PER_DEV_PX);
 
         sub_builder.push_simple_stacking_context(
-            sub_bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
@@ -57,6 +56,7 @@ impl Example for App {
         let mut txn = Transaction::new();
         txn.set_display_list(
             Epoch(0),
+            api.get_namespace_id(),
             sub_builder.end(),
         );
         api.send_transaction(document_id, txn);
@@ -71,12 +71,10 @@ impl Example for App {
                 should_snap: false,
                 paired_with_perspective: false,
             },
-            SpatialTreeItemKey::new(0, 0),
         );
 
         // And this is for the root pipeline
         builder.push_simple_stacking_context(
-            sub_bounds.min,
             space_and_clip.spatial_id,
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );

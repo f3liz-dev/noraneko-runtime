@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ UntypedManagedEndpoint::~UntypedManagedEndpoint() {
     mInner->mOtherSide->ActorEventTarget()->Dispatch(NS_NewRunnableFunction(
         "~ManagedEndpoint (Local)",
         [otherSide = mInner->mOtherSide, id = mInner->mId] {
-          if (IProtocol* actor = otherSide->Get(); actor && actor->CanRecv()) {
+          if (IProtocol* actor = otherSide->Get(); actor && actor->CanSend()) {
             MOZ_DIAGNOSTIC_ASSERT(actor->Id() == id, "Wrong Actor?");
             RefPtr<ActorLifecycleProxy> strongProxy(actor->GetLifecycleProxy());
             strongProxy->Get()->OnMessageReceived(
@@ -195,6 +193,14 @@ bool ParamTraits<mozilla::ipc::UntypedManagedEndpoint>::Read(
 
 void ParamTraits<mozilla::ipc::UntypedEndpoint>::Write(MessageWriter* aWriter,
                                                        paramType&& aParam) {
+  if (aParam.mOtherProcInfo != mozilla::ipc::EndpointProcInfo::Invalid()) {
+    MOZ_RELEASE_ASSERT(
+        XRE_IsParentProcess() ||
+            aParam.mOtherProcInfo == mozilla::ipc::EndpointProcInfo::Current(),
+        "If specified, OtherProcInfo must be in the current process for "
+        "Endpoints sent from child processes.");
+  }
+
   IPC::WriteParam(aWriter, std::move(aParam.mPort));
   IPC::WriteParam(aWriter, aParam.mMessageChannelId);
   IPC::WriteParam(aWriter, aParam.mMyProcInfo);
@@ -203,10 +209,36 @@ void ParamTraits<mozilla::ipc::UntypedEndpoint>::Write(MessageWriter* aWriter,
 
 bool ParamTraits<mozilla::ipc::UntypedEndpoint>::Read(MessageReader* aReader,
                                                       paramType* aResult) {
-  return IPC::ReadParam(aReader, &aResult->mPort) &&
-         IPC::ReadParam(aReader, &aResult->mMessageChannelId) &&
-         IPC::ReadParam(aReader, &aResult->mMyProcInfo) &&
-         IPC::ReadParam(aReader, &aResult->mOtherProcInfo);
+  if (!IPC::ReadParam(aReader, &aResult->mPort) ||
+      !IPC::ReadParam(aReader, &aResult->mMessageChannelId) ||
+      !IPC::ReadParam(aReader, &aResult->mMyProcInfo) ||
+      !IPC::ReadParam(aReader, &aResult->mOtherProcInfo)) {
+    return false;
+  }
+
+  // If specified, mOtherProcInfo must either be bound in the other process, or
+  // the sender must be the parent process.
+  if (aResult->mOtherProcInfo != mozilla::ipc::EndpointProcInfo::Invalid()) {
+    mozilla::ipc::IProtocol* actor = aReader->GetActor();
+    if (!actor) {
+      aReader->FatalError("Must send UntypedEndpoint over an actor");
+      return false;
+    }
+
+    // FIXME: Would be nice to also check that `actor->ToplevelProtocol()` is
+    // `[NeedsOtherPid]` here, but that information is currently not tracked.
+    // This will be easier once we centralize static protocol/actor metadata.
+    mozilla::ipc::EndpointProcInfo peer{
+        .mPid = actor->ToplevelProtocol()->OtherPidMaybeInvalid(),
+        .mChildID = actor->ToplevelProtocol()->OtherChildIDMaybeInvalid()};
+    if (peer != aResult->mOtherProcInfo && peer.mChildID != 0) {
+      aReader->FatalError(
+          "Other end of UntypedEndpoint must be bound in sending process, if "
+          "OtherProcInfo is specified");
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace IPC

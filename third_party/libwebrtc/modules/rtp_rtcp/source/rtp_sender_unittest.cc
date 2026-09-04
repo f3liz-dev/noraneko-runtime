@@ -20,7 +20,7 @@
 
 #include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
-#include "api/environment/environment_factory.h"
+#include "api/rtp_header_extension_id.h"
 #include "api/rtp_packet_sender.h"
 #include "api/rtp_parameters.h"
 #include "api/units/frequency.h"
@@ -40,6 +40,7 @@
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "modules/rtp_rtcp/source/video_fec_generator.h"
 #include "rtc_base/rate_limiter.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/time_controller/simulated_time_controller.h"
@@ -47,18 +48,14 @@
 namespace webrtc {
 
 namespace {
-enum : int {  // The first valid value is 1.
-  kAbsoluteSendTimeExtensionId = 1,
-  kAudioLevelExtensionId,
-  kGenericDescriptorId,
-  kMidExtensionId,
-  kRepairedRidExtensionId,
-  kRidExtensionId,
-  kTransmissionTimeOffsetExtensionId,
-  kTransportSequenceNumberExtensionId,
-  kVideoRotationExtensionId,
-  kVideoTimingExtensionId,
-};
+constexpr RtpHeaderExtensionId kAbsoluteSendTimeExtensionId(1);
+constexpr RtpHeaderExtensionId kAudioLevelExtensionId(2);
+constexpr RtpHeaderExtensionId kMidExtensionId(4);
+constexpr RtpHeaderExtensionId kRepairedRidExtensionId(5);
+constexpr RtpHeaderExtensionId kRidExtensionId(6);
+constexpr RtpHeaderExtensionId kTransmissionTimeOffsetExtensionId(7);
+constexpr RtpHeaderExtensionId kTransportSequenceNumberExtensionId(8);
+constexpr RtpHeaderExtensionId kVideoRotationExtensionId(9);
 
 constexpr int kPayload = 100;
 constexpr int kRtxPayload = 98;
@@ -112,7 +109,7 @@ class RtpSenderTest : public ::testing::Test {
  protected:
   RtpSenderTest()
       : time_controller_(Timestamp::Millis(kStartTime)),
-        env_(CreateEnvironment(time_controller_.GetClock())),
+        env_(CreateTestEnvironment({.time = &time_controller_})),
         retransmission_rate_limiter_(&env_.clock(), 1000),
         flexfec_sender_(env_,
                         0,
@@ -958,15 +955,21 @@ TEST_F(RtpSenderTest, DontCountVolatileExtensionsIntoOverhead) {
   EXPECT_EQ(rtp_sender_->ExpectedPerPacketOverhead(), 12u);
 
   rtp_sender_->RegisterRtpHeaderExtension(InbandComfortNoiseExtension::Uri(),
-                                          1);
+                                          RtpHeaderExtensionId(1));
   rtp_sender_->RegisterRtpHeaderExtension(AbsoluteCaptureTimeExtension::Uri(),
-                                          2);
-  rtp_sender_->RegisterRtpHeaderExtension(VideoOrientation::Uri(), 3);
-  rtp_sender_->RegisterRtpHeaderExtension(PlayoutDelayLimits::Uri(), 4);
-  rtp_sender_->RegisterRtpHeaderExtension(VideoContentTypeExtension::Uri(), 5);
-  rtp_sender_->RegisterRtpHeaderExtension(VideoTimingExtension::Uri(), 6);
-  rtp_sender_->RegisterRtpHeaderExtension(RepairedRtpStreamId::Uri(), 7);
-  rtp_sender_->RegisterRtpHeaderExtension(ColorSpaceExtension::Uri(), 8);
+                                          RtpHeaderExtensionId(2));
+  rtp_sender_->RegisterRtpHeaderExtension(VideoOrientation::Uri(),
+                                          RtpHeaderExtensionId(3));
+  rtp_sender_->RegisterRtpHeaderExtension(PlayoutDelayLimits::Uri(),
+                                          RtpHeaderExtensionId(4));
+  rtp_sender_->RegisterRtpHeaderExtension(VideoContentTypeExtension::Uri(),
+                                          RtpHeaderExtensionId(5));
+  rtp_sender_->RegisterRtpHeaderExtension(VideoTimingExtension::Uri(),
+                                          RtpHeaderExtensionId(6));
+  rtp_sender_->RegisterRtpHeaderExtension(RepairedRtpStreamId::Uri(),
+                                          RtpHeaderExtensionId(7));
+  rtp_sender_->RegisterRtpHeaderExtension(ColorSpaceExtension::Uri(),
+                                          RtpHeaderExtensionId(8));
 
   // Still only 12B counted since can't count on above being sent.
   EXPECT_EQ(rtp_sender_->ExpectedPerPacketOverhead(), 12u);
@@ -1251,7 +1254,7 @@ TEST_F(RtpSenderTest, SupportsPadding) {
   absl::string_view kBweExtensionUris[] = {
       TransportSequenceNumber::Uri(), TransportSequenceNumberV2::Uri(),
       AbsoluteSendTime::Uri(), TransmissionOffset::Uri()};
-  const int kExtensionsId = 7;
+  constexpr RtpHeaderExtensionId kExtensionsId(7);
 
   for (bool sending_media : kSendingMediaStats) {
     rtp_sender_->SetSendingMediaStatus(sending_media);

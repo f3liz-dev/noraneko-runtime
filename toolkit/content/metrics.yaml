@@ -19,6 +19,7 @@ security.doh.neterror:
       security.doh.neterror.load#dohwarning.
     bugs:
       - https://bugzil.la/1829342
+      - https://bugzil.la/2037081
     data_reviews:
       - https://bugzil.la/1829342
     notification_emails:
@@ -43,7 +44,6 @@ security.doh.neterror:
         description: >
           The reason why DoH request is failed
         type: string
-    telemetry_mirror: SecurityDohNeterror_Load_Dohwarning
 
   click_try_again_button:
     type: event
@@ -53,6 +53,7 @@ security.doh.neterror:
       security.doh.neterror.click#try_again_button.
     bugs: &security_doh_neterror_click_bugs
       - https://bugzil.la/1829342
+      - https://bugzil.la/2037081
     data_reviews: &security_doh_neterror_click_data_reviews
       - https://bugzil.la/1829342
     notification_emails: &security_doh_neterror_click_emails
@@ -77,7 +78,6 @@ security.doh.neterror:
         description: >
           The reason why DoH request is failed
         type: string
-    telemetry_mirror: SecurityDohNeterror_Click_TryAgainButton
 
   click_add_exception_button:
     type: event
@@ -90,7 +90,6 @@ security.doh.neterror:
     notification_emails: *security_doh_neterror_click_emails
     expires: never
     extra_keys: *security_doh_neterror_click_extra
-    telemetry_mirror: SecurityDohNeterror_Click_AddExceptionButton
 
   click_settings_button:
     type: event
@@ -103,7 +102,6 @@ security.doh.neterror:
     notification_emails: *security_doh_neterror_click_emails
     expires: never
     extra_keys: *security_doh_neterror_click_extra
-    telemetry_mirror: SecurityDohNeterror_Click_SettingsButton
 
   click_continue_button:
     type: event
@@ -142,7 +140,6 @@ security.doh.neterror:
     notification_emails: *security_doh_neterror_click_emails
     expires: never
     extra_keys: *security_doh_neterror_click_extra
-    telemetry_mirror: SecurityDohNeterror_Click_LearnMoreLink
 
 security.ui.certerror:
   load_aboutcerterror:
@@ -396,12 +393,16 @@ security.ui.neterror:
       recorded in the value extra key.
     bugs:
       - https://bugzil.la/2022590
+      - https://bugzil.la/2048027
     data_reviews:
       - https://bugzil.la/2022590
+      - https://bugzil.la/2048027
     notification_emails:
       - jaws@mozilla.com
       - seceng-telemetry@mozilla.com
     expires: never
+    data_sensitivity:
+      - technical
     extra_keys:
       value:
         description: >
@@ -416,6 +417,78 @@ security.ui.neterror:
         description: >
           The status of the failed channel, as an nsresult.
         type: quantity
+      no_connectivity:
+        description: >
+          Whether Firefox considers the device offline (OS link bit is down).
+          Only true for dnsNotFound when RPMHasConnectivity() returns false.
+        type: boolean
+      captive_portal_state:
+        description: >
+          The captive portal service state at page load time: unknown,
+          not_captive, unlocked_portal, or locked_portal. not_captive is
+          the only value that confirms the user is actually online.
+        type: string
+      trr_only:
+        description: >
+          Whether this is a TRR-only (DoH strict mode) DNS failure.
+        type: boolean
+
+  click_try_again_button:
+    type: event
+    description: >
+      User clicked the Try Again button on the network error page.
+    bugs: &security_ui_neterror_click_bugs
+      - https://bugzil.la/2048019
+    data_reviews: &security_ui_neterror_click_data_reviews
+      - https://bugzil.la/2048019
+    notification_emails: &security_ui_neterror_click_emails
+      - seceng-telemetry@mozilla.com
+    expires: never
+    data_sensitivity: &security_ui_neterror_click_sensitivity
+      - interaction
+    extra_keys: &security_ui_neterror_click_extra
+      value:
+        description: >
+          The error code string (e.g. dnsNotFound, connectionFailure,
+          netTimeout). Truncated to 40 characters.
+        type: string
+      is_frame:
+        description: >
+          If the error page is loaded in an iframe.
+        type: boolean
+
+  click_return_button_adv:
+    type: event
+    description: >
+      User clicked the Go Back button on the network error page.
+    bugs: *security_ui_neterror_click_bugs
+    data_reviews: *security_ui_neterror_click_data_reviews
+    notification_emails: *security_ui_neterror_click_emails
+    expires: never
+    data_sensitivity: *security_ui_neterror_click_sensitivity
+    extra_keys: *security_ui_neterror_click_extra
+
+  click_learn_more_link:
+    type: event
+    description: >
+      User clicked the Learn More link on the network error page.
+    bugs: *security_ui_neterror_click_bugs
+    data_reviews: *security_ui_neterror_click_data_reviews
+    notification_emails: *security_ui_neterror_click_emails
+    expires: never
+    data_sensitivity: *security_ui_neterror_click_sensitivity
+    extra_keys: *security_ui_neterror_click_extra
+
+  click_advanced_button:
+    type: event
+    description: >
+      User clicked the Advanced button on the network error page.
+    bugs: *security_ui_neterror_click_bugs
+    data_reviews: *security_ui_neterror_click_data_reviews
+    notification_emails: *security_ui_neterror_click_emails
+    expires: never
+    data_sensitivity: *security_ui_neterror_click_sensitivity
+    extra_keys: *security_ui_neterror_click_extra
 
 findbar:
   shown:

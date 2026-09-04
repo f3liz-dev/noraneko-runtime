@@ -1,18 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/SliceBudget.h"
 #include "jsapi-tests/tests.h"
+
+#include "js/SliceBudget.h"
 
 using namespace js;
 using JS::SliceBudget;
 using JS::TimeBudget;
 using JS::UnlimitedBudget;
 using JS::WorkBudget;
+
+using mozilla::TimeDuration;
 
 BEGIN_TEST(testSliceBudgetUnlimited) {
   SliceBudget budget = SliceBudget::unlimited();
@@ -53,12 +53,12 @@ BEGIN_TEST(testSliceBudgetWork) {
 END_TEST(testSliceBudgetWork)
 
 BEGIN_TEST(testSliceBudgetTime) {
-  SliceBudget budget = SliceBudget(TimeBudget(10000));
+  SliceBudget budget = SliceBudget(TimeDuration::FromMilliseconds(10000));
   CHECK(!budget.isUnlimited());
   CHECK(!budget.isWorkBudget());
   CHECK(budget.isTimeBudget());
 
-  CHECK(budget.timeBudget() == 10000);
+  CHECK(budget.timeBudget() == TimeDuration::FromMilliseconds(10000));
 
   CHECK(!budget.isOverBudget());
 
@@ -73,7 +73,7 @@ BEGIN_TEST(testSliceBudgetTime) {
 END_TEST(testSliceBudgetTime)
 
 BEGIN_TEST(testSliceBudgetTimeZero) {
-  SliceBudget budget = SliceBudget(TimeBudget(0));
+  SliceBudget budget = SliceBudget(TimeDuration::FromMilliseconds(0));
   budget.step(1000);
   CHECK(budget.isOverBudget());
 
@@ -86,13 +86,14 @@ BEGIN_TEST(testSliceBudgetInterruptibleTime) {
 
   // Interruptible 100 second budget. This test will finish in well under that
   // time.
-  static constexpr int64_t LONG_TIME = 100000;
-  SliceBudget budget = SliceBudget(TimeBudget(LONG_TIME), &wantInterrupt);
+  static constexpr int64_t LONG_TIME = 100;
+  SliceBudget budget =
+      SliceBudget(TimeDuration::FromSeconds(LONG_TIME), &wantInterrupt);
   CHECK(!budget.isUnlimited());
   CHECK(!budget.isWorkBudget());
   CHECK(budget.isTimeBudget());
 
-  CHECK(budget.timeBudget() == LONG_TIME);
+  CHECK(budget.timeBudget() == TimeDuration::FromSeconds(LONG_TIME));
 
   CHECK(!budget.isOverBudget());
 
@@ -114,11 +115,13 @@ BEGIN_TEST(testSliceBudgetInterruptibleTime) {
   // Interrupt requested!
   CHECK(budget.isOverBudget());
 
-  // The external flag is not reset, but the budget will internally remember
-  // that an interrupt was requested.
+  // The external flag is reset, but the budget will internally remember that an
+  // interrupt was requested until the interrupt is cleared.
   CHECK(wantInterrupt);
   wantInterrupt = false;
   CHECK(budget.isOverBudget());
+  budget.clearInterrupted();
+  CHECK(!budget.isOverBudget());
 
   // This doesn't test the deadline is correct as that would require waiting.
 
@@ -153,11 +156,13 @@ BEGIN_TEST(testSliceBudgetInterruptibleUnlimited) {
   // Interrupt requested!
   CHECK(budget.isOverBudget());
 
-  // The external flag is not reset, but the budget will internally remember
-  // that an interrupt was requested.
+  // The external flag is reset, but the budget will internally remember
+  // interrupt was requested until the interrupt is cleared.
   CHECK(wantInterrupt);
   wantInterrupt = false;
   CHECK(budget.isOverBudget());
+  budget.clearInterrupted();
+  CHECK(!budget.isOverBudget());
 
   return true;
 }

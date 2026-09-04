@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +6,13 @@
 #define MOZILLA_GFX_CompositeProcessD3D11FencesHolderMap_H
 
 #include <d3d11.h>
+
 #include <vector>
 
-#include "mozilla/gfx/FileHandleWrapper.h"
-#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/gfx/FileHandleWrapper.h"
+#include "mozilla/layers/LayersTypes.h"
 
 namespace mozilla {
 namespace layers {
@@ -29,8 +28,8 @@ class CompositeProcessD3D11FencesHolderMap {
   static void Shutdown();
   static CompositeProcessD3D11FencesHolderMap* Get() { return sInstance; }
 
-  CompositeProcessD3D11FencesHolderMap();
-  ~CompositeProcessD3D11FencesHolderMap();
+  CompositeProcessD3D11FencesHolderMap() = default;
+  ~CompositeProcessD3D11FencesHolderMap() = default;
 
   void Register(CompositeProcessFencesHolderId aHolderId);
   void RegisterReference(CompositeProcessFencesHolderId aHolderId);
@@ -57,7 +56,7 @@ class CompositeProcessD3D11FencesHolderMap {
     uint32_t mOwners = 1;
   };
 
-  mutable Monitor mMonitor;
+  mutable Monitor mMonitor{"CompositeProcessD3D11FencesHolderMap::mMonitor"};
 
   std::unordered_map<CompositeProcessFencesHolderId, UniquePtr<FencesHolder>,
                      CompositeProcessFencesHolderId::HashFn>

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,10 +13,6 @@
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGTransformBinding.h"
 #include "nsError.h"
-
-namespace {
-const double kRadPerDegree = 2.0 * M_PI / 360.0;
-}  // namespace
 
 namespace mozilla::dom {
 
@@ -39,10 +33,7 @@ SVGMatrixTearoffTable() {
 NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGTransform)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGTransform)
-  // We may not belong to a list, so we must null check tmp->mList.
-  if (tmp->mList) {
-    tmp->mList->mItems[tmp->mListIndex] = nullptr;
-  }
+  tmp->CleanupWeakRefs();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -113,10 +104,17 @@ DOMSVGTransform::~DOMSVGTransform() {
     SVGMatrixTearoffTable().RemoveTearoff(this);
     NS_RELEASE(matrix);
   }
-  // Our mList's weak ref to us must be nulled out when we die. If GC has
-  // unlinked us using the cycle collector code, then that has already
-  // happened, and mList is null.
+  CleanupWeakRefs();
+}
+
+void DOMSVGTransform::CleanupWeakRefs() {
+  // Our mList's weak ref to us must be nulled out when we die (or when we're
+  // cycle collected), so that we don't leave behind a pointer to
+  // free / soon-to-be-free memory. If GC has unlinked us using the cycle
+  // collector code, then that has already happened, and mList is null.
   if (mList) {
+    MOZ_RELEASE_ASSERT(mList->mItems[mListIndex] == this,
+                       "Clearing out the wrong list index...?");
     mList->mItems[mListIndex] = nullptr;
   }
 }
@@ -157,8 +155,8 @@ void DOMSVGTransform::SetTranslate(float tx, float ty, ErrorResult& aRv) {
     return;
   }
 
-  if (Transform().Type() == SVG_TRANSFORM_TRANSLATE && Matrixgfx()._31 == tx &&
-      Matrixgfx()._32 == ty) {
+  if (Transform().Type() == SVG_TRANSFORM_TRANSLATE &&
+      Transform().GetMatrix().GetTranslation() == gfxPoint(tx, ty)) {
     return;
   }
 
@@ -172,8 +170,8 @@ void DOMSVGTransform::SetScale(float sx, float sy, ErrorResult& aRv) {
     return;
   }
 
-  if (Transform().Type() == SVG_TRANSFORM_SCALE && Matrixgfx()._11 == sx &&
-      Matrixgfx()._22 == sy) {
+  if (Transform().Type() == SVG_TRANSFORM_SCALE &&
+      Transform().GetMatrix().ExactlyEquals(gfxMatrix::Scaling(sx, sy))) {
     return;
   }
   AutoChangeTransformListNotifier notifier(this);
@@ -293,7 +291,7 @@ void DOMSVGTransform::SetMatrix(const gfxMatrix& aMatrix) {
   MOZ_ASSERT(!mIsAnimValItem, "Attempting to modify read-only transform");
 
   if (Transform().Type() == SVG_TRANSFORM_MATRIX &&
-      SVGTransform::MatricesEqual(Matrixgfx(), aMatrix)) {
+      aMatrix.ExactlyEquals(Transform().GetMatrix())) {
     return;
   }
 

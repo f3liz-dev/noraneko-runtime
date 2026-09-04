@@ -11,6 +11,7 @@ const TEST_URL = URL_ROOT + "doc_markup_search.html";
 const DEVTOOLS_SEARCH_HIGHLIGHT_NAME = "devtools-search";
 
 add_task(async function () {
+  await pushPref("dom.select.customizable_select.enabled", true);
   const { inspector } = await openInspectorForURL(TEST_URL);
 
   let container = await getContainerForSelector("em", inspector, true);
@@ -248,6 +249,12 @@ add_task(async function () {
     "The ::backdrop element is selected"
   );
   checkHighlightedSearchResults(inspector, ["::backdrop"]);
+  // Hide the modal
+  let onMarkupMutation = inspector.once("markupmutation");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.document.querySelector("dialog").close();
+  });
+  await onMarkupMutation;
 
   // Search by the `content` declaration of the ::before and ::after pseudo elements
   await searchInMarkupView(inspector, "my_before_text");
@@ -268,9 +275,28 @@ add_task(async function () {
   // no highlighting as the `content` text isn't displayed in the markup view
   checkHighlightedSearchResults(inspector, []);
 
+  await searchInMarkupView(inspector, "::picker-icon");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::picker-icon",
+    "The ::picker-icon element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::picker-icon"]);
+
+  // The ::checkmark pseudo element only exists when the select is opened, so show the
+  // picker so we can see them
+  await showCustomizableSelectPicker(inspector, "select");
+  await searchInMarkupView(inspector, "::checkmark");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::checkmark",
+    "The ::checkmark element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::checkmark"]);
+
   info("Search for view-transition pseudo elements");
   // Trigger the view transition
-  const onMarkupMutation = inspector.once("markupmutation");
+  onMarkupMutation = inspector.once("markupmutation");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
     const document = content.document;
     content.testTransition = document.startViewTransition(() => {

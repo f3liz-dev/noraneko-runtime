@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,17 +6,17 @@
 #define nsDNSService2_h_
 
 #include "DNSServiceBase.h"
-#include "nsClassHashtable.h"
-#include "nsPIDNSService.h"
-#include "nsIMemoryReporter.h"
-#include "nsIObserver.h"
-#include "nsHostResolver.h"
-#include "nsString.h"
-#include "nsTHashSet.h"
-#include "nsHashKeys.h"
+#include "TRRService.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
-#include "TRRService.h"
+#include "nsClassHashtable.h"
+#include "nsHashKeys.h"
+#include "nsHostResolver.h"
+#include "nsIMemoryReporter.h"
+#include "nsIObserver.h"
+#include "nsPIDNSService.h"
+#include "nsString.h"
+#include "nsTHashSet.h"
 
 class nsAuthSSPI;
 

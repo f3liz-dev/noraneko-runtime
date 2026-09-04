@@ -11,6 +11,8 @@ add_task(async function () {
   // We will create a main process target list here in order to monitor
   // resources from new tabs as they get created.
   await pushPref("devtools.browsertoolbox.scope", "everything");
+  // We use a commands object for the main process
+  await pushPref("devtools.chrome.enabled", true);
 
   // Open a test tab
   const tab = await addTab("data:text/html,Root Node tests");
@@ -103,7 +105,7 @@ add_task(async function () {
 });
 
 function logInTab(tab, message) {
-  return ContentTask.spawn(tab.linkedBrowser, message, function (_message) {
+  return SpecialPowers.spawn(tab.linkedBrowser, [message], function (_message) {
     content.console.log(_message);
   });
 }

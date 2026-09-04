@@ -222,7 +222,6 @@ fn push_rotated_rect(
     _root_pipeline_id: PipelineId,
     angle: f32,
     time: f32,
-    item_key: SpatialTreeItemKey,
 ) {
     let color = color.scale_rgb(time);
     let rotation = LayoutTransform::rotation(
@@ -246,7 +245,6 @@ fn push_rotated_rect(
             should_snap: false,
             paired_with_perspective: false,
         },
-        item_key,
     );
     builder.push_rect(
         &CommonItemProperties::new(
@@ -287,7 +285,6 @@ fn build_display_list(
         LayoutVector2D::zero(),
         APZScrollGeneration::default(),
         HasScrollLinkedEffect::No,
-        SpatialTreeItemKey::new(1, 0),
     );
 
     builder.push_rect(
@@ -310,7 +307,6 @@ fn build_display_list(
         root_pipeline_id,
         time,
         time,
-        SpatialTreeItemKey::new(1, 1),
     );
 
     push_rotated_rect(
@@ -324,7 +320,6 @@ fn build_display_list(
         root_pipeline_id,
         0.2,
         time,
-        SpatialTreeItemKey::new(1, 2),
     );
 
     push_rotated_rect(
@@ -338,7 +333,6 @@ fn build_display_list(
         root_pipeline_id,
         0.1,
         time,
-        SpatialTreeItemKey::new(1, 3),
     );
 
     push_rotated_rect(
@@ -352,7 +346,6 @@ fn build_display_list(
         root_pipeline_id,
         time,
         time,
-        SpatialTreeItemKey::new(1, 4),
     );
 
     push_rotated_rect(
@@ -366,7 +359,6 @@ fn build_display_list(
         root_pipeline_id,
         time,
         time,
-        SpatialTreeItemKey::new(1, 5),
     );
 }
 
@@ -484,7 +476,7 @@ fn main() {
             inv_mode,
         );
 
-        txn.set_display_list(current_epoch, root_builder.end());
+        txn.set_display_list(current_epoch, api.get_namespace_id(), root_builder.end());
     }
 
     txn.generate_frame(0, true, false, RenderReasons::empty());
@@ -517,7 +509,7 @@ fn main() {
                         inv_mode,
                     );
 
-                    txn.set_display_list(current_epoch, root_builder.end());
+                    txn.set_display_list(current_epoch, api.get_namespace_id(), root_builder.end());
                 }
                 Invalidations::Scrolling => {
                     let d = 0.5 - 0.5 * (2.0 * f32::consts::PI * 5.0 * time).cos();

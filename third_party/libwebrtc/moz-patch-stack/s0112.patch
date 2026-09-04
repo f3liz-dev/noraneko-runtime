@@ -1,26 +1,44 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 7 Feb 2025 15:53:00 -0600
-Subject: Bug 1942428 - (fix-882b32d00f) fix
- -Wtautological-unsigned-zero-compare in payload_type.h
+Date: Wed, 17 Sep 2025 15:41:00 +0000
+Subject: Bug 1988042 - android build fix in
+ third_party/libwebrtc/rtc_base/cpu_info.cc r?ng!
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f3ed04250e9ec1b22731ac690eb66bc96ff894d6
+Supports(...) is really used in unittests and outside of unittests
+it is only used when WEBRTC_ARCH_X86_FAMILY is defined.  For now,
+we'll return false when checking for arm/neon suport.
+
+Differential Revision: https://phabricator.services.mozilla.com/D265018
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/eae7b6ec4f7ca191e8eaa8e36787142528f2c132
 ---
- call/payload_type.h | 4 ++++
- 1 file changed, 4 insertions(+)
+ rtc_base/cpu_info.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
 
-diff --git a/call/payload_type.h b/call/payload_type.h
-index d91da50fcc..a5e120417e 100644
---- a/call/payload_type.h
-+++ b/call/payload_type.h
-@@ -33,7 +33,11 @@ class PayloadType : public StrongAlias<class PayloadTypeTag, uint8_t> {
-     if (rtcp_mux && (id > 63 && id < 96)) {
-       return false;
-     }
-+#if defined(WEBRTC_MOZILLA_BUILD)
-+    return id <= 127; // id is unsigned, therefor always >= 0
-+#else
-     return id >= 0 && id <= 127;
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index ec74055c26..a0f289e2ed 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -25,7 +25,9 @@
+ #elif defined(WEBRTC_MAC)
+ #include <sys/sysctl.h>
+ #elif defined(WEBRTC_ANDROID)
++#if !defined(WEBRTC_MOZILLA_BUILD)
+ #include <cpu-features.h>
 +#endif
-   }
-   template <typename Sink>
-   friend void AbslStringify(Sink& sink, const PayloadType pt) {
+ #include <unistd.h>
+ #elif defined(WEBRTC_FUCHSIA)
+ #include <zircon/syscalls.h>
+@@ -175,7 +177,14 @@ bool Supports(ISA instruction_set_architecture) {
+ #elif defined(WEBRTC_ARCH_ARM_FAMILY)
+   if (instruction_set_architecture == ISA::kNeon) {
+ #if defined(WEBRTC_ANDROID)
++#if defined(WEBRTC_MOZILLA_BUILD)
++    // We should revisit this if Supports(...) is ever more widely used.
++    // Currently, it is used in unittests and when WEBRTC_ARCH_X86_FAMILY
++    // is defined in non-unittest code.
++    return false;
++#else
+     return 0 != (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON);
++#endif
+ #elif defined(WEBRTC_BSD)
+     // OpenBSD does not have getauxval() and does not have /proc reading
+     return false;

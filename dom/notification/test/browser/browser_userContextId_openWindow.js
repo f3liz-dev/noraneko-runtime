@@ -12,15 +12,15 @@ const ALERTS_SERVICE_CONTRACT_ID = "@mozilla.org/alerts-service;1";
 const USER_CONTEXT_ID = 3;
 
 let mockAlertsService = {
-  showAlert(alert, alertListener) {
+  showAlertWithCallbacks(alert, alertCallbacks) {
     ok(true, "Showing alert");
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     setTimeout(function () {
-      alertListener.observe(null, "alertshow", alert.cookie);
+      alertCallbacks.onAlertShow();
     }, 100);
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     setTimeout(function () {
-      alertListener.observe(null, "alertclickcallback", alert.cookie);
+      alertCallbacks.onAlertClick();
     }, 100);
   },
 
@@ -69,7 +69,7 @@ add_task(async function test() {
 
   // select tab and make sure its browser is focused
   gBrowser.selectedTab = tab;
-  tab.ownerGlobal.focus();
+  tab.documentGlobal.focus();
 
   // wait for tab load
   await BrowserTestUtils.browserLoaded(gBrowser.getBrowserForTab(tab));

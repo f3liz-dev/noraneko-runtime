@@ -1,4 +1,4 @@
-# Testing
+# Testing Glean
 
 ```{admonition} This documentation is about testing FOG itself
 This document contains information about how FOG tests itself,
@@ -137,8 +137,8 @@ in `toolkit/components/glean/tests/gtest/`.
 You can write the actual test code in Rust.
 It needs to be accompanied by a C++ GTest that calls a C FFI-exported Rust function.
 See [Testing & Debugging Rust Code](/testing-rust-code/index.md) for more.
-See [`toolkit/components/glean/tests/gtest/TestFog.cpp`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/tests/gtest/TestFog.cpp)
-and [`toolkit/components/glean/tests/gtest/test.rs`](https://searchfox.org/mozilla-central/source/toolkit/components/glean/tests/gtest/test.rs)
+See [`toolkit/components/glean/tests/gtest/TestFog.cpp`](https://searchfox.org/firefox-main/source/toolkit/components/glean/tests/gtest/TestFog.cpp)
+and [`toolkit/components/glean/tests/gtest/test.rs`](https://searchfox.org/firefox-main/source/toolkit/components/glean/tests/gtest/test.rs)
 for an example.
 
 By necessity these can only be integration tests against the compiled crate.
@@ -227,7 +227,7 @@ we use the `telemetry-tests-client` suite in
 For more information on this suite, look to
 [Firefox Telemetry's Test Documentation](https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/internals/tests.html#integration-tests-telemetry-tests-client-and-telemetry-integration-tests)
 and
-[Marionette's Documentation](/testing/marionette/Testing.md).
+[Marionette's Documentation](/remote/marionette/Testing.md).
 
 To run these integration tests, run:
 `./mach telemetry-tests-client toolkit/components/telemetry/tests/marionette/tests/client/`

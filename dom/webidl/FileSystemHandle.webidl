@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,11 +13,11 @@ interface FileSystemHandle {
   readonly attribute USVString name;
 
   /* https://whatpr.org/fs/10.html#api-filesystemhandle */
-  [NewObject]
+  [NewObject, UseCounter=PerOverload]
   Promise<undefined> move(USVString name);
-  [NewObject]
+  [NewObject, UseCounter=PerOverload]
   Promise<undefined> move(FileSystemDirectoryHandle parent);
-  [NewObject]
+  [NewObject, UseCounter=PerOverload]
   Promise<undefined> move(FileSystemDirectoryHandle parent, USVString name);
 
   [NewObject]

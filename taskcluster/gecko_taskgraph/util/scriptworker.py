@@ -18,12 +18,10 @@ Additional configuration is found in the :ref:`graph config <taskgraph-graph-con
 
 import functools
 import itertools
-import json
 import os
 from datetime import datetime
 
 import jsone
-from mozbuild.util import memoize
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.taskcluster import get_artifact_prefix
@@ -68,13 +66,12 @@ SIGNING_SCOPE_ALIAS_TO_PROJECT = [
             "mozilla-beta",
             "mozilla-release",
             "mozilla-esr115",
-            "mozilla-esr128",
             "mozilla-esr140",
+            "mozilla-esr153",
             "comm-beta",
             "comm-release",
-            "comm-esr115",
-            "comm-esr128",
             "comm-esr140",
+            "comm-esr153",
         },
     ],
 ]
@@ -124,13 +121,12 @@ BEETMOVER_SCOPE_ALIAS_TO_PROJECT = [
             "mozilla-beta",
             "mozilla-release",
             "mozilla-esr115",
-            "mozilla-esr128",
             "mozilla-esr140",
+            "mozilla-esr153",
             "comm-beta",
             "comm-release",
-            "comm-esr115",
-            "comm-esr128",
             "comm-esr140",
+            "comm-esr153",
         },
     ],
 ]
@@ -232,17 +228,17 @@ BALROG_SCOPE_ALIAS_TO_PROJECT = [
         },
     ],
     [
-        "esr128",
-        {
-            "mozilla-esr128",
-            "comm-esr128",
-        },
-    ],
-    [
         "esr140",
         {
             "mozilla-esr140",
             "comm-esr140",
+        },
+    ],
+    [
+        "esr153",
+        {
+            "mozilla-esr153",
+            "comm-esr153",
         },
     ],
 ]
@@ -255,8 +251,8 @@ BALROG_SERVER_SCOPES = {
     "beta": "balrog:server:beta",
     "release": "balrog:server:release",
     "esr115": "balrog:server:esr",
-    "esr128": "balrog:server:esr",
     "esr140": "balrog:server:esr",
+    "esr153": "balrog:server:esr",
     "default": "balrog:server:dep",
 }
 
@@ -430,45 +426,7 @@ get_balrog_server_scope = functools.partial(
     alias_to_scope_map=BALROG_SERVER_SCOPES,
 )
 
-cached_load_yaml = memoize(load_yaml)
-
-
-# release_config {{{1
-def get_release_config(config):
-    """Get the build number and version for a release task.
-
-    Currently only applies to beetmover tasks.
-
-    Args:
-        config (TransformConfig): The configuration for the kind being transformed.
-
-    Returns:
-        dict: containing both `build_number` and `version`.  This can be used to
-            update `task.payload`.
-    """
-    release_config = {}
-
-    partial_updates = os.environ.get("PARTIAL_UPDATES", "")
-    if partial_updates != "" and config.kind in (
-        "release-bouncer-sub",
-        "release-bouncer-check",
-        "release-update-verify-config",
-        "release-balrog-submit-toplevel",
-    ):
-        partial_updates = json.loads(partial_updates)
-        release_config["partial_versions"] = ", ".join([
-            "{}build{}".format(v, info["buildNumber"])
-            for v, info in partial_updates.items()
-        ])
-        if release_config["partial_versions"] == "{}":
-            del release_config["partial_versions"]
-
-    release_config["version"] = config.params["version"]
-    release_config["appVersion"] = config.params["app_version"]
-
-    release_config["next_version"] = config.params["next_version"]
-    release_config["build_number"] = config.params["build_number"]
-    return release_config
+cached_load_yaml = functools.cache(load_yaml)
 
 
 def get_signing_type_per_platform(build_platform, is_shippable, config):
@@ -531,11 +489,12 @@ def generate_beetmover_upstream_artifacts(
                 "from",
                 f"beetmover filename {filename}",
                 platform=platform,
+                level=str(config.params.get("level", "1")),
             )
             if dep not in map_config["mapping"][filename]["from"]:
                 continue
             if (
-                current_locale != "en-US"
+                current_locale not in ("en-US", "multi")
                 and not map_config["mapping"][filename]["all_locales"]
             ):
                 continue
@@ -681,19 +640,31 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
     else:
         locales = map_config["default_locales"]
 
-    resolve_keyed_by(map_config, "bucket_paths", job["label"], platform=platform)
+    keyed_by_kwargs = {
+        "platform": platform,
+        "build-type": job["attributes"].get("build-type", ""),
+    }
+    resolve_keyed_by(map_config, "bucket_paths", job["label"], **keyed_by_kwargs)
+    resolve_keyed_by(map_config, "folder_prefix", job["label"], **keyed_by_kwargs)
 
     for locale, dep in sorted(itertools.product(locales, dependencies)):
         paths = dict()
         for filename in map_config["mapping"]:
             # Relevancy checks
             resolve_keyed_by(
-                map_config["mapping"][filename], "from", "blah", platform=platform
+                map_config["mapping"][filename],
+                "from",
+                "blah",
+                platform=platform,
+                level=str(config.params.get("level", "1")),
             )
             if dep not in map_config["mapping"][filename]["from"]:
                 # We don't get this file from this dependency.
                 continue
-            if locale != "en-US" and not map_config["mapping"][filename]["all_locales"]:
+            if (
+                locale not in ("en-US", "multi")
+                and not map_config["mapping"][filename]["all_locales"]
+            ):
                 # This locale either doesn't produce or shouldn't upload this file.
                 continue
             if (
@@ -794,6 +765,9 @@ def generate_beetmover_artifact_map(config, job, **kwargs):
             "upload_date": upload_date.strftime("%Y-%m-%d-%H-%M-%S"),
             "head_rev": config.params["head_rev"],
         })
+
+        if "folder_prefix" in map_config:
+            kwargs["folder_prefix"] = jsone.render(map_config["folder_prefix"], kwargs)
         kwargs.update(**platforms)
         paths = jsone.render(paths, kwargs)
         artifacts.append({

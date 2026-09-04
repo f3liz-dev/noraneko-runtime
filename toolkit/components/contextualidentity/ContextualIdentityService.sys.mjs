@@ -4,9 +4,113 @@
 
 // The maximum valid numeric value for the userContextId.
 const MAX_USER_CONTEXT_ID = -1 >>> 0;
-const LAST_CONTAINERS_JSON_VERSION = 5;
+const LAST_CONTAINERS_JSON_VERSION = 6;
 const SAVE_DELAY_MS = 1500;
 const CONTEXTUAL_IDENTITY_ENABLED_PREF = "privacy.userContext.enabled";
+
+// Canonical container colors and icons. Adding/renaming an entry here must be
+// mirrored in (kept in sync by browser_container_definitions_in_sync.js):
+//   - usercontext.css: .identity-color-* / .identity-icon-* rules
+//   - the matching content/<icon>.svg file
+//   - toolkit/global/contextual-identity.ftl: user-context-color-* /
+//     user-context-icon-* labels
+//   - enterprisepolicies/schemas/policies-schema.json: Containers.Default enums
+// Reordering only affects the swatch order and is local to this file.
+//
+// Each color carries two codes: `code` is the legacy value used when
+// `browser.nova.enabled` is off, `codeNova` is the refreshed value used when it
+// is on. getContainerColorCode() picks between them based on the pref. Under
+// nova `codeNova` is the design-system `--color-<name>-40` token, matching the
+// shade usercontext.css paints as the tab stroke (--identity-stroke-color).
+export const CONTAINER_COLORS = [
+  {
+    name: "gray",
+    code: "#7c7c7d",
+    codeNova: "#949297",
+    l10nId: "user-context-color-gray",
+  },
+  {
+    name: "yellow",
+    code: "#ffcb00",
+    codeNova: "#db820e",
+    l10nId: "user-context-color-yellow",
+  },
+  {
+    name: "orange",
+    code: "#ff9f00",
+    codeNova: "#f4682c",
+    l10nId: "user-context-color-orange",
+  },
+  {
+    name: "red",
+    code: "#ff613d",
+    codeNova: "#ed566e",
+    l10nId: "user-context-color-red",
+  },
+  {
+    name: "pink",
+    code: "#ff4bda",
+    codeNova: "#db54bf",
+    l10nId: "user-context-color-pink",
+  },
+  {
+    name: "purple",
+    code: "#af51f5",
+    codeNova: "#b864ee",
+    l10nId: "user-context-color-purple",
+  },
+  {
+    name: "violet",
+    code: "#764edd",
+    codeNova: "#9871ff",
+    l10nId: "user-context-color-violet",
+  },
+  {
+    name: "blue",
+    code: "#37adff",
+    codeNova: "#5a87fd",
+    l10nId: "user-context-color-blue",
+  },
+  {
+    name: "cyan",
+    code: "#00c79a",
+    codeNova: "#10a4ca",
+    l10nId: "user-context-color-cyan",
+  },
+  {
+    name: "green",
+    code: "#51cd00",
+    codeNova: "#11ae84",
+    l10nId: "user-context-color-green",
+  },
+];
+
+// Legacy container color names accepted only at the contextualIdentities
+// WebExtension API boundary (see ext-contextualIdentities.js), for extensions
+// and containers created before the color refresh. Each maps to the canonical
+// name that replaced it in CONTAINER_COLORS. Resolved via
+// resolveContainerColor(). Internal callers always use canonical names.
+export const CONTAINER_COLOR_ALIASES = {
+  __proto__: null,
+  turquoise: "cyan",
+  toolbar: "gray",
+};
+
+const CONTAINER_ICONS = [
+  { name: "fingerprint", l10nId: "user-context-icon-fingerprint" },
+  { name: "briefcase", l10nId: "user-context-icon-briefcase" },
+  { name: "dollar", l10nId: "user-context-icon-dollar" },
+  { name: "cart", l10nId: "user-context-icon-cart" },
+  { name: "vacation", l10nId: "user-context-icon-vacation" },
+  { name: "gift", l10nId: "user-context-icon-gift" },
+  { name: "food", l10nId: "user-context-icon-food" },
+  { name: "fruit", l10nId: "user-context-icon-fruit" },
+  { name: "pet", l10nId: "user-context-icon-pet" },
+  { name: "tree", l10nId: "user-context-icon-tree" },
+  { name: "chill", l10nId: "user-context-icon-chill" },
+  { name: "circle", l10nId: "user-context-icon-circle" },
+  { name: "fence", l10nId: "user-context-icon-fence" },
+];
 
 const lazy = {};
 
@@ -20,6 +124,10 @@ ChromeUtils.defineLazyGetter(lazy, "gTextDecoder", function () {
 
 ChromeUtils.defineLazyGetter(lazy, "gTextEncoder", function () {
   return new TextEncoder();
+});
+
+ChromeUtils.defineLazyGetter(lazy, "idnService", function () {
+  return Cc["@mozilla.org/network/idn-service;1"].getService(Ci.nsIIDNService);
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -58,6 +166,11 @@ function _ContextualIdentityService(path) {
 }
 
 _ContextualIdentityService.prototype = {
+  QueryInterface: ChromeUtils.generateQI([
+    "nsISiteContainerService",
+    "nsIObserver",
+  ]),
+
   LAST_CONTAINERS_JSON_VERSION,
 
   _userIdentities: [
@@ -109,6 +222,9 @@ _ContextualIdentityService.prototype = {
   _identities: null,
   _openedIdentities: new Set(),
   _lastUserContextId: 0,
+
+  // Map<host, userContextId> binding an exact host to a container.
+  _siteAssociations: null,
 
   _path: null,
   _dataReady: false,
@@ -212,6 +328,7 @@ _ContextualIdentityService.prototype = {
       this._identities.push(Object.assign({}, identity));
     }
     this._openedIdentities = new Set();
+    this._siteAssociations = new Map();
 
     this._dataReady = true;
 
@@ -262,6 +379,7 @@ _ContextualIdentityService.prototype = {
       version: LAST_CONTAINERS_JSON_VERSION,
       lastUserContextId: this._lastUserContextId,
       identities: this._identities,
+      siteAssociations: Object.fromEntries(this._siteAssociations),
     };
 
     let bytes = lazy.gTextEncoder.encode(JSON.stringify(object));
@@ -317,7 +435,7 @@ _ContextualIdentityService.prototype = {
     this.ensureDataReady();
 
     let identity = this._identities.find(
-      identity => identity.userContextId == userContextId && identity.public
+      i => i.userContextId == userContextId && i.public
     );
 
     if (!name.trim()) {
@@ -373,6 +491,7 @@ _ContextualIdentityService.prototype = {
       );
       this._identities.splice(position, 0, ...movedIdentities);
       this.saveSoon();
+      Services.obs.notifyObservers(null, "contextual-identity-reordered");
     }
 
     return !!movedIdentities.length;
@@ -395,6 +514,7 @@ _ContextualIdentityService.prototype = {
     );
     this._identities.splice(index, 1);
     this._openedIdentities.delete(userContextId);
+    this._removeSiteAssociationsForContainer(userContextId);
     this.saveSoon();
     Services.obs.notifyObservers(deletedOutput, "contextual-identity-deleted");
 
@@ -403,6 +523,115 @@ _ContextualIdentityService.prototype = {
     });
 
     return true;
+  },
+
+  // Returns the normalized host (lower case, IDN-encoded) for `site`, or null
+  // if `site` cannot be associated to a container.
+  normalizeSite(site) {
+    try {
+      // domainToASCII does not reject "*", but a host never contains one, so a
+      // wildcard site could never match a navigation.
+      let host = lazy.idnService.domainToASCII(site);
+      return host.includes("*") ? null : host;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  _notifySiteAssociationChanged(site, userContextId) {
+    Services.obs.notifyObservers(
+      { wrappedJSObject: { site, userContextId } },
+      "contextual-identity-site-association-changed"
+    );
+  },
+
+  _removeSiteAssociationsForContainer(userContextId) {
+    let removed = [];
+    for (let [site, id] of this._siteAssociations) {
+      if (id === userContextId) {
+        this._siteAssociations.delete(site);
+        removed.push(site);
+      }
+    }
+
+    for (let site of removed) {
+      this._notifySiteAssociationChanged(site, null);
+    }
+  },
+
+  setSiteAssociation(site, userContextId) {
+    this.ensureDataReady();
+
+    if (!Number.isInteger(userContextId)) {
+      throw new Error(
+        `Invalid container id for site association: ${userContextId}`
+      );
+    }
+
+    if (!this.getPublicIdentityFromId(userContextId)) {
+      throw new Error(
+        `Cannot associate a site to unknown container ${userContextId}`
+      );
+    }
+
+    let host = this.normalizeSite(site);
+    if (!host) {
+      throw new Error("Invalid site for container association.");
+    }
+
+    if (this._siteAssociations.get(host) === userContextId) {
+      return;
+    }
+
+    this._siteAssociations.set(host, userContextId);
+    this.saveSoon();
+    this._notifySiteAssociationChanged(host, userContextId);
+  },
+
+  removeSiteAssociation(site) {
+    this.ensureDataReady();
+
+    let host = this.normalizeSite(site);
+    if (!host || !this._siteAssociations.has(host)) {
+      return;
+    }
+
+    this._siteAssociations.delete(host);
+    this.saveSoon();
+    this._notifySiteAssociationChanged(host, null);
+  },
+
+  getSiteAssociation(site) {
+    this.ensureDataReady();
+
+    let host = this.normalizeSite(site);
+    return (host && this._siteAssociations.get(host)) || 0;
+  },
+
+  getSiteAssociations(userContextId = 0) {
+    this.ensureDataReady();
+
+    let result = [];
+    for (let [site, id] of this._siteAssociations) {
+      if (!userContextId || id === userContextId) {
+        result.push({ site, userContextId: id });
+      }
+    }
+    return result;
+  },
+
+  lookup(host) {
+    return this.getSiteAssociation(host);
+  },
+
+  containerForNavigation(uri, baselineUserContextId) {
+    let host;
+    try {
+      host = uri.asciiHost;
+    } catch (e) {
+      return baselineUserContextId;
+    }
+    return this.getSiteAssociation(host) || baselineUserContextId;
   },
 
   getIdentityObserverOutput(identity) {
@@ -440,6 +669,11 @@ _ContextualIdentityService.prototype = {
       saveNeeded = true;
     }
 
+    if (data.version == 5) {
+      data = this.migrate5to6(data);
+      saveNeeded = true;
+    }
+
     if (data.version != LAST_CONTAINERS_JSON_VERSION) {
       dump(
         "ERROR - ContextualIdentityService - Unknown version found in " +
@@ -452,6 +686,10 @@ _ContextualIdentityService.prototype = {
 
     this._identities = data.identities;
     this._lastUserContextId = data.lastUserContextId;
+
+    this._siteAssociations = new Map(
+      Object.entries(data.siteAssociations ?? {})
+    );
 
     // If we had a migration, let's force the saving of the file.
     if (saveNeeded) {
@@ -572,6 +810,57 @@ _ContextualIdentityService.prototype = {
     return "";
   },
 
+  get containerColors() {
+    return CONTAINER_COLORS.map(color => color.name);
+  },
+
+  get containerIcons() {
+    return CONTAINER_ICONS.map(icon => icon.name);
+  },
+
+  // Maps a possibly-legacy color name to its canonical name. Unknown and
+  // already-canonical names are returned as-is.  Only the contextualIdentities
+  // WebExtension API should need this; internal callers always pass canonical
+  // names.
+  resolveContainerColor(color) {
+    return CONTAINER_COLOR_ALIASES[color] ?? color;
+  },
+
+  getContainerColorCode(color) {
+    let entry = CONTAINER_COLORS.find(e => e.name === color);
+    if (!entry) {
+      return null;
+    }
+    return Services.prefs.getBoolPref("browser.nova.enabled", false)
+      ? entry.codeNova
+      : entry.code;
+  },
+
+  getContainerIconURL(icon) {
+    if (!CONTAINER_ICONS.some(entry => entry.name === icon)) {
+      return null;
+    }
+    return `resource://usercontext-content/${icon}.svg`;
+  },
+
+  getContainerColorL10nId(color) {
+    return CONTAINER_COLORS.find(entry => entry.name === color)?.l10nId ?? null;
+  },
+
+  getContainerIconL10nId(icon) {
+    return CONTAINER_ICONS.find(entry => entry.name === icon)?.l10nId ?? null;
+  },
+
+  getContainerColorLabel(color) {
+    let l10nId = this.getContainerColorL10nId(color);
+    return l10nId ? this.formatContextLabel(l10nId) : "";
+  },
+
+  getContainerIconLabel(icon) {
+    let l10nId = this.getContainerIconL10nId(icon);
+    return l10nId ? this.formatContextLabel(l10nId) : "";
+  },
+
   setTabStyle(tab) {
     if (!tab.hasAttribute("usercontextid")) {
       return;
@@ -580,15 +869,20 @@ _ContextualIdentityService.prototype = {
     let userContextId = tab.getAttribute("usercontextid");
     let identity = this.getPublicIdentityFromId(userContextId);
 
-    let prefix = "identity-color-";
-    /* Remove the existing container color highlight if it exists */
-    for (let className of tab.classList) {
-      if (className.startsWith(prefix)) {
+    /* Remove any existing container color/icon classes. */
+    for (let className of [...tab.classList]) {
+      if (
+        className.startsWith("identity-color-") ||
+        className.startsWith("identity-icon-")
+      ) {
         tab.classList.remove(className);
       }
     }
-    if (identity && identity.color) {
-      tab.classList.add(prefix + identity.color);
+    if (identity?.color) {
+      tab.classList.add("identity-color-" + identity.color);
+    }
+    if (identity?.icon) {
+      tab.classList.add("identity-icon-" + identity.icon);
     }
   },
 
@@ -746,6 +1040,22 @@ _ContextualIdentityService.prototype = {
 
     return data;
   },
+
+  migrate5to6(data) {
+    // Migrating from 5 to 6 is:
+    // - renaming the refreshed container colors, so stored identities only use
+    //   canonical names
+    // - increasing the version id.
+    for (let identity of data.identities) {
+      if (identity.color) {
+        identity.color = this.resolveContainerColor(identity.color);
+      }
+    }
+
+    data.version = 6;
+
+    return data;
+  },
 };
 
 let path = PathUtils.join(
@@ -753,3 +1063,7 @@ let path = PathUtils.join(
   "containers.json"
 );
 export var ContextualIdentityService = new _ContextualIdentityService(path);
+
+export function SiteContainerService() {
+  return ContextualIdentityService;
+}

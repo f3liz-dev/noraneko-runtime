@@ -7,6 +7,9 @@ var gTestTab;
 var gContentAPI;
 
 ChromeUtils.defineESModuleGetters(this, {
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
   CustomizableUITestUtils:
@@ -402,8 +405,8 @@ var tests = [
       function () {
         is(
           popup.anchorNode,
-          document.getElementById("urlbar"),
-          "Popup should be anchored to the urlbar"
+          document.getElementById("urlbar-container"),
+          "Popup should be anchored to the urlbar container"
         );
         is(title.textContent, "test title", "Popup should have correct title");
         is(
@@ -447,8 +450,8 @@ var tests = [
 
     is(
       popup.anchorNode,
-      document.getElementById("urlbar"),
-      "Popup should be anchored to the urlbar"
+      document.getElementById("urlbar-container"),
+      "Popup should be anchored to the urlbar container"
     );
     is(title.textContent, "urlbar title", "Popup should have correct title");
     is(
@@ -580,6 +583,26 @@ var tests = [
       });
     });
   },
+  taskify(async function test_getConfigurationActivitySignals() {
+    await ASRouter.waitForInitialized;
+
+    let previousSessionEnd = Date.now() - 42 * 24 * 60 * 60 * 1000;
+    let originalPreviousSessionEnd = ASRouter.state.previousSessionEnd;
+    await ASRouter.setState({ previousSessionEnd });
+    registerCleanupFunction(() =>
+      ASRouter.setState({ previousSessionEnd: originalPreviousSessionEnd })
+    );
+
+    let result = await new Promise(resolve =>
+      gContentAPI.getConfiguration("appinfo", resolve)
+    );
+
+    is(
+      result.previousSessionEnd,
+      previousSessionEnd,
+      "previousSessionEnd should reflect ASRouter state."
+    );
+  }),
   function test_addToolbarButton(done) {
     let placement = CustomizableUI.getPlacementOfWidget("panic-button");
     is(placement, null, "default UI has panic button in the palette");
@@ -610,7 +633,7 @@ var tests = [
     let defaultEngine = await SearchService.getDefault();
     let visibleEngines = await SearchService.getVisibleEngines();
     let expectedEngines = visibleEngines
-      .filter(engine => engine.isAppProvided)
+      .filter(engine => engine instanceof AppProvidedConfigEngine)
       .map(engine => "searchEngine-" + engine.id);
 
     let data = await new Promise(resolve =>

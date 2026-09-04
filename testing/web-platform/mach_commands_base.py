@@ -2,13 +2,26 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import os
 import sys
 
 from mozlog import handlers
 from mozlog.structuredlog import log_levels
 
+here = os.path.abspath(os.path.dirname(__file__))
+
+
+def setup_environment(tests_root=None):
+    if tests_root is None:
+        tests_root = os.path.join(here, "tests")
+    if tests_root not in sys.path:
+        sys.path.insert(0, tests_root)
+        from tools import localpaths  # noqa: F401
+
 
 def create_parser_wpt():
+    setup_environment()
+
     from wptrunner import wptcommandline
 
     result = wptcommandline.create_parser()
@@ -44,10 +57,10 @@ class WebPlatformTestsRunner:
     def __init__(self, setup):
         self.setup = setup
 
-    def setup_logging(self, **kwargs):
+    def logging_manager(self, **kwargs):
         from tools.wpt import run
 
-        return run.setup_logging(
+        return run.GlobalLogger(
             kwargs,
             {self.setup.default_log_type: sys.stdout},
             formatter_defaults={"screenshot": True},
@@ -76,10 +89,20 @@ class WebPlatformTestsRunner:
         log_buffer = CriticalLogBuffer()
         logger.add_handler(log_buffer)
 
+        # wptrunner.start() unconditionally calls logger.shutdown() in its
+        # finally block. When invoked from `mach test`, the logger is shared
+        # across multiple WPT invocations (one per subsuite bucket), so
+        # shutting it down after the first run kills it for all subsequent
+        # runs. Temporarily replace shutdown with a no-op so the caller
+        # retains control over the logger lifetime.
+        original_shutdown = logger.shutdown
+        logger.shutdown = lambda *args, **kwargs: None
+
         result = 1
         try:
             result = wptrunner.start(**kwargs)
         finally:
+            logger.shutdown = original_shutdown
             if int(result) != 0:
                 self._process_log_errors(logger, log_buffer, kwargs)
             logger.remove_handler(log_buffer)

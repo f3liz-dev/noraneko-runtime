@@ -1,4 +1,3 @@
-/* -*- Mode: rust; rust-indent-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +9,7 @@ use pkcs11_bindings::*;
 use rsclientcerts::manager::{IsSearchingForClientCerts, Manager};
 use rsclientcerts::{
     declare_pkcs11_find_functions, declare_pkcs11_informational_functions,
-    declare_pkcs11_session_functions, declare_pkcs11_sign_functions,
+    declare_pkcs11_pin_functions, declare_pkcs11_session_functions, declare_pkcs11_sign_functions,
     declare_unsupported_pkcs11_functions, log_with_thread_id,
 };
 use std::sync::Mutex;
@@ -56,8 +55,8 @@ extern "C" fn C_Initialize(_pInitArgs: CK_VOID_PTR) -> CK_RV {
         Backend::new(
             SLOT_DESCRIPTIONS_BYTES[0],
             TOKEN_LABELS_BYTES[0],
-            CKF_REMOVABLE_DEVICE,
-            CKF_TOKEN_INITIALIZED,
+            CKF_TOKEN_PRESENT | CKF_REMOVABLE_DEVICE,
+            CKF_USER_PIN_INITIALIZED | CKF_LOGIN_REQUIRED | CKF_TOKEN_INITIALIZED,
             Vec::new(),
             Vec::new(),
         ),
@@ -124,6 +123,7 @@ declare_pkcs11_informational_functions!();
 declare_pkcs11_session_functions!();
 declare_pkcs11_find_functions!();
 declare_pkcs11_sign_functions!();
+declare_pkcs11_pin_functions!();
 declare_unsupported_pkcs11_functions!();
 
 /// To be a valid PKCS #11 module, this list of functions must be supported. At least cryptoki 2.2

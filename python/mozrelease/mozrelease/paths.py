@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from datetime import datetime
 from urllib.parse import urlunsplit
 
 from .versions import MozillaVersion
@@ -44,13 +45,27 @@ def getReleasesDir(product, version=None, protocol=None, server=None):
         return directory
 
 
+def getNightlyDir(product, buildid, locale, repo, protocol=None, server=None):
+    if protocol:
+        assert server is not None, "server is required with protocol"
+
+    dt = datetime.strptime(buildid, "%Y%m%d%H%M%S")
+    suffix = repo if locale == "en-US" else f"{repo}-l10n"
+
+    directory = f"/{product}/nightly/{dt.year}/{dt.month:02}/{dt.year}-{dt.month:02}-{dt.day:02}-{dt.hour:02}-{dt.minute:02}-{dt.second:02}-{suffix}"
+    if protocol:
+        return urlunsplit((protocol, server, directory, None, None))
+    else:
+        return directory
+
+
 def getReleaseInstallerPath(
     productName,
     brandName,
     version,
     platform,
     locale="en-US",
-    last_linux_bz2_version=None,
+    last_linux_bz2_version="134.99.0",
 ):
     if productName not in ("fennec",):
         if platform.startswith("linux"):
@@ -64,13 +79,12 @@ def getReleaseInstallerPath(
                 for p in [
                     platform,
                     locale,
-                    "%s-%s.tar.%s" % (productName, version, compression),
+                    f"{productName}-{version}.tar.{compression}",
                 ]
             ])
         elif "mac" in platform:
             return "/".join([
-                p.strip("/")
-                for p in [platform, locale, "%s %s.dmg" % (brandName, version)]
+                p.strip("/") for p in [platform, locale, f"{brandName} {version}.dmg"]
             ])
         elif platform.startswith("win"):
             return "/".join([
@@ -78,13 +92,13 @@ def getReleaseInstallerPath(
                 for p in [
                     platform,
                     locale,
-                    "%s Setup %s.exe" % (brandName, version),
+                    f"{brandName} Setup {version}.exe",
                 ]
             ])
         else:
-            raise "Unsupported platform"
+            raise ValueError("Unsupported platform")
     elif platform.startswith("android"):
-        filename = "%s-%s.%s.android-arm.apk" % (productName, version, locale)
+        filename = f"{productName}-{version}.{locale}.android-arm.apk"
         return "/".join([p.strip("/") for p in [platform, locale, filename]])
     else:
-        raise "Unsupported platform"
+        raise ValueError("Unsupported platform")

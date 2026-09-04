@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -95,11 +93,12 @@ void nsStyledElement::InlineStyleDeclarationWillChange(
 }
 
 nsresult nsStyledElement::SetInlineStyleDeclaration(
-    DeclarationBlock& aDeclaration, MutationClosureData& aData) {
+    StyleLockedDeclarationBlock& aDeclaration, MutationClosureData& aData) {
   MOZ_ASSERT(OwnerDoc()->UpdateNestingLevel(),
              "Should be inside document update!");
 
-  nsAttrValue attrValue(do_AddRef(&aDeclaration), nullptr);
+  nsAttrValue attrValue(
+      MakeAndAddRef<DeclarationBlock>(do_AddRef(&aDeclaration)), nullptr);
   SetMayHaveStyle();
 
   Document* document = GetComposedDoc();
@@ -107,7 +106,7 @@ nsresult nsStyledElement::SetInlineStyleDeclaration(
   return SetAttrAndNotify(kNameSpaceID_None, nsGkAtoms::style, nullptr,
                           aData.mOldValue.ptrOr(nullptr), attrValue, nullptr,
                           aData.mModType, true, kDontCallAfterSetAttr, document,
-                          updateBatch);
+                          updateBatch, mozilla::dom::IsKnownNewAttr::No);
 }
 
 // ---------------------------------------------------------------
@@ -131,8 +130,7 @@ StylePropertyMap* nsStyledElement::AttributeStyleMap() {
   nsDOMSlots* slots = DOMSlots();
 
   if (!slots->mAttributeStyleMap) {
-    slots->mAttributeStyleMap =
-        MakeRefPtr<StylePropertyMap>(this, /* aComputed */ false);
+    slots->mAttributeStyleMap = MakeRefPtr<StylePropertyMap>(this);
   }
 
   return slots->mAttributeStyleMap;
@@ -154,7 +152,8 @@ nsresult nsStyledElement::ReparseStyleAttribute(bool aForceInDataDoc) {
     // Don't bother going through SetInlineStyleDeclaration; we don't
     // want to fire off mutation events or document notifications anyway
     bool oldValueSet;
-    nsresult rv = SetAndSwapAttr(nsGkAtoms::style, attrValue, &oldValueSet);
+    nsresult rv = SetAndSwapAttr(nsGkAtoms::style, attrValue, &oldValueSet,
+                                 mozilla::dom::IsKnownNewAttr::No);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

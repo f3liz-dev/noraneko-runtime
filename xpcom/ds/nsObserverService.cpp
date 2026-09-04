@@ -1,29 +1,28 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Logging.h"
-#include "nsComponentManagerUtils.h"
-#include "nsContentUtils.h"
-#include "nsIConsoleService.h"
-#include "nsIObserverService.h"
-#include "nsIObserver.h"
-#include "nsIScriptError.h"
 #include "nsObserverService.h"
-#include "nsObserverList.h"
-#include "nsServiceManagerUtils.h"
-#include "nsThreadUtils.h"
-#include "nsEnumeratorUtils.h"
-#include "xpcpublic.h"
+
 #include "mozilla/AppShutdown.h"
-#include "mozilla/net/NeckoCommon.h"
+#include "mozilla/Logging.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Try.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsEnumeratorUtils.h"
+#include "nsIConsoleService.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "nsIScriptError.h"
+#include "nsObserverList.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
+#include "nsThreadUtils.h"
+#include "xpcpublic.h"
 
 // Log module for nsObserverService logging...
 //
@@ -151,7 +150,7 @@ void nsObserverService::Shutdown() {
 nsresult nsObserverService::Create(const nsIID& aIID, void** aInstancePtr) {
   LOG(("nsObserverService::Create()"));
 
-  RefPtr<nsObserverService> os = new nsObserverService();
+  RefPtr os = MakeRefPtr<nsObserverService>();
 
   // The memory reporter can not be immediately registered here because
   // the nsMemoryReporterManager may attempt to get the nsObserverService

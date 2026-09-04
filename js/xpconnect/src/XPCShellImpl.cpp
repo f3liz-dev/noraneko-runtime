@@ -1,12 +1,43 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsXULAppAPI.h"
+#include "mozilla/ChaosMode.h"
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/IOInterposer.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+
+#include "Components.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsArrayEnumerator.h"
+#include "nsCOMArray.h"
+#include "nsComponentManagerUtils.h"
+#include "nsCOMPtr.h"
+#include "nscore.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsExceptionHandler.h"
+#include "nsIAppStartup.h"
+#include "nsIDirectoryService.h"
+#include "nsIFile.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
+#include "nsIServiceManager.h"
+#include "nsIXULRuntime.h"
+#include "nsJSPrincipals.h"
+#include "nsJSUtils.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
+#include "nsXULAppAPI.h"
+#include "ProfilerControl.h"
+#include "SystemGlobal.h"
+#include "xpcprivate.h"
+#include "xpcpublic.h"
+
 #include "js/Array.h"             // JS::NewArrayObject
 #include "js/CallAndConstruct.h"  // JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
@@ -16,42 +47,10 @@
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineFunctions, JS_DefineProperty
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::SourceText
-#include "mozilla/ChaosMode.h"
-#include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/IOInterposer.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-#include "nsServiceManagerUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsExceptionHandler.h"
-#include "nsIServiceManager.h"
-#include "nsIFile.h"
-#include "nsString.h"
-#include "nsIDirectoryService.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsAppDirectoryServiceDefs.h"
-#include "nscore.h"
-#include "nsArrayEnumerator.h"
-#include "nsCOMArray.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsCOMPtr.h"
-#include "nsJSPrincipals.h"
-#include "nsJSUtils.h"
-#include "xpcpublic.h"
-#include "xpcprivate.h"
-#include "SystemGlobal.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIPrincipal.h"
-#include "nsJSUtils.h"
-
-#include "nsIXULRuntime.h"
-#include "nsIAppStartup.h"
-#include "Components.h"
-#include "ProfilerControl.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
+
 #  include "XREShellData.h"
 #endif
 
@@ -64,10 +63,11 @@
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/WinDllServices.h"
 #  include "mozilla/WindowsBCryptInitialization.h"
+
 #  include <windows.h>
 #  if defined(MOZ_SANDBOX)
-#    include "XREShellData.h"
 #    include "sandboxBroker.h"
+#    include "XREShellData.h"
 #  endif
 #endif
 
@@ -76,8 +76,8 @@
 #endif
 
 // all this crap is needed to do the interactive shell stuff
-#include <stdlib.h>
 #include <errno.h>
+#include <stdlib.h>
 #ifdef HAVE_IO_H
 #  include <io.h> /* for isatty() */
 #endif
@@ -91,8 +91,9 @@
 
 // Fuzzing support for XPC runtime fuzzing
 #ifdef FUZZING_INTERFACES
-#  include "xpcrtfuzzing/xpcrtfuzzing.h"
 #  include "XREShellData.h"
+
+#  include "xpcrtfuzzing/xpcrtfuzzing.h"
 MOZ_RUNINIT static bool fuzzDoDebug = !!getenv("MOZ_FUZZ_DEBUG");
 MOZ_RUNINIT static bool fuzzHaveModule = !!getenv("FUZZER");
 #endif  // FUZZING_INTERFACES
@@ -867,16 +868,16 @@ static bool ProcessArgs(AutoJSAPI& jsapi, char** argv, int argc,
    */
   argsObj = JS::NewArrayObject(cx, 0);
   if (!argsObj) {
-    return 1;
+    return true;
   }
   if (!JS_DefineProperty(cx, global, "arguments", argsObj, 0)) {
-    return 1;
+    return true;
   }
 
   for (int j = 0, length = argc - rootPosition; j < length; j++) {
     RootedString str(cx, JS_NewStringCopyZ(cx, argv[rootPosition++]));
     if (!str || !JS_DefineElement(cx, argsObj, j, str, JSPROP_ENUMERATE)) {
-      return 1;
+      return true;
     }
   }
 
@@ -1179,7 +1180,12 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
           aShellData->crashHelperSocket);
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-      rv = CrashReporter::SetExceptionHandler(greBinDir, true);
+      rv = CrashReporter::OOPInit(greBinDir, /*force=*/true);
+      if (NS_FAILED(rv)) {
+        printf("CrashReporter::OOPInit(): could not launch the crash helper\n");
+      }
+
+      rv = CrashReporter::SetExceptionHandler(greBinDir, /*force=*/true);
       if (NS_FAILED(rv)) {
         printf("CrashReporter::SetExceptionHandler failed!\n");
         return 1;
@@ -1410,6 +1416,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
   // holds.
   if (CrashReporter::GetEnabled()) {
     CrashReporter::UnsetExceptionHandler();
+    CrashReporter::OOPDeinit();
   }
 
   // This must precede NS_LogTerm(), otherwise xpcshell return non-zero

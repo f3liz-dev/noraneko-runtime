@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-use crate::render::low_memory_pipeline::render_group::ChannelVec;
+use crate::util::ChannelVec;
 
 /// Returns a vector of &mut vals[idx[i].0][idx[i].1], in order of idx[i].2.
 /// Panics if any of the indices are out of bounds or
@@ -42,18 +42,4 @@ pub(super) fn get_distinct_indices<'a, T>(
         .iter_mut()
         .map(|x| std::mem::take(x).expect("Not all elements were found"))
         .collect()
-}
-
-/// Mirror-reflects a value v to fit in a [0; s) range.
-pub(super) fn mirror(mut v: isize, s: usize) -> usize {
-    // TODO(veluca): consider speeding this up if needed.
-    loop {
-        if v < 0 {
-            v = -v - 1;
-        } else if v >= s as isize {
-            v = s as isize * 2 - v - 1;
-        } else {
-            return v as usize;
-        }
-    }
 }

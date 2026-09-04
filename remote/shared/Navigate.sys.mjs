@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
   Deferred: "chrome://remote/content/shared/Sync.sys.mjs",
   isUncommittedInitialDocument:
-    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   NavigationListener:
     "chrome://remote/content/shared/listeners/NavigationListener.sys.mjs",
@@ -433,6 +433,11 @@ export class ProgressListener {
   }
 
   onLocationChange(progress, request, location, flag) {
+    // Ignore all location changes from subframes.
+    if (progress.browsingContext !== this.#webProgress.browsingContext) {
+      return;
+    }
+
     if (flag & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE) {
       // If an error page has been loaded abort the navigation.
       const errorName = this.#errorName || this.#getErrorName(this.documentURI);

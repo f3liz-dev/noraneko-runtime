@@ -7,15 +7,14 @@ package mozilla.components.service.fxa.sync
 import androidx.annotation.VisibleForTesting
 import androidx.work.WorkInfo
 import mozilla.components.concept.storage.KeyProvider
+import mozilla.components.concept.sync.SyncConfig
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.concept.sync.SyncableStore
-import mozilla.components.service.fxa.SyncConfig
-import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
 import java.io.Closeable
-import java.lang.Exception
 import java.util.concurrent.TimeUnit
 
 /**
@@ -120,6 +119,7 @@ internal interface SyncDispatcher : Closeable, Observable<SyncStatusObserver> {
     fun startPeriodicSync(unit: TimeUnit, period: Long, initialDelay: Long)
     fun stopPeriodicSync()
     fun workersStateChanged(currentWorkStates: List<WorkInfo.State>?)
+    fun setEngineEnabled(engine: SyncEngine, enabled: Boolean)
 }
 
 /**
@@ -168,6 +168,10 @@ internal abstract class SyncManager(
             logger.info("Sync is not enabled. Ignoring 'sync now' request.")
         }
         syncDispatcher?.syncNow(reason, debounce, customEngineSubset)
+    }
+
+    internal fun setEngineEnabled(engine: SyncEngine, enabled: Boolean) {
+        syncDispatcher?.setEngineEnabled(engine, enabled)
     }
 
     /**

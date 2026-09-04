@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,14 +17,16 @@
 #include "mozilla/dom/CSSSkewY.h"
 #include "mozilla/dom/CSSTransformComponentBinding.h"
 #include "mozilla/dom/CSSTranslate.h"
+#include "mozilla/dom/DOMMatrix.h"
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {
 
 CSSTransformComponent::CSSTransformComponent(
-    nsCOMPtr<nsISupports> aParent,
+    nsCOMPtr<nsISupports> aParent, bool aIs2D,
     TransformComponentType aTransformComponentType)
     : mParent(std::move(aParent)),
+      mIs2D(aIs2D),
       mTransformComponentType(aTransformComponentType) {
   MOZ_ASSERT(mParent);
 }
@@ -47,13 +47,47 @@ JSObject* CSSTransformComponent::WrapObject(JSContext* aCx,
 }
 
 // start of CSSTransformComponent Web IDL implementation
-bool CSSTransformComponent::Is2D() const { return false; }
 
-void CSSTransformComponent::SetIs2D(bool aArg) {}
+// https://drafts.css-houdini.org/css-typed-om-1/#dom-csstransformcomponent-is2d
+bool CSSTransformComponent::Is2D() const { return mIs2D; }
 
+// https://drafts.css-houdini.org/css-typed-om-1/#dom-csstransformcomponent-is2d
+void CSSTransformComponent::SetIs2D(bool aArg) {
+  switch (GetTransformComponentType()) {
+    // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssskew-is2d
+    case TransformComponentType::Skew:
+    case TransformComponentType::SkewX:
+    case TransformComponentType::SkewY:
+    // https://drafts.css-houdini.org/css-typed-om-1/#dom-cssperspective-is2d
+    case TransformComponentType::Perspective:
+      break;
+
+    default:
+      mIs2D = aArg;
+  }
+}
+
+// https://drafts.css-houdini.org/css-typed-om-1/#dom-csstransformcomponent-tomatrix
 already_AddRefed<DOMMatrix> CSSTransformComponent::ToMatrix(ErrorResult& aRv) {
-  aRv.Throw(NS_ERROR_NOT_INITIALIZED);
-  return nullptr;
+  // Step 1.
+  auto matrix = [this](ErrorResult& aRv) -> RefPtr<DOMMatrix> {
+    switch (GetTransformComponentType()) {
+      case TransformComponentType::Translate: {
+        return GetAsCSSTranslate().ToMatrix(aRv);
+      }
+
+      default:
+        aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
+        return nullptr;
+    }
+  }(aRv);
+
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  // Step 2.
+  return matrix.forget();
 }
 
 void CSSTransformComponent::Stringify(nsACString& aRetVal) {

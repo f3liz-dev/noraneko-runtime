@@ -30,6 +30,8 @@ pub mod pipeline_constants;
 #[cfg(any(hlsl_out, glsl_out))]
 mod continue_forward;
 
+pub use nt::TaskDispatchLimits;
+
 /// Names of vector components.
 pub const COMPONENTS: &[char] = &['x', 'y', 'z', 'w'];
 /// Indent for backends.
@@ -91,7 +93,7 @@ bitflags::bitflags! {
 pub type PipelineConstants = hashbrown::HashMap<String, f64>;
 
 /// Indentation level.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Level(pub usize);
 
 impl Level {
@@ -148,6 +150,7 @@ fn get_entry_points(
 /// [`EntryPoint`]: crate::EntryPoint
 /// [`Module`]: crate::Module
 /// [`Module::entry_points`]: crate::Module::entry_points
+#[derive(Clone, Copy, Debug)]
 pub enum FunctionType {
     /// A regular function.
     Function(crate::Handle<crate::Function>),
@@ -171,6 +174,7 @@ impl FunctionType {
 }
 
 /// Helper structure that stores data needed when writing the function
+#[derive(Debug)]
 pub struct FunctionCtx<'a> {
     /// The current function being written
     pub ty: FunctionType,
@@ -386,6 +390,7 @@ bitflags::bitflags! {
 }
 
 /// The intersection test to use for ray queries.
+#[derive(Debug)]
 #[repr(u32)]
 pub enum RayIntersectionType {
     Triangle = 1,

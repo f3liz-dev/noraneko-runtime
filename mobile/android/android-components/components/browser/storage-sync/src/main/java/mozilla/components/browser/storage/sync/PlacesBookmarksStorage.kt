@@ -6,20 +6,20 @@ package mozilla.components.browser.storage.sync
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import mozilla.appservices.places.PlacesApi
-import mozilla.appservices.places.uniffi.PlacesApiException
 import mozilla.components.concept.storage.BookmarkInfo
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarksStorage
-import mozilla.components.concept.sync.SyncAuthInfo
-import mozilla.components.concept.sync.SyncStatus
+import mozilla.components.concept.storage.bookmarks.InsertableBookmarkTreeRoot
 import mozilla.components.concept.sync.SyncableStore
 import mozilla.components.concept.toolbar.AutocompleteProvider
 import mozilla.components.concept.toolbar.AutocompleteResult
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.utils.doesUrlStartsWithText
 import mozilla.components.support.utils.segmentAwareDomainMatch
+import kotlin.coroutines.resume
 
 @VisibleForTesting
 internal const val BOOKMARKS_AUTOCOMPLETE_SOURCE_NAME = "placesBookmarks"
@@ -35,6 +35,7 @@ private const val BOOKMARKS_AUTOCOMPLETE_QUERY_LIMIT = 20
 open class PlacesBookmarksStorage(
     context: Context,
     override val autocompletePriority: Int = 0,
+    private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) : PlacesStorage(context),
     BookmarksStorage,
     SyncableStore,
@@ -103,17 +104,15 @@ open class PlacesBookmarksStorage(
      *
      * @param limit The maximum number of entries to return.
      * @param maxAge Optional parameter used to filter out entries older than this number of milliseconds.
-     * @param currentTime Optional parameter for current time. Defaults toSystem.currentTimeMillis()
      * @return The list of matching bookmark nodes up to the limit number of items.
      */
     override suspend fun getRecentBookmarks(
         limit: Int,
         maxAge: Long?,
-        @VisibleForTesting currentTime: Long,
     ): Result<List<BookmarkNode>> {
         return withContext(readScope.coroutineContext) {
             val threshold = if (maxAge != null) {
-                currentTime - maxAge
+                currentTimeMillis() - maxAge
             } else {
                 0
             }
@@ -214,27 +213,9 @@ open class PlacesBookmarksStorage(
      */
     override suspend fun countBookmarksInTrees(guids: List<String>): UInt {
         return withContext(readScope.coroutineContext) {
-            try {
+            handlePlacesExceptions("countBookmarksInTrees", 0U, {
                 reader.countBookmarksInTrees(guids)
-            } catch (e: PlacesApiException) {
-                crashReporter?.submitCaughtException(e)
-                logger.warn("Ignoring PlacesApiException while running countBookmarksInTrees", e)
-                0U
-            }
-        }
-    }
-
-    /**
-     * Runs syncBookmarks() method on the places Connection
-     *
-     * @param authInfo The authentication information to sync with.
-     * @return Sync status of OK or Error
-     */
-    suspend fun sync(authInfo: SyncAuthInfo): SyncStatus {
-        return withContext(writeScope.coroutineContext) {
-            syncAndHandleExceptions {
-                places.syncBookmarks(authInfo)
-            }
+            })
         }
     }
 
@@ -260,4 +241,21 @@ open class PlacesBookmarksStorage(
                 )
             }
         }
+
+    override suspend fun insertTree(tree: InsertableBookmarkTreeRoot): Result<String> {
+        return withContext(writeDispatcher) {
+            runCatching {
+                // we use a suspendable cancellable coroutine to
+                // 1. create a suspension point around the blocking code
+                // 2. give us a handle we can use to stop the work on cancellation
+                suspendCancellableCoroutine { continuation ->
+                    continuation.invokeOnCancellation {
+                        writer.interrupt()
+                    }
+                    val guid = writer.insertBookmarkTree(tree.rootFolder.toPlacesItem(tree.parentGuid).f)
+                    continuation.resume(guid)
+                }
+            }
+        }
+    }
 }

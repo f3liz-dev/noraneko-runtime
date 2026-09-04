@@ -12,6 +12,8 @@ prefs = [
   "messaging-system.log=all", # Enable all Nimbus logging.
 ]
 
+["test_bug2054546.js"]
+
 ["test_Enrollments.js"]
 
 ["test_ExperimentAPI.js"]
@@ -49,6 +51,8 @@ skip-if = [
 ["test_NimbusTestUtils.js"]
 
 ["test_RemoteSettingsExperimentLoader.js"]
+
+["test_RemoteSettingsExperimentLoader_timer.js"]
 
 ["test_RemoteSettingsExperimentLoader_updateRecipes.js"]
 requesttimeoutfactor = 2  # Slow on Windows

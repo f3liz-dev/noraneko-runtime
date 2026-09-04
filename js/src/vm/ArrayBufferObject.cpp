@@ -1,10 +1,7 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/ArrayBufferObject-inl.h"
 #include "vm/ArrayBufferObject.h"
 
 #include "mozilla/Assertions.h"
@@ -18,6 +15,8 @@
 #include <algorithm>  // std::max, std::min
 #include <memory>     // std::uninitialized_copy_n
 #include <string.h>
+
+#include "vm/ArrayBufferObject-inl.h"
 #if !defined(XP_WIN) && !defined(__wasi__)
 #  include <sys/mman.h>
 #endif
@@ -309,16 +308,7 @@ void js::UnmapBufferMemory(wasm::AddressType t, void* base, size_t mappedSize,
  */
 
 static const JSClassOps ArrayBufferObjectClassOps = {
-    nullptr,                      // addProperty
-    nullptr,                      // delProperty
-    nullptr,                      // enumerate
-    nullptr,                      // newEnumerate
-    nullptr,                      // resolve
-    nullptr,                      // mayResolve
-    ArrayBufferObject::finalize,  // finalize
-    nullptr,                      // call
-    nullptr,                      // construct
-    nullptr,                      // trace
+    .finalize = ArrayBufferObject::finalize,
 };
 
 static const JSFunctionSpec arraybuffer_functions[] = {
@@ -820,11 +810,14 @@ bool ArrayBufferObject::resizeImpl(JSContext* cx, const CallArgs& args) {
     Pages newPages =
         Pages::fromByteLengthExact(newByteLength, obj->wasmPageSize());
     MOZ_RELEASE_ASSERT(WasmArrayBufferSourceMaxPages(obj).isSome());
-    Rooted<ArrayBufferObject*> res(
-        cx,
-        obj->wasmGrowToPagesInPlace(obj->wasmAddressType(), newPages, obj, cx));
-    MOZ_ASSERT_IF(res, res == obj);
-    return !!res;
+    ArrayBufferObject* res =
+        obj->wasmGrowToPagesInPlace(obj->wasmAddressType(), newPages, obj, cx);
+    if (!res) {
+      return false;
+    }
+    MOZ_ASSERT(res == obj);
+    args.rval().setUndefined();
+    return true;
   }
 
   // Steps 7-15.
@@ -1306,7 +1299,6 @@ static ArrayBufferContents NewCopiedBufferContents(
 void ArrayBufferObject::detach(JSContext* cx,
                                Handle<ArrayBufferObject*> buffer) {
   cx->check(buffer);
-  MOZ_ASSERT(!buffer->isPreparedForAsmJS());
   MOZ_ASSERT(!buffer->isLengthPinned());
   MOZ_ASSERT(!buffer->isImmutable());
 
@@ -1340,8 +1332,23 @@ void ArrayBufferObject::detach(JSContext* cx,
   }
 }
 
+void ResizableArrayBufferObject::notifyViewsAfterResize() {
+  // Update all views of the buffer to account for the buffer having been
+  // resized.
+  auto& innerViews = ObjectRealm::get(this).innerViews.get();
+  if (InnerViewTable::ViewVector* views =
+          innerViews.maybeViewsUnbarriered(this)) {
+    AutoTouchingGrayThings tgt;
+    for (auto& view : *views) {
+      view->notifyBufferResized();
+    }
+  }
+  if (auto* view = firstView()) {
+    view->as<ArrayBufferViewObject>().notifyBufferResized();
+  }
+}
+
 void ResizableArrayBufferObject::resize(size_t newByteLength) {
-  MOZ_ASSERT(!isPreparedForAsmJS());
   MOZ_ASSERT(!isWasm());
   MOZ_ASSERT(!isDetached());
   MOZ_ASSERT(!isImmutable());
@@ -1360,21 +1367,7 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
   }
 
   setByteLength(newByteLength);
-
-  // Update all views of the buffer to account for the buffer having been
-  // resized.
-
-  auto& innerViews = ObjectRealm::get(this).innerViews.get();
-  if (InnerViewTable::ViewVector* views =
-          innerViews.maybeViewsUnbarriered(this)) {
-    AutoTouchingGrayThings tgt;
-    for (auto& view : *views) {
-      view->notifyBufferResized();
-    }
-  }
-  if (auto* view = firstView()) {
-    view->as<ArrayBufferViewObject>().notifyBufferResized();
-  }
+  notifyViewsAfterResize();
 }
 
 /*
@@ -1393,10 +1386,9 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
  *  - WasmMemoryObject - stores a reference to a (Shared)ArrayBufferObject for
  *    the backing storage.
  *
- *  - ArrayBufferObject - owns the actual buffer of memory for asm.js memories
- *    and non-shared wasm memories. For wasm memories (but NOT asm.js memories),
- *    additional wasm metadata is stored in a WasmArrayRawBuffer next to the
- *    data itself.
+ *  - ArrayBufferObject - owns the actual buffer of memory for non-shared wasm
+ *    memories. For wasm memories, additional wasm metadata is stored in
+ *    a WasmArrayRawBuffer next to the data itself.
  *
  *  - SharedArrayBufferObject - owns the actual buffer of memory for shared wasm
  *    memories, in the form of a WasmSharedArrayRawBuffer.
@@ -1412,12 +1404,12 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
  *
  * ## Wasm memory terminology
  *
- * A wasm/asm.js linear memory is an mmap'd array buffer. In the general case,
+ * A wasm linear memory is an mmap'd array buffer. In the general case,
  * accesses to memory must be bounds checked, but bounds checks can be
  * simplified, omitted, or deferred to signal handling based on the properties
  * of the memory (such as a known maximum size). Some common terminology applies
- * to all asm.js and wasm memories, and is generally handled by
- * WasmMemoryObject. The following terms are all expressed in bytes for clarity,
+ * to all wasm memories, and is generally handled by WasmMemoryObject.
+ * The following terms are all expressed in bytes for clarity,
  * but in practice they may be stored as a page count instead:
  *
  *  - byteLength - the actual current length of the buffer. Accesses in
@@ -1443,7 +1435,7 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
  *  - mappedSize - the actual mmap'd size. Access in the range [0, mappedSize)
  *    will either succeed, or be handled by the wasm signal handlers. The amount
  *    that we map can vary according to multiple factors - see "Allocation
- *    strategies" below. (This property does not apply to asm.js.)
+ *    strategies" below.
  *
  * The below diagram shows the layout of the wasm heap. The wasm-visible portion
  * of the heap starts at 0. There is one extra page prior to the start of the
@@ -1478,8 +1470,6 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
  *  - clampedMaxSize <= wasm::MaxMemoryPages().
  *
  * Invariants on boundsCheckLimit:
- *  - For asm.js code: boundsCheckLimit == byteLength.
- *    Signal handlers will not be invoked.
  *  - For wasm code without the huge memory trick:
  *    byteLength <= boundsCheckLimit < mappedSize
  *  - For wasm code with the huge memory trick:
@@ -1855,54 +1845,6 @@ ArrayBufferObjectMaybeShared* js::CreateWasmBuffer(
       cx, memory);
 }
 
-bool ArrayBufferObject::prepareForAsmJS() {
-  MOZ_ASSERT(byteLength() % wasm::StandardPageSizeBytes == 0,
-             "prior size checking should have guaranteed page-size multiple");
-  MOZ_ASSERT(byteLength() > 0,
-             "prior size checking should have excluded empty buffers");
-  MOZ_ASSERT(!isResizable(),
-             "prior checks should have excluded resizable buffers");
-  MOZ_ASSERT(!isImmutable(),
-             "prior checks should have excluded immutable buffers");
-
-  switch (bufferKind()) {
-    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
-    case MALLOCED_UNKNOWN_ARENA:
-    case MAPPED:
-    case EXTERNAL:
-      // It's okay if this uselessly sets the flag a second time.
-      setIsPreparedForAsmJS();
-      return true;
-
-    case INLINE_DATA:
-      static_assert(wasm::StandardPageSizeBytes >
-                        FixedLengthArrayBufferObject::MaxInlineBytes,
-                    "inline data must be too small to be a page size multiple");
-      MOZ_ASSERT_UNREACHABLE(
-          "inline-data buffers should be implicitly excluded by size checks");
-      return false;
-
-    case NO_DATA:
-      MOZ_ASSERT_UNREACHABLE(
-          "size checking should have excluded detached or empty buffers");
-      return false;
-
-    // asm.js code and associated buffers are potentially long-lived.  Yet a
-    // buffer of user-owned data *must* be detached by the user before the
-    // user-owned data is disposed.  No caller wants to use a user-owned
-    // ArrayBuffer with asm.js, so just don't support this and avoid a mess of
-    // complexity.
-    case USER_OWNED:
-    // wasm buffers can be detached at any time.
-    case WASM:
-      MOZ_ASSERT(!isPreparedForAsmJS());
-      return false;
-  }
-
-  MOZ_ASSERT_UNREACHABLE("non-exhaustive kind-handling switch?");
-  return false;
-}
-
 ArrayBufferObject::BufferContents ArrayBufferObject::createMappedContents(
     int fd, size_t offset, size_t length) {
   void* data =
@@ -2016,43 +1958,28 @@ size_t ArrayBufferObject::wasmMappedSize() const {
 }
 
 AddressType ArrayBufferObject::wasmAddressType() const {
-  if (isWasm()) {
-    return contents().wasmBuffer()->addressType();
-  }
-  MOZ_ASSERT(isPreparedForAsmJS());
-  return wasm::AddressType::I32;
+  MOZ_ASSERT(isWasm());
+  return contents().wasmBuffer()->addressType();
 }
 
 wasm::PageSize ArrayBufferObject::wasmPageSize() const {
-  if (isWasm()) {
-    return contents().wasmBuffer()->pageSize();
-  }
-  MOZ_ASSERT(isPreparedForAsmJS());
-  return wasm::PageSize::Standard;
+  MOZ_ASSERT(isWasm());
+  return contents().wasmBuffer()->pageSize();
 }
 
 Pages ArrayBufferObject::wasmPages() const {
-  if (isWasm()) {
-    return contents().wasmBuffer()->pages();
-  }
-  MOZ_ASSERT(isPreparedForAsmJS());
-  return Pages::fromByteLengthExact(byteLength(), wasmPageSize());
+  MOZ_ASSERT(isWasm());
+  return contents().wasmBuffer()->pages();
 }
 
 Pages ArrayBufferObject::wasmClampedMaxPages() const {
-  if (isWasm()) {
-    return contents().wasmBuffer()->clampedMaxPages();
-  }
-  MOZ_ASSERT(isPreparedForAsmJS());
-  return Pages::fromByteLengthExact(byteLength(), wasmPageSize());
+  MOZ_ASSERT(isWasm());
+  return contents().wasmBuffer()->clampedMaxPages();
 }
 
 Maybe<Pages> ArrayBufferObject::wasmSourceMaxPages() const {
-  if (isWasm()) {
-    return contents().wasmBuffer()->sourceMaxPages();
-  }
-  MOZ_ASSERT(isPreparedForAsmJS());
-  return Some<Pages>(Pages::fromByteLengthExact(byteLength(), wasmPageSize()));
+  MOZ_ASSERT(isWasm());
+  return contents().wasmBuffer()->sourceMaxPages();
 }
 
 size_t js::WasmArrayBufferMappedSize(const ArrayBufferObjectMaybeShared* buf) {
@@ -2105,8 +2032,6 @@ static void CheckStealPreconditions(Handle<ArrayBufferObject*> buffer,
   MOZ_ASSERT(!buffer->isImmutable(), "can't steal from an immutable buffer");
   MOZ_ASSERT(!buffer->isLengthPinned(),
              "can't steal from a buffer with a pinned length");
-  MOZ_ASSERT(!buffer->isPreparedForAsmJS(),
-             "asm.js-prepared buffers don't have detachable/stealable data");
 }
 
 /* static */
@@ -2140,6 +2065,7 @@ ArrayBufferObject* ArrayBufferObject::wasmGrowToPagesInPlace(
       return nullptr;
     }
     oldBuf->setByteLength(newPages.byteLength());
+    oldBuf->as<ResizableArrayBufferObject>().notifyViewsAfterResize();
     AddCellMemory(oldBuf, newPages.byteLength(),
                   MemoryUse::ArrayBufferContents);
     return oldBuf;
@@ -2846,8 +2772,9 @@ ResizableArrayBufferObject::copyAndDetachSteal(
   MOZ_ASSERT(newByteLength <= ArrayBufferObject::ByteLengthLimit,
              "caller must validate the byte count it passes");
   MOZ_ASSERT(!source->isDetached());
-  MOZ_ASSERT(source->byteLength() >= sourceByteOffset);
-  MOZ_ASSERT(source->byteLength() >= sourceByteOffset + newByteLength);
+  MOZ_ASSERT_IF(newByteLength > 0, source->byteLength() >= sourceByteOffset);
+  MOZ_ASSERT_IF(newByteLength > 0,
+                source->byteLength() >= sourceByteOffset + newByteLength);
 
   AutoSetNewObjectMetadata metadata(cx);
   auto [newBuffer, toFill] = createBufferAndData<ImmutableArrayBufferObject,
@@ -2857,8 +2784,10 @@ ResizableArrayBufferObject::copyAndDetachSteal(
     return nullptr;
   }
 
-  std::uninitialized_copy_n(source->dataPointer() + sourceByteOffset,
-                            newByteLength, toFill);
+  if (newByteLength > 0) {
+    std::uninitialized_copy_n(source->dataPointer() + sourceByteOffset,
+                              newByteLength, toFill);
+  }
 
   return newBuffer;
 }
@@ -3036,16 +2965,30 @@ ArrayBufferObject::createFromWasmObject<ResizableArrayBufferObject>(
         MOZ_ASSERT(byteLength <= maxByteLength);
 
         if (byteLength < maxByteLength) {
-          auto newData = ReallocateArrayBufferContents(
-              cx, stolenData, maxByteLength, byteLength);
-          if (!newData) {
-            // If reallocation failed, the old pointer is still valid. The
-            // ArrayBuffer isn't detached and still owns the malloc'ed memory.
-            return nullptr;
+          // realloc with a zero size is not portable, so when shrinking to
+          // zero, allocate fresh (empty) contents and free the old allocation.
+          //
+          // If (re)allocation fails, the old pointer is still valid. The
+          // ArrayBuffer isn't detached and still owns the malloc'ed memory.
+          ArrayBufferContents newData;
+          if (byteLength > 0) {
+            newData = ReallocateArrayBufferContents(cx, stolenData,
+                                                    maxByteLength, byteLength);
+            if (!newData) {
+              return nullptr;
+            }
+          } else {
+            newData =
+                AllocateUninitializedArrayBufferContents(cx, /* nbytes = */ 0);
+            if (!newData) {
+              return nullptr;
+            }
+            js_free(stolenData);
           }
 
           // The following code must be infallible, because the data pointer of
-          // |buffer| is possibly no longer valid after the above realloc.
+          // |buffer| is possibly no longer valid after the above realloc or
+          // js_free.
 
           stolenData = newData.release();
         }
@@ -3158,20 +3101,38 @@ ArrayBufferObject::extractStructuredCloneContents(
 /* static */
 bool ArrayBufferObject::ensureNonInline(JSContext* cx,
                                         Handle<ArrayBufferObject*> buffer) {
-  if (buffer->isDetached() || buffer->isPreparedForAsmJS()) {
+  if (buffer->isDetached()) {
     return true;
-  }
-
-  if (buffer->isLengthPinned()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_ARRAYBUFFER_LENGTH_PINNED);
-    MOZ_DIAGNOSTIC_ASSERT(!cx->brittleMode, "ArrayBuffer length pinned");
-    return false;
   }
 
   BufferContents inlineContents = buffer->contents();
   if (inlineContents.kind() != INLINE_DATA) {
+    // The data is already out-of-line, so there is nothing to move and the pin
+    // (if any) does not block us. A pin here means this call is nested inside
+    // another pinned access of the same buffer, which is memory-safe (the pin
+    // keeps the out-of-line data stable and prevents detach/resize). But it
+    // usually means unintended re-entrancy -- e.g. running script while a
+    // buffer is pinned. To make it get noticed, crash in brittle mode (which is
+    // set during operations where we want to see the exact reason for certain
+    // failures) in a diagnostic build. In other situations, allow it to succeed
+    // without doing anything.
+    MOZ_DIAGNOSTIC_ASSERT(
+        !(buffer->isLengthPinned() && cx->brittleMode),
+        "nested pin of out-of-line ArrayBuffer: safe, but suggests unexpected "
+        "re-entrant access to the buffer outside the enclosing pinned region");
     return true;
+  }
+
+  if (buffer->isLengthPinned()) {
+    // The data is inline and its length is pinned, so we genuinely cannot move
+    // it out-of-line. Unlike the out-of-line case above, this is neither benign
+    // nor merely a violation of convention. Pinning only sets a flag without
+    // moving data, so a buffer can be both inline and pinned (e.g. wasm's
+    // AutoPinBufferSourceLength). Throw a JS exception.
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_ARRAYBUFFER_LENGTH_PINNED);
+    MOZ_DIAGNOSTIC_ASSERT(!cx->brittleMode, "ArrayBuffer length pinned");
+    return false;
   }
 
   size_t nbytes = buffer->maxByteLength();
@@ -3215,13 +3176,8 @@ void ArrayBufferObject::addSizeOfExcludingThis(
       break;
     case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
     case MALLOCED_UNKNOWN_ARENA:
-      if (buffer.isPreparedForAsmJS()) {
-        info->objectsMallocHeapElementsAsmJS +=
-            mallocSizeOf(buffer.dataPointer());
-      } else {
-        info->objectsMallocHeapElementsArrayBuffer +=
-            mallocSizeOf(buffer.dataPointer());
-      }
+      info->objectsMallocHeapElementsArrayBuffer +=
+          mallocSizeOf(buffer.dataPointer());
       break;
     case NO_DATA:
       // No data is no memory.
@@ -3360,9 +3316,6 @@ void ForEachArrayBufferFlag(uint32_t flags, KnownF known, UnknownF unknown) {
       case ArrayBufferObject::ArrayBufferFlags::DETACHED:
         known("DETACHED");
         break;
-      case ArrayBufferObject::ArrayBufferFlags::FOR_ASMJS:
-        known("FOR_ASMJS");
-        break;
       default:
         unknown(i);
         break;
@@ -3479,9 +3432,19 @@ bool InnerViewTable::Views::traceWeak(JSTracer* trc, size_t startIndex) {
           return true;
         }
 
-        if (!sawNurseryView && gc::IsInsideNursery(view)) {
-          sawNurseryView = true;
-          firstNurseryView = index;
+        if (!sawNurseryView) {
+          if (gc::IsInsideNursery(view)) {
+            // Record position of first nursery view.
+            sawNurseryView = true;
+            firstNurseryView = index;
+          }
+        } else {
+          if (!gc::IsInsideNursery(view)) {
+            // Move tenured view before the first nursery view.
+            MOZ_ASSERT(firstNurseryView < index);
+            std::swap(views[firstNurseryView], view);
+            firstNurseryView++;
+          }
         }
 
         index++;
@@ -3591,10 +3554,10 @@ void InnerViewTable::sweepAfterMinorGC(JSTracer* trc) {
   }
 
   // Otherwise look at every map entry.
-  for (ArrayBufferViewMap::Enum e(map); !e.empty(); e.popFront()) {
-    MOZ_ASSERT(!gc::IsInsideNursery(e.front().key()));
-    if (!sweepViewsAfterMinorGC(trc, e.front().key(), e.front().value())) {
-      e.removeFront();
+  for (auto iter = map.modIter(); !iter.done(); iter.next()) {
+    MOZ_ASSERT(!gc::IsInsideNursery(iter.get().key()));
+    if (!sweepViewsAfterMinorGC(trc, iter.get().key(), iter.get().value())) {
+      iter.remove();
     }
   }
 }
@@ -3615,8 +3578,8 @@ bool InnerViewTable::sweepViewsAfterMinorGC(JSTracer* trc,
 
 size_t InnerViewTable::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
   size_t vectorSize = 0;
-  for (auto r = map.all(); !r.empty(); r.popFront()) {
-    vectorSize += r.front().value().views.sizeOfExcludingThis(mallocSizeOf);
+  for (auto iter = map.iter(); !iter.done(); iter.next()) {
+    vectorSize += iter.get().value().views.sizeOfExcludingThis(mallocSizeOf);
   }
 
   return vectorSize + map.shallowSizeOfExcludingThis(mallocSizeOf) +

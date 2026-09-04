@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef MOZILLA_GFX_PRINTTARGETSKPDF_H
 #define MOZILLA_GFX_PRINTTARGETSKPDF_H
 
+#include "PrintTarget.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "PrintTarget.h"
 #include "skia/include/core/SkCanvas.h"
-#include "skia/include/docs/SkPDFDocument.h"
 #include "skia/include/core/SkStream.h"
+#include "skia/include/docs/SkPDFDocument.h"
 
 namespace mozilla {
 namespace gfx {
@@ -27,7 +26,8 @@ class PrintTargetSkPDF final : public PrintTarget {
       nsIOutputStream* aStream, const IntSize& aSizeInPoints);
 
   nsresult BeginPrinting(const nsAString& aTitle,
-                         const nsAString& aPrintToFileName, int32_t aStartPage,
+                         const nsAString& aPrintToFileName,
+                         uint64_t aInnerWindowId, int32_t aStartPage,
                          int32_t aEndPage) override;
   nsresult EndPrinting() override;
   void Finish() override;

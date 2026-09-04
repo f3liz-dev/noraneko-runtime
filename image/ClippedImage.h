@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,13 @@
 #ifndef mozilla_image_ClippedImage_h
 #define mozilla_image_ClippedImage_h
 
+#include <utility>
+
 #include "ImageWrapper.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-
-#include <utility>
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 namespace image {

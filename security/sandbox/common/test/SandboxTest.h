@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 #ifndef mozilla_SandboxTest_h
 #define mozilla_SandboxTest_h
 
+#include "GMPService.h"
 #include "SandboxTestingParent.h"
 #include "mozISandboxTest.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/MozPromise.h"
-#include "GMPService.h"
 #include "nsTArray.h"
 
 #if !defined(MOZ_DEBUG) || !defined(ENABLE_TESTS)

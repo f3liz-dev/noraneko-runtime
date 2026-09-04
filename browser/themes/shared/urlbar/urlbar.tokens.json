@@ -1,0 +1,76 @@
+{
+  "background": {
+    "color": {
+      "@base": {
+        "value": "{toolbar.field.background.color.@base}"
+      },
+      "focus": {
+        "value": "{toolbar.field.background.color.focus}"
+      }
+    }
+  },
+  "border": {
+    "radius": {
+      "value": "{button.border.radius}"
+    }
+  },
+  "box": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": {
+            "light": "white",
+            "dark": "rgb(66, 65, 77)",
+            "nativeTheme": "{button.background.color.@base}"
+          }
+        },
+        "hover": {
+          "value": {
+            "light": "{button.background.color.hover}",
+            "dark": "color-mix(in srgb, currentColor 22%, transparent)"
+          }
+        },
+        "active": {
+          "value": "{button.background.color.active}"
+        },
+        "focus": {
+          "value": {
+            "light": "{button.background.color.@base}",
+            "dark": "color-mix(in srgb, currentColor 16%, transparent)"
+          }
+        }
+      }
+    },
+    "text": {
+      "color": {
+        "@base": {
+          "value": "inherit"
+        },
+        "hover": {
+          "value": "{urlbar.box.text.color.@base}"
+        }
+      }
+    }
+  },
+  "icon": {
+    "fill": {
+      "opacity": {
+        "value": {
+          "default": "0.72",
+          "nativeTheme": "0.9",
+          "prefersContrast": "1"
+        }
+      }
+    }
+  },
+  "margin": {
+    "inline": {
+      "value": "5px"
+    }
+  },
+  "padding": {
+    "block": {
+      "value": "4px"
+    }
+  }
+}

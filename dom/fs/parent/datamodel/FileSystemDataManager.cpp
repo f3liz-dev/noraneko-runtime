@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -55,9 +53,9 @@ namespace {
 // The assertion type must be the same as the assertion type used for defining
 // the base class for FileSystemDataManager in FileSystemDataManager.h!
 using FileSystemDataManagerHashKey =
-    std::conditional<ReleaseAssertEnabled::value,
-                     quota::nsCStringHashKeyWithDisabledMemmove,
-                     nsCStringHashKey>::type;
+    std::conditional_t<ReleaseAssertEnabled::value,
+                       quota::nsCStringHashKeyWithDisabledMemmove,
+                       nsCStringHashKey>;
 
 // Raw (but checked when the diagnostic assert is enabled) references as we
 // don't want to keep FileSystemDataManager objects alive forever. When a

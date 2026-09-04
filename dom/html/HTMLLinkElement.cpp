@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +20,7 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
+#include "mozilla/dom/ModuleLoader.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "nsAttrValueInlines.h"
@@ -34,6 +33,7 @@
 #include "nsIContentPolicy.h"
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
+#include "nsIURIWithSizeOf.h"
 #include "nsMimeTypes.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
@@ -46,7 +46,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Link)
 namespace mozilla::dom {
 
 HTMLLinkElement::HTMLLinkElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+    already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
 HTMLLinkElement::~HTMLLinkElement() { SupportsDNSPrefetch::Destroyed(*this); }
@@ -411,9 +411,10 @@ void HTMLLinkElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   // It is okay to include the size of mCachedURI here even though it might have
   // strong references from elsewhere because the URI was created for this
   // object, in nsGenericHTMLElement::GetURIAttr(). Only objects that created
-  // their own URI will call nsIURI::SizeOfIncludingThis().
+  // their own URI will call nsIURIWithSizeOf::SizeOfIncludingThis().
   if (mCachedURI) {
-    *aNodeSize += mCachedURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+    *aNodeSize += SizeOfIncludingThisIfURIWithSizeOf(
+        mCachedURI, aSizes.mState.mMallocSizeOf);
   }
 }
 
@@ -446,7 +447,12 @@ void HTMLLinkElement::
     TryDNSPrefetchOrPreconnectOrPrefetchOrPreloadOrPrerender() {
   MOZ_ASSERT(IsInComposedDoc());
   if (!HasAttr(nsGkAtoms::href)) {
-    return;
+    // Per HTML spec, imagesrcset can substitute for href on image preloads.
+    nsAutoString as;
+    GetAttr(nsGkAtoms::as, as);
+    if (!as.LowerCaseEqualsASCII("image") || !HasAttr(nsGkAtoms::imagesrcset)) {
+      return;
+    }
   }
 
   nsAutoString rel;
@@ -481,45 +487,51 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & ePRELOAD) {
-    if (nsCOMPtr<nsIURI> uri = GetURI()) {
-      nsContentPolicyType policyType;
+    nsCOMPtr<nsIURI> uri = GetURI();
 
-      nsAttrValue asAttr;
-      nsAutoString mimeType;
-      nsAutoString media;
-      GetContentPolicyMimeTypeMedia(asAttr, policyType, mimeType, media);
+    nsContentPolicyType policyType;
+    nsAttrValue asAttr;
+    nsAutoString mimeType;
+    nsAutoString media;
+    GetContentPolicyMimeTypeMedia(asAttr, policyType, mimeType, media);
 
-      if (policyType == nsIContentPolicy::TYPE_INVALID ||
-          !net::CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
-        // Ignore preload with a wrong or empty as attribute.
-        net::WarnIgnoredPreload(*OwnerDoc(), *uri);
-        return;
-      }
-
-      // https://html.spec.whatwg.org/#translate-a-preload-destination
-      // If destination is not "fetch", "font", "image", "script", "style", or
-      // "track", then return null.
-      int16_t asValue = asAttr.GetEnumValue();
-      if (asValue != net::DESTINATION_FETCH &&
-          asValue != net::DESTINATION_FONT &&
-          asValue != net::DESTINATION_IMAGE &&
-          asValue != net::DESTINATION_SCRIPT &&
-          asValue != net::DESTINATION_STYLE &&
-          asValue != net::DESTINATION_TRACK) {
-        // TODO: Currently the spec doesn't define an event handler to be called
-        // , but this is under discussion.
-        // See: https://github.com/whatwg/html/issues/10940
-        //
-        // Post a "load" event here to match the legacy behavior.
-        RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
-            this, u"load"_ns, CanBubble::eNo, ChromeOnlyDispatch::eNo);
-        asyncDispatcher->PostDOMEvent();
-        return;
-      }
-
-      StartPreload(policyType);
+    // Image preloads can derive their URI from imagesrcset without href.
+    if (!uri && (policyType != nsIContentPolicy::TYPE_IMAGE ||
+                 !HasAttr(nsGkAtoms::imagesrcset))) {
       return;
     }
+
+    if (policyType == nsIContentPolicy::TYPE_INVALID ||
+        !net::CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
+      // Ignore preload with a wrong or empty as attribute.
+      nsAutoString srcset;
+      GetAttr(nsGkAtoms::imagesrcset, srcset);
+      net::WarnIgnoredPreload(*OwnerDoc(), uri, srcset);
+      return;
+    }
+
+    // https://html.spec.whatwg.org/#translate-a-preload-destination
+    // If destination is not "fetch", "font", "image", "script", "style", or
+    // "track", then return null.
+    int16_t asValue = asAttr.GetEnumValue();
+    if (asValue != net::DESTINATION_FETCH && asValue != net::DESTINATION_FONT &&
+        asValue != net::DESTINATION_IMAGE &&
+        asValue != net::DESTINATION_SCRIPT &&
+        asValue != net::DESTINATION_STYLE &&
+        asValue != net::DESTINATION_TRACK) {
+      // TODO: Currently the spec doesn't define an event handler to be called
+      // , but this is under discussion.
+      // See: https://github.com/whatwg/html/issues/10940
+      //
+      // Post a "load" event here to match the legacy behavior.
+      RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
+          this, u"load"_ns, CanBubble::eNo, ChromeOnlyDispatch::eNo);
+      asyncDispatcher->PostDOMEvent();
+      return;
+    }
+
+    StartPreload(policyType);
+    return;
   }
 
   if (linkTypes & eMODULE_PRELOAD) {
@@ -539,7 +551,8 @@ void HTMLLinkElement::
       return;
     }
 
-    if (!StaticPrefs::network_modulepreload()) {
+    if (!StaticPrefs::network_modulepreload() &&
+        !StaticPrefs::dom_multiple_import_maps_enabled()) {
       // Keep behavior from https://phabricator.services.mozilla.com/D149371,
       // prior to main implementation of modulepreload
       moduleLoader->DisallowImportMaps();
@@ -579,7 +592,9 @@ void HTMLLinkElement::
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-modulepreload-module-script-graph
     // Step 1. Disallow further import maps given settings object.
-    moduleLoader->DisallowImportMaps();
+    if (!StaticPrefs::dom_multiple_import_maps_enabled()) {
+      moduleLoader->DisallowImportMaps();
+    }
 
     StartPreload(nsIContentPolicy::TYPE_SCRIPT);
     return;
@@ -603,7 +618,11 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   MOZ_ASSERT(IsInComposedDoc());
 
   if (!HasAttr(nsGkAtoms::href)) {
-    return;
+    nsAutoString as;
+    GetAttr(nsGkAtoms::as, as);
+    if (!as.LowerCaseEqualsASCII("image") || !HasAttr(nsGkAtoms::imagesrcset)) {
+      return;
+    }
   }
 
   nsAutoString rel;
@@ -622,9 +641,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   }
 
   nsCOMPtr<nsIURI> uri = GetURI();
-  if (!uri) {
-    return;
-  }
 
   nsAttrValue asAttr;
   nsContentPolicyType asPolicyType;
@@ -632,12 +648,19 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   nsAutoString media;
   GetContentPolicyMimeTypeMedia(asAttr, asPolicyType, mimeType, media);
 
+  if (!uri && (asPolicyType != nsIContentPolicy::TYPE_IMAGE ||
+               !HasAttr(nsGkAtoms::imagesrcset))) {
+    return;
+  }
+
   if (asPolicyType == nsIContentPolicy::TYPE_INVALID ||
       !net::CheckPreloadAttrs(asAttr, mimeType, media, OwnerDoc())) {
     // Ignore preload with a wrong or empty as attribute, but be sure to cancel
     // the old one.
     CancelPrefetchOrPreload();
-    net::WarnIgnoredPreload(*OwnerDoc(), *uri);
+    nsAutoString srcset;
+    GetAttr(nsGkAtoms::imagesrcset, srcset);
+    net::WarnIgnoredPreload(*OwnerDoc(), uri, srcset);
     return;
   }
 

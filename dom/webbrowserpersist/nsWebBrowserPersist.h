@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +27,7 @@
 #include "nsTArray.h"
 #include "nsWeakReference.h"
 
+class nsIReferrerInfo;
 class nsIStorageStream;
 class nsIWebBrowserPersistDocument;
 
@@ -96,8 +96,9 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
       nsIURI* aURI, nsIWebBrowserPersistDocument* aDoc,
       nsContentPolicyType aContentPolicyType, bool aNeedsPersisting,
       URIData** aData);
-  nsresult MakeOutputStream(nsIURI* aFile, nsIOutputStream** aOutputStream);
-  nsresult MakeOutputStreamFromFile(nsIFile* aFile,
+  nsresult MakeOutputStream(nsIURI* aFile, nsIURI* aSourceURI,
+                            nsIOutputStream** aOutputStream);
+  nsresult MakeOutputStreamFromFile(nsIFile* aFile, nsIURI* aSourceURI,
                                     nsIOutputStream** aOutputStream);
   nsresult MakeOutputStreamFromURI(nsIURI* aURI, nsIOutputStream** aOutStream);
   nsresult CreateChannelFromURI(nsIURI* aURI, nsIChannel** aChannel);
@@ -144,6 +145,7 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
 
   nsCOMPtr<nsIMIMEService> mMIMEService;
   nsCOMPtr<nsIURI> mURI;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   nsCOMPtr<nsIWebProgressListener> mProgressListener;
   /**
    * Progress listener for 64-bit values; this is the same object as
@@ -183,6 +185,8 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
   int16_t mWrapColumn;
   uint32_t mEncodingFlags;
   nsString mContentType;
+  // Random suffix added to downloaded filenames to make them less predictable.
+  nsCString mFilenameRandomSeed;
 };
 
 #endif

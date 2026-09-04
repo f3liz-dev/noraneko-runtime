@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef AudioLayout_h
 #define AudioLayout_h
 
+#include <bit>
 #include <cstdint>
 #include <initializer_list>
 
 #include "cubeb/cubeb.h"
-#include "mozilla/MathAlgorithms.h"
 #include "nsTArray.h"
 
 namespace mozilla {
@@ -19,7 +17,7 @@ class AudioConfig {
  public:
   // Channel definition is conveniently defined to be in the same order as
   // WAVEFORMAT && SMPTE, even though this is unused for now.
-  enum Channel {
+  enum Channel : int32_t {
     CHANNEL_INVALID = -1,
     CHANNEL_FRONT_LEFT = 0,
     CHANNEL_FRONT_RIGHT,
@@ -93,7 +91,7 @@ class AudioConfig {
     static uint32_t Channels(ChannelMap aMap) {
       static_assert(sizeof(ChannelMap) == sizeof(uint32_t),
                     "Must adjust ChannelMap type");
-      return CountPopulation32(aMap);
+      return std::popcount(aMap);
     }
 
     static ChannelLayout SMPTEDefault(const ChannelLayout& aChannelLayout);

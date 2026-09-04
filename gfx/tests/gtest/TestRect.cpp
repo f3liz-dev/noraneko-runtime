@@ -1,20 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include <limits>
 
-#include "gtest/gtest.h"
-
-#include "gfxTypes.h"
-#include "nsRect.h"
-#include "nsRectAbsolute.h"
 #include "gfxRect.h"
+#include "gfxTypes.h"
+#include "gtest/gtest.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/RectAbsolute.h"
-#include "mozilla/WritingModes.h"
+#include "nsRect.h"
+#include "nsRectAbsolute.h"
 #ifdef XP_WIN
 #  include <windows.h>
 #endif
@@ -40,7 +37,7 @@ static_assert(std::is_same_v<CSSCoord, decltype(CSSIntCoord() * 42.f)>);
 static_assert(std::is_same_v<CSSCoord, decltype(CSSCoord() * 42.f)>);
 
 template <class RectType>
-static bool TestConstructors() {
+static bool TestRectConstructors() {
   // Create a rectangle
   RectType rect1(10, 20, 30, 40);
 
@@ -609,7 +606,7 @@ TEST(Gfx, Logical)
 
 TEST(Gfx, nsRect)
 {
-  TestConstructors<nsRect>();
+  TestRectConstructors<nsRect>();
   TestEqualityOperator<nsRect>();
   TestContainment<nsRect, nscoord>();
   TestIntersects<nsRect>();
@@ -623,7 +620,7 @@ TEST(Gfx, nsRect)
 
 TEST(Gfx, nsIntRect)
 {
-  TestConstructors<nsIntRect>();
+  TestRectConstructors<nsIntRect>();
   TestEqualityOperator<nsIntRect>();
   TestContainment<nsIntRect, int32_t>();
   TestIntersects<nsIntRect>();
@@ -637,7 +634,7 @@ TEST(Gfx, nsIntRect)
 
 TEST(Gfx, gfxRect)
 {
-  TestConstructors<gfxRect>();
+  TestRectConstructors<gfxRect>();
   // Skip TestEqualityOperator<gfxRect>(); as gfxRect::operator== is private
   TestContainment<gfxRect, double>();
   TestIntersects<gfxRect>();

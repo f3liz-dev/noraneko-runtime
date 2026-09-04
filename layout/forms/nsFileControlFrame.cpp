@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -94,7 +92,7 @@ static already_AddRefed<Element> MakeAnonButton(
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
-  nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+  nsContentUtils::GetMaybeLocalizedString(PropertiesFile::FORMS_PROPERTIES,
                                           labelKey, aDoc, buttonTxt);
 
   auto* nim = aDoc->NodeInfoManager();
@@ -140,8 +138,9 @@ nsresult nsFileControlFrame::CreateAnonymousContent(
   aElements.AppendElement(mTextContent);
 
   // We should be able to interact with the element by doing drag and drop.
-  mContent->AddSystemEventListener(u"drop"_ns, mMouseListener, false);
-  mContent->AddSystemEventListener(u"dragover"_ns, mMouseListener, false);
+  mContent->AddSystemEventListener(u"drop"_ns, mMouseListener, false, false);
+  mContent->AddSystemEventListener(u"dragover"_ns, mMouseListener, false,
+                                   false);
 
   SyncDisabledState();
 
@@ -372,7 +371,8 @@ void nsFileControlFrame::SyncDisabledState() {
 
 void nsFileControlFrame::ElementStateChanged(ElementState aStates) {
   if (aStates.HasState(ElementState::DISABLED)) {
-    nsContentUtils::AddScriptRunner(new SyncDisabledStateEvent(this));
+    nsContentUtils::AddScriptRunner(
+        MakeAndAddRef<SyncDisabledStateEvent>(this));
   }
 }
 

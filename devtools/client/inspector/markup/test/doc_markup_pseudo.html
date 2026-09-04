@@ -26,6 +26,18 @@ dialog::backdrop {
 dialog::before {
   content: "before dialog";
 }
+
+select {
+  appearance: base-select;
+}
+select::picker-icon {
+  background-color: hotpink;
+}
+option::checkmark {
+  background-color: lime;
+  content: "-";
+}
+
 </style>
 
 <article>
@@ -36,3 +48,8 @@ dialog::before {
   <li>Cats</li>
 </ul>
 <dialog><p>My Dialog</p></dialog>
+<select>
+  <option>Apricot</option>
+  <option>Banana</option>
+  <option>Cherry</option>
+</select>

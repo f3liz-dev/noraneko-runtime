@@ -6,10 +6,7 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.toolbars.bookmarks.visibility", "newtab"],
-      ["browser.urlbar.trustPanel.featureGate", false],
-    ],
+    set: [["browser.toolbars.bookmarks.visibility", "newtab"]],
   });
 
   info("Open new tab and bookmarks toolbar");
@@ -64,14 +61,14 @@ add_task(async function drop_on_tabbar_from_chevron() {
     opening: "https://example.com/",
     waitForLoad: false,
   });
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => bookmarksToolbar.collapsed,
     "Wait for toolbar to become invisible"
   );
 
   info("Select about:newtab tab again");
   gBrowser.selectedTab = newTab;
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !bookmarksToolbar.collapsed,
     "Wait for toolbar to become visible"
   );
@@ -97,7 +94,15 @@ add_task(async function drop_on_chevron_from_identity_box() {
 
   info("Start DnD");
   let chevronMenu = document.getElementById("PlacesChevron");
-  let identityBox = document.getElementById("identity-box");
+  let siteInfoBox = document.getElementById("trust-icon-container");
+  await TestUtils.waitForCondition(
+    () => BrowserTestUtils.isVisible(siteInfoBox),
+    "Wait for trust icon to become visible"
+  );
+
+  let urlbar = document.getElementById("urlbar");
+  let urlbarRect = urlbar.getBoundingClientRect();
+  let siteInfoRect = siteInfoBox.getBoundingClientRect();
   let chevronPopup = document.getElementById("PlacesChevronPopup");
 
   let onChevronPopupShown = BrowserTestUtils.waitForPopupEvent(
@@ -105,13 +110,19 @@ add_task(async function drop_on_chevron_from_identity_box() {
     "shown"
   );
   await EventUtils.synthesizePlainDragAndDrop({
-    srcElement: identityBox,
+    srcElement: urlbar,
+    srcX: Math.round(
+      siteInfoRect.left - urlbarRect.left + siteInfoRect.width / 2
+    ),
+    srcY: Math.round(
+      siteInfoRect.top - urlbarRect.top + siteInfoRect.height / 2
+    ),
     destElement: chevronMenu,
   });
   await onChevronPopupShown;
 
   info("Check the last bookmark item");
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     let items = [...chevronPopup.children];
     let lastElement = items.findLast(
       c => c.nodeName == "menuitem" && BrowserTestUtils.isVisible(c)
@@ -136,13 +147,14 @@ async function testForDndFromChevron(chevronMenu) {
   await onChevronPopupShown;
 
   info("Choose a menu item from chevron menu as drag target");
-  let srcElement = await BrowserTestUtils.waitForCondition(() =>
+  let srcElement = await TestUtils.waitForCondition(() =>
     [...chevronPopup.children].findLast(
       c =>
         c.label?.startsWith("https://example.com/") &&
         BrowserTestUtils.isVisible(c)
     )
   );
+  let srcRect = srcElement.getBoundingClientRect();
 
   let destElement = document.getElementById(
     gBrowser.tabContainer.overflowing ? "new-tab-button" : "tabs-newtab-button"
@@ -155,6 +167,8 @@ async function testForDndFromChevron(chevronMenu) {
   info("Start DnD");
   await EventUtils.synthesizePlainDragAndDrop({
     srcElement,
+    srcX: Math.floor(srcRect.width / 2),
+    srcY: Math.floor(srcRect.height / 2),
     destElement,
   });
 

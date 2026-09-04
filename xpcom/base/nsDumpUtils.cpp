@@ -1,24 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDumpUtils.h"
+
+#include <errno.h>
+
+#include "SpecialSystemDirectory.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Services.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
-#include <errno.h>
-#include "prenv.h"
-#include "mozilla/Services.h"
 #include "nsIObserverService.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "SpecialSystemDirectory.h"
+#include "prenv.h"
 
 #if defined(XP_UNIX) && !defined(XP_IOS)  // {
-#  include "mozilla/Preferences.h"
 #  include <fcntl.h>
-#  include <unistd.h>
+#  include <signal.h>
 #  include <sys/stat.h>
+#  include <unistd.h>
+
+#  include "mozilla/Preferences.h"
 
 using namespace mozilla;
 
@@ -222,7 +224,7 @@ FifoWatcher* FifoWatcher::GetSingleton() {
   if (!sSingleton) {
     nsAutoCString dirPath;
     Preferences::GetCString("memory_info_dumper.watch_fifo.directory", dirPath);
-    sSingleton = new FifoWatcher(dirPath);
+    sSingleton = new FifoWatcher(std::move(dirPath));
     sSingleton->Init();
     ClearOnShutdown(&sSingleton);
   }

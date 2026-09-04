@@ -161,8 +161,9 @@ Rust is then responsible for turning the pending data into
 #### Supported Process Types
 
 FOG supports messaging between the following types of child process and the parent process:
-* content children (via `PContent`
-  (for now. See [bug 1641989](https://bugzilla.mozilla.org/show_bug.cgi?id=1641989))
+* content children (via `PContent` or `PFOGTransport`)
+  * PFOGTransport is a new addition to this list, and uses a background queue instead of a named thread.
+  At this time PContent is used by default, and the use of PFOGTransport must be enabled [via a pref](preferences.md#internal-preferences).
 * gmp children (via `PGMP`)
 * gpu children (via `PGPU`)
 * rdd children (via `PRDD`)
@@ -170,7 +171,7 @@ FOG supports messaging between the following types of child process and the pare
 * utility children (via `PUtilityProcess`)
 
 See
-[the process model docs](/dom/ipc/process_model.rst)
+[the process model docs](/dom/ipc/process_model.md)
 for more information about what that means.
 
 ### Adding Support for a new Process Type

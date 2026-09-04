@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +6,13 @@
 
 #include <ostream>
 
+#include "UnitTransforms.h"
 #include "Units.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/ScrollContainerFrame.h"
 #include "nsDisplayList.h"
 #include "nsTArray.h"
-#include "UnitTransforms.h"
 
 namespace mozilla {
 namespace layers {
@@ -306,7 +304,11 @@ bool WebRenderLayerScrollData::ValidateSubtree(
     const WebRenderLayerScrollData* currentChild =
         &aParent.mLayerScrollData[currentChildIndex];
     childDescendantCounts += currentChild->mDescendantCount;
-    currentChild->ValidateSubtree(aParent, aVisitCounts, currentChildIndex);
+    if (!currentChild->ValidateSubtree(aParent, aVisitCounts,
+                                       currentChildIndex)) {
+      // If a subtree is invalid, we are also invalid.
+      return false;
+    }
 
     // The current child's descendants come first in the array, and the next
     // element after that is our next child.
@@ -451,57 +453,18 @@ bool WebRenderScrollData::RepopulateMap() {
 
 namespace IPC {
 
-void ParamTraits<mozilla::layers::WebRenderLayerScrollData>::Write(
-    MessageWriter* aWriter, const paramType& aParam) {
-  WriteParam(aWriter, aParam.mDescendantCount);
-  WriteParam(aWriter, aParam.mScrollIds);
-  WriteParam(aWriter, aParam.mAncestorTransform);
-  WriteParam(aWriter, aParam.mAncestorTransformId);
-  WriteParam(aWriter, aParam.mTransform);
-  WriteParam(aWriter, aParam.mTransformIsPerspective);
-  WriteParam(aWriter, aParam.mVisibleRect);
-  WriteParam(aWriter, aParam.mRemoteDocumentSize);
-  WriteParam(aWriter, aParam.mReferentId);
-  WriteParam(aWriter, aParam.mEventRegionsOverride);
-  WriteParam(aWriter, aParam.mScrollbarData);
-  WriteParam(aWriter, aParam.mScrollbarAnimationId);
-  WriteParam(aWriter, aParam.mFixedPositionAnimationId);
-  WriteParam(aWriter, aParam.mFixedPositionSides);
-  WriteParam(aWriter, aParam.mFixedPosScrollContainerId);
-  WriteParam(aWriter, aParam.mStickyPosScrollContainerId);
-  WriteParam(aWriter, aParam.mStickyScrollRangeOuter);
-  WriteParam(aWriter, aParam.mStickyScrollRangeInner);
-  WriteParam(aWriter, aParam.mStickyPositionAnimationId);
-  WriteParam(aWriter, aParam.mZoomAnimationId);
-  WriteParam(aWriter, aParam.mAsyncZoomContainerId);
-  // Do not write |mInitializedFrom|, the pointer wouldn't be valid
-  // on the compositor side.
-}
-
-bool ParamTraits<mozilla::layers::WebRenderLayerScrollData>::Read(
-    MessageReader* aReader, paramType* aResult) {
-  return ReadParam(aReader, &aResult->mDescendantCount) &&
-         ReadParam(aReader, &aResult->mScrollIds) &&
-         ReadParam(aReader, &aResult->mAncestorTransform) &&
-         ReadParam(aReader, &aResult->mAncestorTransformId) &&
-         ReadParam(aReader, &aResult->mTransform) &&
-         ReadParam(aReader, &aResult->mTransformIsPerspective) &&
-         ReadParam(aReader, &aResult->mVisibleRect) &&
-         ReadParam(aReader, &aResult->mRemoteDocumentSize) &&
-         ReadParam(aReader, &aResult->mReferentId) &&
-         ReadParam(aReader, &aResult->mEventRegionsOverride) &&
-         ReadParam(aReader, &aResult->mScrollbarData) &&
-         ReadParam(aReader, &aResult->mScrollbarAnimationId) &&
-         ReadParam(aReader, &aResult->mFixedPositionAnimationId) &&
-         ReadParam(aReader, &aResult->mFixedPositionSides) &&
-         ReadParam(aReader, &aResult->mFixedPosScrollContainerId) &&
-         ReadParam(aReader, &aResult->mStickyPosScrollContainerId) &&
-         ReadParam(aReader, &aResult->mStickyScrollRangeOuter) &&
-         ReadParam(aReader, &aResult->mStickyScrollRangeInner) &&
-         ReadParam(aReader, &aResult->mStickyPositionAnimationId) &&
-         ReadParam(aReader, &aResult->mZoomAnimationId) &&
-         ReadParam(aReader, &aResult->mAsyncZoomContainerId);
-}
+IMPLEMENT_IPC_SERIALIZER_WITH_FIELDS(
+    mozilla::layers::WebRenderLayerScrollData, mDescendantCount, mScrollIds,
+    mAncestorTransform, mAncestorTransformId, mTransform,
+    mTransformIsPerspective, mVisibleRect, mRemoteDocumentSize, mReferentId,
+    mEventRegionsOverride, mScrollbarData, mScrollbarAnimationId,
+    mFixedPositionAnimationId, mFixedPositionSides, mFixedPosScrollContainerId,
+    mStickyPosScrollContainerId, mStickyScrollRangeOuter,
+    mStickyScrollRangeInner, mStickyPositionAnimationId, mZoomAnimationId,
+    mAsyncZoomContainerId
+    // Do not write |mInitializedFrom|, the pointer wouldn't be valid
+    // on the compositor side.
+);
 
 void ParamTraits<mozilla::layers::WebRenderScrollData>::Write(
     MessageWriter* aWriter, const paramType& aParam) {

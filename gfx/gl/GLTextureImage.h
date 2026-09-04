@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,12 @@
 #ifndef GLTEXTUREIMAGE_H_
 #define GLTEXTUREIMAGE_H_
 
+#include "GLContextTypes.h"
+#include "gfxTypes.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/gfx/Rect.h"
 #include "nsRegion.h"
 #include "nsTArray.h"
-#include "gfxTypes.h"
-#include "GLContextTypes.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/RefPtr.h"
 
 class gfxASurface;
 

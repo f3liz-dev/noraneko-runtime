@@ -5,12 +5,8 @@
 #ifndef nsHtml5AtomTable_h
 #define nsHtml5AtomTable_h
 
-#include "nsHashKeys.h"
-#include "nsTHashtable.h"
 #include "nsAtom.h"
 #include "nsISerialEventTarget.h"
-
-#define RECENTLY_USED_PARSER_ATOMS_SIZE 37
 
 /*
  * nsHtml5AtomTable provides an atom cache for nsHtml5Parser and
@@ -46,8 +42,8 @@ class nsHtml5AtomTable {
    * Empties the table.
    */
   void Clear() {
-    for (uint32_t i = 0; i < RECENTLY_USED_PARSER_ATOMS_SIZE; ++i) {
-      mRecentlyUsedParserAtoms[i] = nullptr;
+    for (auto& mRecentlyUsedParserAtom : mRecentlyUsedParserAtoms) {
+      mRecentlyUsedParserAtom = nullptr;
     }
   }
 
@@ -58,7 +54,9 @@ class nsHtml5AtomTable {
 #endif
 
  private:
-  RefPtr<nsAtom> mRecentlyUsedParserAtoms[RECENTLY_USED_PARSER_ATOMS_SIZE];
+  // Must be a power of two (see GetAtom).
+  constexpr static uint32_t kRecentlyUsedSize = 64;
+  RefPtr<nsAtom> mRecentlyUsedParserAtoms[kRecentlyUsedSize];
 #ifdef DEBUG
   nsCOMPtr<nsISerialEventTarget> mPermittedLookupEventTarget;
 #endif

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +22,7 @@ using TimeUnit = media::TimeUnit;
 
 extern LazyLogModule gMediaDecoderLog;
 #define LOG(x, ...) \
-  DDMOZ_LOG(gMediaDecoderLog, LogLevel::Debug, x, ##__VA_ARGS__)
+  DDMOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, x, ##__VA_ARGS__)
 #define LOGD(x, ...) \
   MOZ_LOG_FMT(gMediaDecoderLog, LogLevel::Debug, x, ##__VA_ARGS__)
 
@@ -207,8 +205,8 @@ already_AddRefed<ChannelMediaDecoder> ChannelMediaDecoder::Clone(
   return decoder.forget();
 }
 
-MediaDecoderStateMachineBase* ChannelMediaDecoder::CreateStateMachine(
-    bool aDisableExternalEngine) {
+already_AddRefed<MediaDecoderStateMachineBase>
+ChannelMediaDecoder::CreateStateMachine(bool aDisableExternalEngine) {
   MOZ_ASSERT(NS_IsMainThread());
   MediaFormatReaderInit init;
   init.mVideoFrameContainer = GetVideoFrameContainer();
@@ -234,10 +232,10 @@ MediaDecoderStateMachineBase* ChannelMediaDecoder::CreateStateMachine(
        StaticPrefs::media_wmf_media_engine_enabled() == 3) &&
       StaticPrefs::media_wmf_media_engine_channel_decoder_enabled() &&
       !aDisableExternalEngine) {
-    return new ExternalEngineStateMachine(this, mReader);
+    return MakeAndAddRef<ExternalEngineStateMachine>(this, mReader);
   }
 #endif
-  return new MediaDecoderStateMachine(this, mReader);
+  return MakeAndAddRef<MediaDecoderStateMachine>(this, mReader);
 }
 
 void ChannelMediaDecoder::Shutdown() {
@@ -309,7 +307,7 @@ void ChannelMediaDecoder::NotifyDownloadEnded(nsresult aStatus) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
 
-  LOG("NotifyDownloadEnded, status=%" PRIx32, static_cast<uint32_t>(aStatus));
+  LOG("NotifyDownloadEnded, status={:x}", static_cast<uint32_t>(aStatus));
 
   if (NS_SUCCEEDED(aStatus)) {
     // Download ends successfully. This is a stream with a finite length.

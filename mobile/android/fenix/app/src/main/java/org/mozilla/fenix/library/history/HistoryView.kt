@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.library.history
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.view.isInvisible
@@ -13,7 +15,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.SimpleItemAnimator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.sync.SyncReason
 import org.mozilla.fenix.R
@@ -91,6 +93,9 @@ class HistoryView(
         }
 
         binding.swipeRefresh.setOnRefreshListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                binding.swipeRefresh.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            }
             store.dispatch(HistoryFragmentAction.StartSync)
             scope.launch {
                 accountManager.syncNow(

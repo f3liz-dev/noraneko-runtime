@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,25 +5,38 @@
 #include "VectorImage.h"
 
 #include "AutoRestoreSVGState.h"
+#include "BlobSurfaceProvider.h"
+#include "ISurfaceProvider.h"
+#include "ImageRegion.h"
+#include "LookupResult.h"
+#include "Orientation.h"
+#include "SVGDocumentWrapper.h"
+#include "SVGDrawingCallback.h"
+#include "SVGDrawingParameters.h"
+#include "SurfaceCache.h"
+#include "WindowRenderer.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxDrawable.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
 #include "imgFrame.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/MediaFeatureChange.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/SVGSVGElement.h"
-#include "mozilla/dom/SVGDocument.h"
-#include "mozilla/gfx/2D.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/SVGObserverUtils.h"  // for SVGRenderingObserver
 #include "mozilla/SVGUtils.h"
-
+#include "mozilla/StaticPrefs_image.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/SVGDocument.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/image/Resolution.h"
+#include "nsIDOMEventListener.h"
 #include "nsIStreamListener.h"
 #include "nsMimeTypes.h"
 #include "nsPresContext.h"
@@ -32,20 +44,6 @@
 #include "nsString.h"
 #include "nsStubDocumentObserver.h"
 #include "nsWindowSizes.h"
-#include "ImageRegion.h"
-#include "ISurfaceProvider.h"
-#include "LookupResult.h"
-#include "Orientation.h"
-#include "SVGDocumentWrapper.h"
-#include "SVGDrawingCallback.h"
-#include "SVGDrawingParameters.h"
-#include "nsIDOMEventListener.h"
-#include "SurfaceCache.h"
-#include "BlobSurfaceProvider.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/image/Resolution.h"
-#include "WindowRenderer.h"
 
 namespace mozilla {
 
@@ -957,8 +955,7 @@ VectorImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
   std::tie(sourceSurface, params.size) =
       LookupCachedSurface(aSize, params.svgContext, aFlags);
   if (sourceSurface) {
-    RefPtr<gfxDrawable> drawable =
-        new gfxSurfaceDrawable(sourceSurface, params.size);
+    auto drawable = MakeRefPtr<gfxSurfaceDrawable>(sourceSurface, params.size);
     Show(drawable, params);
     return ImgDrawResult::SUCCESS;
   }
@@ -981,8 +978,7 @@ VectorImage::Draw(gfxContext* aContext, const nsIntSize& aSize,
     return ImgDrawResult::SUCCESS;
   }
 
-  RefPtr<gfxDrawable> drawable =
-      new gfxSurfaceDrawable(sourceSurface, params.size);
+  auto drawable = MakeRefPtr<gfxSurfaceDrawable>(sourceSurface, params.size);
   Show(drawable, params);
   SendFrameComplete(didCache, params.flags);
   return ImgDrawResult::SUCCESS;
@@ -1242,10 +1238,10 @@ bool VectorImage::MaybeRestrictSVGContext(SVGImageContext& aSVGContext,
 
 already_AddRefed<gfxDrawable> VectorImage::CreateSVGDrawable(
     const SVGDrawingParameters& aParams) {
-  RefPtr<gfxDrawingCallback> cb = new SVGDrawingCallback(
+  auto cb = MakeRefPtr<SVGDrawingCallback>(
       mSVGDocumentWrapper, aParams.viewportSize, aParams.size, aParams.flags);
 
-  RefPtr<gfxDrawable> svgDrawable = new gfxCallbackDrawable(cb, aParams.size);
+  auto svgDrawable = MakeRefPtr<gfxCallbackDrawable>(cb, aParams.size);
   return svgDrawable.forget();
 }
 
@@ -1456,7 +1452,8 @@ VectorImage::OnStartRequest(nsIRequest* aRequest) {
              "Repeated call to OnStartRequest -- can this happen?");
 
   mSVGDocumentWrapper = new SVGDocumentWrapper();
-  nsresult rv = mSVGDocumentWrapper->OnStartRequest(aRequest);
+  RefPtr<SVGDocumentWrapper> wrapper = mSVGDocumentWrapper;
+  nsresult rv = wrapper->OnStartRequest(aRequest);
   if (NS_FAILED(rv)) {
     mSVGDocumentWrapper = nullptr;
     mError = true;
@@ -1488,7 +1485,8 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     return NS_ERROR_FAILURE;
   }
 
-  return mSVGDocumentWrapper->OnStopRequest(aRequest, aStatus);
+  RefPtr<SVGDocumentWrapper> wrapper = mSVGDocumentWrapper;
+  return wrapper->OnStopRequest(aRequest, aStatus);
 }
 
 void VectorImage::OnSVGDocumentParsed() {
@@ -1604,6 +1602,10 @@ void VectorImage::OnSVGDocumentError() {
   // invalid document.
   ReportDocumentUseCounters();
 
+  // ProgressTracker::SyncNotifyProgress may release us, so ensure we
+  // stick around long enough to complete our work.
+  RefPtr<VectorImage> kungFuDeathGrip(this);
+
   if (mProgressTracker) {
     // Notify observers about the error and unblock page load.
     Progress progress = FLAG_HAS_ERROR;
@@ -1629,8 +1631,8 @@ VectorImage::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInStr,
     return NS_ERROR_FAILURE;
   }
 
-  return mSVGDocumentWrapper->OnDataAvailable(aRequest, aInStr, aSourceOffset,
-                                              aCount);
+  RefPtr<SVGDocumentWrapper> wrapper = mSVGDocumentWrapper;
+  return wrapper->OnDataAvailable(aRequest, aInStr, aSourceOffset, aCount);
 }
 
 // --------------------------

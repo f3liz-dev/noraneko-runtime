@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,17 +6,18 @@
 #include "GPUProcessHost.h"
 #include "GPUProcessManager.h"
 #include "GfxInfoBase.h"
+#include "ProfilerParent.h"
 #include "TelemetryProbesReporter.h"
-#include "VideoUtils.h"
 #include "VRProcessManager.h"
+#include "VideoUtils.h"
 #include "gfxConfig.h"
 #include "gfxPlatform.h"
 #include "mozilla/Components.h"
 #include "mozilla/FOGIPC.h"
+#include "mozilla/HangDetails.h"
+#include "mozilla/RemoteMediaManagerChild.h"  // For RemoteMediaIn
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/glean/GfxMetrics.h"
-#include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/dom/CheckerboardReportService.h"
@@ -26,8 +25,8 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/HangDetails.h"
-#include "mozilla/RemoteMediaManagerChild.h"  // For RemoteMediaIn
+#include "mozilla/glean/GfxMetrics.h"
+#include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/APZInputBridgeChild.h"
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
@@ -35,7 +34,6 @@
 #include "nsIGfxInfo.h"
 #include "nsIObserverService.h"
 #include "nsIPropertyBag2.h"
-#include "ProfilerParent.h"
 
 namespace mozilla {
 namespace gfx {
@@ -181,7 +179,8 @@ mozilla::ipc::IPCResult GPUChild::RecvGraphicsError(const nsCString& aError) {
 mozilla::ipc::IPCResult GPUChild::RecvCreateVRProcess() {
   // Make sure create VR process at the main process
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+      StaticPrefs::dom_vr_enabled()) {
     VRProcessManager::Initialize();
     VRProcessManager* vr = VRProcessManager::Get();
     MOZ_ASSERT(vr, "VRProcessManager must be initialized first.");
@@ -197,19 +196,20 @@ mozilla::ipc::IPCResult GPUChild::RecvCreateVRProcess() {
 mozilla::ipc::IPCResult GPUChild::RecvShutdownVRProcess() {
   // Make sure stopping VR process at the main process
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+      StaticPrefs::dom_vr_enabled()) {
     VRProcessManager::Shutdown();
   }
 
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUChild::RecvNotifyUiObservers(
-    const nsCString& aTopic) {
+mozilla::ipc::IPCResult GPUChild::RecvFlushActiveCheckerboardReportsDone() {
   nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
   MOZ_ASSERT(obsSvc);
   if (obsSvc) {
-    obsSvc->NotifyObservers(nullptr, aTopic.get(), nullptr);
+    obsSvc->NotifyObservers(nullptr, "APZ:FlushActiveCheckerboard:Done",
+                            nullptr);
   }
   return IPC_OK();
 }
@@ -292,25 +292,27 @@ bool GPUChild::SendRequestMemoryReport(const uint32_t& aGeneration,
                                        const Maybe<FileDescriptor>& aDMDFile) {
   mMemoryReportRequest = MakeUnique<MemoryReportRequestHost>(aGeneration);
 
-  PGPUChild::SendRequestMemoryReport(
-      aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile,
-      [&](const uint32_t& aGeneration2) {
-        if (GPUProcessManager* gpm = GPUProcessManager::Get()) {
-          if (GPUChild* child = gpm->GetGPUChild()) {
-            if (child->mMemoryReportRequest) {
-              child->mMemoryReportRequest->Finish(aGeneration2);
-              child->mMemoryReportRequest = nullptr;
+  PGPUChild::SendRequestMemoryReport(aGeneration, aAnonymize,
+                                     aMinimizeMemoryUsage, aDMDFile)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](uint32_t aGeneration2) {
+            if (GPUProcessManager* gpm = GPUProcessManager::Get()) {
+              if (GPUChild* child = gpm->GetGPUChild()) {
+                if (child->mMemoryReportRequest) {
+                  child->mMemoryReportRequest->Finish(aGeneration2);
+                  child->mMemoryReportRequest = nullptr;
+                }
+              }
             }
-          }
-        }
-      },
-      [&](mozilla::ipc::ResponseRejectReason) {
-        if (GPUProcessManager* gpm = GPUProcessManager::Get()) {
-          if (GPUChild* child = gpm->GetGPUChild()) {
-            child->mMemoryReportRequest = nullptr;
-          }
-        }
-      });
+          },
+          [](mozilla::ipc::ResponseRejectReason) {
+            if (GPUProcessManager* gpm = GPUProcessManager::Get()) {
+              if (GPUChild* child = gpm->GetGPUChild()) {
+                child->mMemoryReportRequest = nullptr;
+              }
+            }
+          });
 
   return true;
 }

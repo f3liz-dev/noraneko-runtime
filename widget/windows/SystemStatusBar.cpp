@@ -1,30 +1,28 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <strsafe.h>
 #include "SystemStatusBar.h"
 
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
+#include <strsafe.h>
+
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/XULButtonElement.h"
 #include "mozilla/widget/IconLoader.h"
 #include "mozilla/widget/NativeMenu.h"
-#include "mozilla/dom/XULButtonElement.h"
 #include "nsComputedDOMStyle.h"
+#include "nsDocShell.h"
 #include "nsIContentPolicy.h"
+#include "nsIDocShell.h"
 #include "nsISupports.h"
 #include "nsMenuPopupFrame.h"
-#include "nsXULPopupManager.h"
-#include "nsIDocShell.h"
-#include "nsDocShell.h"
 #include "nsWindowGfx.h"
-
+#include "nsXULPopupManager.h"
 #include "shellapi.h"
 
 namespace mozilla::widget {
@@ -92,10 +90,10 @@ StatusBarEntry::StatusBarEntry(Element* aMenu) : mMenu(aMenu), mInitted(false) {
 }
 
 StatusBarEntry::~StatusBarEntry() {
+  Destroy();
   if (!mInitted) {
     return;
   }
-  Destroy();
   ::Shell_NotifyIconW(NIM_DELETE, &mIconData);
   VERIFY(::DestroyWindow(mIconData.hWnd));
 }
@@ -279,7 +277,7 @@ nsresult SystemStatusBar::Init() {
 
 NS_IMETHODIMP
 SystemStatusBar::AddItem(Element* aElement) {
-  RefPtr<StatusBarEntry> entry = new StatusBarEntry(aElement);
+  auto entry = MakeRefPtr<StatusBarEntry>(aElement);
   nsresult rv = entry->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 

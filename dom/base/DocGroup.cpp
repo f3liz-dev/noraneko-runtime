@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,10 +8,12 @@
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ThrottledEventQueue.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/dom/MediaSource.h"
 #include "mozilla/dom/WindowContext.h"
 #include "nsDOMMutationObserver.h"
 #include "nsIDirectTaskDispatcher.h"
@@ -35,11 +35,19 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(DocGroup)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(DocGroup)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSignalSlotList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowsingContextGroup)
+
+  for (const MediaSourceURLEntry& entry : tmp->mMediaSourceURLs.Values()) {
+    CycleCollectionNoteChild(cb, entry.mMediaSource.get(),
+                             "mMediaSourceURLs[].mMediaSource");
+    CycleCollectionNoteChild(cb, entry.mOwner.get(),
+                             "mMediaSourceURLs[].mOwner");
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DocGroup)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSignalSlotList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowsingContextGroup)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mMediaSourceURLs)
 
   // If we still have any documents in this array, they were just unlinked, so
   // clear out our weak pointers to them.
@@ -94,6 +102,51 @@ DocGroup::CustomElementReactionsStack() {
   return mReactionsStack;
 }
 
+CustomElementRegistry* DocGroup::GetActiveConstructorRegistry(
+    JSObject* aConstructor) {
+  MOZ_ASSERT(aConstructor);
+  for (auto& entry : mActiveConstructorMap) {
+    if (entry.mConstructor->CallableOrNull() == aConstructor) {
+      return entry.mRegistry;
+    }
+  }
+  return nullptr;
+}
+
+DocGroup::AutoActiveConstructorRegistry::AutoActiveConstructorRegistry(
+    DocGroup* aDocGroup, CustomElementConstructor* aConstructor,
+    CustomElementRegistry* aRegistry)
+    : mDocGroup(aDocGroup), mConstructor(aConstructor) {
+  MOZ_ASSERT(mDocGroup);
+  MOZ_ASSERT(mConstructor);
+  JSObject* callable = mConstructor->CallableOrNull();
+  for (auto& entry : mDocGroup->mActiveConstructorMap) {
+    if (entry.mConstructor->CallableOrNull() == callable) {
+      mPreviousRegistry = std::move(entry.mRegistry);
+      entry.mRegistry = aRegistry;
+      return;
+    }
+  }
+  mDocGroup->mActiveConstructorMap.AppendElement(
+      ActiveConstructorEntry{mConstructor, aRegistry});
+}
+
+DocGroup::AutoActiveConstructorRegistry::~AutoActiveConstructorRegistry() {
+  JSObject* callable = mConstructor->CallableOrNull();
+  for (auto it = mDocGroup->mActiveConstructorMap.rbegin();
+       it != mDocGroup->mActiveConstructorMap.rend(); ++it) {
+    if (it->mConstructor->CallableOrNull() == callable) {
+      if (mPreviousRegistry) {
+        it->mRegistry = std::move(mPreviousRegistry);
+      } else {
+        mDocGroup->mActiveConstructorMap.RemoveElementAt(
+            std::prev(it.base()).GetIndex());
+      }
+      return;
+    }
+  }
+}
+
 void DocGroup::AddDocument(Document* aDocument) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!mDocuments.Contains(aDocument));
@@ -106,13 +159,13 @@ void DocGroup::AddDocument(Document* aDocument) {
   MOZ_ASSERT_IF(
       aDocument->GetBrowsingContext(),
       aDocument->GetBrowsingContext()->Group() == mBrowsingContextGroup);
-  mDocuments.AppendElement(aDocument);
+  mDocuments.Insert(aDocument);
 }
 
 void DocGroup::RemoveDocument(Document* aDocument) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDocuments.Contains(aDocument));
-  mDocuments.RemoveElement(aDocument);
+  mDocuments.Remove(aDocument);
 
   if (mDocuments.IsEmpty()) {
     mBrowsingContextGroup = nullptr;
@@ -163,6 +216,62 @@ bool DocGroup::IsActive() const {
   }
 
   return false;
+}
+
+nsresult DocGroup::RegisterMediaSourceURL(nsGlobalWindowInner* aWindow,
+                                          MediaSource* aMediaSource,
+                                          nsACString& aURL) {
+  NS_ENSURE_ARG(aWindow);
+  NS_ENSURE_ARG(aMediaSource);
+
+  if (NS_WARN_IF(aWindow->IsDying()) ||
+      NS_WARN_IF(aWindow->GetDocGroup() != this)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = aWindow->PrincipalOrNull();
+  if (NS_WARN_IF(!principal)) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+  nsresult rv = BlobURLProtocolHandler::GenerateURIString(principal, aURL);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(!mMediaSourceURLs.Contains(aURL), "URL collision?");
+  mMediaSourceURLs.InsertOrUpdate(
+      aURL,
+      MediaSourceURLEntry{.mMediaSource = aMediaSource, .mOwner = aWindow});
+
+  // Ensure the Window knows about this URL so it can be cleaned up when the
+  // Window is destroyed, and can be reported in the memory reporter.
+  aWindow->NoteMediaSourceURL(aURL);
+  return NS_OK;
+}
+
+bool DocGroup::UnregisterMediaSourceURL(const nsACString& aURL,
+                                        bool aNotifyWindow) {
+  auto removed = mMediaSourceURLs.Extract(aURL);
+  if (aNotifyWindow && removed && removed->mOwner) {
+    // Remove this MediaSource from the Window which created the URL, removing
+    // it from the memory report and ensuring UnregisterMediaSourceURL won't be
+    // called when the window is destroyed.
+    removed->mOwner->UnnoteMediaSourceURL(aURL);
+  }
+  return removed.isSome();
+}
+
+already_AddRefed<MediaSource> DocGroup::LookupMediaSourceURL(nsIURI* aURI) {
+  MOZ_ASSERT(aURI && aURI->SchemeIs(BLOBURI_SCHEME));
+
+  nsAutoCString spec;
+  if (NS_WARN_IF(NS_FAILED(aURI->GetSpec(spec)))) {
+    return nullptr;
+  }
+  if (auto entry = mMediaSourceURLs.Lookup(spec)) {
+    return do_AddRef(entry->mMediaSource);
+  }
+  return nullptr;
 }
 
 }  // namespace mozilla::dom

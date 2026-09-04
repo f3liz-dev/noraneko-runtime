@@ -26,7 +26,6 @@
 #include "api/scoped_refptr.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/test/metrics/metric.h"
-#include "api/test/rtc_error_matchers.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "p2p/base/transport_description.h"
@@ -81,8 +80,11 @@ class PeerConnectionDataChannelOpenTest
   void SignalIceCandidates(
       scoped_refptr<PeerConnectionTestWrapper> from_pc_wrapper,
       scoped_refptr<PeerConnectionTestWrapper> to_pc_wrapper) {
-    from_pc_wrapper->SignalOnIceCandidateReady.connect(
-        to_pc_wrapper.get(), &PeerConnectionTestWrapper::AddIceCandidate);
+    from_pc_wrapper->SubscribeOnIceCandidateReady(
+        this, [to_pc = to_pc_wrapper.get()](const std::string& arg1, int arg2,
+                                            const std::string& arg3) {
+          to_pc->AddIceCandidate(arg1, arg2, arg3);
+        });
   }
 
   void Negotiate(scoped_refptr<PeerConnectionTestWrapper> local_pc_wrapper,
@@ -124,8 +126,7 @@ class PeerConnectionDataChannelOpenTest
       scoped_refptr<PeerConnectionTestWrapper> pc_wrapper) {
     auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
     pc_wrapper->pc()->CreateOffer(observer.get(), {});
-    EXPECT_THAT(WaitUntil([&] { return observer->called(); }, IsTrue()),
-                IsRtcOk());
+    EXPECT_TRUE(WaitUntil([&] { return observer->called(); }));
     return observer->MoveDescription();
   }
 
@@ -133,8 +134,7 @@ class PeerConnectionDataChannelOpenTest
       scoped_refptr<PeerConnectionTestWrapper> pc_wrapper) {
     auto observer = make_ref_counted<MockCreateSessionDescriptionObserver>();
     pc_wrapper->pc()->CreateAnswer(observer.get(), {});
-    EXPECT_THAT(WaitUntil([&] { return observer->called(); }, IsTrue()),
-                IsRtcOk());
+    EXPECT_TRUE(WaitUntil([&] { return observer->called(); }));
     return observer->MoveDescription();
   }
 
@@ -224,7 +224,10 @@ INSTANTIATE_TEST_SUITE_P(
             "Enabled/",
             // SPED + DTLS 1.3
             "WebRTC-IceHandshakeDtls/Enabled/WebRTC-ForceDtls13/"
-            "Enabled/"),
+            "Enabled/",
+            // SPED + DTLS 1.3 + SNAP
+            "WebRTC-IceHandshakeDtls/Enabled/WebRTC-ForceDtls13/"
+            "Enabled/WebRTC-Sctp-Snap/Enabled/"),
         testing::Bool(),  // Whether to skip signaling candidates from
                           // first connection.
         testing::Values(

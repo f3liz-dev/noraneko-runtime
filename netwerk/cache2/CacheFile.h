@@ -9,9 +9,9 @@
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
 #include "Dictionary.h"
-#include "nsRefPtrHashtable.h"
-#include "nsClassHashtable.h"
 #include "mozilla/Mutex.h"
+#include "nsClassHashtable.h"
+#include "nsRefPtrHashtable.h"
 
 class nsIAsyncOutputStream;
 class nsICacheEntry;
@@ -203,6 +203,10 @@ class MOZ_CAPABILITY("mutex") CacheFile final
   nsresult SetAltMetadata(const char* aAltMetadata);
 
   nsresult InitIndexEntry();
+
+  // Marks a new disk-backed entry as encrypted and assigns its stable per-file
+  // salt when disk cache encryption is enabled. No-op otherwise.
+  void SetupEncryption() MOZ_REQUIRES(this);
 
   bool mOpeningFile MOZ_GUARDED_BY(this){false};
   bool mReady MOZ_GUARDED_BY(this){false};

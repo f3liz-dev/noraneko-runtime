@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "nsHttpBasicAuth.h"
-#include "nsCRT.h"
-#include "nsString.h"
+
+#include "HttpLog.h"
 #include "mozilla/Base64.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "nsCRT.h"
+#include "nsString.h"
 
 namespace mozilla {
 namespace net {
@@ -68,7 +67,7 @@ nsHttpBasicAuth::GenerateCredentials(
     const nsAString& password, nsISupports** sessionState,
     nsISupports** continuationState, uint32_t* aFlags, nsACString& creds) {
   LOG(("nsHttpBasicAuth::GenerateCredentials [challenge=%s]\n",
-       aChallenge.BeginReading()));
+       PromiseFlatCString(aChallenge).get()));
 
   *aFlags = 0;
 
@@ -87,7 +86,7 @@ nsHttpBasicAuth::GenerateCredentials(
   nsresult rv = Base64EncodeAppend(userpass, authString);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  creds = authString;
+  creds = std::move(authString);
   return NS_OK;
 }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozilla/net/Cookie.h"
 #include "mozilla/net/CookieCommons.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsContentUtils.h"
 #include "nsICookieNotification.h"
 
 using namespace mozilla::dom;
@@ -166,7 +165,7 @@ void CookieStoreSubscriptionService::Subscribe(
 
   if (!registrationData) {
     registrationData = mData.AppendElement();
-    registrationData->mRegistration = tmp;
+    registrationData->mRegistration = std::move(tmp);
   }
 
   bool toStore = false;
@@ -323,6 +322,22 @@ CookieStoreSubscriptionService::Observe(nsISupports* aSubject,
       continue;
     }
 
+    nsCOMPtr<nsIURI> principalURI;
+    rv = NS_NewURI(getter_AddRefs(principalURI), principalInfo.spec());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+
+    nsAutoCString host;
+    rv = nsContentUtils::GetHostOrIPv6WithBrackets(principalURI, host);
+    if (NS_WARN_IF(NS_FAILED(rv)) || host.IsEmpty()) {
+      continue;
+    }
+
+    if (!CookieCommons::DomainMatches(Cookie::Cast(cookie), host)) {
+      continue;
+    }
+
     for (const CookieSubscription& subscription : data.mSubscriptions) {
       if (subscription.name().isSome() && subscription.name().value() != name) {
         continue;
@@ -393,7 +408,8 @@ void CookieStoreSubscriptionService::ParseAndAddSubscription(
   Json::Value value;
   Json::Reader jsonReader;
 
-  MOZ_ASSERT(jsonReader.parse(aValue.BeginReading(), value, false));
+  MOZ_ASSERT(jsonReader.parse(aValue.BeginReading(), aValue.EndReading(), value,
+                              false));
   MOZ_ASSERT(value.isObject());
 
   for (Json::ValueConstIterator iter = value.begin(); iter != value.end();

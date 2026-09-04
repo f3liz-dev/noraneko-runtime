@@ -1,8 +1,8 @@
 import pytest
 
 URL = "https://onlyfaucet.com/"
-BLOCKED_CSS = "#cf-error-details"
-UNBLOCKED_CSS = "#content"
+BLOCKED_TEXT = "you have been blocked"
+UNBLOCKED_CSS = "[data-target='#login']"
 
 
 @pytest.mark.asyncio
@@ -10,4 +10,4 @@ UNBLOCKED_CSS = "#content"
 async def test_regression(client):
     await client.navigate(URL)
     assert client.await_css(UNBLOCKED_CSS, is_displayed=True)
-    assert not client.find_css(BLOCKED_CSS, is_displayed=True)
+    assert not client.find_text(BLOCKED_TEXT, is_displayed=True)

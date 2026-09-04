@@ -8,6 +8,7 @@ import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.nimbus.messaging.MessageData
 import mozilla.components.service.nimbus.messaging.MicrosurveyAnswer
 import mozilla.components.service.nimbus.messaging.MicrosurveyConfig
+import mozilla.components.service.nimbus.messaging.MicrosurveyOrdering
 import mozilla.components.service.nimbus.messaging.StyleData
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
@@ -26,9 +27,9 @@ class MicrosurveyUIDataTest {
     private val answer2 = MicrosurveyAnswer(text = StringHolder(null, "b"), ordering = 1)
     private val answer3 = MicrosurveyAnswer(text = StringHolder(null, "c"), ordering = 2)
     private val answer4 = MicrosurveyAnswer(text = StringHolder(null, "d"), ordering = 3)
-    private val unorderedAnswers = listOf(answer3, answer1, answer4, answer2)
+    private val answers = listOf(answer1, answer2, answer3, answer4)
 
-    private val orderedAnswersText = listOf("a", "b", "c", "d")
+    private val answersText = listOf("a", "b", "c", "d")
 
     @Before
     fun setup() {
@@ -40,7 +41,7 @@ class MicrosurveyUIDataTest {
         val microsurveyConfig = MicrosurveyConfig(
             utmContent = "test utm content",
             icon = R.drawable.ic_print,
-            answers = unorderedAnswers,
+            answers = answers,
         )
         val messageData = MessageData(
             title = StringHolder(null, "test title"),
@@ -54,11 +55,13 @@ class MicrosurveyUIDataTest {
             promptTitle = "test title",
             icon = R.drawable.ic_print,
             question = "test question",
-            answers = orderedAnswersText,
+            answers = answersText,
             utmContent = "test utm content",
+            maxNumberLines = 2,
         )
         val actual = message.toMicrosurveyUIData()
-        assertEquals(expected, actual)
+        assertEquals(expected.copy(answers = emptyList()), actual?.copy(answers = emptyList()))
+        assertEquals(answersText.sorted(), actual?.answers?.sorted())
     }
 
     @Test
@@ -66,7 +69,7 @@ class MicrosurveyUIDataTest {
         val microsurveyConfig = MicrosurveyConfig(
             utmContent = "test utm content",
             icon = R.drawable.ic_print,
-            answers = unorderedAnswers,
+            answers = answers,
         )
         val messageData = MessageData(
             text = StringHolder(null, "test question"),
@@ -112,7 +115,7 @@ class MicrosurveyUIDataTest {
     fun `WHEN microsurvey has no icon THEN toMicrosurveyUIData returns the UI data from the raw data with the default icon`() {
         val microsurveyConfig = MicrosurveyConfig(
             utmContent = "test utm content",
-            answers = unorderedAnswers,
+            answers = answers,
         )
         val messageData = MessageData(
             title = StringHolder(null, "test title"),
@@ -126,18 +129,20 @@ class MicrosurveyUIDataTest {
             promptTitle = "test title",
             icon = iconsR.drawable.mozac_ic_lightbulb_24,
             question = "test question",
-            answers = orderedAnswersText,
+            answers = answersText,
             utmContent = "test utm content",
+            maxNumberLines = 2,
         )
         val actual = message.toMicrosurveyUIData()
-        assertEquals(expected, actual)
+        assertEquals(expected.copy(answers = emptyList()), actual?.copy(answers = emptyList()))
+        assertEquals(answersText.sorted(), actual?.answers?.sorted())
     }
 
     @Test
     fun `WHEN microsurvey has no utm content THEN toMicrosurveyUIData returns the UI data from the raw data`() {
         val microsurveyConfig = MicrosurveyConfig(
             icon = R.drawable.ic_print,
-            answers = unorderedAnswers,
+            answers = answers,
         )
         val messageData = MessageData(
             title = StringHolder(null, "test title"),
@@ -151,11 +156,41 @@ class MicrosurveyUIDataTest {
             promptTitle = "test title",
             icon = R.drawable.ic_print,
             question = "test question",
-            answers = orderedAnswersText,
+            answers = answersText,
             utmContent = null,
+            maxNumberLines = 2,
         )
         val actual = message.toMicrosurveyUIData()
-        assertEquals(expected, actual)
+        assertEquals(expected.copy(answers = emptyList()), actual?.copy(answers = emptyList()))
+        assertEquals(answersText.sorted(), actual?.answers?.sorted())
+    }
+
+    @Test
+    fun `WHEN microsurvey has pinned randomized ordering THEN answers with ordering greater than 0 are sorted in ascending order before shuffled answers`() {
+        val answer1 = MicrosurveyAnswer(text = StringHolder(null, "b"), ordering = 2)
+        val answer2 = MicrosurveyAnswer(text = StringHolder(null, "c"), ordering = 3)
+        val answer3 = MicrosurveyAnswer(text = StringHolder(null, "a"), ordering = 1)
+        val answer4 = MicrosurveyAnswer(text = StringHolder(null, "d"), ordering = 0)
+        val answer5 = MicrosurveyAnswer(text = StringHolder(null, "e"), ordering = 0)
+        val answers = listOf(answer1, answer2, answer3, answer4, answer5)
+
+        val microsurveyConfig = MicrosurveyConfig(
+            icon = R.drawable.ic_print,
+            answers = answers,
+            answerOrderingType = MicrosurveyOrdering.PINNED_RANDOMIZED,
+        )
+        val messageData = MessageData(
+            title = StringHolder(null, "test title"),
+            text = StringHolder(null, "test question"),
+            microsurveyConfig = microsurveyConfig,
+        )
+        val message = createTestMessage(messageData)
+
+        val actual = message.toMicrosurveyUIData()
+
+        assertEquals(5, actual?.answers?.size)
+        assertEquals(listOf("a", "b", "c"), actual?.answers?.subList(0, 3))
+        assertEquals(setOf("d", "e"), actual?.answers?.subList(3, 5)?.toSet())
     }
 
     private fun createTestMessage(messageData: MessageData) = Message(

@@ -204,7 +204,7 @@ struct hb_hashmap_t
 
     unsigned int power = hb_bit_storage (hb_max (hb_max ((unsigned) population, new_population) * 2, 4u));
     unsigned int new_size = 1u << power;
-    item_t *new_items = (item_t *) hb_malloc ((size_t) new_size * sizeof (item_t));
+    item_t *new_items = (item_t *) hb_malloc2 ((size_t) new_size, sizeof (item_t));
     if (unlikely (!new_items))
     {
       successful = false;
@@ -379,7 +379,11 @@ struct hb_hashmap_t
 
   void clear ()
   {
-    if (unlikely (!successful)) return;
+    /* Early-out on already-empty.  Protects the Null singleton
+     * (zero-initialized) from any writes.  Any non-empty hashmap
+     * is a real heap instance with writable items, so clearing
+     * under !successful is safe. */
+    if (!population && !occupancy) return;
 
     for (auto &_ : hb_iter (items, size ()))
     {

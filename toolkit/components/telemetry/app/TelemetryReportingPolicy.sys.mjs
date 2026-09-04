@@ -79,6 +79,19 @@ export var Policy = {
     return TelemetryReportingPolicyImpl._showModal(data);
   },
   delayedSetup: async () => TelemetryReportingPolicyImpl._delayedSetup(),
+  // Windows and macOS are enabled through the default pref value in firefox.js
+  // and don't need a runtime opt in. Otherwise, TOU is only supported on
+  // official Mozilla Linux distributions. All other platforms are excluded both
+  // by the pref default in firefox.js and by this explicit Linux gate.
+  shouldEnableTOUAtRuntime: () => {
+    return AppConstants.platform === "linux" && Policy.isEligibleOnLinux();
+  },
+  isEligibleOnLinux: () => {
+    return Services.prefs
+      .getDefaultBranch(null)
+      .getCharPref("distribution.id", "")
+      .startsWith("mozilla");
+  },
 };
 
 /**
@@ -138,7 +151,7 @@ export var TelemetryReportingPolicy = {
    * It is dispatched when:
    *   1. The user accepts the Terms of Use (ToU), or
    *   2. The user has previously accepted the ToU, or
-   *   2. The user is not eligible to see the ToU. Example local builds and temporarily Linux.
+   *   2. The user is not eligible to see the ToU. Example local builds and non-official Linux distributions.
    */
   TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE: "telemetry-tou-accepted-or-ineligible",
   // Make this value accessible on TelemetryReportingPolicy
@@ -248,6 +261,19 @@ export var TelemetryReportingPolicy = {
 
   async ensureUserIsNotified() {
     return TelemetryReportingPolicyImpl.ensureUserIsNotified();
+  },
+
+  willShowTOUModal() {
+    return TelemetryReportingPolicyImpl._shouldShowTOU({
+      ignoreInProgress: true,
+    });
+  },
+
+  hasUserResolvedTermsOfUse() {
+    return (
+      TelemetryReportingPolicyImpl.hasUserAcceptedCurrentTOU ||
+      TelemetryReportingPolicyImpl.isUserNotifiedOfCurrentPolicy
+    );
   },
 };
 
@@ -653,12 +679,12 @@ var TelemetryReportingPolicyImpl = {
       "browser.preonboarding.enrolledInOnTrainRollout",
       false
     );
-    // TOS is current disabled for Linux users, who see the legacy data
-    // reporting flow instead (see Bug 1964180).
-    const TOSEnabled = Services.prefs.getBoolPref(
-      "browser.preonboarding.enabled",
-      true
-    );
+    // On Linux, TOU is only available for official linux builds. Users on
+    // other Linux builds see the legacy data reporting flow instead (see
+    // Bug 1964180).
+    const TOSEnabled =
+      (AppConstants.platform !== "linux" || Policy.isEligibleOnLinux()) &&
+      Services.prefs.getBoolPref("browser.preonboarding.enabled", true);
     const acceptedAfterTOULandedAsDefault =
       TOSEnabled &&
       enrolled &&
@@ -876,7 +902,12 @@ var TelemetryReportingPolicyImpl = {
   /**
    * Determine whether the user should be shown the terms of use.
    */
-  _shouldShowTOU() {
+  _shouldShowTOU(opts = {}) {
+    if (AppConstants.platform === "linux" && !Policy.isEligibleOnLinux()) {
+      this._log.trace("_shouldShowTOU - Non-eligible Linux distribution.");
+      return false;
+    }
+
     // In some cases, _shouldShowTOU can be called before the Nimbus variables
     // are set. When this happens, we call _configureFromNimbus to initialize
     // these variables before evaluating them. This ensures we have accurate
@@ -922,7 +953,7 @@ var TelemetryReportingPolicyImpl = {
       return false;
     }
 
-    if (this._notificationInProgress) {
+    if (!opts.ignoreInProgress && this._notificationInProgress) {
       this._log.trace(
         "_shouldShowTOU - User not notified, notification already in progress."
       );
@@ -1259,24 +1290,25 @@ var TelemetryReportingPolicyImpl = {
     }
     this._nimbusVariables = lazy.NimbusFeatures.preonboarding.getAllVariables();
 
-    if (this._nimbusVariables.enabled === null) {
-      const preonboardingMessage =
-        lazy.OnboardingMessageProvider.getPreonboardingMessages().find(
-          m => m.id === "NEW_USER_TOU_ONBOARDING"
-        );
-      // Use default message variables, overriding with values from any set
-      // fallback prefs.
-      this._nimbusVariables = {
-        ...preonboardingMessage,
-        ...Object.fromEntries(
-          Object.entries(this._nimbusVariables).filter(
-            ([_, value]) => value !== null
-          )
-        ),
-      };
+    if (Policy.shouldEnableTOUAtRuntime()) {
+      this._nimbusVariables.enabled = null;
+    }
+
+    // Only resolve the OnboardingMessageProvider lazy getter when defaults
+    // are actually needed (it loads a browser-only module, which fails in
+    // stripped-down environments such as xpcshell child processes launched
+    // in test automation)
+    if (
+      this._nimbusVariables.enabled === null ||
+      (this._nimbusVariables.enabled && !this._nimbusVariables.screens?.length)
+    ) {
       this._log.trace(
         `_configureFromNimbus: using default preonboarding message`
       );
+      this._nimbusVariables =
+        lazy.OnboardingMessageProvider.getPreonboardingVariablesWithDefaults(
+          this._nimbusVariables
+        );
     }
 
     if (this._nimbusVariables.enabled) {
@@ -1325,6 +1357,9 @@ var TelemetryReportingPolicyImpl = {
     let win = BrowserWindowTracker.getTopWindow({
       allowFromInactiveWorkspace: true,
     });
+    if (!win) {
+      return false;
+    }
 
     const config = {
       type: "SHOW_SPOTLIGHT",
@@ -1341,7 +1376,7 @@ var TelemetryReportingPolicyImpl = {
       },
     };
 
-    SpecialMessageActions.handleAction(config, win);
+    SpecialMessageActions.handleAction(config, win.gBrowser.selectedBrowser);
     this._notificationInProgress = true;
 
     return true;

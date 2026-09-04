@@ -1,4 +1,8 @@
-import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
+import {
+  actionCreators as ac,
+  actionTypes as at,
+  actionUtils as au,
+} from "common/Actions.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 import { PrefsFeed } from "lib/PrefsFeed.sys.mjs";
 
@@ -25,10 +29,17 @@ describe("PrefsFeed", () => {
         getStringPref: sinon.spy(),
         getIntPref: sinon.spy(),
         getBoolPref: sinon.spy(),
+        addObserver: sinon.spy(),
+        removeObserver: sinon.spy(),
       },
       obs: {
         removeObserver: sinon.spy(),
         addObserver: sinon.spy(),
+      },
+      // Version comparator for the theme-picker backward-compat gate; default to
+      // a supported (>= 155) host so existing browserNovaEnabled assertions hold.
+      vc: {
+        compare: sinon.stub().returns(0),
       },
     };
     SelectableProfileServiceStub = {
@@ -68,6 +79,53 @@ describe("PrefsFeed", () => {
   it("should set a pref when a SET_PREF action is received", () => {
     feed.onAction(ac.SetPref("foo", 2));
     assert.calledWith(feed._prefs.set, "foo", 2);
+  });
+  it("should set every pref when a SET_MULTIPLE_PREFS action is received", () => {
+    feed.onAction(ac.SetMultiplePrefs({ foo: 2, bar: 3 }));
+    assert.calledWith(feed._prefs.set, "foo", 2);
+    assert.calledWith(feed._prefs.set, "bar", 3);
+  });
+  it("should coalesce SET_MULTIPLE_PREFS into one content MULTIPLE_PREFS_CHANGED while still notifying feeds per pref", () => {
+    // The branch observer fires onPrefChanged synchronously per _prefs.set.
+    feed._prefs.set = sinon.spy((name, value) =>
+      feed.onPrefChanged(name, value)
+    );
+    feed.onAction(ac.SetMultiplePrefs({ foo: 2, bar: 3 }));
+
+    const dispatched = feed.store.dispatch.getCalls().map(call => call.args[0]);
+
+    // Content gets exactly one combined MULTIPLE_PREFS_CHANGED broadcast.
+    const prefsChanged = dispatched.filter(
+      a => a.type === at.MULTIPLE_PREFS_CHANGED
+    );
+    assert.equal(prefsChanged.length, 1);
+    assert.deepEqual(prefsChanged[0].data.values, { foo: 2, bar: 3 });
+    assert.isTrue(au.isBroadcastToContent(prefsChanged[0]));
+
+    // Feeds still get per-pref PREF_CHANGED, but main-only (not re-broadcast
+    // to content, which would re-stagger the resize).
+    const prefChanged = dispatched.filter(a => a.type === at.PREF_CHANGED);
+    assert.equal(prefChanged.length, 2);
+    prefChanged.forEach(a => assert.isFalse(au.isBroadcastToContent(a)));
+  });
+  it("should still route skipBroadcast prefs individually during a SET_MULTIPLE_PREFS transaction", () => {
+    feed._prefs.set = sinon.spy((name, value) =>
+      feed.onPrefChanged(name, value)
+    );
+    feed.onAction(ac.SetMultiplePrefs({ foo: 2, baz: 5 }));
+
+    const dispatched = feed.store.dispatch.getCalls().map(call => call.args[0]);
+    const prefsChanged = dispatched.filter(
+      a => a.type === at.MULTIPLE_PREFS_CHANGED
+    );
+    assert.equal(prefsChanged.length, 1);
+    assert.deepEqual(prefsChanged[0].data.values, { foo: 2 });
+
+    const bazChange = dispatched.find(
+      a => a.type === at.PREF_CHANGED && a.data.name === "baz"
+    );
+    assert.ok(bazChange, "baz should be dispatched individually");
+    assert.equal(bazChange.data.value, 5);
   });
   it("should call clearUserPref with action CLEAR_PREF", () => {
     feed.onAction({ type: at.CLEAR_PREF, data: { name: "pref.test" } });
@@ -120,6 +178,30 @@ describe("PrefsFeed", () => {
       testExperiment: { enabled: true },
     });
   });
+  it("should dispatch PREFS_INITIAL_VALUES with adsBackendConfig", () => {
+    const testObject = {
+      meta: { isRollout: false },
+      value: {
+        flags: {
+          feature1: true,
+        },
+      },
+    };
+    sandbox
+      .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+      .returns([testObject]);
+
+    feed.onAction({ type: at.INIT });
+
+    assert.equal(
+      feed.store.dispatch.firstCall.args[0].type,
+      at.PREFS_INITIAL_VALUES
+    );
+    const [{ data }] = feed.store.dispatch.firstCall.args;
+    assert.deepEqual(data.adsBackendConfig, {
+      feature1: true,
+    });
+  });
   it("should dispatch PREFS_INITIAL_VALUES with an empty object if no experiment is returned", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns(null);
     feed.onAction({ type: at.INIT });
@@ -163,6 +245,45 @@ describe("PrefsFeed", () => {
       global.Region.REGION_TOPIC
     );
   });
+  it("should add a browser.nova.enabled observer on init", () => {
+    feed.init();
+    assert.calledWith(
+      ServicesStub.prefs.addObserver,
+      "browser.nova.enabled",
+      feed
+    );
+  });
+  it("should remove the browser.nova.enabled observer on uninit", () => {
+    feed.uninit();
+    assert.calledWith(
+      ServicesStub.prefs.removeObserver,
+      "browser.nova.enabled",
+      feed
+    );
+  });
+  it("should broadcast browserNovaEnabled when browser.nova.enabled changes", () => {
+    ServicesStub.prefs.getBoolPref = sinon.stub().returns(true);
+    feed.observe(null, "nsPref:changed", "browser.nova.enabled");
+    assert.calledWith(
+      feed.store.dispatch,
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: { name: "browserNovaEnabled", value: true },
+      })
+    );
+  });
+  it("keeps browserNovaEnabled false on hosts older than 155 even when the pref is on", () => {
+    ServicesStub.prefs.getBoolPref = sinon.stub().returns(true);
+    ServicesStub.vc.compare = sinon.stub().returns(-1);
+    feed.observe(null, "nsPref:changed", "browser.nova.enabled");
+    assert.calledWith(
+      feed.store.dispatch,
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: { name: "browserNovaEnabled", value: false },
+      })
+    );
+  });
   it("should send a PREF_CHANGED action when onPrefChanged is called", () => {
     feed.onPrefChanged("foo", 2);
     assert.calledWith(
@@ -203,6 +324,33 @@ describe("PrefsFeed", () => {
     assert.notCalled(feed.store.dispatch);
     feed.onPocketExperimentUpdated({}, "feature-rollout-loaded");
     assert.notCalled(feed.store.dispatch);
+  });
+  it("should set initialWallpaper when currentWallpaper is set and initialWallpaper is unset", () => {
+    sandbox
+      .stub(global.NimbusFeatures.pocketNewtab, "getAllVariables")
+      .returns({
+        currentWallpaper: "celestial",
+      });
+    feed.onPocketExperimentUpdated();
+    assert.calledWith(
+      feed._prefs.set,
+      "newtabWallpapers.initialWallpaper",
+      "celestial"
+    );
+  });
+  it("should not overwrite initialWallpaper if it is already set", () => {
+    FAKE_PREFS.set("newtabWallpapers.initialWallpaper", "celestial");
+    sandbox
+      .stub(global.NimbusFeatures.pocketNewtab, "getAllVariables")
+      .returns({
+        currentWallpaper: "celestial",
+      });
+    feed.onPocketExperimentUpdated();
+    assert.neverCalledWith(
+      feed._prefs.set,
+      "newtabWallpapers.initialWallpaper",
+      sinon.match.any
+    );
   });
   it("should send a PREF_CHANGED actions when onExperimentUpdated is called", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns({
@@ -398,6 +546,304 @@ describe("PrefsFeed", () => {
         })
       );
     });
+    it("should write trainhop widgets.weatherSize to the default branch", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { weatherSize: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.calledWith(setStringPref, "widgets.weather.size", "large");
+    });
+
+    it("should write widgetsSettings default-enabled values to the default branch", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetsSettings",
+          payload: { listsEnabled: false, focusTimerEnabled: true },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.calledWith(setBoolPref, "widgets.lists.enabled", false);
+      assert.calledWith(setBoolPref, "widgets.focusTimer.enabled", true);
+    });
+
+    it("should not write a widget default when its widgetsSettings key is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetsSettings",
+          payload: { listsEnabled: false },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.clocks.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should write widgetPictureOfTheDay.enabled to the user pref default branch, not the system pref", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPictureOfTheDay",
+          payload: {
+            enabled: true,
+            setAsWallpaperEnabled: true,
+            size: "large",
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      // `enabled` overrides the user-facing enabled pref's default; `visible`
+      // (not present here) would reveal the widget separately; size and
+      // setAsWallpaperEnabled are read directly from trainhopConfig.
+      assert.calledWith(setBoolPref, "widgets.pictureOfTheDay.enabled", true);
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.system.pictureOfTheDay.enabled",
+        sinon.match.any
+      );
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.pictureOfTheDay.setAsWallpaper.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write the POTD enabled default when widgetPictureOfTheDay.enabled is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPictureOfTheDay",
+          payload: { size: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.pictureOfTheDay.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should write widgetCrossword.enabled to the user pref default branch, not the system pref", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetCrossword",
+          payload: {
+            enabled: true,
+            endpoint: "https://example.com/crossword/index.html",
+            size: "large",
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      // `enabled` overrides the user-facing enabled pref's default; `visible`
+      // (not present here) would reveal the widget separately; size and
+      // endpoint are read directly from trainhopConfig.
+      assert.calledWith(setBoolPref, "widgets.crossword.enabled", true);
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.system.crossword.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should write widgetPrivacy.enabled to the user pref default branch, not the system pref", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPrivacy",
+          payload: {
+            enabled: true,
+            showVpnMessages: true,
+            maxDisplayCount: 50,
+            size: "large",
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      // `enabled` overrides the user-facing enabled pref's default; `visible`
+      // (not present here) would reveal the widget separately; size and the
+      // message-scheduling keys are read directly from trainhopConfig.
+      assert.calledWith(setBoolPref, "widgets.privacy.enabled", true);
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.system.privacy.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write the privacy enabled default when widgetPrivacy.enabled is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetPrivacy",
+          payload: { showVpnMessages: true },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.privacy.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write the crossword enabled default when widgetCrossword.enabled is absent", () => {
+      const setBoolPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setBoolPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgetCrossword",
+          payload: { size: "large" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setBoolPref,
+        "widgets.crossword.enabled",
+        sinon.match.any
+      );
+    });
+
+    it("should not write widgets.weather.size when weatherSize is missing", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { enabled: true },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setStringPref,
+        "widgets.weather.size",
+        sinon.match.any
+      );
+    });
+
+    it("should not write widgets.weather.size when weatherSize is empty string", () => {
+      const setStringPref = sinon.spy();
+      ServicesStub.prefs.getDefaultBranch = sinon
+        .stub()
+        .returns({ setStringPref });
+      const enrollment = {
+        meta: { isRollout: false },
+        value: {
+          type: "widgets",
+          payload: { weatherSize: "" },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([enrollment]);
+
+      feed.onTrainhopExperimentUpdated();
+
+      assert.neverCalledWith(
+        setStringPref,
+        "widgets.weather.size",
+        sinon.match.any
+      );
+    });
+
     it("should dedupe multi-payload format with experiment taking precedence over rollout", () => {
       const rollout = {
         meta: {
@@ -454,6 +900,149 @@ describe("PrefsFeed", () => {
       );
     });
   });
+  describe("adsBackend", () => {
+    it("should send a PREF_CHANGED action when onAdsBackendUpdated is called", () => {
+      const testObject = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+            },
+          },
+        })
+      );
+    });
+    it("should prefer experiments over rollouts for individual flags", () => {
+      const testObject1 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature1: false,
+            feature2: true,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature2: false,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+              feature2: false,
+            },
+          },
+        })
+      );
+    });
+    it("should handle and merge multiple experiments and rollouts", () => {
+      const testObject1 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature1: true,
+            feature2: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature1: false,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: { isRollout: true },
+        value: {
+          flags: {
+            feature3: true,
+          },
+        },
+      };
+      const testObject4 = {
+        meta: { isRollout: false },
+        value: {
+          flags: {
+            feature3: false,
+            feature4: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3, testObject4]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {
+              feature1: true,
+              feature2: true,
+              feature3: false,
+              feature4: true,
+            },
+          },
+        })
+      );
+    });
+    it("should handle no active experiments and rollouts", () => {
+      sandbox
+        .stub(global.NimbusFeatures.adsBackend, "getAllEnrollments")
+        .returns([]);
+      feed.onAdsBackendUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "adsBackendConfig",
+            value: {},
+          },
+        })
+      );
+    });
+  });
   it("should dispatch PREF_CHANGED when onWidgetsUpdated is called", () => {
     sandbox
       .stub(global.NimbusFeatures.newtabWidgets, "getAllVariables")
@@ -485,6 +1074,7 @@ describe("PrefsFeed", () => {
     sandbox.spy(global.NimbusFeatures.pocketNewtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtabTrainhop, "offUpdate");
+    sandbox.spy(global.NimbusFeatures.adsBackend, "offUpdate");
     feed.removeListeners();
     assert.calledWith(
       global.NimbusFeatures.pocketNewtab.offUpdate,
@@ -497,6 +1087,10 @@ describe("PrefsFeed", () => {
     assert.calledWith(
       global.NimbusFeatures.newtabTrainhop.offUpdate,
       feed.onTrainhopExperimentUpdated
+    );
+    assert.calledWith(
+      global.NimbusFeatures.adsBackend.offUpdate,
+      feed.onAdsBackendUpdated
     );
     assert.calledWith(
       ServicesStub.obs.removeObserver,

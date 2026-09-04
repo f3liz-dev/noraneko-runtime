@@ -1,28 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsThreadPool.h"
 
-#include "nsCOMArray.h"
 #include "ThreadDelay.h"
-#include "nsIEventTarget.h"
-#include "nsIRunnable.h"
-#include "nsThreadManager.h"
-#include "nsThread.h"
-#include "nsThreadUtils.h"
-#include "prinrval.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerRunnable.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StickyTimeDuration.h"
+#include "nsCOMArray.h"
+#include "nsIEventTarget.h"
+#include "nsIRunnable.h"
+#include "nsThread.h"
+#include "nsThreadManager.h"
 #include "nsThreadSyncDispatch.h"
-
-#include <mutex>
+#include "nsThreadUtils.h"
+#include "prinrval.h"
 
 using namespace mozilla;
 
@@ -455,6 +451,10 @@ nsThreadPool::Run() {
 
   MOZ_ASSERT(gCurrentThreadPool.get() == this);
   gCurrentThreadPool.set(nullptr);
+
+  // Clear the thread's back-pointer into this pool so that the profiler's
+  // SamplerThread stops using it for this thread.
+  static_cast<nsThread*>(current.get())->SetPoolThreadFreePtr(nullptr);
 
   if (shutdownThreadOnExit) {
     ShutdownThread(current);

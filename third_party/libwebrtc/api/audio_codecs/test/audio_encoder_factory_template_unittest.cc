@@ -24,9 +24,9 @@
 #include "api/audio_codecs/g722/audio_encoder_g722.h"
 #include "api/audio_codecs/opus/audio_encoder_opus.h"
 #include "api/environment/environment.h"
-#include "api/environment/environment_factory.h"
 #include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_audio_encoder.h"
@@ -92,6 +92,7 @@ struct BaseAudioEncoderApi {
   // Create Encoders with different sample rates depending if it is created
   // through V1 or V2 method so that a test may detect which method was used.
   static constexpr int kV1SameRate = 10'000;
+  static constexpr int kV1NoCodecPairSameRate = 15'000;
   static constexpr int kV2SameRate = 20'000;
 
   struct Config {};
@@ -105,7 +106,7 @@ struct BaseAudioEncoderApi {
   }
 
   static void AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs) {
-    specs->push_back({AudioFormat(), CodecInfo()});
+    specs->push_back({.format = AudioFormat(), .info = CodecInfo()});
   }
 
   static AudioCodecInfo QueryAudioEncoder(const Config&) { return CodecInfo(); }
@@ -118,6 +119,17 @@ struct AudioEncoderApiWithV1Make : BaseAudioEncoderApi {
       std::optional<AudioCodecPairId> /* codec_pair_id */) {
     auto encoder = std::make_unique<NiceMock<MockAudioEncoder>>();
     ON_CALL(*encoder, SampleRateHz).WillByDefault(Return(kV1SameRate));
+    return encoder;
+  }
+};
+
+struct AudioEncoderApiWithV1AndNoCodecPairId : BaseAudioEncoderApi {
+  static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
+      const Config&,
+      int /* payload_type */) {
+    auto encoder = std::make_unique<NiceMock<MockAudioEncoder>>();
+    ON_CALL(*encoder, SampleRateHz)
+        .WillByDefault(Return(kV1NoCodecPairSameRate));
     return encoder;
   }
 };
@@ -155,7 +167,7 @@ struct AudioEncoderApiWithBothV1AndV2Make : BaseAudioEncoderApi {
 
 TEST(AudioEncoderFactoryTemplateTest,
      UsesV1MakeAudioEncoderWhenV2IsNotAvailable) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderApiWithV1Make>();
 
   EXPECT_THAT(factory->Create(env, BaseAudioEncoderApi::AudioFormat(), {}),
@@ -164,8 +176,19 @@ TEST(AudioEncoderFactoryTemplateTest,
 }
 
 TEST(AudioEncoderFactoryTemplateTest,
+     UsesV1NoCodecPairMakeAudioEncoderWhenV2IsNotAvailable) {
+  const Environment env = CreateTestEnvironment();
+  auto factory =
+      CreateAudioEncoderFactory<AudioEncoderApiWithV1AndNoCodecPairId>();
+
+  EXPECT_THAT(factory->Create(env, BaseAudioEncoderApi::AudioFormat(), {}),
+              Pointer(Property(&AudioEncoder::SampleRateHz,
+                               BaseAudioEncoderApi::kV1NoCodecPairSameRate)));
+}
+
+TEST(AudioEncoderFactoryTemplateTest,
      PreferV2MakeAudioEncoderWhenBothAreAvailable) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory =
       CreateAudioEncoderFactory<AudioEncoderApiWithBothV1AndV2Make>();
 
@@ -175,7 +198,7 @@ TEST(AudioEncoderFactoryTemplateTest,
 }
 
 TEST(AudioEncoderFactoryTemplateTest, CanUseTraitWithOnlyV2MakeAudioEncoder) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderApiWithV2Make>();
   EXPECT_THAT(factory->Create(env, BaseAudioEncoderApi::AudioFormat(), {}),
               Pointer(Property(&AudioEncoder::SampleRateHz,
@@ -183,7 +206,7 @@ TEST(AudioEncoderFactoryTemplateTest, CanUseTraitWithOnlyV2MakeAudioEncoder) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, NoEncoderTypes) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   scoped_refptr<AudioEncoderFactory> factory(
       make_ref_counted<
           audio_encoder_factory_template_impl::AudioEncoderFactoryT<>>());
@@ -194,7 +217,7 @@ TEST(AudioEncoderFactoryTemplateTest, NoEncoderTypes) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, OneEncoderType) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderFakeApi<BogusParams>>();
   EXPECT_THAT(factory->GetSupportedEncoders(),
               ::testing::ElementsAre(
@@ -209,7 +232,7 @@ TEST(AudioEncoderFactoryTemplateTest, OneEncoderType) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, TwoEncoderTypes) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderFakeApi<BogusParams>,
                                            AudioEncoderFakeApi<ShamParams>>();
   EXPECT_THAT(factory->GetSupportedEncoders(),
@@ -234,7 +257,7 @@ TEST(AudioEncoderFactoryTemplateTest, TwoEncoderTypes) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, G711) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderG711>();
   EXPECT_THAT(factory->GetSupportedEncoders(),
               ::testing::ElementsAre(
@@ -252,7 +275,7 @@ TEST(AudioEncoderFactoryTemplateTest, G711) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, G722) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderG722>();
   EXPECT_THAT(factory->GetSupportedEncoders(),
               ::testing::ElementsAre(
@@ -267,7 +290,7 @@ TEST(AudioEncoderFactoryTemplateTest, G722) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, L16) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderL16>();
   EXPECT_THAT(
       factory->GetSupportedEncoders(),
@@ -288,7 +311,7 @@ TEST(AudioEncoderFactoryTemplateTest, L16) {
 }
 
 TEST(AudioEncoderFactoryTemplateTest, Opus) {
-  const Environment env = CreateEnvironment();
+  const Environment env = CreateTestEnvironment();
   auto factory = CreateAudioEncoderFactory<AudioEncoderOpus>();
   AudioCodecInfo info = {48000, 1, 32000, 6000, 510000};
   info.allow_comfort_noise = false;

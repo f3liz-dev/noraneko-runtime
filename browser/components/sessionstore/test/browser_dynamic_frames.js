@@ -8,10 +8,6 @@
  * inserted iframes are ignored.
  */
 add_task(async function () {
-  // allow top level data: URI navigations, otherwise clicking a data: link fails
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
   // This URL has the following frames:
   //  + data:text/html,A (static)
   //  + data:text/html,B (static)
@@ -59,10 +55,6 @@ add_task(async function () {
  * create a second root entry that doesn't contain any dynamic children either.
  */
 add_task(async function () {
-  // allow top level data: URI navigations, otherwise clicking a data: link fails
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.data_uri.block_toplevel_data_uri_navigations", false]],
-  });
   // This URL has the following frames:
   //  + data:text/html,A (static)
   //  + data:text/html,C (dynamic iframe)
@@ -86,9 +78,19 @@ add_task(async function () {
   ok(entries[0].url.startsWith("data:text/html"), "correct root url");
   ok(!entries[0].children, "no children collected");
 
-  // Navigate the subframe.
-  await BrowserTestUtils.synthesizeMouseAtCenter("#lnk", {}, browser);
-  await promiseBrowserLoaded(browser, false /* don't ignore subframes */);
+  // Navigate the subframe by activating the link. Activate it directly in
+  // content rather than synthesizing a mouse click: the link sits inline
+  // between two asynchronously-loading iframes, so a coordinate-based click can
+  // intermittently miss it while layout is still reflowing. Set up the load
+  // listener before activating so the subframe load can't be missed either.
+  let loaded = promiseBrowserLoaded(
+    browser,
+    false /* don't ignore subframes */
+  );
+  await SpecialPowers.spawn(browser, [], () => {
+    content.document.getElementById("lnk").click();
+  });
+  await loaded;
 
   await TabStateFlusher.flush(browser);
   ({ entries } = JSON.parse(ss.getTabState(tab)));

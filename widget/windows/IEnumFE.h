@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,8 +58,8 @@ class FormatEtc {
 class CEnumFormatEtc final : public IEnumFORMATETC {
  public:
   explicit CEnumFormatEtc(nsTArray<FormatEtc>& aArray);
-  CEnumFormatEtc();
-  ~CEnumFormatEtc();
+  CEnumFormatEtc() = default;
+  ~CEnumFormatEtc() = default;
 
   // IUnknown impl.
   STDMETHODIMP QueryInterface(REFIID riid, LPVOID* ppv);
@@ -78,8 +77,8 @@ class CEnumFormatEtc final : public IEnumFORMATETC {
 
  private:
   nsTArray<FormatEtc> mFormatList;  // Formats
-  ULONG mRefCnt;                    // Object reference count
-  ULONG mCurrentIdx;                // Current element
+  ULONG mRefCnt{0};                 // Object reference count
+  ULONG mCurrentIdx{0};             // Current element
 
   void SetIndex(uint32_t aIdx);
 };

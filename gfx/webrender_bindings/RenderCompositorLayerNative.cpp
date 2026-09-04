@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +5,26 @@
 #include "RenderCompositorLayerNative.h"
 
 #include "GLContext.h"
+#include "GLContextEGL.h"
 #include "GLContextProvider.h"
+#include "RenderCompositorRecordedFrame.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositionRecorder.h"
 #include "mozilla/layers/GpuFence.h"
 #include "mozilla/layers/NativeLayer.h"
 #include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/layers/SurfacePool.h"
-#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "RenderCompositorRecordedFrame.h"
+
+#if defined(MOZ_WAYLAND)
+#  include "mozilla/layers/NativeLayerWayland.h"
+#endif
 
 namespace mozilla::wr {
 
@@ -35,6 +38,11 @@ RenderCompositorLayerNative::RenderCompositorLayerNative(
   LOG("RenderCompositorLayerNative::RenderCompositorLayerNative()");
 
   MOZ_ASSERT(mNativeLayerRoot);
+#if defined(MOZ_WAYLAND)
+  if (auto* rootWayland = mNativeLayerRoot->AsNativeLayerRootWayland()) {
+    rootWayland->SetGLContext(aGL);
+  }
+#endif
 
 #if defined(XP_DARWIN) || defined(MOZ_WAYLAND)
   auto pool = RenderThread::Get()->SharedSurfacePool();
@@ -73,7 +81,7 @@ RenderedFrameId RenderCompositorLayerNative::EndFrame(
 
   DoSwap();
 
-  MOZ_ASSERT(mPendingGpuFeces.empty());
+  MOZ_ASSERT(mPendingGpuFences.empty());
 
   return frameId;
 }
@@ -106,9 +114,33 @@ bool RenderCompositorLayerNative::ShouldUseLayerCompositor() const {
 
 bool RenderCompositorLayerNative::UseLayerCompositor() const { return true; }
 
+bool RenderCompositorLayerNative::EnableAsyncScreenshot() {
+#if defined(XP_DARWIN)
+  // On macOS, NativeLayerRootSnapshotterCA supports to take snapshot with
+  // multiple layers.
+  return true;
+#else
+  // Request WebRender to use only one layer for content rendering during taking
+  // snapshot. In addition to the content layer, one debug layer could exist.
+  mAsyncScreenshotLastFrameUsed = mCurrentFrame;
+  if (!mEnableAsyncScreenshot) {
+    mEnableAsyncScreenshotInNextFrame = true;
+    return false;
+  }
+  return true;
+#endif
+}
+
 void RenderCompositorLayerNative::GetCompositorCapabilities(
     CompositorCapabilities* aCaps) {
   RenderCompositor::GetCompositorCapabilities(aCaps);
+}
+
+void RenderCompositorLayerNative::GetWindowProperties(
+    WindowProperties* aProperties) {
+  // XXX
+  aProperties->is_opaque = false;
+  aProperties->enable_screenshot = mEnableAsyncScreenshot;
 }
 
 RenderCompositorLayerNative::Surface::~Surface() = default;
@@ -215,6 +247,11 @@ void RenderCompositorLayerNative::CompositorBeginFrame() {
   mBeginFrameTimeStamp = TimeStamp::Now();
   mSurfacePoolHandle->OnBeginFrame();
   mNativeLayerRoot->PrepareForCommit();
+  mCurrentFrame++;
+  if (mEnableAsyncScreenshotInNextFrame) {
+    mEnableAsyncScreenshot = true;
+    mEnableAsyncScreenshotInNextFrame = false;
+  }
 }
 
 void RenderCompositorLayerNative::CompositorEndFrame() {
@@ -223,9 +260,15 @@ void RenderCompositorLayerNative::CompositorEndFrame() {
   DoFlush();
 #endif
 
+  mAddedLayers.Reverse();
+
   mNativeLayerRoot->SetLayers(mAddedLayers);
   mNativeLayerRoot->CommitToScreen();
   mSurfacePoolHandle->OnEndFrame();
+  if (mEnableAsyncScreenshot &&
+      (mCurrentFrame - mAsyncScreenshotLastFrameUsed) > 1) {
+    mEnableAsyncScreenshot = false;
+  }
 }
 
 void RenderCompositorLayerNative::BindNativeLayer(wr::NativeSurfaceId aId) {
@@ -386,7 +429,7 @@ void RenderCompositorLayerNative::AddSurface(
   if (surface.mIsExternal) {
     RefPtr<layers::GpuFence> fence = layer->GetGpuFence();
     if (fence && BackendType() == layers::WebRenderBackend::HARDWARE) {
-      mPendingGpuFeces.emplace_back(fence);
+      mPendingGpuFences.emplace_back(fence);
     }
   }
 }
@@ -440,7 +483,22 @@ bool RenderCompositorLayerNativeOGL::InitDefaultFramebuffer() {
 
 void RenderCompositorLayerNativeOGL::DoSwap() { InsertFrameDoneSync(); }
 
-void RenderCompositorLayerNativeOGL::DoFlush() { mGL->fFlush(); }
+void RenderCompositorLayerNativeOGL::DoFlush() {
+  if (mGL->GetContextType() == gl::GLContextType::EGL) {
+    const auto* gle = gl::GLContextEGL::Cast(mGL);
+    const auto& egl = gle->mEgl;
+
+    // When setting a Metal-rendered IOSurface as a CALayer's contents, pending
+    // Metal commands must be explicitly scheduled to ensure they are committed
+    // with the next transaction.
+    // https://groups.google.com/g/angleproject/c/6UeZshVzt28/m/pRCjGEfmEwAJ
+    if (egl->IsExtensionSupported(
+            gl::EGLExtension::ANGLE_wait_until_work_scheduled)) {
+      egl->fWaitUntilWorkScheduledANGLE();
+    }
+  }
+  mGL->fFlush();
+}
 
 void RenderCompositorLayerNativeOGL::InsertFrameDoneSync() {
 #ifdef XP_DARWIN
@@ -450,7 +508,7 @@ void RenderCompositorLayerNativeOGL::InsertFrameDoneSync() {
     mGL->fDeleteSync(mThisFrameDoneFences->mSync);
   }
   mThisFrameDoneFences =
-      MakeUnique<BackPressureFences>(std::move(mPendingGpuFeces));
+      MakeUnique<BackPressureFences>(std::move(mPendingGpuFences));
   mThisFrameDoneFences->mSync =
       mGL->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 #endif
@@ -458,19 +516,8 @@ void RenderCompositorLayerNativeOGL::InsertFrameDoneSync() {
 
 bool RenderCompositorLayerNativeOGL::WaitForGPU() {
   if (mPreviousFrameDoneFences) {
-    bool complete = false;
-    while (!complete) {
-      complete = true;
-      for (const auto& fence : mPreviousFrameDoneFences->mGpuFeces) {
-        if (!fence->HasCompleted()) {
-          complete = false;
-          break;
-        }
-      }
-
-      if (!complete) {
-        PR_Sleep(PR_MillisecondsToInterval(1));
-      }
+    for (const auto& fence : mPreviousFrameDoneFences->mGpuFences) {
+      fence->ClientWait(TimeDuration::Forever());
     }
 
     if (mPreviousFrameDoneFences->mSync) {
@@ -508,7 +555,12 @@ void RenderCompositorLayerNativeOGL::BindSwapChain(
       int right = std::clamp((int)rect.max.x, 0, size.width);
       int bottom = std::clamp((int)rect.max.y, 0, size.height);
 
-      return gfx::IntRect(left, top, right, bottom);
+      int width = right - left;
+      int height = bottom - top;
+      MOZ_RELEASE_ASSERT(width >= 0);
+      MOZ_RELEASE_ASSERT(height >= 0);
+
+      return gfx::IntRect(left, top, width, height);
     }
 
     return gfx::IntRect(0, 0, size.width, size.height);

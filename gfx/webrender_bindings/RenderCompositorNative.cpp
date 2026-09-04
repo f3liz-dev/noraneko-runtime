@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +5,22 @@
 #include "RenderCompositorNative.h"
 
 #include "GLContext.h"
+#include "GLContextEGL.h"
 #include "GLContextProvider.h"
+#include "RenderCompositorRecordedFrame.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositionRecorder.h"
 #include "mozilla/layers/GpuFence.h"
 #include "mozilla/layers/NativeLayer.h"
 #include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/layers/SurfacePool.h"
-#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "RenderCompositorRecordedFrame.h"
 
 namespace mozilla::wr {
 
@@ -93,7 +92,7 @@ RenderedFrameId RenderCompositorNative::EndFrame(
 
   DoSwap();
 
-  MOZ_ASSERT(mPendingGpuFeces.empty());
+  MOZ_ASSERT(mPendingGpuFences.empty());
 
   if (mNativeLayerForEntireWindow) {
     mNativeLayerForEntireWindow->NotifySurfaceReady();
@@ -479,7 +478,7 @@ void RenderCompositorNative::AddSurface(
     if (surface.mIsExternal) {
       RefPtr<layers::GpuFence> fence = layer->GetGpuFence();
       if (fence && BackendType() == layers::WebRenderBackend::HARDWARE) {
-        mPendingGpuFeces.emplace_back(fence);
+        mPendingGpuFences.emplace_back(fence);
       }
     }
 
@@ -558,7 +557,22 @@ void RenderCompositorNativeOGL::DoSwap() {
   }
 }
 
-void RenderCompositorNativeOGL::DoFlush() { mGL->fFlush(); }
+void RenderCompositorNativeOGL::DoFlush() {
+  if (mGL->GetContextType() == gl::GLContextType::EGL) {
+    const auto* gle = gl::GLContextEGL::Cast(mGL);
+    const auto& egl = gle->mEgl;
+
+    // When setting a Metal-rendered IOSurface as a CALayer's contents, pending
+    // Metal commands must be explicitly scheduled to ensure they are committed
+    // with the next transaction.
+    // https://groups.google.com/g/angleproject/c/6UeZshVzt28/m/pRCjGEfmEwAJ
+    if (egl->IsExtensionSupported(
+            gl::EGLExtension::ANGLE_wait_until_work_scheduled)) {
+      egl->fWaitUntilWorkScheduledANGLE();
+    }
+  }
+  mGL->fFlush();
+}
 
 void RenderCompositorNativeOGL::InsertFrameDoneSync() {
 #ifdef XP_DARWIN
@@ -568,7 +582,7 @@ void RenderCompositorNativeOGL::InsertFrameDoneSync() {
     mGL->fDeleteSync(mThisFrameDoneFences->mSync);
   }
   mThisFrameDoneFences =
-      MakeUnique<BackPressureFences>(std::move(mPendingGpuFeces));
+      MakeUnique<BackPressureFences>(std::move(mPendingGpuFences));
   mThisFrameDoneFences->mSync =
       mGL->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 #endif
@@ -576,19 +590,8 @@ void RenderCompositorNativeOGL::InsertFrameDoneSync() {
 
 bool RenderCompositorNativeOGL::WaitForGPU() {
   if (mPreviousFrameDoneFences) {
-    bool complete = false;
-    while (!complete) {
-      complete = true;
-      for (const auto& fence : mPreviousFrameDoneFences->mGpuFeces) {
-        if (!fence->HasCompleted()) {
-          complete = false;
-          break;
-        }
-      }
-
-      if (!complete) {
-        PR_Sleep(PR_MillisecondsToInterval(1));
-      }
+    for (const auto& fence : mPreviousFrameDoneFences->mGpuFences) {
+      fence->ClientWait(TimeDuration::Forever());
     }
 
     if (mPreviousFrameDoneFences->mSync) {

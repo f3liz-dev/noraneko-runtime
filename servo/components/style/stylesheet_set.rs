@@ -5,8 +5,8 @@
 //! A centralized set of stylesheets for a document.
 
 use crate::derives::*;
+use crate::device::Device;
 use crate::invalidation::stylesheets::{RuleChangeKind, StylesheetInvalidationSet};
-use crate::media_queries::Device;
 use crate::shared_lock::SharedRwLockReadGuard;
 use crate::stylesheets::{
     CssRule, CssRuleRef, CustomMediaMap, Origin, OriginSet, PerOrigin, StylesheetInDocument,
@@ -311,7 +311,7 @@ where
 }
 
 /// The set of stylesheets effective for a given document.
-#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
+#[derive(MallocSizeOf)]
 pub struct DocumentStylesheetSet<S>
 where
     S: StylesheetInDocument + PartialEq + 'static,

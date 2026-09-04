@@ -13,6 +13,7 @@ DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
 DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
+DEFINES["WEBRTC_DEPRECATE_PLAN_B"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
 DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
@@ -31,6 +32,10 @@ LOCAL_INCLUDES += [
     "/third_party/abseil-cpp/",
     "/third_party/libwebrtc/",
     "/tools/profiler/public"
+]
+
+UNIFIED_SOURCES += [
+    "/third_party/libwebrtc/rtc_base/ref_counter.cc"
 ]
 
 if not CONFIG["MOZ_DEBUG"]:
@@ -56,6 +61,10 @@ if CONFIG["OS_TARGET"] == "Android":
     DEFINES["__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__"] = True
     DEFINES["__STDC_CONSTANT_MACROS"] = True
     DEFINES["__STDC_FORMAT_MACROS"] = True
+
+    OS_LIBS += [
+        "log"
+    ]
 
 if CONFIG["OS_TARGET"] == "Darwin":
 
@@ -127,6 +136,10 @@ if CONFIG["TARGET_CPU"] == "aarch64":
 
 if CONFIG["TARGET_CPU"] == "arm":
 
+    CXXFLAGS += [
+        "-mfpu=neon"
+    ]
+
     DEFINES["WEBRTC_ARCH_ARM"] = True
     DEFINES["WEBRTC_ARCH_ARM_V7"] = True
     DEFINES["WEBRTC_HAS_NEON"] = True
@@ -173,6 +186,12 @@ if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "WINNT":
 
     DEFINES["_HAS_ITERATOR_DEBUGGING"] = "0"
 
+if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "x86":
+
+    CXXFLAGS += [
+        "-msse2"
+    ]
+
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
 
     DEFINES["_GNU_SOURCE"] = True
@@ -182,6 +201,10 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "arm":
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
+
+    CXXFLAGS += [
+        "-msse2"
+    ]
 
     DEFINES["_GNU_SOURCE"] = True
 

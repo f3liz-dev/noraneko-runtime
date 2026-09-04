@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,10 @@
 #ifndef mozilla_net_WebSocketConnectionParent_h
 #define mozilla_net_WebSocketConnectionParent_h
 
+#include "WebSocketConnectionBase.h"
 #include "mozilla/net/PWebSocketConnectionParent.h"
 #include "mozilla/net/WebSocketConnectionBase.h"
 #include "nsISupportsImpl.h"
-#include "WebSocketConnectionBase.h"
 
 class nsIHttpUpgradeListener;
 
@@ -57,9 +55,9 @@ class WebSocketConnectionParent final : public PWebSocketConnectionParent,
   nsCOMPtr<nsIHttpUpgradeListener> mUpgradeListener;
   RefPtr<WebSocketConnectionListener> mListener;
   nsCOMPtr<nsISerialEventTarget> mBackgroundThread;
-  nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
+  nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo MOZ_GUARDED_BY(mMutex);
   Atomic<bool> mClosed{false};
-  Mutex mMutex MOZ_UNANNOTATED{"WebSocketConnectionParent::mMutex"};
+  Mutex mMutex{"WebSocketConnectionParent::mMutex"};
 };
 
 }  // namespace net

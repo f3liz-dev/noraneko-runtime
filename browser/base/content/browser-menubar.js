@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,6 +11,7 @@ document.addEventListener(
       switch (event.target.id) {
         // == edit-menu ==
         case "menu_preferences":
+        case "menu_settings":
           openPreferences(undefined);
           break;
 
@@ -41,6 +41,12 @@ document.addEventListener(
         // == history-menu ==
         case "sync-tabs-menuitem":
           gSync.openSyncedTabsPanel();
+          break;
+        case "historyRemoteTabsPromo":
+          gSync.handleSyncPromoAction(
+            event.target.dataset.action,
+            "remote-tabs-top-menu-history"
+          );
           break;
         case "hiddenTabsMenu":
           gTabsPanel.showHiddenTabsPanel(event, "hidden-tabs-menuitem");
@@ -102,8 +108,25 @@ document.addEventListener(
         case "aboutName":
           openAboutDialog();
           break;
+        case "menu_referralsPage":
+          // Ensure the referrals pref is enabled
+          if (Services.prefs.getBoolPref("browser.referrals.enabled")) {
+            openReferralsPage();
+          }
+          break;
         case "helpPolicySupport":
           openTrustedLinkIn(Services.policies.getSupportMenu().URL.href, "tab");
+          break;
+
+        // menu_setAsDefault is only available on macOS
+        case "menu_setAsDefault":
+          if (AppConstants.platform == "macosx") {
+            Glean.browserApplicationmenu.setAsDefault.record();
+            ShellService.setAsDefault().catch(async _ => {
+              // Due to https://bugzilla.mozilla.org/show_bug.cgi?id=1205066
+              // setAsDefault() always throws on macOS so we don't need to log it.
+            });
+          }
           break;
       }
     });

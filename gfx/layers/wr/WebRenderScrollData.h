@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,17 +7,17 @@
 
 #include <iosfwd>
 
-#include "chrome/common/ipc_message_utils.h"
 #include "FrameMetrics.h"
-#include "ipc/IPCMessageUtils.h"
 #include "LayersTypes.h"
+#include "chrome/common/ipc_message_utils.h"
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "mozilla/HashTable.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/layers/FocusTarget.h"
 #include "mozilla/layers/ScrollbarData.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "mozilla/HashTable.h"
-#include "mozilla/Maybe.h"
 #include "nsTArrayForwardDeclare.h"
 
 namespace mozilla {
@@ -347,25 +345,8 @@ class WebRenderScrollData {
 }  // namespace mozilla
 
 namespace IPC {
-
-template <>
-struct ParamTraits<mozilla::layers::WebRenderLayerScrollData> {
-  typedef mozilla::layers::WebRenderLayerScrollData paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam);
-
-  static bool Read(MessageReader* aReader, paramType* aResult);
-};
-
-template <>
-struct ParamTraits<mozilla::layers::WebRenderScrollData> {
-  typedef mozilla::layers::WebRenderScrollData paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam);
-
-  static bool Read(MessageReader* aReader, paramType* aResult);
-};
-
+DECLARE_IPC_SERIALIZER(mozilla::layers::WebRenderLayerScrollData);
+DECLARE_IPC_SERIALIZER(mozilla::layers::WebRenderScrollData);
 }  // namespace IPC
 
 #endif /* GFX_WEBRENDERSCROLLDATA_H */

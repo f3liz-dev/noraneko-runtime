@@ -45,11 +45,9 @@ add_setup(async function () {
  */
 add_task(async function testModelHubProvider() {
   let win = await loadInitialView("extension");
-  let modelHubCategory = win.document
-    .getElementById("categories")
-    .getButtonByName("mlmodel");
+  let modelHubCategory = AboutAddonsTestUtils.getCategoryButton(win, "mlmodel");
 
-  await BrowserTestUtils.waitForCondition(async () => {
+  await TestUtils.waitForCondition(async () => {
     return modelHubCategory.hidden;
   }, "Wait for the mlmodel category button to be hidden");
 
@@ -76,18 +74,15 @@ add_task(async function testModelHubProvider() {
   ]);
   win = await loadInitialView("extension");
   let doc = win.document;
-  modelHubCategory = doc
-    .getElementById("categories")
-    .getButtonByName("mlmodel");
-
-  await BrowserTestUtils.waitForCondition(async () => {
+  modelHubCategory = AboutAddonsTestUtils.getCategoryButton(win, "mlmodel");
+  await TestUtils.waitForCondition(async () => {
     return !modelHubCategory.hidden;
   }, "Wait for the mlmodel category button to not be hidden");
 
   ok(!modelHubCategory.hidden, "Model hub category is shown");
 
   let mlmodelLoaded = waitForViewLoad(win);
-  modelHubCategory.click();
+  AboutAddonsTestUtils.clickCategoryButton(win, "mlmodel");
   await mlmodelLoaded;
 
   let enabledSection = getSection(doc, "mlmodel-enabled-section");

@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,7 @@ interface Principal;
 interface URI;
 interface nsIDocShell;
 interface RemoteTab;
+interface MozChannel;
 interface nsIDOMProcessParent;
 interface nsIRFPTargetSetIDL;
 
@@ -71,6 +71,36 @@ enum PermitUnloadAction {
   "unload",
 };
 
+// Language metadata sampled from the document associated with a WindowGlobal.
+dictionary DocumentLanguageMetadata {
+  required DOMString htmlLangAttribute;
+  required DOMString textSample;
+};
+
+dictionary DocumentLanguageMetadataRequestOptions {
+  // The sample length that is sufficient to resolve without additional retry attempts.
+  required unsigned long textSampleMinCodeUnits;
+
+  // The target sample length for text extraction. The returned sample may exceed this value
+  // depending on the text-content length of the final node prior to hitting this threshold.
+  required unsigned long textSampleTargetCodeUnits;
+};
+
+// Options for WindowGlobalParent.drawSnapshot.
+dictionary DrawSnapshotOptions {
+  // If true, temporarily resets the scroll position of the root scroll frame
+  // to 0, such that position:fixed elements are drawn at their initial
+  // position. Has no effect unless the rect is non-null and drawView is false.
+  boolean resetScrollPosition = false;
+
+  // If true, draw the view rather than the document: the rect is relative to
+  // the visible viewport rather than to the page, and everything the view
+  // draws is captured, including the root scrollbars and position:fixed
+  // elements at their scrolled position. This is always the case when the rect
+  // is null.
+  boolean drawView = false;
+};
+
 [Exposed=Window, ChromeOnly]
 interface WindowGlobalParent : WindowContext {
   readonly attribute boolean isClosed;
@@ -86,6 +116,9 @@ interface WindowGlobalParent : WindowContext {
   readonly attribute unsigned long long contentParentId;
 
   readonly attribute long osPid;
+
+  // The remote type of `this.domProcess`.
+  readonly attribute UTF8String? remoteType;
 
   // A WindowGlobalParent is the root in its process if it has no parent, or its
   // embedder is in a different process.
@@ -120,11 +153,27 @@ interface WindowGlobalParent : WindowContext {
 
   // Information about the currently loaded document.
   readonly attribute Principal documentPrincipal;
+  readonly attribute Principal documentPartitionedPrincipal;
   readonly attribute Principal documentStoragePrincipal;
   readonly attribute Principal? contentBlockingAllowListPrincipal;
   readonly attribute URI? documentURI;
   readonly attribute DOMString documentTitle;
   readonly attribute nsICookieJarSettings? cookieJarSettings;
+
+  // Requests a language-metadata sample from the current document.
+  // Resolves to null if this WindowGlobal is closed, no longer current, or cannot provide metadata.
+  [NewObject]
+  Promise<DocumentLanguageMetadata?> requestDocumentLanguageMetadata(
+      DocumentLanguageMetadataRequestOptions options);
+
+  // The bare nsIChannel instances which were created in the parent process by
+  // DocumentLoadListener to load this document.
+  //
+  // NOTE: These will not reflect content-process-only changes to the channel,
+  // such as the PDF.js & JSON stream converters, initial about:blank, and
+  // javascript: URI documents.
+  readonly attribute MozChannel? documentChannel;
+  readonly attribute MozChannel? failedChannel;
 
   // True if the the currently loaded document is in fullscreen.
   attribute boolean fullscreen;
@@ -142,6 +191,13 @@ interface WindowGlobalParent : WindowContext {
   readonly attribute nsIDOMProcessParent? domProcess;
 
   static WindowGlobalParent? getByInnerWindowId(unsigned long long innerWindowId);
+
+  // Flush each live top-level WindowGlobalParent's in-memory ContentBlockingLog
+  // to the tracking database. Used by TrackingDBService to force ingestion of
+  // pending events from long-lived tabs before a read query. Applies the same
+  // gates as the existing on-destruction flush (out-of-process, non-private,
+  // top-level content).
+  static undefined flushAllContentBlockingLogs();
 
   /**
    * Get or create the JSWindowActor with the given name.
@@ -161,10 +217,7 @@ interface WindowGlobalParent : WindowContext {
    * @param scale The scale to render the window at. Use devicePixelRatio
    * to have comparable rendering to the OS.
    * @param backgroundColor The background color to use.
-   * @param resetScrollPosition If true, temporarily resets the scroll position
-   * of the root scroll frame to 0, such that position:fixed elements are drawn
-   * at their initial position. This parameter only takes effect when passing a
-   * non-null rect.
+   * @param options See DrawSnapshotOptions.
    *
    * This API can only be used in the parent process, as content processes
    * cannot access the rendering of out of process iframes. This API works
@@ -174,12 +227,14 @@ interface WindowGlobalParent : WindowContext {
   Promise<ImageBitmap> drawSnapshot(DOMRect? rect,
                                     double scale,
                                     UTF8String backgroundColor,
-                                    optional boolean resetScrollPosition = false);
+                                    optional DrawSnapshotOptions options = {});
 
   // True if any of the windows in the subtree rooted at this window
   // has active peer connections.  If this is called for a non-top-level
   // context, it always returns false.
   boolean hasActivePeerConnections();
+
+  undefined updateFullscreenKeyboardLockStatus(FullscreenKeyboardLock status);
 };
 
 [Exposed=Window, ChromeOnly]

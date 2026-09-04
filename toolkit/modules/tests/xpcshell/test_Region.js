@@ -20,12 +20,12 @@ const INTERVAL_PREF = "browser.region.update.interval";
 const RESPONSE_DELAY = 500;
 const RESPONSE_TIMEOUT = 100;
 
-const histogram = Services.telemetry.getHistogramById(
-  "SEARCH_SERVICE_COUNTRY_FETCH_RESULT"
-);
-
 add_setup(async () => {
   Services.prefs.setBoolPref("browser.region.log", true);
+  Services.prefs.setBoolPref("network.dns.disableIPv6", true);
+  registerCleanupFunction(async () => {
+    Services.prefs.clearUserPref("network.dns.disableIPv6");
+  });
 });
 
 // Region.sys.mjs will call init() on being loaded and set a background
@@ -103,7 +103,8 @@ add_task(async function test_basic() {
 });
 
 add_task(async function test_invalid_url() {
-  histogram.clear();
+  Services.fog.testResetFOG();
+
   Services.prefs.setIntPref("browser.region.retry-timeout", 0);
   Services.prefs.setCharPref(
     RegionTestUtils.REGION_URL_PREF,
@@ -114,7 +115,8 @@ add_task(async function test_invalid_url() {
 });
 
 add_task(async function test_invalid_json() {
-  histogram.clear();
+  Services.fog.testResetFOG();
+
   Services.prefs.setCharPref(
     RegionTestUtils.REGION_URL_PREF,
     'data:application/json,{"country_code"'
@@ -124,7 +126,8 @@ add_task(async function test_invalid_json() {
 });
 
 add_task(async function test_timeout() {
-  histogram.clear();
+  Services.fog.testResetFOG();
+
   Services.prefs.setIntPref("browser.region.retry-timeout", 0);
   Services.prefs.setIntPref("browser.region.timeout", RESPONSE_TIMEOUT);
   let srv = useHttpServer(RegionTestUtils.REGION_URL_PREF);
@@ -205,7 +208,7 @@ add_task(async function test_update_us() {
 
   // Setting the region to US whilst within a US timezone should work.
   let stub = sinon.stub(Region, "_isUSTimezone").returns(true);
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   RegionTestUtils.setNetworkRegion("US");
   await Region._fetchRegion();
 
@@ -221,7 +224,7 @@ add_task(async function test_update_us() {
 
   // Setting the region to US whilst not within a US timezone should not work.
   stub.returns(false);
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   RegionTestUtils.setNetworkRegion("US");
   await Region._fetchRegion();
 
@@ -232,7 +235,7 @@ add_task(async function test_update_us() {
 });
 
 add_task(async function test_max_retry() {
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   let requestsSeen = 0;
   Services.prefs.setIntPref("browser.region.retry-timeout", RESPONSE_TIMEOUT);
   Services.prefs.setIntPref("browser.region.timeout", RESPONSE_TIMEOUT);
@@ -257,7 +260,7 @@ add_task(async function test_max_retry() {
 });
 
 add_task(async function test_retry() {
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   let requestsSeen = 0;
   Services.prefs.setIntPref("browser.region.retry-timeout", RESPONSE_TIMEOUT);
   Services.prefs.setIntPref("browser.region.timeout", RESPONSE_TIMEOUT);
@@ -329,7 +332,7 @@ function send(res, json) {
 
 async function cleanup(srv = null) {
   Services.prefs.clearUserPref("browser.search.region");
-  Region._home = null;
+  Region._setHomeRegion(null, false);
   if (srv) {
     await new Promise(r => srv.stop(r));
   }
@@ -338,10 +341,10 @@ async function cleanup(srv = null) {
 async function checkTelemetry(aExpectedValue) {
   // Wait until there is 1 result.
   await TestUtils.waitForCondition(() => {
-    let snapshot = histogram.snapshot();
-    return Object.values(snapshot.values).reduce((a, b) => a + b, 0) == 1;
+    let snapshot = Glean.region.fetchResult.testGetValue();
+    return snapshot?.count == 1;
   });
-  let snapshot = histogram.snapshot();
+  let snapshot = Glean.region.fetchResult.testGetValue();
   Assert.equal(snapshot.values[aExpectedValue], 1);
 }
 

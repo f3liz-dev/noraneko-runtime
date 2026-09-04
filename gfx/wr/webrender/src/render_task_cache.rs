@@ -11,10 +11,6 @@ use crate::device::TextureFilter;
 use crate::freelist::{FreeList, FreeListHandle, WeakFreeListHandle};
 use crate::internal_types::FastHashMap;
 use crate::prim_store::image::ImageCacheKey;
-use crate::prim_store::gradient::{
-    FastLinearGradientCacheKey, LinearGradientCacheKey, RadialGradientCacheKey,
-    ConicGradientCacheKey,
-};
 use crate::prim_store::line_dec::LineDecorationCacheKey;
 use crate::quad::QuadCacheKey;
 use crate::resource_cache::CacheItem;
@@ -48,10 +44,6 @@ pub enum RenderTaskCacheKeyKind {
     Image(ImageCacheKey),
     BorderSegment(BorderSegmentCacheKey),
     LineDecoration(LineDecorationCacheKey),
-    FastLinearGradient(FastLinearGradientCacheKey),
-    LinearGradient(LinearGradientCacheKey),
-    RadialGradient(RadialGradientCacheKey),
-    ConicGradient(ConicGradientCacheKey),
     Snapshot(SnapshotImageKey),
     Quad(QuadCacheKey),
 }
@@ -60,6 +52,7 @@ pub enum RenderTaskCacheKeyKind {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct RenderTaskCacheKey {
+    pub origin: DeviceIntPoint,
     pub size: DeviceIntSize,
     pub kind: RenderTaskCacheKeyKind,
 }
@@ -116,7 +109,7 @@ impl RenderTaskCache {
         texture_cache: &mut TextureCache,
     ) {
         self.frame_id += 1;
-        profile_scope!("begin_frame");
+        tracy_rs::profile_scope!("begin_frame");
         // Drop any items from the cache that have been
         // evicted from the texture cache.
         //

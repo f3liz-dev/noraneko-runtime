@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -20,7 +18,7 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "js/Object.h"  // JS::GetClass, JS::GetReservedSlot, JS::GetMaybePtrFromReservedSlot
+#include "js/Object.h"  // JS::GetClass, JS::GetNativeObjectReservedSlot, JS::GetMaybePtrFromNativeObjectReservedSlot
 #include "js/RootingAPI.h"  // JS::Handle, JS_DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE
 #include "js/ScalarType.h"  // JS::Scalar::Type
 #include "js/Wrapper.h"     // js::CheckedUnwrapStatic
@@ -222,28 +220,6 @@ extern JS_PUBLIC_API size_t JS_GetArrayBufferViewByteOffset(JSObject* obj);
  */
 extern JS_PUBLIC_API void* JS_GetArrayBufferViewData(
     JSObject* obj, bool* isSharedMemory, const JS::AutoRequireNoGC&);
-
-/**
- * Return a "fixed" pointer (one that will not move during a GC) to the
- * ArrayBufferView's data. Note that this will not keep the object alive; the
- * holding object should be rooted or traced. If the view is storing the data
- * inline, this will copy the data to the provided buffer, returning nullptr if
- * bufSize is inadequate.
- *
- * Avoid using this unless necessary. JS_GetArrayBufferViewData is simpler and
- * more efficient because it requires the caller to ensure that a GC will not
- * occur and thus does not need to handle movable data.
- */
-extern JS_PUBLIC_API uint8_t* JS_GetArrayBufferViewFixedData(JSObject* obj,
-                                                             uint8_t* buffer,
-                                                             size_t bufSize);
-
-/**
- * If the bufSize passed to JS_GetArrayBufferViewFixedData is at least this
- * many bytes, then any copied data is guaranteed to fit into the provided
- * buffer.
- */
-extern JS_PUBLIC_API size_t JS_MaxMovableTypedArraySize();
 
 /**
  * Return the ArrayBuffer or SharedArrayBuffer underlying an ArrayBufferView.
@@ -643,11 +619,11 @@ ArrayBufferView ArrayBufferView::fromObject(JSObject* unwrapped) {
                                             bool* isSharedMemory,          \
                                             ExternalType** data) {         \
     MOZ_ASSERT(JS::TypedArray<JS::Scalar::Name>::fromObject(unwrapped));   \
-    const JS::Value& lenSlot =                                             \
-        JS::GetReservedSlot(unwrapped, detail::TypedArrayLengthSlot);      \
+    const JS::Value& lenSlot = JS::GetNativeObjectReservedSlot(            \
+        unwrapped, detail::TypedArrayLengthSlot);                          \
     *length = size_t(lenSlot.toPrivate());                                 \
     *isSharedMemory = JS_GetTypedArraySharedness(unwrapped);               \
-    *data = JS::GetMaybePtrFromReservedSlot<ExternalType>(                 \
+    *data = JS::GetMaybePtrFromNativeObjectReservedSlot<ExternalType>(     \
         unwrapped, detail::TypedArrayDataSlot);                            \
   }                                                                        \
                                                                            \

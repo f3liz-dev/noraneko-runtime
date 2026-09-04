@@ -139,7 +139,7 @@ export class LoginManagerPrompter {
 
     return {
       dismiss() {
-        const { PopupNotifications } = aBrowser.ownerGlobal.wrappedJSObject;
+        const { PopupNotifications } = aBrowser.documentGlobal.wrappedJSObject;
         PopupNotifications.remove(notification);
       },
     };
@@ -199,7 +199,7 @@ export class LoginManagerPrompter {
     const changeMessageIds = {
       prompt: messageStringID ?? "password-manager-update-password-message",
       mainButton: "password-manager-password-password-button-allow",
-      secondaryButton: "password-manager-update-password-button-deny",
+      secondaryButton: "password-manager-save-password-button-deny",
     };
 
     const initialMessageIds =
@@ -232,7 +232,16 @@ export class LoginManagerPrompter {
       did_select_pw: false,
     };
 
-    const updateButtonStatus = element => {
+    const updateButtonStatus = () => {
+      if (!currentNotification) {
+        return;
+      }
+      const element = [...currentNotification.owner.panel.childNodes].find(
+        n => n.notification == currentNotification
+      );
+      if (!element) {
+        return;
+      }
       const mainActionButton = element.button;
       // Disable the main button inside the menu-button if the password field is empty.
       if (!login.password.length) {
@@ -283,7 +292,7 @@ export class LoginManagerPrompter {
       if (element) {
         element.setAttribute("buttonlabel", mainButton.label);
         element.setAttribute("buttonaccesskey", mainButton.accessKey);
-        updateButtonStatus(element);
+        updateButtonStatus();
       }
     };
 
@@ -298,9 +307,8 @@ export class LoginManagerPrompter {
       const passwordField = chromeDoc.getElementById(
         "password-notification-password"
       );
-      // Ensure the type is reset so the field is masked.
-      passwordField.type = "password";
-      passwordField.revealPassword = false;
+      // Ensure the field is masked.
+      passwordField.inputEl.revealPassword = false;
       passwordField.value = login.password;
 
       updateButtonLabel();
@@ -317,6 +325,9 @@ export class LoginManagerPrompter {
 
     const onInput = () => {
       readDataFromUI();
+      // Update the button's disabled state synchronously so it doesn't depend
+      // on the async searchLoginsAsync call in updateButtonLabel.
+      updateButtonStatus();
       updateButtonLabel();
     };
 
@@ -344,14 +355,12 @@ export class LoginManagerPrompter {
 
     const onKeyUp = e => {
       if (e.key == "Enter") {
-        e.target.closest("popupnotification").button.doCommand();
+        e.target.closest("popupnotification").button.click();
       }
     };
 
-    const togglePopup = event => {
-      event.target.parentElement
-        .getElementsByClassName("ac-has-end-icon")[0]
-        .toggleHistoryPopup();
+    const onDropmarkerClick = event => {
+      event.currentTarget.inputEl.toggleHistoryPopup();
     };
 
     const persistData = async () => {
@@ -473,7 +482,7 @@ export class LoginManagerPrompter {
           !Services.policies.isAllowed("removeMasterPassword")
         ) {
           if (!lazy.LoginHelper.isPrimaryPasswordSet()) {
-            browser.ownerGlobal.openDialog(
+            browser.documentGlobal.openDialog(
               "chrome://mozapps/content/preferences/changemp.xhtml",
               "",
               "centerscreen,chrome,modal,titlebar"
@@ -583,9 +592,24 @@ export class LoginManagerPrompter {
     );
 
     // .wrappedJSObject needed here -- see bug 422974 comment 5.
-    const { PopupNotifications } = browser.ownerGlobal.wrappedJSObject;
+    const { PopupNotifications } = browser.documentGlobal.wrappedJSObject;
 
     const notificationID = "password";
+
+    // Don't downgrade an already-open (shown) doorhanger to dismissed. A form
+    // submission and a field-edit notification can race to (re)create the same
+    // "password" doorhanger, so the dismissed edit prompt can land last and
+    // hide a doorhanger the user is looking at.
+    if (showOptions.dismissed) {
+      const existing = PopupNotifications?.getNotification(
+        notificationID,
+        browser
+      );
+      if (existing && !existing.dismissed) {
+        showOptions = { ...showOptions, dismissed: false };
+      }
+    }
+
     // keep attention notifications around for longer after a locationchange
     const timeoutMs =
       showOptions.dismissed && showOptions.extraAttr == "attention"
@@ -595,7 +619,9 @@ export class LoginManagerPrompter {
     const options = Object.assign(
       {
         timeout: Date.now() + timeoutMs,
+        autofocus: true,
         persistWhileVisible: true,
+        lowerPanelLevel: true,
         passwordNotificationType: type,
         hideClose: true,
         eventCallback(topic) {
@@ -628,45 +654,33 @@ export class LoginManagerPrompter {
                   .getElementById("password-notification-username")
                   .addEventListener("keyup", onKeyUp);
                 chromeDoc
+                  .getElementById("password-notification-username")
+                  .addEventListener("dropmarker-click", onDropmarkerClick);
+                chromeDoc
                   .getElementById("password-notification-password")
                   .addEventListener("keyup", onKeyUp);
                 chromeDoc
                   .getElementById("password-notification-password")
                   .addEventListener("input", onPasswordInput);
-                chromeDoc
-                  .getElementById("password-notification-username-dropmarker")
-                  .addEventListener("click", togglePopup);
+                let popup = chromeDoc.getElementById("PopupAutoComplete");
+                popup.onUsernameSelect = onUsernameSelect;
+                popup.onPasswordSelect = onPasswordSelect;
 
                 LoginManagerPrompter._getUsernameSuggestions(
                   login,
                   possibleValues?.usernames
                 ).then(usernameSuggestions => {
-                  const dropmarker = chromeDoc?.getElementById(
-                    "password-notification-username-dropmarker"
+                  // Set autocomplete result before enabling the dropmarker
+                  LoginManagerPrompter._setUsernameAutocomplete(
+                    usernameSuggestions
                   );
-                  if (dropmarker) {
-                    dropmarker.hidden = !usernameSuggestions.length;
-                  }
-
                   const usernameField = chromeDoc?.getElementById(
                     "password-notification-username"
                   );
                   if (usernameField) {
-                    usernameField.classList.toggle(
-                      "ac-has-end-icon",
-                      !!usernameSuggestions.length
-                    );
+                    usernameField.showDropmarker = !!usernameSuggestions.length;
                   }
                 });
-
-                let popup = chromeDoc.getElementById("PopupAutoComplete");
-                popup.onUsernameSelect = onUsernameSelect;
-                popup.onPasswordSelect = onPasswordSelect;
-
-                LoginManagerPrompter._setUsernameAutocomplete(
-                  login,
-                  possibleValues?.usernames
-                );
               }
               break;
             case "shown": {
@@ -694,14 +708,16 @@ export class LoginManagerPrompter {
               );
               usernameField.removeEventListener("input", onUsernameInput);
               usernameField.removeEventListener("keyup", onKeyUp);
+              usernameField.removeEventListener(
+                "dropmarker-click",
+                onDropmarkerClick
+              );
+              usernameField.inputEl?.detachController();
               const passwordField = chromeDoc.getElementById(
                 "password-notification-password"
               );
               passwordField.removeEventListener("input", onPasswordInput);
               passwordField.removeEventListener("keyup", onKeyUp);
-              chromeDoc
-                .getElementById("password-notification-username-dropmarker")
-                .removeEventListener("click", togglePopup);
               break;
             }
           }
@@ -810,7 +826,7 @@ export class LoginManagerPrompter {
 
     return {
       dismiss() {
-        const { PopupNotifications } = aBrowser.ownerGlobal.wrappedJSObject;
+        const { PopupNotifications } = aBrowser.documentGlobal.wrappedJSObject;
         PopupNotifications.remove(notification);
       },
     };
@@ -845,7 +861,7 @@ export class LoginManagerPrompter {
     // If user selects ok, outparam.value is set to the index
     // of the selected username.
     const ok = Services.prompt.select(
-      browser.ownerGlobal,
+      browser.documentGlobal,
       dialogTitle,
       dialogText,
       usernames,
@@ -974,19 +990,14 @@ export class LoginManagerPrompter {
   /**
    * Set the values that will be used the next time the username autocomplete popup is opened.
    *
-   * @param {nsILoginInfo} login - used only for its information about the current domain.
-   * @param {Set<string>?} possibleUsernames - values that we believe may be new/changed login usernames.
+   * @param {object[]} usernames - ordered suggestions from _getUsernameSuggestions.
    */
-  static async _setUsernameAutocomplete(login, possibleUsernames = new Set()) {
+  static _setUsernameAutocomplete(usernames) {
     const result = Cc[
       "@mozilla.org/autocomplete/simple-result;1"
     ].createInstance(Ci.nsIAutoCompleteSimpleResult);
     result.setDefaultIndex(0);
 
-    const usernames = await this._getUsernameSuggestions(
-      login,
-      possibleUsernames
-    );
     for (const { text, style } of usernames) {
       const value = text;
       const comment = "";
@@ -1027,8 +1038,8 @@ export class LoginManagerPrompter {
       acceptDifferentSubdomains: true,
     });
 
-    const saved = baseDomainLogins.map(login => {
-      return { text: login.username, style: "login" };
+    const saved = baseDomainLogins.map(savedLogin => {
+      return { text: savedLogin.username, style: "login" };
     });
     const possible = [...possibleUsernames].map(username => {
       return { text: username, style: "possible-username" };

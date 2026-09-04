@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -38,7 +36,6 @@ bool ForOfLoopControl::emitBeginCodeNeedingIteratorClose(BytecodeEmitter* bce) {
   return true;
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 bool ForOfLoopControl::prepareForForOfLoopIteration(
     BytecodeEmitter* bce, const EmitterScope* headLexicalEmitterScope,
     bool hasAwaitUsing) {
@@ -49,7 +46,6 @@ bool ForOfLoopControl::prepareForForOfLoopIteration(
   }
   return true;
 }
-#endif
 
 bool ForOfLoopControl::emitEndCodeNeedingIteratorClose(BytecodeEmitter* bce) {
   if (!tryCatch_->emitCatch(TryEmitter::ExceptionStack::Yes)) {
@@ -57,18 +53,33 @@ bool ForOfLoopControl::emitEndCodeNeedingIteratorClose(BytecodeEmitter* bce) {
     return false;
   }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   // Explicit Resource Management Proposal
   // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-runtime-semantics-forin-div-ofbodyevaluation-lhs-stmt-iterator-lhskind-labelset
   // Step 9.i.i.1 Set result to
   // Completion(DisposeResources(iterationEnv.[[DisposeCapability]], result)).
   if (forOfDisposalEmitter_.isSome()) {
-    if (!forOfDisposalEmitter_->emitEnd()) {
+    //              [stack] ITER ... EXCEPTION STACK
+    if (!bce->emit1(JSOp::Swap)) {
+      //              [stack] ITER ... STACK EXCEPTION
+      return false;
+    }
+    if (!bce->emit1(JSOp::True)) {
+      //              [stack] ITER ... STACK EXCEPTION THROWING
+      return false;
+    }
+    if (!forOfDisposalEmitter_->prepareForForOfIteratorClose()) {
+      //              [stack] ITER ... STACK EXCEPTION THROWING
+      return false;
+    }
+    if (!bce->emit1(JSOp::Pop)) {
+      //              [stack] ITER ... STACK EXCEPTION
+      return false;
+    }
+    if (!bce->emit1(JSOp::Swap)) {
       //              [stack] ITER ... EXCEPTION STACK
       return false;
     }
   }
-#endif
 
   unsigned slotFromTop = bce->bytecodeSection().stackDepth() - iterDepth_;
   if (!bce->emitDupAt(slotFromTop)) {
@@ -110,6 +121,20 @@ bool ForOfLoopControl::emitEndCodeNeedingIteratorClose(BytecodeEmitter* bce) {
     if (!ifGeneratorClosing.emitThen()) {
       //            [stack] ITER ... FSTACK FTHROWING FVALUE
       return false;
+    }
+    if (forOfDisposalEmitter_.isSome()) {
+      if (!bce->emit1(JSOp::Swap)) {
+        //          [stack] ITER ... FSTACK FVALUE FTHROWING
+        return false;
+      }
+      if (!forOfDisposalEmitter_->prepareForForOfIteratorClose()) {
+        //          [stack] ITER ... FSTACK FVALUE FTHROWING
+        return false;
+      }
+      if (!bce->emit1(JSOp::Swap)) {
+        //          [stack] ITER ... FSTACK FTHROWING FVALUE
+        return false;
+      }
     }
     if (!bce->emitDupAt(slotFromTop + 1)) {
       //            [stack] ITER ... FSTACK FTHROWING FVALUE ITER
@@ -189,7 +214,8 @@ bool ForOfLoopControl::emitPrepareForNonLocalJumpFromScope(
     return false;
   }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  *tryNoteStart = bce->bytecodeSection().offset();
+
   // Explicit Resource Management Proposal
   // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-runtime-semantics-forin-div-ofbodyevaluation-lhs-stmt-iterator-lhskind-labelset
   // Step 9.k.i. Set result to
@@ -200,25 +226,21 @@ bool ForOfLoopControl::emitPrepareForNonLocalJumpFromScope(
     //              [stack] EXC-DISPOSE? DISPOSE-THROWING? ITER
     return false;
   }
-#endif
 
   if (!bce->emit1(JSOp::Dup)) {
     //              [stack] EXC-DISPOSE? DISPOSE-THROWING? ITER ITER
     return false;
   }
 
-  *tryNoteStart = bce->bytecodeSection().offset();
   if (!emitIteratorCloseInScope(bce, currentScope, CompletionKind::Normal)) {
     //              [stack] EXC-DISPOSE? DISPOSE-THROWING? ITER
     return false;
   }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   if (!disposeBeforeIterClose.emitEnd()) {
     //              [stack] ITER
     return false;
   }
-#endif
 
   if (isTarget) {
     // At the level of the target block, there's bytecode after the

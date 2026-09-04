@@ -67,13 +67,12 @@ class NoDispatchersSetMainDetectorTest : LintDetectorTest() {
     @Test
     fun `GIVEN a test file, WHEN Dispatchers_setMain is called THEN expect lint error`() {
         lint()
-            .allowMissingSdk()
             .files(dispatcherStub, setMainUsage)
             .run()
             .expectErrorCount(1)
             .expectContains(
                 """
-                Avoid using 'Dispatchers.setMain' directly in tests. Use a TestRule (e.g., MainCoroutineRule or a local rule) for managing dispatchers
+                Avoid using 'Dispatchers.setMain' directly in tests. Inject dispatchers into your components instead to allow testing with a TestDispatcher.
             """.trimIndent(),
             )
     }
@@ -81,13 +80,12 @@ class NoDispatchersSetMainDetectorTest : LintDetectorTest() {
     @Test
     fun `GIVEN a test file, WHEN Dispatchers_resetMain is called THEN expect lint error`() {
         lint()
-            .allowMissingSdk()
             .files(dispatcherStub, resetMainUsage)
             .run()
             .expectErrorCount(1)
             .expectContains(
                 """
-                Avoid using 'Dispatchers.resetMain' directly in tests. Use a TestRule (e.g., MainCoroutineRule or a local rule) for managing dispatchers
+                Avoid using 'Dispatchers.resetMain' directly in tests. Inject dispatchers into your components instead to allow testing with a TestDispatcher.
             """.trimIndent(),
             )
     }
@@ -109,7 +107,6 @@ class NoDispatchersSetMainDetectorTest : LintDetectorTest() {
         ).indented()
 
         lint()
-            .allowMissingSdk()
             .files(dispatcherStub, cleanUsage)
             .run()
             .expectClean()

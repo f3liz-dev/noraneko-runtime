@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -433,7 +431,7 @@ ProcessStreamingContext::ProcessStreamingContext(
   if (mFailureLatch.Failed()) {
     return;
   }
-  if (!mTIDList.initCapacity(aThreadCount)) {
+  if (!mThreadIds.initCapacity(aThreadCount)) {
     mFailureLatch.SetFailure(
         "OOM in ProcessStreamingContext allocating TID list");
     return;
@@ -441,7 +439,7 @@ ProcessStreamingContext::ProcessStreamingContext(
   if (!mThreadStreamingContextList.initCapacity(aThreadCount)) {
     mFailureLatch.SetFailure(
         "OOM in ProcessStreamingContext allocating context list");
-    mTIDList.clear();
+    mThreadIds.clear();
     return;
   }
 }
@@ -450,8 +448,8 @@ ProcessStreamingContext::~ProcessStreamingContext() {
   if (mFailureLatch.Failed()) {
     return;
   }
-  MOZ_ASSERT(mTIDList.length() == mThreadStreamingContextList.length());
-  MOZ_ASSERT(mTIDList.length() == mTIDList.capacity(),
+  MOZ_ASSERT(mThreadIds.length() == mThreadStreamingContextList.length());
+  MOZ_ASSERT(mThreadIds.length() == mThreadIds.capacity(),
              "Didn't pre-allocate exactly right");
 }
 
@@ -463,10 +461,12 @@ void ProcessStreamingContext::AddThreadStreamingContext(
   if (mFailureLatch.Failed()) {
     return;
   }
-  MOZ_ASSERT(mTIDList.length() == mThreadStreamingContextList.length());
-  MOZ_ASSERT(mTIDList.length() < mTIDList.capacity(),
+  MOZ_ASSERT(mThreadIds.length() == mThreadStreamingContextList.length());
+  MOZ_ASSERT(mThreadIds.length() < mThreadIds.capacity(),
              "Didn't pre-allocate enough");
-  mTIDList.infallibleAppend(aProfiledThreadData.Info().ThreadId());
+  mThreadIds.infallibleAppend(
+      ThreadStreamingId{aProfiledThreadData.Info().ThreadId(),
+                        aProfiledThreadData.BufferPositionWhenUnregistered()});
   mThreadStreamingContextList.infallibleEmplaceBack(
       aProfiledThreadData, aBuffer, aCx, mFailureLatch, aService,
       aProgressLogger.CreateSubLoggerFromTo(

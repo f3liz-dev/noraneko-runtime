@@ -10,6 +10,7 @@
 pub mod compare;
 pub mod quadtree;
 pub mod cached_surface;
+pub mod vert_buffer;
 
 use api::units::*;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
@@ -27,7 +28,7 @@ pub struct DirtyRegion {
     /// The overall dirty rect, a combination of dirty_rects
     pub combined: VisRect,
 
-    /// The corrdinate space used to do clipping, visibility, and
+    /// The coordinate space used to do clipping, visibility, and
     /// dirty rect calculations.
     pub visibility_spatial_node: SpatialNodeIndex,
     /// Spatial node of the picture this region represents.
@@ -106,6 +107,8 @@ pub enum InvalidationReason {
     ScaleChanged,
     // The content of the sampling surface changed
     SurfaceContentChanged,
+    // Cancel underlay
+    CancelUnderlay,
 }
 
 /// The result of a primitive dependency comparison. Size is a u8
@@ -120,10 +123,8 @@ pub enum PrimitiveCompareResult {
     Equal,
     /// Something in the PrimitiveDescriptor was different
     Descriptor,
-    /// The clip node content or spatial node changed
+    /// A clip corner changed (vert range values differ)
     Clip,
-    /// The value of the transform changed
-    Transform,
     /// An image dependency was dirty
     Image,
     /// The value of an opacity binding changed

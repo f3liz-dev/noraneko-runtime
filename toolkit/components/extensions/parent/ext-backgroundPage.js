@@ -53,6 +53,21 @@ function notifyBackgroundScriptStatus(addonId, isRunning) {
   Services.obs.notifyObservers(subject, "extension:background-script-status");
 }
 
+function notifyBackgroundScriptSuspendIgnored(extension) {
+  // Notify developer that background did not suspend due to active devtools.
+  const context = extension.backgroundContext;
+  // TODO: Also log for background_worker. Currently excluded because the
+  // logConsoleScriptError helper is designed for windows, not workers.
+  if (context?.viewType === "background") {
+    context.logConsoleScriptError({
+      message:
+        "Background event page was not terminated on idle because a DevTools toolbox is attached to the extension.",
+      fileName: context.uri.spec,
+      flags: Ci.nsIScriptError.warningFlag,
+    });
+  }
+}
+
 // Same as nsITelemetry msSinceProcessStartExcludingSuspend but returns
 // undefined instead of throwing an extension.
 function msSinceProcessStartExcludingSuspend() {
@@ -202,7 +217,7 @@ class BackgroundWorker {
       );
     });
 
-    // TODO(Bug 17228327): follow up to spawn the active worker for a previously installed
+    // TODO bug 1728327: follow up to spawn the active worker for a previously installed
     // background service worker.
     await serviceWorkerManager.registerForAddonPrincipal(
       this.extension.principal
@@ -800,7 +815,8 @@ class BackgroundBuilder {
         return;
       }
 
-      // Keep in sync with categories in WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT.
+      // Keep in sync with the labels listed in the extensions.counters.event_page_idle_result
+      // Glean metric.
       let KNOWN = ["nativeapp", "streamfilter", "listeners"];
       ExtensionTelemetry.eventPageIdleResult.histogramAdd({
         extension,
@@ -864,6 +880,7 @@ class BackgroundBuilder {
         ExtensionParent.DebugUtils.hasDevToolsAttached(extension.id)
       ) {
         extension.emit("background-script-suspend-ignored");
+        notifyBackgroundScriptSuspendIgnored(extension);
         return;
       }
 

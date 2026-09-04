@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -64,12 +62,12 @@ JSObject* BigIntObject::create(JSContext* cx, HandleBigInt bigInt) {
   if (!bn) {
     return nullptr;
   }
-  bn->initFixedSlot(PRIMITIVE_VALUE_SLOT, BigIntValue(bigInt));
+  bn->initFixedSlotTyped(PRIMITIVE_VALUE_SLOT, BigIntValue(bigInt));
   return bn;
 }
 
 BigInt* BigIntObject::unbox() const {
-  return getFixedSlot(PRIMITIVE_VALUE_SLOT).toBigInt();
+  return getFixedSlotTyped(PRIMITIVE_VALUE_SLOT).toBigInt();
 }
 
 static BigInt* ThisBigIntValue(const CallArgs& args) {

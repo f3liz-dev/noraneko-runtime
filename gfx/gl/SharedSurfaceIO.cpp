@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,13 @@
 #include "SharedSurfaceIO.h"
 
 #include "GLContextCGL.h"
+#include "GLContextEGL.h"
 #include "MozFramebuffer.h"
+#include "ScopedGLHelpers.h"
 #include "mozilla/gfx/MacIOSurface.h"
+#include "mozilla/layers/GpuFenceMTLSharedEvent.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
 #include "mozilla/layers/LayersTypes.h"
-#include "ScopedGLHelpers.h"
 
 namespace mozilla {
 namespace gl {
@@ -27,30 +28,32 @@ SurfaceFactory_IOSurface::SurfaceFactory_IOSurface(GLContext& gl)
 // -
 // Surface
 
-static bool BackTextureWithIOSurf(GLContext* const gl, const GLuint tex,
-                                  MacIOSurface* const ioSurf) {
+static Maybe<GLenum> BackTextureWithIOSurf(GLContext* const gl,
+                                           const GLuint tex,
+                                           MacIOSurface* const ioSurf) {
   MOZ_ASSERT(gl->IsCurrent());
 
-  ScopedBindTexture texture(gl, tex, LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+  const GLenum target = gl->GetPreferredMacIOSurfaceTextureTarget();
 
-  gl->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB,
-                     LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
-  gl->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB,
-                     LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
-  gl->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_S,
-                     LOCAL_GL_CLAMP_TO_EDGE);
-  gl->fTexParameteri(LOCAL_GL_TEXTURE_RECTANGLE_ARB, LOCAL_GL_TEXTURE_WRAP_T,
-                     LOCAL_GL_CLAMP_TO_EDGE);
+  ScopedBindTexture texture(gl, tex, target);
 
-  return ioSurf->BindTexImage(gl, 0);
+  gl->fTexParameteri(target, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
+  gl->fTexParameteri(target, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
+  gl->fTexParameteri(target, LOCAL_GL_TEXTURE_WRAP_S, LOCAL_GL_CLAMP_TO_EDGE);
+  gl->fTexParameteri(target, LOCAL_GL_TEXTURE_WRAP_T, LOCAL_GL_CLAMP_TO_EDGE);
+
+  if (!ioSurf->BindTexImage(gl, 0)) {
+    return Nothing();
+  }
+  return Some(target);
 }
 
 /*static*/
 UniquePtr<SharedSurface_IOSurface> SharedSurface_IOSurface::Create(
     const SharedSurfaceDesc& desc) {
   const auto& size = desc.size;
-  const RefPtr<MacIOSurface> ioSurf =
-      MacIOSurface::CreateIOSurface(size.width, size.height, true);
+  const RefPtr<MacIOSurface> ioSurf = MacIOSurface::CreateIOSurface(
+      size.width, size.height, MacIOSurface::AllowAlpha::Yes);
   if (!ioSurf) {
     NS_WARNING("Failed to create MacIOSurface.");
     return nullptr;
@@ -61,13 +64,13 @@ UniquePtr<SharedSurface_IOSurface> SharedSurface_IOSurface::Create(
   // -
 
   auto tex = MakeUnique<Texture>(*desc.gl);
-  if (!BackTextureWithIOSurf(desc.gl, tex->name, ioSurf)) {
+  Maybe<GLenum> target = BackTextureWithIOSurf(desc.gl, tex->name, ioSurf);
+  if (!target) {
     return nullptr;
   }
 
-  const GLenum target = LOCAL_GL_TEXTURE_RECTANGLE;
   auto fb = MozFramebuffer::CreateForBacking(desc.gl, desc.size, 0, false,
-                                             target, tex->name);
+                                             false, *target, tex->name);
   if (!fb) return nullptr;
 
   return AsUnique(
@@ -87,6 +90,49 @@ void SharedSurface_IOSurface::ProducerReleaseImpl() {
   const auto& gl = mDesc.gl;
   if (!gl) return;
   gl->MakeCurrent();
+
+  MOZ_ASSERT(!mGpuFence);
+  if (gl->GetContextType() == GLContextType::EGL) {
+    const auto& gle = GLContextEGL::Cast(gl);
+    const auto& egl = gle->mEgl;
+
+    if (egl->IsExtensionSupported(
+            EGLExtension::ANGLE_metal_shared_event_sync)) {
+      const uint64_t signalValue = 1;
+      const EGLAttrib attribs[] = {
+          LOCAL_EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE,
+          static_cast<EGLAttrib>(signalValue & 0xFFFFFFFF),
+          LOCAL_EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE,
+          static_cast<EGLAttrib>(signalValue >> 32), LOCAL_EGL_NONE};
+      const EGLSync sync = egl->fCreateSyncEGL15(
+          LOCAL_EGL_SYNC_METAL_SHARED_EVENT_ANGLE, attribs);
+      if (!sync) {
+        gfxCriticalNote << "Creating EGL_SYNC_METAL_SHARED_EVENT sync failed";
+        gl->fFinish();
+        return;
+      }
+      void* const sharedEvent = egl->fCopyMetalSharedEventANGLE(sync);
+      egl->fDestroySync(sync);
+
+      if (!sharedEvent) {
+        gfxCriticalNote << "eglCopyMetalSharedEventANGLE failed";
+        gl->fFinish();
+        return;
+      }
+      mGpuFence =
+          layers::GpuFenceMTLSharedEvent::Create(sharedEvent, signalValue);
+      if (!mGpuFence) {
+        gfxCriticalNote << "GpuFenceMTLSharedEvent::Create failed";
+        gl->fFinish();
+        return;
+      }
+
+      // We must flush here else the shared event may never be signalled.
+      gl->fFlush();
+      return;
+    }
+  }
+
   gl->fFlush();
 }
 
@@ -95,7 +141,7 @@ SharedSurface_IOSurface::ToSurfaceDescriptor() {
   const bool isOpaque = false;  // RGBA
   return Some(layers::SurfaceDescriptorMacIOSurface(
       mIOSurf->GetIOSurfaceID(), isOpaque, mIOSurf->GetYUVColorSpace(),
-      (layers::GpuFence*)nullptr));
+      mIOSurf->GetTransferFunction(), (layers::GpuFence*)nullptr));
 }
 
 }  // namespace gl

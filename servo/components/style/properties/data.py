@@ -20,7 +20,7 @@ LOGICAL_SIZES = ["block-size", "inline-size"]
 LOGICAL_AXES = ["block", "inline"]
 
 SYSTEM_FONT_LONGHANDS = """font_family font_size font_style
-                           font_stretch font_weight""".split()
+                           font_width font_weight""".split()
 
 PRIORITARY_PROPERTIES = set(
     [
@@ -48,7 +48,7 @@ PRIORITARY_PROPERTIES = set(
         "font-size",
         "font-size-adjust",
         "font-weight",
-        "font-stretch",
+        "font-width",
         "font-style",
         "font-family",
         # color-scheme affects how system colors and light-dark() resolve.
@@ -59,8 +59,79 @@ PRIORITARY_PROPERTIES = set(
         "zoom",
         # Line height lengths depend on this.
         "line-height",
+        # appearance and -moz-default-appearance control whether
+        # @appearance-base rules apply.
+        "-moz-default-appearance",
+        "appearance",
     ]
 )
+
+# Set of prioritary properties and dependencies between them.
+#
+# Some properties must depend on appearance because of the @appearance-base rule.
+# If a property doesn't depend on `appearance` (either directly or transitively), then
+# declarations inside the @appearance-base rule might not apply consistently.
+#
+# We don't want to necessarily make all properties work in @appearance-base, however.
+# For example we don't want to mess with writing-modes etc there, so we can skip the
+# dependency.
+PRIORITARY_PROPERTY_DEPENDENCIES = {
+    # Needed for @appearance-base
+    "-moz-default-appearance": [],
+    "appearance": ["-moz-default-appearance"],
+    # Language affects font-family and thus other prioritary font properties.
+    "-x-lang": [],
+    # font-family potentially changes keyword font sizes, we want to apply text
+    # un-scaling after it.
+    "-x-text-scale": ["font-family"],
+    # Affects all colors due to forced-colors mode.
+    "forced-color-adjust": [],
+    # color-scheme potentially affects all colors via light-dark() / system colors.
+    # It depends on forced-color-adjust because it's one of the
+    # "ignored_when_colors_disabled" properties.
+    "color-scheme": ["forced-color-adjust"],
+    # Affects all lengths.
+    "zoom": [],
+    # Affects the `math` keyword font-size.
+    "math-depth": [],
+    # Affects min font-size.
+    "-moz-min-font-size-ratio": [],
+    # Default font-family depends on language.
+    "font-family": ["-x-lang", "appearance"],
+    # font-size depends on zoom because it's a length, and other properties because of
+    # their respective size implications, see their comments.
+    "font-size": [
+        "zoom",
+        "math-depth",
+        "-x-text-scale",
+        "-moz-min-font-size-ratio",
+    ],
+    # Various font properties affect primary font selection, which affect all other
+    # lengths (other than font-size) via font-relative units.
+    "font-size-adjust": ["appearance"],
+    "font-weight": ["appearance"],
+    "font-width": ["appearance"],
+    "font-style": ["appearance"],
+    # Writing-mode properties affect logical -> physical property conversions, but also
+    # font metrics.
+    "direction": [],
+    "writing-mode": [],
+    "text-orientation": [],
+    # Line-height depends on the primary font and writing-mode because it can be a
+    # length.
+    "line-height": [
+        "direction",
+        "writing-mode",
+        "text-orientation",
+        "font-size",
+        "font-weight",
+        "font-width",
+        "font-style",
+        "font-size-adjust",
+    ],
+}
+
+PRIORITARY_PROPERTIES = set(PRIORITARY_PROPERTY_DEPENDENCIES.keys())
 
 VISITED_DEPENDENT_PROPERTIES = set(
     [
@@ -149,8 +220,8 @@ def to_camel_case_lower(ident):
 
 
 # https://drafts.csswg.org/cssom/#css-property-to-idl-attribute
-def to_idl_name(ident):
-    return re.sub("-([a-z])", lambda m: m.group(1).upper(), ident)
+def to_idl_name(name):
+    return re.sub("-([a-z])", lambda m: m.group(1).upper(), name)
 
 
 def parse_aliases(value):
@@ -486,6 +557,11 @@ class Longhand(Property):
         ]
 
     def may_be_disabled_in(self, shorthand, engine):
+        if "ALLOWS_DISABLED_SUBPROPERTIES" in shorthand.flags:
+            assert "IS_LEGACY_SHORTHAND" in shorthand.flags
+            assert len(shorthand.sub_properties) == 1
+            return False
+
         if engine == "gecko":
             return self.gecko_pref and self.gecko_pref != shorthand.gecko_pref
         elif engine == "servo":
@@ -512,7 +588,10 @@ class Longhand(Property):
             return False
         # TODO: Get this from SpecifiedValueInfo or so instead; see bug 1887627.
         return self.predefined_type in {
+            "BorderSideWidth",
             "BorderSpacing",
+            "BoxShadow",
+            "Filter",
             "FontSize",
             "Inset",
             "Length",
@@ -522,11 +601,13 @@ class Longhand(Property):
             "LineHeight",
             "LineWidth",
             "MaxSize",
+            "Margin",
             "NonNegativeLength",
             "NonNegativeLengthOrAuto",
             "NonNegativeLengthOrNumber",
             "NonNegativeLengthOrNumberRect",
             "NonNegativeLengthPercentage",
+            "NonNegativeLengthPercentageOrAuto",
             "NonNegativeLengthPercentageOrNormal",
             "Position",
             "PositionOrAuto",
@@ -559,7 +640,6 @@ class Longhand(Property):
                 "AnimationDirection",
                 "AnimationFillMode",
                 "AnimationPlayState",
-                "AspectRatio",
                 "BaselineSource",
                 "BreakBetween",
                 "BreakWithin",
@@ -568,7 +648,6 @@ class Longhand(Property):
                 "BorderStyle",
                 "table::CaptionSide",
                 "Clear",
-                "ColumnCount",
                 "Contain",
                 "ContentVisibility",
                 "ContainerType",
@@ -577,21 +656,15 @@ class Longhand(Property):
                 "FillRule",
                 "Float",
                 "FontLanguageOverride",
-                "FontSizeAdjust",
-                "FontStretch",
-                "FontStyle",
                 "FontSynthesis",
                 "FontSynthesisStyle",
                 "FontVariantEastAsian",
                 "FontVariantLigatures",
                 "FontVariantNumeric",
-                "FontWeight",
-                "GreaterThanOrEqualToOneNumber",
                 "GridAutoFlow",
+                "ImageDecoding",
                 "ImageRendering",
                 "Inert",
-                "InitialLetter",
-                "Integer",
                 "PositionArea",
                 "PositionAreaKeyword",
                 "PositionProperty",
@@ -600,26 +673,21 @@ class Longhand(Property):
                 "SelfAlignment",
                 "JustifyItems",
                 "LineBreak",
-                "LineClamp",
+                "MarginTrim",
                 "MasonryAutoFlow",
                 "MozTheme",
                 "BoolInteger",
                 "text::MozControlCharacterVisibility",
-                "MathDepth",
                 "MozScriptMinSize",
                 "MozScriptSizeMultiplier",
                 "TransformBox",
                 "TextDecorationSkipInk",
-                "NonNegativeNumber",
-                "OffsetRotate",
-                "Opacity",
                 "OutlineStyle",
                 "Overflow",
                 "OverflowAnchor",
                 "OverflowWrap",
                 "OverscrollBehavior",
                 "PageOrientation",
-                "Percentage",
                 "PointerEvents",
                 "PositionTryOrder",
                 "PositionVisibility",
@@ -627,7 +695,6 @@ class Longhand(Property):
                 "ForcedColorAdjust",
                 "Resize",
                 "RubyPosition",
-                "SVGOpacity",
                 "SVGPaintOrder",
                 "ScrollbarGutter",
                 "ScrollSnapAlign",
@@ -654,8 +721,6 @@ class Longhand(Property):
                 "WritingModeProperty",
                 "XSpan",
                 "XTextScale",
-                "ZIndex",
-                "Zoom",
             }
         if self.name == "overflow-y":
             return True
@@ -800,6 +865,18 @@ class StyleStruct(object):
         self.document_dependent = self.gecko_name in ["Font", "Visibility", "Text"]
 
 
+class Descriptor(object):
+    def __init__(self, name, type, parser=None, gecko_pref=None, ignore_malloc_size_of=None, aliases=[]):
+        self.name = name
+        self.aliases = aliases
+        self.type = type
+        self.parser = parser
+        self.gecko_pref = gecko_pref
+        self.ignore_malloc_size_of = ignore_malloc_size_of
+        self.ident = to_rust_ident(name)
+        self.camel_case = to_camel_case(name)
+
+
 class PropertiesData(object):
     def __init__(self, engine):
         self.engine = engine
@@ -933,6 +1010,11 @@ class PropertiesData(object):
             self.declare_shorthand(name, **args)
         self.declare_all_shorthand()
 
+        self.font_face_descriptors = self._load_descriptors("font_face_descriptors.toml")
+        self.counter_style_descriptors = self._load_descriptors("counter_style_descriptors.toml")
+        self.property_descriptors = self._load_descriptors("property_descriptors.toml")
+        self.view_transition_descriptors = self._load_descriptors("view_transition_descriptors.toml")
+
 
     def declare_all_shorthand(self):
         # We don't define the 'all' shorthand using the regular helpers:shorthand
@@ -979,6 +1061,11 @@ class PropertiesData(object):
             spec="https://drafts.csswg.org/css-cascade-3/#all-shorthand"
         )
 
+
+    def _load_descriptors(self, filename):
+        path = os.path.join(os.path.dirname(__file__), filename)
+        data = toml.loads(open(path).read())
+        return [Descriptor(name, **args) for name, args in data.items()]
 
     def style_struct_by_name_lower(self, name):
         for s in self.style_structs:
@@ -1196,11 +1283,14 @@ class PropertyRestrictions:
     # https://drafts.csswg.org/css-pseudo/#placeholder
     #
     # The spec says that placeholder and first-line have the same restrictions,
-    # but that's not true in Gecko and we also allow a handful other properties
-    # for ::placeholder.
+    # except those defined in css-inline.
+    # We also allow a handful other properties for ::placeholder, which is allowed by
+    # the spec.
     @staticmethod
     def placeholder(data):
         props = PropertyRestrictions.first_line(data)
+        for p in PropertyRestrictions.spec(data, "css-inline"):
+            props.discard(p)
         props.add("opacity")
         props.add("text-overflow")
         props.add("text-align")
@@ -1211,6 +1301,8 @@ class PropertyRestrictions:
             props.add(p)
         # ::placeholder can't be SVG text
         props -= PropertyRestrictions.svg_text_properties()
+        # Historically ::placeholder's line-height was !important in the UA sheet.
+        props.remove("line-height")
 
         return props
 
@@ -1239,6 +1331,7 @@ class PropertyRestrictions:
                 "unicode-bidi",
                 "-moz-osx-font-smoothing",
             ]
+            + PropertyRestrictions.shorthand(data, "animation-range")
             + PropertyRestrictions.shorthand(data, "text-wrap")
             + PropertyRestrictions.shorthand(data, "white-space")
             + PropertyRestrictions.spec(data, "css-fonts")

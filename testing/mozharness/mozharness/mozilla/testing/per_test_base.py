@@ -397,10 +397,7 @@ class SingleTestMixin:
         mozinfo.update({
             "privateBrowsing": "privatebrowsing" in self.config.get("test_tags", [])
         })
-        mozinfo.update({
-            "sessionHistoryInParent": "fission.disableSessionHistoryInParent=true"
-            in self.config.get("extra_prefs", [])
-        })
+        mozinfo.update({"sessionHistoryInParent": True})
         mozinfo.update({"http2": self.config.get("useHttp2Server", False)})
         mozinfo.update({"http3": self.config.get("useHttp3Server", False)})
         mozinfo.update({"xorigin": self.config.get("enable_xorigin_tests", False)})
@@ -587,8 +584,8 @@ class SingleTestMixin:
 
     def get_indexed_logs(self, dir, test_suite):
         """
-        Per-test tasks need distinct file names for the raw and errorsummary logs
-        on each run.
+        Per-test tasks need distinct file names for the raw, errorsummary and
+        testsummary logs on each run.
         """
         index = ""
         if self.verify_enabled or self.per_test_coverage:
@@ -598,4 +595,5 @@ class SingleTestMixin:
         error_summary_file = os.path.join(
             dir, "%s%s_errorsummary.log" % (test_suite, index)
         )
-        return raw_log_file, error_summary_file
+        test_summary_file = os.path.join(dir, "summary.jsonl")
+        return raw_log_file, error_summary_file, test_summary_file

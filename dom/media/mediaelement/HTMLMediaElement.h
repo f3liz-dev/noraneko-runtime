@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -174,8 +172,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   CORSMode GetCORSMode() { return mCORSMode; }
 
-  explicit HTMLMediaElement(
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+  explicit HTMLMediaElement(already_AddRefed<mozilla::dom::NodeInfo> aNodeInfo);
   void Init();
 
   virtual HTMLVideoElement* AsHTMLVideoElement() { return nullptr; };
@@ -368,6 +365,8 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   // Stops listening for async GV autoplay permissions if observer exists.
   void StopObservingGVAutoplayIfNeeded();
+
+  bool ShouldDelayPlayUntilGVAutoplayRequestResolved() const;
 
   // Check if the media element had crossorigin set when loading started
   bool ShouldCheckAllowOrigin();
@@ -657,22 +656,30 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void SetVolume(double aVolume, ErrorResult& aRv);
 
-  bool Muted() const { return mMuted & MUTED_BY_CONTENT; }
-  void SetMuted(bool aMuted);
+  enum MutedReasons {
+    MUTED_BY_CONTENT = 0x01,
+    MUTED_BY_INVALID_PLAYBACK_RATE = 0x02,
+    MUTED_BY_AUDIO_CHANNEL = 0x04,
+    MUTED_BY_AUDIO_TRACK = 0x08,
+    MUTED_BY_MEDIA_CONTROL = 0x10
+  };
+
+  bool Muted() const {
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted
+    return !!(mMuted & (MUTED_BY_CONTENT | MUTED_BY_INVALID_PLAYBACK_RATE));
+  }
+  void SetMuted(bool aMuted, MutedReasons aReason = MUTED_BY_CONTENT);
+
+  // Chrome-only accessor exposing which reasons currently contribute to the
+  // muted state, so tests can verify muting that does not affect the
+  // web-visible muted attribute (e.g. mute via media control).
+  uint32_t GetMutedReasons() const { return mMuted; }
 
   bool DefaultMuted() const { return GetBoolAttr(nsGkAtoms::muted); }
 
   void SetDefaultMuted(bool aMuted, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::muted, aMuted, aRv);
   }
-
-  bool MozAllowCasting() const { return mAllowCasting; }
-
-  void SetMozAllowCasting(bool aShow) { mAllowCasting = aShow; }
-
-  bool MozIsCasting() const { return mIsCasting; }
-
-  void SetMozIsCasting(bool aShow) { mIsCasting = aShow; }
 
   // Returns whether a call to Play() would be rejected with NotAllowedError.
   // This assumes "worst case" for unknowns. So if prompting for permission is
@@ -807,6 +814,18 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   }
 
   void NotifyCueDisplayStatesChanged();
+
+  void SetCuesDirty() {
+    if (mTextTrackManager) {
+      mTextTrackManager->SetCuesDirty();
+    }
+  }
+
+  void UpdateCueDisplay() {
+    if (mTextTrackManager) {
+      mTextTrackManager->UpdateCueDisplay();
+    }
+  }
 
   bool IsBlessed() const { return mIsBlessed; }
 
@@ -1314,6 +1333,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    */
   void SetVolumeInternal();
 
+  // Record the glean probe once per resource when a playback that would
+  // otherwise be audible is muted only by the muted content attribute added at
+  // runtime.
+  void MaybeRecordRuntimeMutedContentAttrImpact();
+
   /**
    * Suspend or resume element playback and resource download.  When we suspend
    * playback, event delivery would also be suspended (and events queued) until
@@ -1368,7 +1392,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // content, or NS_ERROR_FAILURE if the document has no window.
   bool CanBeCaptured(StreamCaptureType aCaptureType, ErrorResult& aRv);
 
-  using nsGenericHTMLElement::DispatchEvent;
   // For nsAsyncEventRunner.
   // The event is blocked while the document is in B/F cache.
   MOZ_CAN_RUN_SCRIPT nsresult FireEvent(const nsAString& aName);
@@ -1597,14 +1620,22 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // True if the audio track is not silent.
   bool mIsAudioTrackAudible = false;
 
-  enum MutedReasons {
-    MUTED_BY_CONTENT = 0x01,
-    MUTED_BY_INVALID_PLAYBACK_RATE = 0x02,
-    MUTED_BY_AUDIO_CHANNEL = 0x04,
-    MUTED_BY_AUDIO_TRACK = 0x08
-  };
-
   uint32_t mMuted = 0;
+
+  // The tristate "muted state". While Default, the muted content attribute is a
+  // fallback that determines whether the element is muted; once the muted
+  // setter latches the state to True or False, the content attribute no longer
+  // applies.
+  // https://html.spec.whatwg.org/multipage/media.html#concept-media-muted-state
+  enum class MutedState : uint8_t { Default, True, False };
+  MutedState mMutedState = MutedState::Default;
+
+  // Whether the muted content attribute added at runtime (while the muted state
+  // is "default") is what would mute this element, and whether the resulting
+  // impact has already been recorded for the current resource. Used only for
+  // the glean probe.
+  bool mMutedByRuntimeContentAttr = false;
+  bool mRecordedRuntimeContentAttrImpact = false;
 
   UniquePtr<const MetadataTags> mTags;
 
@@ -1614,6 +1645,12 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // This is always the original URL we're trying to load --- before
   // redirects etc.
   nsCOMPtr<nsIURI> mLoadingSrc;
+
+  // The URI of the resource actually loaded. Starts equal to mLoadingSrc and
+  // is updated to the post-redirect URI on each redirect. Used to decide
+  // cross-origin load-error redaction; null means we have no captured URI, and
+  // is treated as cross-origin.
+  nsCOMPtr<nsIURI> mLoadingSrcFinalURI;
 
   // The triggering principal for the current source.
   nsCOMPtr<nsIPrincipal> mLoadingSrcTriggeringPrincipal;
@@ -1971,9 +2008,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // error.
   bool IsPlayable() const;
 
-  // Return true if the media qualifies for being controlled by media control
-  // keys.
-  bool ShouldStartMediaControlKeyListener() const;
+  // Return true if the media source qualifies for full media-key control,
+  // meaning the OS media-control interface (media keys, lock-screen widget,
+  // etc.) will be activated for this element.
+  bool IsControllableMediaSource() const;
 
   // Start the listener if media fits the requirement of being able to be
   // controlled be media control keys.

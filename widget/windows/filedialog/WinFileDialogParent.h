@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,10 +40,11 @@ class WinFileDialogParent final : private PWinFileDialogParent {
 
   [[nodiscard]] RefPtr<ShowFileDialogPromise> ShowFileDialogImpl(
       HWND parent, const FileDialogType& type,
-      mozilla::Span<Command const> commands);
+      mozilla::Span<Command const> commands, bool aNeedsInputProtection);
 
   [[nodiscard]] RefPtr<ShowFolderDialogPromise> ShowFolderDialogImpl(
-      HWND parent, mozilla::Span<Command const> commands);
+      HWND parent, mozilla::Span<Command const> commands,
+      bool aNeedsInputProtection);
 
  private:
   ~WinFileDialogParent();

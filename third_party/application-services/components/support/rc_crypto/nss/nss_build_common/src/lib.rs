@@ -23,29 +23,29 @@ pub enum LinkingKind {
 pub struct NoNssDir;
 
 pub fn link_nss() -> Result<(), NoNssDir> {
-    let is_gecko = env::var_os("MOZ_TOPOBJDIR").is_some();
-    if !is_gecko {
-        let (lib_dir, include_dir) = get_nss()?;
-        println!(
-            "cargo:rustc-link-search=native={}",
-            lib_dir.to_string_lossy()
-        );
-        println!("cargo:include={}", include_dir.to_string_lossy());
-        let kind = determine_kind();
-        link_nss_libs(kind);
-    } else {
-        let libs = match env::var("CARGO_CFG_TARGET_OS")
-            .as_ref()
-            .map(std::string::String::as_str)
-        {
-            Ok("android") | Ok("macos") => vec!["nss3"],
-            _ => vec!["nssutil3", "nss3", "plds4", "plc4", "nspr4"],
-        };
-        for lib in &libs {
-            println!("cargo:rustc-link-lib=dylib={}", lib);
-        }
+    if env::var_os("MOZ_TOPOBJDIR").is_some() {
+        mozbuild::link_nss();
+        return Ok(());
     }
+    let (lib_dir, include_dir) = get_nss()?;
+    println!(
+        "cargo:rustc-link-search=native={}",
+        lib_dir.to_string_lossy()
+    );
+    println!("cargo:include={}", include_dir.to_string_lossy());
+    let kind = determine_kind();
+    link_nss_libs(kind);
     Ok(())
+}
+
+pub fn link_nss_rustlib() -> Result<(), NoNssDir> {
+    if env::var_os("MOZ_TOPOBJDIR").is_some() {
+        mozbuild::link_nss_rustlib();
+        return Ok(());
+    }
+    // The standalone NSS_DIR path already produces a self-contained link
+    // (including mozpkix when statically linked), so this matches link_nss.
+    link_nss()
 }
 
 fn get_nss() -> Result<(PathBuf, PathBuf), NoNssDir> {
@@ -112,6 +112,7 @@ fn get_nss_libs(kind: LinkingKind) -> Vec<&'static str> {
                 "certhi",
                 "cryptohi",
                 "freebl_static",
+                "gcm",
                 "mozpkix",
                 "nspr4",
                 "nss_static",
@@ -127,32 +128,25 @@ fn get_nss_libs(kind: LinkingKind) -> Vec<&'static str> {
             // Hardware specific libs.
             let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
             let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-            // https://searchfox.org/nss/rev/0d5696b3edce5124353f03159d2aa15549db8306/lib/freebl/freebl.gyp#508-542
             if target_arch == "arm" || target_arch == "aarch64" {
                 static_libs.push("armv8_c_lib");
             }
             if target_arch == "x86_64" || target_arch == "x86" {
-                static_libs.push("gcm-aes-x86_c_lib");
+                static_libs.push("ghash-aes-x86_c_lib");
                 static_libs.push("sha-x86_c_lib");
             }
             if target_arch == "arm" {
-                static_libs.push("gcm-aes-arm32-neon_c_lib")
+                static_libs.push("ghash-aes-arm32-neon_c_lib")
             }
             if target_arch == "aarch64" {
-                static_libs.push("gcm-aes-aarch64_c_lib");
+                static_libs.push("ghash-aes-aarch64_c_lib");
             }
             if target_arch == "x86_64" {
                 static_libs.push("hw-acc-crypto-avx");
                 static_libs.push("hw-acc-crypto-avx2");
-            }
-            // https://searchfox.org/nss/rev/08c4d05078d00089f8d7540651b0717a9d66f87e/lib/freebl/freebl.gyp#315-324
-            if ((target_os == "android" || target_os == "linux") && target_arch == "x86_64")
-                || target_os == "windows"
-            {
-                static_libs.push("intel-gcm-wrap_c_lib");
-                // https://searchfox.org/nss/rev/08c4d05078d00089f8d7540651b0717a9d66f87e/lib/freebl/freebl.gyp#43-47
-                if (target_os == "android" || target_os == "linux") && target_arch == "x86_64" {
-                    static_libs.push("intel-gcm-s_lib");
+                // intel-gcm-wrap is not built for iOS simulator targets.
+                if target_os != "ios" {
+                    static_libs.push("intel-gcm-wrap_c_lib");
                 }
             }
             static_libs

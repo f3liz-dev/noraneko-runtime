@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,15 @@
 #ifndef nsAsyncRedirectVerifyHelper_h
 #define nsAsyncRedirectVerifyHelper_h
 
-#include "nsIRunnable.h"
-#include "nsIChannelEventSink.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsINamed.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIChannelEventSink.h"
+#include "nsINamed.h"
+#include "nsIRunnable.h"
 
 class nsIChannel;
+class nsIEventTarget;
 
 namespace mozilla {
 namespace net {

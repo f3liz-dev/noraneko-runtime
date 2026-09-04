@@ -1,4 +1,4 @@
-# Telemetry
+# DevTools telemetry
 
 We use telemetry to get metrics of usage of the different features and panels in DevTools. This will help us take better, informed decisions when prioritising our work.
 
@@ -154,6 +154,7 @@ Create a telemetry instance on the tool constructor:
 ```js
 this._telemetry = new Telemetry({ useSessionId: true });
 ```
+
 `useSessionId` allows to aggregate all records behind a randomly unique "session_id"
 extra attribute. For example, this helps aggregate all data recorded for one precise
 toolbox instance.

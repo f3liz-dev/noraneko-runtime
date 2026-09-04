@@ -57,7 +57,7 @@ class MozAdsUseCasesTest {
         val clickUrl = "https://firefox.com/click"
         val exception = MozAdsClientApiException.Other("test error")
 
-        whenever(client.recordClick(clickUrl = any())).thenThrow(exception)
+        whenever(client.recordClick(clickUrl = clickUrl)).thenThrow(exception)
 
         assertFalse(useCases.recordClickInteraction(clickUrl = clickUrl))
         verify(client).recordClick(clickUrl = clickUrl)
@@ -78,7 +78,7 @@ class MozAdsUseCasesTest {
         val impressionUrl = "https://firefox.com/click"
         val exception = MozAdsClientApiException.Other("test error")
 
-        whenever(client.recordImpression(impressionUrl = any())).thenThrow(exception)
+        whenever(client.recordImpression(impressionUrl = impressionUrl)).thenThrow(exception)
 
         assertFalse(useCases.recordImpressionInteraction(impressionUrl = impressionUrl))
         verify(client).recordImpression(impressionUrl = impressionUrl)

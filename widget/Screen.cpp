@@ -1,16 +1,14 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 2; -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Screen.h"
 
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/ScreenBinding.h"
 #include "mozilla/Hal.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/ScreenBinding.h"
 
 namespace mozilla::widget {
 
@@ -31,6 +29,7 @@ Screen::Screen(LayoutDeviceIntRect aRect, LayoutDeviceIntRect aAvailRect,
                uint32_t aRefreshRate, DesktopToLayoutDeviceScale aContentsScale,
                CSSToLayoutDeviceScale aDefaultCssScale, float aDPI,
                IsPseudoDisplay aIsPseudoDisplay, IsHDR aIsHDR,
+               float aSDRContentBrightness, float aHDRPeakBrightness,
                hal::ScreenOrientation aOrientation,
                OrientationAngle aOrientationAngle)
     : mRect(aRect),
@@ -46,7 +45,9 @@ Screen::Screen(LayoutDeviceIntRect aRect, LayoutDeviceIntRect aAvailRect,
       mScreenOrientation(EffectiveOrientation(aOrientation, aRect)),
       mOrientationAngle(aOrientationAngle),
       mIsPseudoDisplay(aIsPseudoDisplay == IsPseudoDisplay::Yes),
-      mIsHDR(aIsHDR == IsHDR::Yes) {}
+      mIsHDR(aIsHDR == IsHDR::Yes),
+      mSDRContentBrightness(aSDRContentBrightness),
+      mHDRPeakBrightness(aHDRPeakBrightness) {}
 
 Screen::Screen(const dom::ScreenDetails& aScreen)
     : mRect(aScreen.rect()),
@@ -62,7 +63,9 @@ Screen::Screen(const dom::ScreenDetails& aScreen)
       mScreenOrientation(aScreen.orientation()),
       mOrientationAngle(aScreen.orientationAngle()),
       mIsPseudoDisplay(aScreen.isPseudoDisplay()),
-      mIsHDR(aScreen.isHDR()) {}
+      mIsHDR(aScreen.isHDR()),
+      mSDRContentBrightness(aScreen.sdrContentBrightness()),
+      mHDRPeakBrightness(aScreen.hdrPeakBrightness()) {}
 
 Screen::Screen(const Screen& aOther)
     : mRect(aOther.mRect),
@@ -78,13 +81,16 @@ Screen::Screen(const Screen& aOther)
       mScreenOrientation(aOther.mScreenOrientation),
       mOrientationAngle(aOther.mOrientationAngle),
       mIsPseudoDisplay(aOther.mIsPseudoDisplay),
-      mIsHDR(aOther.mIsHDR) {}
+      mIsHDR(aOther.mIsHDR),
+      mSDRContentBrightness(aOther.mSDRContentBrightness),
+      mHDRPeakBrightness(aOther.mHDRPeakBrightness) {}
 
 dom::ScreenDetails Screen::ToScreenDetails() const {
   return dom::ScreenDetails(
       mRect, mRectDisplayPix, mAvailRect, mAvailRectDisplayPix, mPixelDepth,
       mColorDepth, mRefreshRate, mContentsScale, mDefaultCssScale, mDPI,
-      mScreenOrientation, mOrientationAngle, mIsPseudoDisplay, mIsHDR);
+      mScreenOrientation, mOrientationAngle, mIsPseudoDisplay, mIsHDR,
+      mSDRContentBrightness, mHDRPeakBrightness);
 }
 
 NS_IMETHODIMP

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -225,6 +223,10 @@ size_t Platform::PageSize() {
 
 size_t Platform::AllocationGranularity() { return PageSize(); }
 
-bool Platform::IsSafeToMap(const PlatformHandle&) { return true; }
+bool Platform::IsSafeToMap(const PlatformHandle&, uint64_t) {
+  // mach_vm_map is not well documented but it appears to check for the usual
+  // kinds of invalid input (out-of-range size, wrong object type, etc.)
+  return true;
+}
 
 }  // namespace mozilla::ipc::shared_memory

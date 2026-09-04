@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +18,8 @@ class JSActorProtocolUtils {
   static void FromIPCShared(ProtoT& aProto, const ActorInfoT& aInfo) {
     aProto->mRemoteTypes = aInfo.remoteTypes().Clone();
 
+    aProto->mSafeForUntrustedWebProcess = aInfo.safeForUntrustedWebProcess();
+
     aProto->mChild.mESModuleURI = aInfo.url();
 
     aProto->mLoadInDevToolsLoader = aInfo.loadInDevToolsLoader();
@@ -32,6 +32,8 @@ class JSActorProtocolUtils {
     aInfo.name() = aProto->mName;
 
     aInfo.remoteTypes() = aProto->mRemoteTypes.Clone();
+
+    aInfo.safeForUntrustedWebProcess() = aProto->mSafeForUntrustedWebProcess;
 
     aInfo.url() = aProto->mChild.mESModuleURI;
 
@@ -48,6 +50,8 @@ class JSActorProtocolUtils {
       MOZ_ASSERT(aOptions.mRemoteTypes.Value().Length());
       aProto->mRemoteTypes = aOptions.mRemoteTypes.Value();
     }
+
+    aProto->mSafeForUntrustedWebProcess = aOptions.mSafeForUntrustedWebProcess;
 
     if (aOptions.mParent.WasPassed()) {
       const auto& parentOptions = aOptions.mParent.Value();

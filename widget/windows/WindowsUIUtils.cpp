@@ -1,39 +1,39 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <windows.h>
-#include <winreg.h>
-#include <wrl.h>
-#include <powerbase.h>
-#include <cfgmgr32.h>
-
-#include "nsServiceManagerUtils.h"
-
 #include "WindowsUIUtils.h"
 
-#include "nsIObserverService.h"
-#include "nsIAppShellService.h"
-#include "nsAppShellCID.h"
+// clang-format off
+#include <windows.h>
+#include <cfgmgr32.h>
+#include <powerbase.h>
+#include <winreg.h>
+#include <wrl.h>
+// clang-format on
+
+#include "Units.h"
+#include "WinRegistry.h"
+#include "WinUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/WindowsVersion.h"
-#include "mozilla/LookAndFeel.h"
 #include "mozilla/media/MediaUtils.h"
-#include "nsString.h"
+#include "nsAppShellCID.h"
 #include "nsGlobalWindowOuter.h"
+#include "nsIAppShellService.h"
+#include "nsIObserverService.h"
 #include "nsIWidget.h"
 #include "nsIWindowMediator.h"
 #include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
 #include "nsWindowGfx.h"
-#include "Units.h"
 #include "nsWindowsHelpers.h"
-#include "WinRegistry.h"
-#include "WinUtils.h"
 
 mozilla::LazyLogModule gTabletModeLog("TabletMode");
 extern mozilla::LazyLogModule gWindowsLog;
@@ -45,8 +45,8 @@ extern mozilla::LazyLogModule gWindowsLog;
 
 #  include <inspectable.h>
 #  include <roapi.h>
-#  include <windows.ui.viewmanagement.h>
 #  include <uiviewsettingsinterop.h>
+#  include <windows.ui.viewmanagement.h>
 
 #  pragma comment(lib, "runtimeobject.lib")
 
@@ -66,8 +66,10 @@ using namespace mozilla;
 enum class TabletModeState : uint8_t { Unknown, Off, On };
 static TabletModeState sInTabletModeState = TabletModeState::Unknown;
 
-WindowsUIUtils::WindowsUIUtils() = default;
-WindowsUIUtils::~WindowsUIUtils() = default;
+// Cache: whether this device is believed to be capable of entering tablet mode.
+//
+// Meaningful only if `IsWin11OrLater()`.
+static Maybe<bool> sIsTabletCapable = Nothing();
 
 NS_IMPL_ISUPPORTS(WindowsUIUtils, nsIWindowsUIUtils)
 
@@ -186,9 +188,31 @@ bool WindowsUIUtils::GetInWin11TabletMode() {
     return false;
   }
   if (sInTabletModeState == TabletModeState::Unknown) {
-    UpdateInWin11TabletMode();
+    UpdateInWin11TabletMode(TabletModeUpdateReason::LazyQuery);
   }
   return sInTabletModeState == TabletModeState::On;
+}
+
+// Memoized result of the Win11 tablet-capability heuristic. Computing it is a
+// side effect of UpdateInWin11TabletMode(), which latches sIsTabletCapable on
+// its first run.
+static bool GetIsWin11TabletCapable() {
+  MOZ_DIAGNOSTIC_ASSERT(IsWin11OrLater());
+  if (sIsTabletCapable.isNothing()) {
+    WindowsUIUtils::UpdateInWin11TabletMode(
+        WindowsUIUtils::TabletModeUpdateReason::LazyQuery);
+  }
+  return sIsTabletCapable.valueOr(false);
+}
+
+bool WindowsUIUtils::GetIsTabletCapable() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  // Win10 exposes tablet mode as a user-toggleable setting on every device, so
+  // there is nothing to detect.
+  if (!IsWin11OrLater()) {
+    return true;
+  }
+  return GetIsWin11TabletCapable();
 }
 
 NS_IMETHODIMP
@@ -200,6 +224,12 @@ WindowsUIUtils::GetInWin10TabletMode(bool* aResult) {
 NS_IMETHODIMP
 WindowsUIUtils::GetInWin11TabletMode(bool* aResult) {
   *aResult = GetInWin11TabletMode();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WindowsUIUtils::GetIsTabletCapable(bool* aResult) {
+  *aResult = GetIsTabletCapable();
   return NS_OK;
 }
 
@@ -486,6 +516,8 @@ void WindowsUIUtils::UpdateInWin10TabletMode() {
   }
 
   HWND winPtr = (HWND)widget->GetNativeData(NS_NATIVE_WINDOW);
+  NS_ENSURE_TRUE_VOID(winPtr);
+
   ComPtr<IUIViewSettingsInterop> uiViewSettingsInterop;
 
   HRESULT hr = GetActivationFactory(
@@ -522,11 +554,6 @@ void WindowsUIUtils::UpdateInWin10TabletMode() {
 #endif
 }
 
-// Cache: whether this device is believed to be capable of entering tablet mode.
-//
-// Meaningful only if `IsWin11OrLater()`.
-static Maybe<bool> sIsTabletCapable = Nothing();
-
 // The UUID of a GPIO pin which indicates whether or not a convertible device is
 // currently in tablet mode. (We copy `DEFINE_GUID`'s implementation here since
 // we can't control `INITGUID`, which the canonical one is conditional on.)
@@ -539,7 +566,7 @@ static Maybe<bool> sIsTabletCapable = Nothing();
     MOZ_GUID_GPIOBUTTONS_LAPTOPSLATE_INTERFACE, 0x317fc439, 0x3f77, 0x41c8,
     0xb0, 0x9e, 0x08, 0xad, 0x63, 0x27, 0x2a, 0xa3);
 
-void WindowsUIUtils::UpdateInWin11TabletMode() {
+void WindowsUIUtils::UpdateInWin11TabletMode(TabletModeUpdateReason aReason) {
   // The OS-level getter itself is threadsafe, but we retain the main-thread
   // restriction to parallel the Win10 getter's (presumed) restriction.
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
@@ -720,6 +747,10 @@ void WindowsUIUtils::UpdateInWin11TabletMode() {
       return;
     }
   } else if (sIsTabletCapable == Some(false)) {
+    if (aReason == TabletModeUpdateReason::LazyQuery) {
+      sInTabletModeState = TabletModeState::Off;
+      return;
+    }
     // We've been in here before, and the heuristic came back false... but
     // somehow, we've just gotten an update for the convertible-slate-mode
     // state.

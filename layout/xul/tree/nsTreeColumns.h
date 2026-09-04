@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -133,14 +131,14 @@ class nsTreeColumn final : public nsISupports, public nsWrapperCache {
 
   int32_t mIndex;
 
-  bool mIsPrimary;
-  bool mIsCycler;
-  bool mIsEditable;
-  bool mOverflow;
+  bool mIsPrimary = false;
+  bool mIsCycler = false;
+  bool mIsEditable = false;
+  bool mOverflow = false;
 
-  int16_t mType;
+  int16_t mType = 0;
 
-  int8_t mCropStyle;
+  int8_t mCropStyle = 0;
   mozilla::StyleTextAlign mTextAlignment;
 
   RefPtr<nsTreeColumn> mNext;

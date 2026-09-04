@@ -157,6 +157,9 @@ class ManifestTokens:
         _v1126100: Token = self.add(
             Token(t_type=t_os_version, depends=win, value="11.26100")
         )
+        _v1126200: Token = self.add(
+            Token(t_type=t_os_version, depends=win, value="11.26200")
+        )
 
         _aarch64: Token = self.add(Token(t_type=t_arch, value="aarch64"))
         _armeabi_v7a: Token = self.add(
@@ -200,9 +203,13 @@ class ManifestTokens:
         _mda_gpu: Token = self.add(Token(t_type=t_variant, value="mda_gpu"))
         _msix: Token = self.add(Token(t_type=t_variant, value="msix"))
         _nogpu: Token = self.add(Token(t_type=t_variant, value="nogpu"))
-        # privateBrowsing -- not used in any manifests
+        _nova: Token = self.add(Token(t_type=t_variant, value="nova"))
+        _private_browsing: Token = self.add(
+            Token(t_type=t_variant, value="privateBrowsing")
+        )
         _remote_async: Token = self.add(Token(t_type=t_variant, value="remote_async"))
         _snapshot: Token = self.add(Token(t_type=t_variant, value="snapshot"))
+        _standalone: Token = self.add(Token(t_type=t_variant, value="standalone"))
         _socketprocess_e10s: Token = self.add(
             Token(t_type=t_variant, value="socketprocess_e10s")
         )
@@ -238,6 +245,7 @@ class ManifestTokens:
         _is_ubuntu: Token = self.add(
             Token(t_type=t_other_flags, value="is_ubuntu")
         )  # deprecated
+        _macos_vm: Token = self.add(Token(t_type=t_other_flags, value="macos_vm"))
         _msix: Token = self.add(Token(t_type=t_other_flags, value="msix"))
         _nightly_build: Token = self.add(
             Token(t_type=t_other_flags, value="nightly_build")

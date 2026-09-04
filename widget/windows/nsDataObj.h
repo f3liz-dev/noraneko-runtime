@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +8,13 @@
 #include <oleidl.h>
 #include <shldisp.h>
 
-#include "mozilla/glue/WinUtils.h"
 #include "mozilla/LazyIdleThread.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsIFile.h"
-#include "nsIURI.h"
-#include "nsIStreamListener.h"
-#include "nsIChannel.h"
+#include "mozilla/glue/WinUtils.h"
 #include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsIChannel.h"
+#include "nsIFile.h"
+#include "nsIStreamListener.h"
 #include "nsITimer.h"
 #include "nsIURI.h"
 #include "nsString.h"
@@ -37,6 +34,14 @@ class CEnumFormatEtc;
  */
 class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
   RefPtr<mozilla::LazyIdleThread> mIOThread;
+
+ public:  // web custom format payload
+  void SetWebCustomFormatMapJson(const nsACString& aJson) {
+    mWebCustomFormatMapJson = aJson;
+  }
+  const nsCString& WebCustomFormatMapJson() const {
+    return mWebCustomFormatMapJson;
+  }
 
  public:  // construction, destruction
   explicit nsDataObj(nsIURI* uri = nullptr);
@@ -153,6 +158,7 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
 
   nsresult ExtractShortcutURL(nsString& outURL);
   nsresult ExtractShortcutTitle(nsString& outTitle);
+  bool ShortcutUrlHasWebScheme();
 
   // munge our HTML data to win32's CF_HTML spec. Will null terminate
   nsresult BuildPlatformHTML(const char* inOurHTML, char** outPlatformHTML);
@@ -167,6 +173,12 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
 
  private:
   nsTArray<nsCString> mDataFlavors;
+
+  // JSON serialization of the WebCustomFormatMap published alongside the
+  // per-clipboard-format data on the clipboard. Set by
+  // nsClipboard::SetupNativeDataObject when the transferable contains any
+  // "web " prefixed flavors.
+  nsCString mWebCustomFormatMapJson;
 
   // the nsITransferable knows nothing about the nsDataObj
   RefPtr<nsITransferable> mTransferable;
@@ -204,19 +216,19 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
                        ULONG* nBytesRead) final;
 
    protected:
-    uint32_t mStreamRead;
+    uint32_t mStreamRead{0};
 
-    CStreamBase();
-    virtual ~CStreamBase();
+    CStreamBase() = default;
+    virtual ~CStreamBase() = default;
   };
 
   class CStream final : public CStreamBase, public nsIStreamListener {
     nsCOMPtr<nsIChannel> mChannel;
     FallibleTArray<uint8_t> mChannelData;
     nsresult mChannelResult;
-    bool mChannelRead;
+    bool mChannelRead{false};
 
-    virtual ~CStream();
+    virtual ~CStream() = default;
     nsresult WaitForCompletion();
 
     // IUnknown
@@ -228,7 +240,7 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
     STDMETHODIMP Stat(STATSTG* statstg, DWORD dwFlags) final;
 
    public:
-    CStream();
+    CStream() = default;
     nsresult Init(nsIURI* pSourceURI, nsContentPolicyType aContentPolicyType,
                   nsIPrincipal* aRequestingPrincipal,
                   nsICookieJarSettings* aCookieJarSettings,
@@ -280,7 +292,7 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
     const uint32_t mTotalLength;
     RefPtr<IUnknown> mMarshaler;
 
-    virtual ~CMemStream();
+    virtual ~CMemStream() = default;
     void WaitForCompletion();
 
     // IStream

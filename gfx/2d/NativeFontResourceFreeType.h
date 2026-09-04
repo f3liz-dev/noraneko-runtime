@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 #ifndef mozilla_gfx_NativeFontResourceFreeType_h
 #define mozilla_gfx_NativeFontResourceFreeType_h
 
-#include "2D.h"
-
 #include <cairo-ft.h>
-#include "mozilla/UniquePtr.h"
+
+#include "2D.h"
 
 namespace mozilla {
 namespace gfx {
@@ -36,8 +33,7 @@ class NativeFontResourceFreeType
   already_AddRefed<SharedFTFace> CloneFace(int aFaceIndex = 0) override;
 
  protected:
-  NativeFontResourceFreeType(UniquePtr<uint8_t[]>&& aFontData,
-                             uint32_t aDataLength,
+  NativeFontResourceFreeType(const uint8_t*&& aFontData, uint32_t aDataLength,
                              FT_Library aFTLibrary = nullptr);
 
   template <class T>
@@ -45,8 +41,7 @@ class NativeFontResourceFreeType
                                             uint32_t aDataLength,
                                             FT_Library aFTLibrary);
 
-  UniquePtr<uint8_t[]> mFontData;
-  uint32_t mDataLength;
+  RefPtr<FontData> mFontData;
   FT_Library mFTLibrary;
 };
 
@@ -67,8 +62,7 @@ class NativeFontResourceFontconfig final : public NativeFontResourceFreeType {
  private:
   friend class NativeFontResourceFreeType;
 
-  NativeFontResourceFontconfig(UniquePtr<uint8_t[]>&& aFontData,
-                               uint32_t aDataLength,
+  NativeFontResourceFontconfig(const uint8_t*&& aFontData, uint32_t aDataLength,
                                FT_Library aFTLibrary = nullptr);
 };
 #endif

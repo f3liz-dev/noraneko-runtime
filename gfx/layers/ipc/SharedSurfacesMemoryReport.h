@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +7,10 @@
 
 #include <cstdint>  // for uint32_t
 #include <unordered_map>
+
 #include "base/process.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/gfx/Point.h"  // for IntSize
 
 namespace mozilla {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef nsDirectoryService_h_
 #define nsDirectoryService_h_
 
-#include "nsIDirectoryService.h"
-#include "nsInterfaceHashtable.h"
-#include "nsIFile.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsTArray.h"
 #include "mozilla/StaticPtr.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsIDirectoryService.h"
+#include "nsIFile.h"
+#include "nsInterfaceHashtable.h"
+#include "nsTArray.h"
 
 #define NS_DIRECTORY_SERVICE_CID \
   {0xf00152d0, 0xb40b, 0x11d3, {0x8c, 0x9c, 0x00, 0x00, 0x64, 0x65, 0x73, 0x74}}
@@ -31,7 +29,7 @@ class nsDirectoryService final : public nsIDirectoryService,
 
   NS_DECL_NSIDIRECTORYSERVICEPROVIDER2
 
-  nsDirectoryService();
+  nsDirectoryService() = default;
 
   static void RealInit();
   void RegisterCategoryProviders();
@@ -47,7 +45,7 @@ class nsDirectoryService final : public nsIDirectoryService,
   ~nsDirectoryService();
   nsCOMPtr<nsIFile> mXCurProcD;
 
-  nsInterfaceHashtable<nsCStringHashKey, nsIFile> mHashtable;
+  nsInterfaceHashtable<nsCStringHashKey, nsIFile> mHashtable{128};
   nsTArray<nsCOMPtr<nsIDirectoryServiceProvider>> mProviders;
 };
 

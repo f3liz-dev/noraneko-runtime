@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -61,6 +59,7 @@
 #include "nsIWebSocketChannel.h"
 #include "nsIWebSocketImpl.h"
 #include "nsIWebSocketListener.h"
+#include "nsIWebSocketProtocolHandler.h"
 #include "nsIWindowWatcher.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -101,9 +100,9 @@ class WebSocketImplProxy final : public nsIWebSocketImpl,
     mOwner = nullptr;
   }
 
-  void BindToOwner(nsIGlobalObject* aOwner) {
-    GlobalTeardownObserver::BindToOwner(aOwner);
-    GlobalFreezeObserver::BindToOwner(aOwner);
+  void BindToGlobal(nsIGlobalObject* aGlobal) {
+    GlobalTeardownObserver::BindToGlobal(aGlobal);
+    GlobalFreezeObserver::BindToGlobal(aGlobal);
   }
 
   void DisconnectFromOwner() override;
@@ -134,6 +133,7 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
       : mWebSocket(aWebSocket),
         mIsServerSide(false),
         mSecure(false),
+        mSecureContext(false),
         mOnCloseScheduled(false),
         mFailed(false),
         mDisconnectingOrDisconnected(false),
@@ -220,11 +220,14 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   nsCOMPtr<nsIWebSocketChannel> mChannel;
 
+  uint64_t mAssociatedBrowsingContextID = 0;
+
   bool mIsServerSide;  // True if we're implementing the server side of a
                        // websocket connection
 
   bool mSecure;  // if true it is using SSL and the wss scheme,
                  // otherwise it is using the ws scheme with no SSL
+  bool mSecureContext;
 
   bool mOnCloseScheduled;
   bool mFailed;
@@ -272,6 +275,7 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   RefPtr<WebSocketEventService> mService;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
+  Maybe<ClientInfo> mClientInfo;
 
   RefPtr<WebSocketImplProxy> mImplProxy;
 
@@ -664,7 +668,7 @@ void WebSocketImpl::Disconnect(const RefPtr<WebSocketImpl>& aProofOfRef) {
 
   // If we haven't called WebSocket::DisconnectFromOwner yet, update
   // web socket count here.
-  if (nsIGlobalObject* global = mWebSocket->GetOwnerGlobal()) {
+  if (nsIGlobalObject* global = mWebSocket->GetRelevantGlobal()) {
     global->UpdateWebSocketCount(-1);
   }
 
@@ -1411,6 +1415,9 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
 
+    webSocketImpl->mAssociatedBrowsingContextID =
+        workerPrivate->AssociatedBrowsingContextID();
+
     uint32_t lineno;
     JS::ColumnNumberOneOrigin column;
     JS::AutoFilename file;
@@ -1591,7 +1598,7 @@ void WebSocket::DisconnectFromOwner() {
   // If we haven't called WebSocketImpl::Disconnect yet, update web
   // socket count here.
   if (mImpl && !mImpl->mDisconnectingOrDisconnected) {
-    GetOwnerGlobal()->UpdateWebSocketCount(-1);
+    GetRelevantGlobal()->UpdateWebSocketCount(-1);
   }
 
   DOMEventTargetHelper::DisconnectFromOwner();
@@ -1618,6 +1625,8 @@ nsresult WebSocketImpl::Init(nsIGlobalObject* aWindowGlobal, JSContext* aCx,
                              uint32_t aScriptLine, uint32_t aScriptColumn) {
   AssertIsOnMainThread();
   MOZ_ASSERT(aPrincipal);
+
+  mLoadingPrincipal = aPrincipal;
 
   mService = WebSocketEventService::GetOrCreate();
 
@@ -1647,7 +1656,7 @@ nsresult WebSocketImpl::Init(nsIGlobalObject* aWindowGlobal, JSContext* aCx,
   RefPtr<WebSocketImplProxy> proxy;
   if (mIsMainThread) {
     proxy = new WebSocketImplProxy(this);
-    proxy->BindToOwner(aWindowGlobal);
+    proxy->BindToGlobal(aWindowGlobal);
   }
 
   if (!mIsMainThread) {
@@ -1668,6 +1677,8 @@ nsresult WebSocketImpl::Init(nsIGlobalObject* aWindowGlobal, JSContext* aCx,
   }
 
   mIsServerSide = aIsServerSide;
+  mSecureContext = aIsSecure;
+  mClientInfo = aClientInfo;
 
   // If we don't have aCx, we are window-less, so we don't have a
   // inner-windowID. This can happen in sharedWorkers and ServiceWorkers or in
@@ -1783,39 +1794,6 @@ nsresult WebSocketImpl::Init(nsIGlobalObject* aWindowGlobal, JSContext* aCx,
                         mPrivateBrowsing);
   }
 
-  // Don't allow https:// to open ws://
-  // Check that we aren't a server side websocket or set to be upgraded to wss
-  // or allowing ws from https or a local websocket
-  if (!mIsServerSide && !mSecure &&
-      !Preferences::GetBool("network.websocket.allowInsecureFromHTTPS",
-                            false) &&
-      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
-          mAsciiHost)) {
-    // If aIsSecure is true then disallow loading ws
-    if (aIsSecure) {
-      return NS_ERROR_DOM_SECURITY_ERR;
-    }
-
-    // Obtain the precursor's URI for the loading principal if it exists
-    // otherwise use the loading principal's URI
-    nsCOMPtr<nsIPrincipal> precursorPrincipal =
-        aPrincipal->GetPrecursorPrincipal();
-    nsCOMPtr<nsIURI> precursorOrLoadingURI = precursorPrincipal
-                                                 ? precursorPrincipal->GetURI()
-                                                 : aPrincipal->GetURI();
-
-    // Check if the parent was loaded securely if we have one
-    if (precursorOrLoadingURI) {
-      nsCOMPtr<nsIURI> precursorOrLoadingInnermostURI =
-          NS_GetInnermostURI(precursorOrLoadingURI);
-      // If the parent was loaded securely then disallow loading ws
-      if (precursorOrLoadingInnermostURI &&
-          precursorOrLoadingInnermostURI->SchemeIs("https")) {
-        return NS_ERROR_DOM_SECURITY_ERR;
-      }
-    }
-  }
-
   if (mIsMainThread) {
     mImplProxy = std::move(proxy);
   }
@@ -1890,17 +1868,50 @@ nsresult WebSocketImpl::InitializeConnection(
   AssertIsOnMainThread();
   MOZ_ASSERT(!mChannel, "mChannel should be null");
 
+  // Don't allow https:// to open ws://
+  // Check that we aren't a server side websocket or set to be upgraded to wss
+  // or allowing ws from https or a local websocket
+  if (!mIsServerSide && !mSecure &&
+      !Preferences::GetBool("network.websocket.allowInsecureFromHTTPS",
+                            false) &&
+      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
+          mAsciiHost)) {
+    // If mSecureContext is true then disallow loading ws
+    if (mSecureContext) {
+      return NS_ERROR_DOM_SECURITY_ERR;
+    }
+
+    // Obtain the precursor's URI for the loading principal if it exists
+    // otherwise use the loading principal's URI
+    nsCOMPtr<nsIPrincipal> precursorPrincipal =
+        mLoadingPrincipal->GetPrecursorPrincipal();
+    nsCOMPtr<nsIURI> precursorOrLoadingURI = precursorPrincipal
+                                                 ? precursorPrincipal->GetURI()
+                                                 : mLoadingPrincipal->GetURI();
+
+    // Check if the parent was loaded securely if we have one
+    if (precursorOrLoadingURI) {
+      nsCOMPtr<nsIURI> precursorOrLoadingInnermostURI =
+          NS_GetInnermostURI(precursorOrLoadingURI);
+      // If the parent was loaded securely then disallow loading ws
+      if (precursorOrLoadingInnermostURI &&
+          precursorOrLoadingInnermostURI->SchemeIs("https")) {
+        return NS_ERROR_DOM_SECURITY_ERR;
+      }
+    }
+  }
+
   nsCOMPtr<nsIWebSocketChannel> wsChannel;
   nsAutoCloseWS autoClose(this);
   nsresult rv;
 
-  if (mSecure) {
-    wsChannel =
-        do_CreateInstance("@mozilla.org/network/protocol;1?name=wss", &rv);
-  } else {
-    wsChannel =
-        do_CreateInstance("@mozilla.org/network/protocol;1?name=ws", &rv);
-  }
+  nsCOMPtr<nsIWebSocketProtocolHandler> wsHandler =
+      do_GetService(mSecure ? "@mozilla.org/network/protocol;1?name=wss"
+                            : "@mozilla.org/network/protocol;1?name=ws",
+                    &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = wsHandler->NewWebSocketChannel(getter_AddRefs(wsChannel));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // add ourselves to the document's load group and
@@ -1933,8 +1944,18 @@ nsresult WebSocketImpl::InitializeConnection(
       doc, doc ? doc->NodePrincipal() : aPrincipal, aPrincipal,
       aCookieJarSettings,
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-      nsIContentPolicy::TYPE_WEBSOCKET, 0);
+      nsIContentPolicy::TYPE_WEBSOCKET, mClientInfo, 0);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  if (mAssociatedBrowsingContextID) {
+    nsCOMPtr<nsILoadInfo> loadInfo;
+    rv = wsChannel->GetLoadInfo(getter_AddRefs(loadInfo));
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (loadInfo) {
+      MOZ_ALWAYS_SUCCEEDS(loadInfo->SetAssociatedBrowsingContextID(
+          mAssociatedBrowsingContextID));
+    }
+  }
 
   if (!mRequestedProtocolList.IsEmpty()) {
     rv = wsChannel->SetProtocol(mRequestedProtocolList);
@@ -2016,7 +2037,7 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
   AssertIsOnTargetThread();
 
   AutoJSAPI jsapi;
-  if (NS_WARN_IF(!jsapi.Init(GetOwnerGlobal()))) {
+  if (NS_WARN_IF(!jsapi.Init(GetRelevantGlobal()))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2036,7 +2057,7 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
       messageType = nsIWebSocketEventListener::TYPE_BLOB;
 
       RefPtr<Blob> blob =
-          Blob::CreateStringBlob(GetOwnerGlobal(), aData, u""_ns);
+          Blob::CreateStringBlob(GetRelevantGlobal(), aData, u""_ns);
       if (NS_WARN_IF(!blob)) {
         return NS_ERROR_FAILURE;
       }
@@ -2122,9 +2143,9 @@ nsresult WebSocket::CreateAndDispatchCloseEvent(bool aWasClean, uint16_t aCode,
 
 nsresult WebSocketImpl::ParseURL(const nsAString& aURL, nsIURI* aBaseURI) {
   AssertIsOnMainThread();
-  NS_ENSURE_TRUE(!aURL.IsEmpty(), NS_ERROR_DOM_SYNTAX_ERR);
 
   if (mIsServerSide) {
+    NS_ENSURE_TRUE(!aURL.IsEmpty(), NS_ERROR_DOM_SYNTAX_ERR);
     mWebSocket->mURI = aURL;
     CopyUTF16toUTF8(mWebSocket->mURI, mURI);
 
@@ -2194,10 +2215,10 @@ nsresult WebSocketImpl::ParseURL(const nsAString& aURL, nsIURI* aBaseURI) {
       nsContentUtils::GetWebExposedOriginSerialization(parsedURL, mUTF16Origin);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_SYNTAX_ERR);
 
-  mAsciiHost = host;
+  mAsciiHost = std::move(host);
   ToLowerCase(mAsciiHost);
 
-  mResource = filePath;
+  mResource = std::move(filePath);
   if (!query.IsEmpty()) {
     mResource.Append('?');
     mResource.Append(query);

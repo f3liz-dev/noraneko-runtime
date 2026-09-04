@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/Symbol.h"
-#include "js/Symbol.h"
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
+#include "js/Symbol.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SymbolType.h"
 
@@ -34,7 +32,7 @@ SymbolObject* SymbolObject::create(JSContext* cx, JS::HandleSymbol symbol) {
   if (!obj) {
     return nullptr;
   }
-  obj->setPrimitiveValue(symbol);
+  obj->initPrimitiveValue(symbol);
   return obj;
 }
 

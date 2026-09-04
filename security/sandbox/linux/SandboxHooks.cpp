@@ -1,21 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Types.h"
-
 #include <dlfcn.h>
-#include <signal.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/inotify.h>
 #ifdef MOZ_X11
 #  include <X11/Xlib.h>
 #endif
+
+#include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Types.h"
 
 // Signal number used to enable seccomp on each thread.
 extern mozilla::Atomic<int> gSeccompTsyncBroadcastSignum;

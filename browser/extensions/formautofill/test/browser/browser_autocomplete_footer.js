@@ -20,7 +20,7 @@ function getFooterLabel(itemsBox) {
     footer = footer.previousSibling;
   }
 
-  return footer.querySelector(".line1-label");
+  return footer.querySelector("autocomplete-row-item").label;
 }
 
 add_task(async function test_footer_has_correct_button_text_on_address() {
@@ -34,7 +34,7 @@ add_task(async function test_footer_has_correct_button_text_on_address() {
       await openPopupOn(browser, "#organization");
       let footer = getFooterLabel(itemsBox);
       Assert.equal(
-        footer.innerText,
+        footer,
         l10n.formatValueSync("autofill-manage-addresses-label")
       );
       await closePopup(browser);
@@ -53,7 +53,7 @@ add_task(async function test_footer_has_correct_button_text_on_credit_card() {
       await openPopupOn(browser, "#cc-number");
       let footer = getFooterLabel(itemsBox);
       Assert.equal(
-        footer.innerText,
+        footer,
         l10n.formatValueSync("autofill-manage-payment-methods-label")
       );
       await closePopup(browser);
@@ -72,9 +72,7 @@ add_task(async function test_press_enter_on_footer() {
       await openPopupOn(browser, "#organization");
 
       // Navigate to the footer and press enter.
-      const listItemElems = itemsBox.querySelectorAll(
-        ".autocomplete-richlistitem"
-      );
+      const listItemElems = itemsBox.querySelectorAll(".autocomplete-row-item");
       const prefTabPromise = BrowserTestUtils.waitForNewTab(
         gBrowser,
         PRIVACY_PREF_URL,
@@ -110,8 +108,9 @@ add_task(async function test_click_on_footer() {
 
       await openPopupOn(browser, "#organization");
       // Click on the footer
+
       let optionButton = itemsBox.querySelector(
-        ".autocomplete-richlistitem:last-child"
+        ".autocomplete-row-item[footer]"
       );
       while (optionButton.collapsed) {
         optionButton = optionButton.previousElementSibling;
@@ -122,11 +121,22 @@ add_task(async function test_click_on_footer() {
         PRIVACY_PREF_URL,
         true
       );
-      // Make sure dropdown is visible before continuing mouse synthesizing.
-      await BrowserTestUtils.waitForCondition(() =>
-        BrowserTestUtils.isVisible(optionButton)
-      );
-      await EventUtils.synthesizeMouseAtCenter(optionButton, {});
+      // The rows can overflow the list while the popup is still being sized,
+      // leaving the footer outside it. Its center is then over the page, so the
+      // click would dismiss the popup. isVisible() ignores clipping.
+      await TestUtils.waitForCondition(() => {
+        if (!BrowserTestUtils.isVisible(optionButton)) {
+          return false;
+        }
+        const listRect = itemsBox.getBoundingClientRect();
+        const footerRect = optionButton.getBoundingClientRect();
+        return (
+          footerRect.height &&
+          footerRect.top >= listRect.top &&
+          footerRect.bottom <= listRect.bottom
+        );
+      }, "the footer to be inside the list");
+      EventUtils.synthesizeMouseAtCenter(optionButton, {});
       info(`expecting tab: about:preferences#privacy opened`);
       const prefTab = await prefTabPromise;
       info(`expecting tab: about:preferences#privacy removed`);

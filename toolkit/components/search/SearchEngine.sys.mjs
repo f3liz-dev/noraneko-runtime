@@ -20,7 +20,15 @@ const lazy = XPCOMUtils.declareLazy({
       prefix: "SearchEngine",
       maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
     }),
+  settingsRedesignEnabled: {
+    pref: "browser.settings-redesign.enabled",
+    default: false,
+  },
 });
+
+// Longer search terms provide no user benefit and make the submission URL
+// expensive to build.
+export const MAX_SEARCH_TERM_LENGTH = 32000;
 
 // Supported OpenSearch parameters
 // See https://web.archive.org/web/20060203040832/http://opensearch.a9.com/spec/1.1/querysyntax/#core
@@ -1251,6 +1259,11 @@ export class SearchEngine {
    * @returns {boolean}
    */
   get hideOneOffButton() {
+    if (lazy.settingsRedesignEnabled) {
+      // This setting is no longer supported after the settings redesign, so
+      // always return false.
+      return false;
+    }
     return this.getAttr("hideOneOffButton") || false;
   }
 
@@ -1261,28 +1274,6 @@ export class SearchEngine {
   set hideOneOffButton(val) {
     const value = !!val;
     this.setAttr("hideOneOffButton", value, true);
-  }
-
-  /**
-   * This method should be overridden by app provided config engines.
-   *
-   * @returns {boolean}
-   *   Whether this engine is an app provided config engine, i.e. it comes
-   *   from the search-config-v2 and active in the user's environment.
-   */
-  get isAppProvided() {
-    return false;
-  }
-
-  /**
-   * This method should be overridden by config search engines.
-   *
-   * @returns {boolean}
-   *   Whether this engine is a config search engine, i.e. it comes from
-   *   the search-config-v2.
-   */
-  get isConfigEngine() {
-    return false;
   }
 
   /**
@@ -1376,6 +1367,15 @@ export class SearchEngine {
         responseType == lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)
     ) {
       lazy.logConsole.warn("getSubmission: searchTerms is empty!");
+    }
+
+    if (searchTerms.length > MAX_SEARCH_TERM_LENGTH) {
+      searchTerms = searchTerms.substring(0, MAX_SEARCH_TERM_LENGTH);
+      // Avoid splitting a surrogate pair.
+      let last = searchTerms.charCodeAt(searchTerms.length - 1);
+      if (last >= 0xd800 && last <= 0xdbff) {
+        searchTerms = searchTerms.slice(0, -1);
+      }
     }
 
     return url.getSubmission(searchTerms, this.queryCharset);

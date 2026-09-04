@@ -4,13 +4,13 @@
 
 
 import argparse
+import functools
 import importlib
 import os
 import sys
 
 from mach.decorators import Command, SubCommand
 from mach.util import get_state_dir
-from mozbuild.util import memoize
 
 from tryselect import TRYSELECT_METRICS_PATH
 
@@ -47,10 +47,15 @@ def init(command_context):
     mach_context = command_context._mach_context
     lando.LAUNCH_BROWSER = not mach_context.settings["try"]["nobrowser"]
     push.MAX_HISTORY = mach_context.settings["try"]["maxhistory"]
+    push.MACH_TRY_REMOTE = mach_context.settings["try"]["pushremote"]
+    if "GIT_BACKING_ENABLED" in os.environ:
+        push.GIT_BACKING_ENABLED = os.environ.get("GIT_BACKING_ENABLED") == "1"
+    else:
+        push.GIT_BACKING_ENABLED = mach_context.settings["try"]["gitbacking"]
     task_config.SKIP_ARTIFACT_BUILD_CHECK = mach_context.settings["try"]["noartifact"]
 
 
-@memoize
+@functools.cache
 def presets(command_context):
     from tryselect.preset import MergedHandler
 
@@ -110,9 +115,7 @@ def handle_presets(
 
     if preset:
         if preset not in presets(command_context):
-            command_context._mach_context.parser.error(
-                f"preset '{preset}' does not exist"
-            )
+            parser.error(f"preset '{preset}' does not exist")
 
         name = preset
         preset = presets(command_context)[name]

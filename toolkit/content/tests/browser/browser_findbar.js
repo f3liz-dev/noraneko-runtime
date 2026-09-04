@@ -260,9 +260,7 @@ add_task(async function e10sLostKeys() {
     }
   );
 
-  await BrowserTestUtils.waitForCondition(
-    () => findBar._findField.value.length == 3
-  );
+  await TestUtils.waitForCondition(() => findBar._findField.value.length == 3);
   is(document.activeElement, findBar._findField, "findbar is now focused");
   is(findBar._findField.value, "abc", "abc fully entered as find query");
 
@@ -347,7 +345,7 @@ add_task(async function test_input_keypress() {
   await EventUtils.synthesizeKey("KEY_ArrowDown");
   await scrollPromise;
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.defaultView.innerHeight +
@@ -364,7 +362,7 @@ add_task(async function test_input_keypress() {
   await EventUtils.synthesizeKey("KEY_ArrowDown", { accelKey: true });
   await completeScrollPromise;
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function () {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.defaultView.innerHeight +

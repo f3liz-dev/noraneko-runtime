@@ -12,6 +12,8 @@ import mozilla.components.lib.crash.store.CrashState
 import mozilla.components.lib.state.State
 import org.mozilla.fenix.browser.StandardSnackbarError
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.appstate.blockedtrackers.BlockedTrackersState
+import org.mozilla.fenix.components.appstate.lens.LensState
 import org.mozilla.fenix.components.appstate.qrScanner.QrScannerState
 import org.mozilla.fenix.components.appstate.readerview.ReaderViewState
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
@@ -26,6 +28,7 @@ import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.library.history.PendingDeletionHistory
 import org.mozilla.fenix.messaging.MessagingState
+import org.mozilla.fenix.microsurvey.MicrosurveyState
 import org.mozilla.fenix.reviewprompt.ReviewPromptState
 import org.mozilla.fenix.reviewprompt.ReviewPromptState.Unknown
 import org.mozilla.fenix.wallpapers.WallpaperState
@@ -51,13 +54,13 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * @property mode Whether the app is in private browsing mode.
  * @property orientation Current orientation of the application.
  * @property topSites The list of [TopSite] in the [HomeFragment].
- * @property showCollectionPlaceholder If true, shows a placeholder when there are no collections.
  * @property recentTabs The list of recent [RecentTab] in the [HomeFragment].
  * @property recentSyncedTabState The [RecentSyncedTabState] in the [HomeFragment].
  * @property bookmarks The list of recently saved [BookmarkNode]s to show on the [HomeFragment].
  * @property recentHistory The list of [RecentlyVisitedItem]s.
  * @property recommendationState The [ContentRecommendationsState] to display.
  * @property messaging State related messages.
+ * @property microsurvey The [MicrosurveyState] derived from the MICROSURVEY message surface.
  * @property pendingDeletionHistoryItems The set of History items marked for removal in the UI,
  * awaiting to be removed once the Undo snackbar hides away.
  * Also serves as an in memory cache of all stories mapped by category allowing for quick stories filtering.
@@ -74,11 +77,16 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * @property webCompatState The [WebCompatState] when the feature was last used.
  * @property setupChecklistState Optional [SetupChecklistState] for the Setup Checklist feature.
  * @property searchState The current search state.
+ * @property lensState The [LensState] for Google Lens image search.
  * @property qrScannerState The [QrScannerState] when the feature was last used.
  * @property isPrivateScreenLocked Whether the private browsing mode is currently locked behind
  * authentication.
  * @property reviewPrompt Whether we should show a review prompt and whether we ran the eligibility check at all
  * @property voiceSearchState The [VoiceSearchState] representing the current state of voice search functionality.
+ * @property isDefaultBrowser Whether Firefox is the default browser or not.
+ * @property blockedTrackersState The [BlockedTrackersState] with data about blocked trackers.
+ * @property longfoxEntryPointReady Whether the fox peek animation should play on the next homepage view.
+ * @property isTabsTrayVisible Whether TabsTray is shown.
  */
 data class AppState(
     val isForeground: Boolean = true,
@@ -91,13 +99,13 @@ data class AppState(
     val mode: BrowsingMode = BrowsingMode.Normal,
     val orientation: OrientationMode = OrientationMode.Undefined,
     val topSites: List<TopSite> = emptyList(),
-    val showCollectionPlaceholder: Boolean = false,
     val recentTabs: List<RecentTab> = emptyList(),
     val recentSyncedTabState: RecentSyncedTabState = RecentSyncedTabState.None,
     val bookmarks: List<Bookmark> = emptyList(),
     val recentHistory: List<RecentlyVisitedItem> = emptyList(),
     val recommendationState: ContentRecommendationsState = ContentRecommendationsState(),
     val messaging: MessagingState = MessagingState(),
+    val microsurvey: MicrosurveyState = MicrosurveyState(),
     val pendingDeletionHistoryItems: Set<PendingDeletionHistory> = emptySet(),
     val wallpaperState: WallpaperState = WallpaperState.default,
     val standardSnackbarError: StandardSnackbarError? = null,
@@ -111,8 +119,13 @@ data class AppState(
     val webCompatState: WebCompatState? = null,
     val setupChecklistState: SetupChecklistState? = null,
     val searchState: SearchState = SearchState.EMPTY,
+    val lensState: LensState = LensState.DEFAULT,
     val qrScannerState: QrScannerState = QrScannerState.DEFAULT,
     val isPrivateScreenLocked: Boolean = false,
     val reviewPrompt: ReviewPromptState = Unknown,
     val voiceSearchState: VoiceSearchState = VoiceSearchState(),
+    val isDefaultBrowser: Boolean = false,
+    val blockedTrackersState: BlockedTrackersState = BlockedTrackersState(),
+    val longfoxEntryPointReady: Boolean = false,
+    val isTabsTrayVisible: Boolean = false,
 ) : State

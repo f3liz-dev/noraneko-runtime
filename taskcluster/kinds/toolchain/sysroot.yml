@@ -7,6 +7,7 @@ task-defaults:
     worker:
         max-run-time: 1800
     run:
+        clone-with: hg
         using: toolchain-script
         script: build-sysroot.sh
         toolchain-artifact: public/build/sysroot.tar.zst
@@ -24,6 +25,7 @@ sysroot-i686-linux-gnu:
     dependencies:
         gcc-10: packages-deb8-32-gcc-10
     run:
+        clone-with: hg
         toolchain-artifact: public/build/sysroot-i686-linux-gnu.tar.zst
         arguments:
             - i386
@@ -41,6 +43,7 @@ sysroot-x86_64-linux-gnu:
     dependencies:
         gcc-10: packages-deb8-gcc-10
     run:
+        clone-with: hg
         toolchain-artifact: public/build/sysroot-x86_64-linux-gnu.tar.zst
         arguments:
             - amd64
@@ -59,17 +62,19 @@ sysroot-x86_64-linux-gnu-x11:
         gcc-10: packages-deb8-gcc-10
         gtk3: packages-deb8-gtk3
     run:
+        clone-with: hg
         toolchain-artifact: public/build/sysroot-x86_64-linux-gnu.tar.zst
         arguments:
             - amd64
 
-sysroot-wasm32-wasi-clang-17:
+sysroot-wasm32-wasi-clang-19:
     description: "Sysroot for wasi"
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-wasi-17)
+        symbol: TL(sysroot-wasi-19)
     run:
+        clone-with: hg
         script: build-sysroot-wasi.sh
         arguments:
             - wasi-sdk.patch
@@ -79,19 +84,20 @@ sysroot-wasm32-wasi-clang-17:
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-17
+            - clang-19
             - wasi-sdk
         toolchain:
-            - linux64-clang-17-raw
-            - wasm32-wasi-compiler-rt-17
+            - linux64-clang-19-raw
+            - wasm32-wasi-compiler-rt-19
 
-sysroot-wasm32-wasi-clang-20:
+sysroot-wasm32-wasi-clang-21:
     description: "Sysroot for wasi"
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-wasi-20)
+        symbol: TL(sysroot-wasi-21)
     run:
+        clone-with: hg
         script: build-sysroot-wasi.sh
         arguments:
             - wasi-sdk.patch
@@ -104,19 +110,20 @@ sysroot-wasm32-wasi-clang-20:
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-20
+            - clang-21
             - wasi-sdk
         toolchain:
-            - linux64-clang-20-stage1
-            - wasm32-wasi-compiler-rt-20
+            - linux64-clang-21-stage1
+            - wasm32-wasi-compiler-rt-21
 
-sysroot-wasm32-wasi-clang-21:
+sysroot-wasm32-wasi-clang-22:
     description: "Sysroot for wasi"
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-wasi-21)
+        symbol: TL(sysroot-wasi-22)
     run:
+        clone-with: hg
         script: build-sysroot-wasi.sh
         arguments:
             - wasi-sdk.patch
@@ -125,11 +132,11 @@ sysroot-wasm32-wasi-clang-21:
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-21
+            - clang-22
             - wasi-sdk
         toolchain:
-            - linux64-clang-21-stage1
-            - wasm32-wasi-compiler-rt-21
+            - linux64-clang-22-stage1
+            - wasm32-wasi-compiler-rt-22
 
 sysroot-wasm32-wasi-clang-trunk:
     description: "Sysroot for wasi"
@@ -138,6 +145,7 @@ sysroot-wasm32-wasi-clang-trunk:
     treeherder:
         symbol: TL(sysroot-wasi-trunk)
     run:
+        clone-with: hg
         script: build-sysroot-wasi.sh
         arguments:
             - wasi-sdk.patch
@@ -169,6 +177,7 @@ sysroot-aarch64-linux-gnu:
     dependencies:
         gcc-10: packages-deb10-arm64-gcc-10
     run:
+        clone-with: hg
         toolchain-artifact: public/build/sysroot-aarch64-linux-gnu.tar.zst
         arguments:
             - arm64
@@ -184,6 +193,7 @@ linux32-toolchain-sysroot:
     dependencies:
         gcc-8: packages-deb8-32-gcc-8
     run:
+        clone-with: hg
         arguments:
             - i386
             # For clang
@@ -201,6 +211,7 @@ linux64-toolchain-sysroot:
     dependencies:
         gcc-8: packages-deb8-gcc-8
     run:
+        clone-with: hg
         arguments:
             - amd64
             # For clang
@@ -216,6 +227,8 @@ linux64-toolchain-sysroot:
             - libicu-dev
             # For libdmg-hfsplus
             - liblzma-dev
+            # For socorro-cli
+            - libdbus-1-dev
 
 linux64-toolchain-sysroot-gcc10:
     description: "Sysroot for linux64 toolchain builds"
@@ -228,6 +241,7 @@ linux64-toolchain-sysroot-gcc10:
     dependencies:
         gcc-10: packages-deb8-gcc-10
     run:
+        clone-with: hg
         arguments:
             - amd64
             # For clang
@@ -249,8 +263,11 @@ linux64-aarch64-toolchain-sysroot:
     treeherder:
         symbol: TLA64(sysroot-toolchain)
     run:
+        clone-with: hg
         arguments:
             - arm64
             # For clang
             - binutils-dev
             - libxml2-dev
+            # For socorro-cli
+            - libdbus-1-dev

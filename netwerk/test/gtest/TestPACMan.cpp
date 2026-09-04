@@ -1,17 +1,17 @@
 #include <utility>
 
-#include "gtest/gtest.h"
-#include "nsServiceManagerUtils.h"
 #include "../../../xpcom/threads/nsThreadManager.h"
-#include "nsIDHCPClient.h"
+#include "../../base/nsPACMan.h"
+#include "gtest/gtest.h"
+#include "mozilla/GenericFactory.h"
+#include "mozilla/ModuleUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticMutex.h"
 #include "nsComponentManager.h"
+#include "nsIDHCPClient.h"
 #include "nsIPrefService.h"
 #include "nsNetCID.h"
-#include "mozilla/ModuleUtils.h"
-#include "mozilla/GenericFactory.h"
-#include "../../base/nsPACMan.h"
-#include "mozilla/StaticMutex.h"
+#include "nsServiceManagerUtils.h"
 
 #define TEST_WPAD_DHCP_OPTION "http://pac/pac.dat"
 #define TEST_ASSIGNED_PAC_URL "http://assignedpac/pac.dat"
@@ -148,7 +148,7 @@ class TestPACMan : public ::testing::Test {
   }
 
   void AssertPACSpecEqualTo(const char* aExpected) {
-    ASSERT_STREQ(aExpected, mPACMan->mPACURISpec.Data());
+    ASSERT_STREQ(aExpected, mPACMan->mPACURISpec.get());
   }
 
  private:
@@ -168,7 +168,7 @@ TEST_F(TestPACMan, TestCreateDHCPClientAndGetOption) {
 
   GetPACManDHCPCient()->GetOption(252, spec);
 
-  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, spec.Data());
+  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, spec.get());
 }
 
 TEST_F(TestPACMan, TestCreateDHCPClientAndGetEmptyOption) {
@@ -189,19 +189,19 @@ TEST_F(TestPACMan,
   ProcessAllEventsTenTimes();
 
   mozilla::StaticMutexAutoLock lock(sMutex);
-  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.Data());
+  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.get());
   AssertPACSpecEqualTo(TEST_WPAD_DHCP_OPTION);
 }
 
 TEST_F(TestPACMan, WhenTheDHCPResponseIsEmptyWPADDefaultsToStandardURL) {
-  SetOptionResult(""_ns.Data());
+  SetOptionResult("");
 
   mPACMan->LoadPACFromURI(""_ns);
   ASSERT_TRUE(NS_HasPendingEvents(nullptr));
   ProcessAllEventsTenTimes();
 
   mozilla::StaticMutexAutoLock lock(sMutex);
-  ASSERT_STREQ("", WPADOptionResult.Data());
+  ASSERT_STREQ("", WPADOptionResult.get());
   AssertPACSpecEqualTo("http://wpad/wpad.dat");
 }
 
@@ -213,7 +213,7 @@ TEST_F(TestPACMan, WhenThereIsNoDHCPClientWPADDefaultsToStandardURL) {
   ProcessAllEventsTenTimes();
 
   mozilla::StaticMutexAutoLock lock(sMutex);
-  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.Data());
+  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.get());
   AssertPACSpecEqualTo("http://wpad/wpad.dat");
 }
 
@@ -225,7 +225,7 @@ TEST_F(TestPACMan, WhenWPADOverDHCPIsPreffedOffWPADDefaultsToStandardURL) {
   ProcessAllEventsTenTimes();
 
   mozilla::StaticMutexAutoLock lock(sMutex);
-  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.Data());
+  ASSERT_STREQ(TEST_WPAD_DHCP_OPTION, WPADOptionResult.get());
   AssertPACSpecEqualTo("http://wpad/wpad.dat");
 }
 

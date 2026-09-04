@@ -1,27 +1,23 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Thu, 29 Aug 2024 08:31:00 +0000
-Subject: Bug 1914837 - Always initialize DesktopCapturer::pid.
- r=webrtc-reviewers,ng
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 15 Oct 2024 16:46:00 -0500
+Subject: Bug 1924098 - (fix-e432503389) upstream changed signature of
+ LibvpxVp9Encoder::InitAndSetControlSettings
 
-This member is patched on top of libwebrtc. New backends could be added from
-under us. It needs to be initialized.
-
-Differential Revision: https://phabricator.services.mozilla.com/D220265
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fdf5b0a81b0c0e87d31c5963091681a0e5960678
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fadad7695efe0d9cc6b999a613b9e1f536e660bd
 ---
- modules/desktop_capture/desktop_capturer.h | 2 +-
+ modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
-index 0e32474543..c85d0eba7a 100644
---- a/modules/desktop_capture/desktop_capturer.h
-+++ b/modules/desktop_capture/desktop_capturer.h
-@@ -80,7 +80,7 @@ class RTC_EXPORT DesktopCapturer {
-   struct Source {
-     // The unique id to represent a Source of current DesktopCapturer.
-     SourceId id;
--    pid_t pid;
-+    pid_t pid = 0;
- 
-     // Title of the window or screen in UTF-8 encoding, maybe empty. This field
-     // should not be used to identify a source.
+diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
+index 46878860e2..811110323e 100644
+--- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
++++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
+@@ -1354,7 +1354,7 @@ int LibvpxVp9Encoder::UpdateCodecFrameSize(
+   // bugs in trying to do it the "right" way, we basically re-do
+   // the initialization.
+   vpx_codec_destroy(encoder_); // clean up old state
+-  int result = InitAndSetControlSettings(&codec_);
++  int result = InitAndSetControlSettings();
+   if (result == WEBRTC_VIDEO_CODEC_OK) {
+     // TODO: Mozilla rates have become much more complicated, we need to store
+     // more state or find another way of doing this.

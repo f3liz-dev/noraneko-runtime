@@ -11,7 +11,6 @@ use crate::{
     render::{SimpleRenderPipeline, buffer_splitter::BufferSplitter},
     util::{
         ShiftRightCeil,
-        test::check_equal_images,
         tracing_wrappers::{instrument, trace},
     },
 };
@@ -103,10 +102,11 @@ fn make_and_run_simple_pipeline_impl<InputT: ImageDataType, OutputT: ImageDataTy
         image_size,
         downsampling_shift,
         LOG_GROUP_SIZE,
-        1,
         chunk_size,
+        // No need to reuse buffers in tests.
+        Some(0),
     )
-    .add_stage_internal(stage)?;
+    .add_stage_internal(stage);
 
     let jxl_data_type = match OutputT::DATA_TYPE_ID {
         DataTypeTag::U8 | DataTypeTag::I8 => JxlDataFormat::U8 { bit_depth: 8 },
@@ -129,7 +129,7 @@ fn make_and_run_simple_pipeline_impl<InputT: ImageDataType, OutputT: ImageDataTy
             JxlColorType::Grayscale,
             jxl_data_type,
             false,
-        )?;
+        );
     }
     let mut pipeline = pipeline.build()?;
 
@@ -168,7 +168,7 @@ fn make_and_run_simple_pipeline_impl<InputT: ImageDataType, OutputT: ImageDataTy
             pipeline.set_buffer_for_group(
                 c,
                 g,
-                1,
+                true,
                 extract_group_rect(&input_images[c], g, log_group_size)?,
                 &mut buffer_splitter,
             )?;
@@ -232,8 +232,8 @@ pub(super) fn test_stage_consistency<S: RenderPipelineTestableStage<V>, V>(
         )
         .unwrap_or_else(|_| panic!("error running pipeline with chunk size {chunk_size}"));
 
-        for (o, bo) in output.iter().zip(base_output.iter()) {
-            check_equal_images(bo, o);
+        for (out, base_out) in output.iter().zip(base_output.iter()) {
+            crate::tests::assert_image_eq!(out, base_out, "with chunk size {}", chunk_size);
         }
 
         Ok(())

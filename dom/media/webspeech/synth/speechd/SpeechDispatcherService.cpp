@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -148,7 +146,7 @@ class SpeechDispatcherCallback final : public nsISpeechTaskCallback {
                            SpeechDispatcherService* aService)
       : mTask(aTask), mService(aService) {}
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(SpeechDispatcherCallback,
                                            nsISpeechTaskCallback)
 
@@ -333,13 +331,13 @@ void SpeechDispatcherService::Setup() {
     return;
   }
 
-  for (uint32_t i = 0; i < std::size(kSpeechDispatcherSymbols); i++) {
-    *kSpeechDispatcherSymbols[i].function = PR_FindFunctionSymbol(
-        speechdLib, kSpeechDispatcherSymbols[i].functionName);
+  for (auto speechDispatcherSymbol : kSpeechDispatcherSymbols) {
+    *speechDispatcherSymbol.function =
+        PR_FindFunctionSymbol(speechdLib, speechDispatcherSymbol.functionName);
 
-    if (!*kSpeechDispatcherSymbols[i].function) {
+    if (!*speechDispatcherSymbol.function) {
       NS_WARNING(nsPrintfCString("Failed to find speechd symbol for'%s'",
-                                 kSpeechDispatcherSymbols[i].functionName)
+                                 speechDispatcherSymbol.functionName)
                      .get());
       NotifyError(u"missing-symbol"_ns);
       return;
@@ -367,7 +365,7 @@ void SpeechDispatcherService::Setup() {
   spd_set_notification_on(mSpeechdClient, SPD_END);
   spd_set_notification_on(mSpeechdClient, SPD_CANCEL);
 
-  if (list != NULL) {
+  if (list != nullptr) {
     for (int i = 0; list[i]; i++) {
       nsAutoString uri;
 

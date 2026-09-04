@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define SECURITY_SANDBOX_COMMON_TEST_SANDBOXTESTINGCHILDTESTS_H_
 
 #include "SandboxTestingChild.h"
-
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "nsXULAppAPI.h"
 
@@ -33,6 +30,7 @@
 #    include <sys/un.h>
 #    include <sys/utsname.h>
 #    include <termios.h>
+
 #    include "mozilla/ProcInfo_linux.h"
 #    ifdef MOZ_X11
 #      include "X11/Xlib.h"
@@ -47,17 +45,18 @@
 #endif
 
 #ifdef XP_MACOSX
+#  include "mozilla/Sandbox.h"
 #  if defined(__SSE2__) || defined(_M_X64) || \
       (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #    include "emmintrin.h"
 #  endif
-#  include <spawn.h>
+#  include <AudioToolbox/AudioToolbox.h>
 #  include <CoreFoundation/CoreFoundation.h>
 #  include <CoreGraphics/CoreGraphics.h>
-#  include <AudioToolbox/AudioToolbox.h>
 #  include <dirent.h>
 #  include <fcntl.h>
 #  include <limits.h>
+#  include <spawn.h>
 #  include <sys/stat.h>
 #  include <sys/sysctl.h>
 #  include <unistd.h>
@@ -72,8 +71,8 @@ extern "C" int sandbox_check(pid_t pid, const char* operation, int type, ...);
 #  include <winternl.h>
 
 #  include "mozilla/DynamicallyLinkedFunctionPtr.h"
-#  include "nsAppDirectoryServiceDefs.h"
 #  include "mozilla/WindowsProcessMitigations.h"
+#  include "nsAppDirectoryServiceDefs.h"
 #endif
 
 #ifdef XP_LINUX
@@ -629,6 +628,12 @@ void RunTestsContent(SandboxTestingChild* child) {
     return fd;
   });
 
+  child->ErrnoValueTest("symlink"_ns, EPERM,
+                        [] { return symlink("something", "/tmp/testlink"); });
+  child->ErrnoValueTest("symlinkat"_ns, EPERM, [] {
+    return symlinkat("something", AT_FDCWD, "/tmp/testlink");
+  });
+
 #  endif  // XP_LINUX
 
 #  ifdef XP_MACOSX
@@ -840,11 +845,22 @@ void RunTestsRDD(SandboxTestingChild* child) {
 
   RunTestsSched(child);
 
+#    ifdef MOZ_ENABLE_VULKAN_VIDEO
+  // Vulkan video decode (bug 2021722) routes socket() through
+  // FakeSocketTrap, letting RDD create a real AF_UNIX socket for EGL's
+  // Wayland/X11 probing (hence the "0" below, meaning success) while
+  // still rejecting AF_INET, now with EAFNOSUPPORT instead of EACCES.
+  child->ErrnoValueTest("socket_inet"_ns, EAFNOSUPPORT,
+                        [] { return socket(AF_INET, SOCK_STREAM, 0); });
+  child->ErrnoValueTest("socket_unix"_ns, 0,
+                        [] { return socket(AF_UNIX, SOCK_STREAM, 0); });
+#    else
   child->ErrnoValueTest("socket_inet"_ns, EACCES,
                         [] { return socket(AF_INET, SOCK_STREAM, 0); });
 
   child->ErrnoValueTest("socket_unix"_ns, EACCES,
                         [] { return socket(AF_UNIX, SOCK_STREAM, 0); });
+#    endif
 
   child->ErrnoTest("uname"_ns, true, [] {
     struct utsname uts;
@@ -899,7 +915,7 @@ void RunTestsRDD(SandboxTestingChild* child) {
   });
 
 #  elif XP_MACOSX
-  RunMacTestLaunchProcess(child);
+  RunMacTestLaunchProcess(child, EPERM);
   RunMacTestWindowServer(child);
   RunMacTestAudioAPI(child, true);
 #  endif
@@ -1344,7 +1360,7 @@ void RunTestsGPU(SandboxTestingChild* child) {
 
   RunMacTestLaunchProcess(child, EPERM);
   RunMacTestAudioAPI(child);
-  RunMacTestWindowServer(child, true);
+  RunMacTestWindowServer(child, ProcessIsX86_64());
 
 #else   // defined(XP_WIN)
     child->ReportNoTests();

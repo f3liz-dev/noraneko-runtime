@@ -9,16 +9,27 @@ import { Assert } from "resource://testing-common/Assert.sys.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   modifySchemaForTests: "resource:///modules/policies/schema.sys.mjs",
 });
 
 export var EnterprisePolicyTesting = {
-  // |json| must be an object representing the desired policy configuration, OR a
-  // path to the JSON file containing the policy configuration.
+  // Path resolver for relative filenames. Must be set by each test head.
+  // Mochitest heads use |getTestFilePath|; xpcshell heads use
+  // |path => do_get_file(path).path|.
+  pathResolver: null,
+
+  // |json| must be an object representing the desired policy configuration, OR
+  // a path (absolute or test-relative) to the JSON file containing the policy
+  // configuration. An empty string is treated as a non-existent file, which
+  // disables the policy engine.
   setupPolicyEngineWithJson: async function setupPolicyEngineWithJson(
     json,
     customSchema
   ) {
+    PoliciesPrefTracker.restoreDefaultValues();
+
     let filePath;
     if (typeof json == "object") {
       filePath = lazy.FileTestUtils.getTempFile("policies.json").path;
@@ -26,8 +37,15 @@ export var EnterprisePolicyTesting = {
       // This file gets automatically deleted by FileTestUtils
       // at the end of the test run.
       await IOUtils.writeJSON(filePath, json);
-    } else {
+    } else if (!json) {
+      filePath = PathUtils.join(
+        PathUtils.tempDir,
+        "non-existing-policy-file.json"
+      );
+    } else if (PathUtils.isAbsolute(json)) {
       filePath = json;
+    } else {
+      filePath = EnterprisePolicyTesting.pathResolver(json);
     }
 
     Services.prefs.setStringPref("browser.policies.alternatePath", filePath);
@@ -47,6 +65,19 @@ export var EnterprisePolicyTesting = {
 
     Services.obs.notifyObservers(null, "EnterprisePolicies:Restart");
     return promise;
+  },
+
+  // Loads a new enterprise policy and re-initialises the search service with
+  // the new policy. Also waits for the search service to write the settings
+  // file to disk.
+  async setupPolicyEngineWithJsonForSearch(json, customSchema) {
+    lazy.SearchService.reset();
+    await EnterprisePolicyTesting.setupPolicyEngineWithJson(json, customSchema);
+    let settingsWritten = lazy.SearchTestUtils.promiseSearchNotification(
+      "write-settings-to-disk-complete"
+    );
+    await lazy.SearchService.init();
+    await settingsWritten;
   },
 
   checkPolicyPref(prefName, expectedValue, expectedLockedness) {
@@ -93,7 +124,7 @@ export var PoliciesPrefTracker = {
 
   start() {
     let { PoliciesUtils } = ChromeUtils.importESModule(
-      "resource:///modules/policies/Policies.sys.mjs"
+      "resource://gre/modules/PoliciesHelpers.sys.mjs"
     );
     this._originalFunc = PoliciesUtils.setDefaultPref;
     PoliciesUtils.setDefaultPref = this.hoistedSetDefaultPref.bind(this);
@@ -103,7 +134,7 @@ export var PoliciesPrefTracker = {
     this.restoreDefaultValues();
 
     let { PoliciesUtils } = ChromeUtils.importESModule(
-      "resource:///modules/policies/Policies.sys.mjs"
+      "resource://gre/modules/PoliciesHelpers.sys.mjs"
     );
     PoliciesUtils.setDefaultPref = this._originalFunc;
     this._originalFunc = null;
@@ -116,7 +147,10 @@ export var PoliciesPrefTracker = {
       let defaults = new Preferences({ defaultBranch: true });
       let stored = {};
 
-      if (defaults.has(prefName)) {
+      if (
+        Services.prefs.getDefaultBranch("").getPrefType(prefName) !=
+        Ci.nsIPrefBranch.PREF_INVALID
+      ) {
         stored.originalDefaultValue = defaults.get(prefName);
       } else {
         stored.originalDefaultValue = undefined;
@@ -148,7 +182,7 @@ export var PoliciesPrefTracker = {
       // If a pref was used through setDefaultPref instead
       // of setAndLockPref, it wasn't locked, but calling
       // unlockPref is harmless
-      Preferences.unlock(prefName);
+      Services.prefs.unlockPref(prefName);
 
       if (stored.originalDefaultValue !== undefined) {
         defaults.set(prefName, stored.originalDefaultValue);

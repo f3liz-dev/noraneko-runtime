@@ -19,7 +19,7 @@ const DEFAULT_LAUNCHER_VISIBLE = false;
  *
  * @typedef {object} SidebarStateProps
  *
- * @property {boolean} command
+ * @property {string} command
  *   The id of the current sidebar panel. The panel may be closed and still have a command value.
  *   Re-opening the sidebar panel will then load the current command id.
  * @property {boolean} panelOpen
@@ -59,7 +59,6 @@ const DEFAULT_LAUNCHER_VISIBLE = false;
  */
 
 const LAUNCHER_MINIMUM_WIDTH = 100;
-const SIDEBAR_MAXIMUM_WIDTH = "75vw";
 
 const LEGACY_USED_PREF = "sidebar.old-sidebar.has-used";
 const REVAMP_USED_PREF = "sidebar.new-sidebar.has-used";
@@ -76,6 +75,8 @@ export class SidebarState {
     ...SidebarState.defaultProperties,
   };
   #launcherEverVisible = false;
+  bookmarksExpandedFolders = [];
+  #navToolboxCollapsed = false;
 
   /** @type {SidebarStateProps} */
   static defaultProperties = Object.freeze({
@@ -126,6 +127,15 @@ export class SidebarState {
   }
 
   /**
+   * Get the splitter sibling for the sidebar launcher.
+   *
+   * @returns {XULElement}
+   */
+  get #launcherSplitterEl() {
+    return this.#controller.launcherSplitter;
+  }
+
+  /**
    * Get the sidebar panel element.
    *
    * @returns {XULElement}
@@ -158,7 +168,7 @@ export class SidebarState {
    * @returns {XULElement}
    */
   get #pinnedTabsItemsWrapper() {
-    return this.#pinnedTabsContainerEl.shadowRoot.querySelector(
+    return this.#pinnedTabsContainerEl?.shadowRoot?.querySelector(
       "[part=items-wrapper]"
     );
   }
@@ -185,7 +195,7 @@ export class SidebarState {
    * Get window object from the controller.
    */
   get #controllerGlobal() {
-    return this.#launcherContainerEl.ownerGlobal;
+    return this.#launcherContainerEl.documentGlobal;
   }
 
   /**
@@ -215,7 +225,7 @@ export class SidebarState {
    * @param {SidebarStateProps} props
    *   New properties to overwrite the default state with.
    */
-  loadInitialState(props) {
+  loadCurrentState(props) {
     // Override any initial launcher visible state when the new sidebar has not been
     // made visible yet
     let hasPreviousVisibleState = false;
@@ -242,6 +252,9 @@ export class SidebarState {
     } else if (this.revampVisibility == "always-show") {
       props.launcherVisible = true;
     }
+    const hasExplicitHiddenLauncher =
+      hasPreviousVisibleState && !props.launcherVisible;
+
     for (const [key, value] of Object.entries(props)) {
       if (value === undefined) {
         // `undefined` means we should use the default value.
@@ -263,13 +276,9 @@ export class SidebarState {
         case "panelOpen":
           // we need to know if we have a command value before finalizing panelOpen
           break;
-        case "expandedPinnedTabsHeight":
-        case "collapsedPinnedTabsHeight":
-          this.updatePinnedTabsHeight();
-          break;
-        case "expandedToolsHeight":
-        case "collapsedToolsHeight":
-          this.updateToolsHeight();
+        case "pinnedTabsHeight":
+        case "toolsHeight":
+          this.#props[key] = value;
           break;
         default:
           this[key] = value;
@@ -283,11 +292,23 @@ export class SidebarState {
     if (!this.command) {
       props.panelOpen = false;
     }
+
     this.panelOpen = !!props.panelOpen;
+    if (hasExplicitHiddenLauncher) {
+      this.launcherVisible = false;
+    }
     if (this.command && this.panelOpen) {
-      this.launcherVisible = true;
+      if (!hasExplicitHiddenLauncher && !this.launcherHiddenWithPanel) {
+        this.launcherVisible = true;
+      }
       // show() is async, so make sure we return its promise here
       return this.#controller.showInitially(this.command);
+    }
+    if (["hide-sidebar", "hide-launcher"].includes(this.revampVisibility)) {
+      // No panel is open, so the launcher stays hidden as these modes intend. A
+      // new or restored window can otherwise inherit a visible launcher state,
+      // which shouldn't carry over here.
+      this.launcherVisible = false;
     }
     return this.#controller.hide();
   }
@@ -314,6 +335,7 @@ export class SidebarState {
       command: this.command,
       panelOpen: this.panelOpen,
       panelWidth: this.panelWidth,
+      bookmarksExpandedFolders: this.bookmarksExpandedFolders,
       launcherWidth: convertToInt(this.launcherWidth),
       expandedLauncherWidth: convertToInt(this.expandedLauncherWidth),
       launcherExpanded: this.launcherExpanded,
@@ -344,8 +366,11 @@ export class SidebarState {
     }
     this.#props.panelOpen = !!open;
     if (open) {
-      // Launcher must be visible to open a panel.
-      this.launcherVisible = true;
+      // Launcher must be visible to open a panel, except in horizontal-tabs
+      // "hide sidebar" mode where the launcher stays hidden and only the panel
+      // is shown. Re-run the setter either way so the box padding tracks the
+      // launcher-less layout.
+      this.launcherVisible = !this.launcherHiddenWithPanel;
 
       Services.prefs.setBoolPref(
         this.revampEnabled ? REVAMP_USED_PREF : LEGACY_USED_PREF,
@@ -362,6 +387,7 @@ export class SidebarState {
     }
     boxEl.toggleAttribute("sidebar-panel-open", open);
     contentAreaEl.toggleAttribute("sidebar-panel-open", open);
+    this.#controller.requestMaxWidthUpdate();
   }
 
   get panelWidth() {
@@ -371,7 +397,7 @@ export class SidebarState {
   }
 
   set panelWidth(width) {
-    this.#launcherContainerEl.style.maxWidth = `calc(${SIDEBAR_MAXIMUM_WIDTH} - ${width}px)`;
+    this.#controller.requestMaxWidthUpdate();
   }
 
   get expandedPinnedTabsHeight() {
@@ -415,11 +441,30 @@ export class SidebarState {
       return false;
     }
 
+    // Vertical "hide-sidebar" and horizontal "hide-launcher" both keep the
+    // launcher hidden initially (with vertical "hide-sidebar" it becomes visible
+    // while a panel is open).
+    if (["hide-sidebar", "hide-launcher"].includes(this.revampVisibility)) {
+      return false;
+    }
+
     // default/fallback value for vertical tabs is to always be visible initially
     if (lazy.verticalTabsEnabled) {
       return true;
     }
     return DEFAULT_LAUNCHER_VISIBLE;
+  }
+
+  /**
+   * Whether the launcher should stay hidden while a panel is open. This is the
+   * case in horizontal-tabs "hide-launcher" mode, where the launcher is replaced
+   * by the panel header dropdown: the toolbar button then toggles only the
+   * panel and the launcher remains hidden until the user leaves that mode.
+   *
+   * @returns {boolean}
+   */
+  get launcherHiddenWithPanel() {
+    return this.revampVisibility === "hide-launcher";
   }
 
   get launcherVisible() {
@@ -443,14 +488,26 @@ export class SidebarState {
   ) {
     switch (this.revampVisibility) {
       case "hide-sidebar":
-        if (lazy.verticalTabsEnabled) {
-          forceExpandValue = visible;
-        }
+        // Vertical tabs: the toolbar button toggles the launcher (which expands
+        // when shown).
+        forceExpandValue = visible;
         this.launcherVisible = visible;
         break;
       case "always-show":
+        // Vertical tabs: launcher always visible; the toolbar button only
+        // toggles expansion.
+        this.launcherVisible = true;
+        break;
       case "expand-on-hover":
         this.launcherVisible = true;
+        break;
+      case "hide-on-close":
+      case "hide-launcher":
+        // Horizontal tabs have no expanded launcher state. "hide-on-close"
+        // shows/hides the collapsed launcher via the toolbar button;
+        // "hide-launcher" keeps it hidden (the panel header switcher replaces
+        // it).
+        this.launcherVisible = visible;
         break;
     }
     if (forceExpandValue !== null) {
@@ -462,14 +519,21 @@ export class SidebarState {
     if (!this.revampEnabled) {
       // Launcher not supported in legacy sidebar.
       this.#props.launcherVisible = false;
+      this.#launcherSplitterEl.hidden = true;
       this.#launcherContainerEl.hidden = true;
+      this.#controller._disableLauncherDragging();
+      this.#updateTabbrowser(false);
       return;
     }
     this.#props.launcherVisible = visible;
+    this.#launcherContainerEl.hidden = !visible;
+    this.#launcherSplitterEl.hidden = !visible;
     if (visible) {
       this.#launcherEverVisible = true;
+      this.#controller._enableLauncherDragging();
+    } else {
+      this.#controller._disableLauncherDragging();
     }
-    this.#launcherContainerEl.hidden = !visible;
     this.#launcherEl.requestUpdate();
     this.#updateTabbrowser(visible);
     this.#sidebarBoxEl.style.paddingInlineStart =
@@ -496,7 +560,6 @@ export class SidebarState {
     // and selectors considerably.
     const { tabContainer } = this.#controllerGlobal.gBrowser;
     const mainEl = this.#controller.sidebarContainer;
-    const splitterEl = this.#controller._launcherSplitter;
     const boxEl = this.#controller._box;
     const contentAreaEl =
       this.#controllerGlobal.document.getElementById("tabbrowser-tabbox");
@@ -504,7 +567,10 @@ export class SidebarState {
     if (mainEl?.toggleAttribute) {
       mainEl.toggleAttribute("sidebar-launcher-expanded", expanded);
     }
-    splitterEl?.toggleAttribute("sidebar-launcher-expanded", expanded);
+    this.#launcherSplitterEl?.toggleAttribute(
+      "sidebar-launcher-expanded",
+      expanded
+    );
     boxEl?.toggleAttribute("sidebar-launcher-expanded", expanded);
     contentAreaEl.toggleAttribute("sidebar-launcher-expanded", expanded);
     this.#controller.updateToolbarButton();
@@ -562,7 +628,7 @@ export class SidebarState {
   }
 
   set pinnedTabsDragActive(active) {
-    this.#props.pinnedDragActive = active;
+    this.#props.pinnedTabsDragActive = active;
 
     let itemsWrapperHeight =
       this.#controllerGlobal.windowUtils.getBoundsWithoutFlushing(
@@ -657,11 +723,11 @@ export class SidebarState {
     this.#props.launcherWidth = width;
     const { document } = this.#controllerGlobal;
     if (!document.documentElement.hasAttribute("inDOMFullscreen")) {
-      this.#panelEl.style.maxWidth = `calc(${SIDEBAR_MAXIMUM_WIDTH} - ${width}px)`;
       // Expand the launcher when it gets wide enough.
       if (this.launcherDragActive) {
         this.launcherExpanded = width >= LAUNCHER_MINIMUM_WIDTH;
       }
+      this.#controller.requestMaxWidthUpdate();
     }
   }
 
@@ -721,17 +787,38 @@ export class SidebarState {
    * height (if available).
    */
   updatePinnedTabsHeight() {
-    if (!lazy.verticalTabsEnabled) {
-      if (this.#pinnedTabsContainerEl) {
-        this.#pinnedTabsContainerEl.style.height = "";
-      }
+    if (!this.#pinnedTabsContainerEl || this.pinnedTabsDragActive) {
       return;
     }
-    if (this.launcherExpanded && this.expandedPinnedTabsHeight) {
-      this.#pinnedTabsContainerEl.style.height = `${this.expandedPinnedTabsHeight}px`;
-    } else if (!this.launcherExpanded && this.collapsedPinnedTabsHeight) {
-      this.#pinnedTabsContainerEl.style.height = `${this.collapsedPinnedTabsHeight}px`;
+    if (!lazy.verticalTabsEnabled) {
+      this.#pinnedTabsContainerEl.style.height = "";
+      return;
     }
+    const preferredHeight = this.launcherExpanded
+      ? this.expandedPinnedTabsHeight
+      : this.collapsedPinnedTabsHeight;
+    if (!preferredHeight) {
+      // Nothing stored for this state, so clear any height left over from the
+      // other state and let the container size itself to its contents.
+      this.#pinnedTabsContainerEl.style.height = "";
+      return;
+    }
+    const itemsWrapper = this.#pinnedTabsItemsWrapper;
+    const itemsWrapperHeight = itemsWrapper
+      ? this.#controllerGlobal.windowUtils.getBoundsWithoutFlushing(
+          itemsWrapper
+        ).height
+      : 0;
+    if (!itemsWrapperHeight) {
+      // The pinned tabs have no layout to clamp the stored height to, so leave
+      // the container's height alone until they do.
+      return;
+    }
+    // Clamp for display only, never overwriting the user's saved preference.
+    this.#pinnedTabsContainerEl.style.height = `${Math.min(
+      preferredHeight,
+      itemsWrapperHeight
+    )}px`;
   }
 
   /**
@@ -781,9 +868,27 @@ export class SidebarState {
   }
 
   #updateTabbrowser(isSidebarShown) {
-    this.#controllerGlobal.document
-      .getElementById("tabbrowser-tabbox")
-      .toggleAttribute("sidebar-shown", isSidebarShown);
+    const doc = this.#controllerGlobal.document;
+    const tabbox = doc.getElementById("tabbrowser-tabbox");
+    if (!tabbox || !doc.documentElement) {
+      return;
+    }
+    tabbox.toggleAttribute(
+      "sidebar-shown",
+      isSidebarShown && !this.#navToolboxCollapsed
+    );
+  }
+
+  get navToolboxCollapsed() {
+    return this.#navToolboxCollapsed;
+  }
+
+  set navToolboxCollapsed(val) {
+    if (this.#navToolboxCollapsed === val) {
+      return;
+    }
+    this.#navToolboxCollapsed = val;
+    this.#updateTabbrowser(this.launcherVisible);
   }
 
   get command() {

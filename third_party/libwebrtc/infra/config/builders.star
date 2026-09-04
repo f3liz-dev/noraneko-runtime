@@ -165,13 +165,15 @@ def ci_builder(
         kwargs["priority"] = 29
 
     add_milo(name, {"ci": ci_cat, "perf": perf_cat})
-    if ci_cat and not perf_cat:
-        lkgr_builders.append(name)
     dimensions = ({"os": os_from_name(name), "pool": "luci.webrtc.ci", "cpu": kwargs.pop("cpu", DEFAULT_CPU)})
     dimensions["builderless"] = "1"
     properties = properties or {}
     properties["builder_group"] = "client.webrtc"
     properties.update(make_siso_properties("rbe-webrtc-trusted"))
+
+    if ci_cat and not perf_cat:
+        properties["gardener_rotations"] = ["webrtc"]
+        lkgr_builders.append(name)
 
     notifies = ["post_submit_failure_notifier", "infra_failure_notifier"]
     notifies += ["webrtc_tree_closer"] if name not in skipped_lkgr_bots else []
@@ -308,21 +310,16 @@ ios_builder, ios_try_job = normal_builder_factory(
 
 # Actual builder configuration:
 
-ci_builder("Android32 (dbg)", "Android|arm|dbg")
-try_builder("android_compile_arm_dbg", cq = {"experiment_percentage": 100})
+ci_builder("Android64 (dbg)", "Android|arm64|dbg")
+try_builder("android_compile_arm_dbg")
 try_builder("android_arm_dbg")
-ci_builder("Android32", "Android|arm|rel")
+ci_builder("Android64", "Android|arm64|rel")
 try_builder("android_arm_rel")
 ci_builder("Android32 Builder arm", "Android|arm|size", perf_cat = "Android|arm|Builder|", prioritized = True)
 try_builder("android_compile_arm_rel")
 perf_builder("Perf Android32 (R Pixel5)", "Android|arm|Tester|R Pixel5", triggered_by = ["Android32 Builder arm"])
-try_builder("android_compile_arm64_dbg", cq = None)
-try_builder("android_arm64_dbg", cq = None)
-ci_builder("Android64", "Android|arm64|rel")
-try_builder("android_arm64_rel")
 ci_builder("Android64 Builder arm64", "Android|arm64|size", perf_cat = "Android|arm64|Builder|", prioritized = True)
 perf_builder("Perf Android64 (R Pixel5)", "Android|arm64|Tester|R Pixel5", triggered_by = ["Android64 Builder arm64"])
-try_builder("android_compile_arm64_rel")
 ci_builder("Android64 Builder x64 (dbg)", "Android|x64|dbg")
 try_builder("android_compile_x64_dbg")
 try_builder("android_compile_x64_rel", cq = None)
@@ -330,7 +327,7 @@ ci_builder("Android32 Builder x86 (dbg)", "Android|x86|dbg")
 try_builder("android_compile_x86_dbg")
 ci_builder("Android32 Builder x86", "Android|x86|rel")
 try_builder("android_compile_x86_rel")
-ci_builder("Android32 (more configs)", "Android|arm|more")
+ci_builder("Android64 (more configs)", "Android|arm64|more")
 try_builder("android_arm_more_configs")
 chromium_try_builder("android_chromium_compile")
 
@@ -394,9 +391,7 @@ try_builder("mac_compile_dbg")
 ci_builder("Mac64 Release", "Mac|x64|rel")
 try_builder("mac_rel")
 try_builder("mac_compile_rel", cq = None)
-ci_builder("Mac64 Builder", ci_cat = None, perf_cat = "Mac|x64|Builder|")
 ci_builder("MacArm64 Builder", ci_cat = None, perf_cat = "Mac|arm64|Builder|")
-perf_builder("Perf Mac 11", "Mac|x64|Tester|11", triggered_by = ["Mac64 Builder"])
 perf_builder("Perf Mac M1 Arm64 12", "Mac|arm64|Tester|12", triggered_by = ["MacArm64 Builder"])
 ci_builder("Mac Asan", "Mac|x64|asan")
 try_builder("mac_asan")
@@ -482,7 +477,7 @@ lkgr_config = {
                 "WebRTC Chromium FYI Mac Tester",
                 "WebRTC Chromium FYI Win Builder (dbg)",
                 "WebRTC Chromium FYI Win Builder",
-                "WebRTC Chromium FYI Win10 Tester",
+                "WebRTC Chromium FYI Win Tester",
                 # TODO: b/441273941 - Re-enable once the ios infra issue is resolved
                 #"WebRTC Chromium FYI ios-device",
                 #"WebRTC Chromium FYI ios-simulator",

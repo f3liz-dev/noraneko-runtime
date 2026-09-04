@@ -6,16 +6,14 @@
  * This module exports a provider that offers token alias engines.
  */
 
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -31,10 +29,10 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    return lazy.UrlbarShared.PROVIDER_TYPE.HEURISTIC;
   }
 
   static get PRIORITY() {
@@ -67,7 +65,7 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
     }
 
     // Do not show token alias results in search mode.
-    if (queryContext.searchMode) {
+    if (queryContext.restrictInSearchMode()) {
       return false;
     }
 
@@ -123,8 +121,8 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
         engine.name != this._autofillData?.result.payload.engine
       ) {
         let result = new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.SEARCH,
-          source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+          type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+          source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
           hideRowLabel: true,
           payload: {
             engine: engine.name,
@@ -135,8 +133,8 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
             providesSearchMode: true,
           },
           highlights: {
-            engine: UrlbarUtils.HIGHLIGHT.TYPED,
-            keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+            engine: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+            keyword: lazy.UrlbarShared.HIGHLIGHT.TYPED,
           },
         });
         if (instance != this.queryInstance) {
@@ -194,8 +192,8 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
             alias.substr(queryContext.searchString.length);
           let value = aliasPreservingUserCase + " ";
           return new lazy.UrlbarResult({
-            type: UrlbarUtils.RESULT_TYPE.SEARCH,
-            source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+            type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+            source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
             // We set suggestedIndex = 0 instead of the heuristic because we
             // don't want this result to be automatically selected. That way,
             // users can press Tab to select the result, building on their
@@ -216,8 +214,8 @@ export class UrlbarProviderTokenAliasEngines extends UrlbarProvider {
               providesSearchMode: true,
             },
             highlights: {
-              engine: UrlbarUtils.HIGHLIGHT.TYPED,
-              keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+              engine: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+              keyword: lazy.UrlbarShared.HIGHLIGHT.TYPED,
             },
           });
         }

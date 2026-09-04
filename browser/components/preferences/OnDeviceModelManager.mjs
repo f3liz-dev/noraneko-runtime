@@ -11,6 +11,8 @@ const XPCOMUtils = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 ).XPCOMUtils;
 const lazy = XPCOMUtils.declareLazy({
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
   LinkPreview: "moz-src:///browser/components/genai/LinkPreview.sys.mjs",
   PdfJsGuessAltTextFeature: "resource://pdf.js/PdfJsAIFeature.sys.mjs",
@@ -29,6 +31,7 @@ const OnDeviceModelFeatures = Object.freeze({
   PdfAltText: "pdfjsAltText",
   Translations: "translations",
   SidebarChatbot: "sidebarChatbot",
+  SmartWindow: "smartWindow",
 });
 
 /** @type {Record<OnDeviceModelFeaturesEnum, string[]>} */
@@ -52,6 +55,16 @@ const FeaturePrefs = Object.freeze({
   [OnDeviceModelFeatures.SidebarChatbot]: [
     "browser.ml.chat.provider",
     "browser.ml.chat.enabled",
+  ],
+  [OnDeviceModelFeatures.SmartWindow]: [
+    "browser.smartwindow.enabled",
+    "browser.smartwindow.tos.consentTime",
+    // makeAiControlSetting's get() calls AIWindow.isBlocked which reads a
+    // cached value of this pref. Without this entry get() can run before
+    // AIWindow's cache is refreshed since pref observers fire in
+    // unpredictable order. This is triggered e.g. when UITour overrides
+    // this pref externally.
+    "browser.ai.control.smartWindow",
   ],
 });
 
@@ -120,6 +133,8 @@ export const OnDeviceModelManager = {
         return lazy.TranslationsFeature;
       case OnDeviceModelFeatures.SidebarChatbot:
         return lazy.GenAI;
+      case OnDeviceModelFeatures.SmartWindow:
+        return lazy.AIWindow;
       default:
         throw new Error(`Unknown feature "${feature}"`);
     }
@@ -142,6 +157,8 @@ export const OnDeviceModelManager = {
         return "browser.ai.control.translations";
       case OnDeviceModelFeatures.SidebarChatbot:
         return "browser.ai.control.sidebarChatbot";
+      case OnDeviceModelFeatures.SmartWindow:
+        return "browser.ai.control.smartWindow";
       default:
         throw new Error(`Unknown feature "${feature}"`);
     }
@@ -154,6 +171,15 @@ export const OnDeviceModelManager = {
    */
   isAllowed(feature) {
     return this.getAIFeature(feature).isAllowed;
+  },
+
+  /**
+   * Check if a feature has a distinct enabled state in AI Controls.
+   *
+   * @param {OnDeviceModelFeaturesEnum} feature
+   */
+  hasDistinctEnabledState(feature) {
+    return this.getAIFeature(feature).hasDistinctEnabledState;
   },
 
   /**
@@ -172,6 +198,24 @@ export const OnDeviceModelManager = {
    */
   isBlocked(feature) {
     return this.getAIFeature(feature).isBlocked;
+  },
+
+  /**
+   * Check if the current device can run a feature.
+   *
+   * @param {OnDeviceModelFeaturesEnum} feature
+   */
+  canRunOnDevice(feature) {
+    return this.getAIFeature(feature).canRunOnDevice;
+  },
+
+  /**
+   * Get the derived AI Controls state for a feature.
+   *
+   * @param {OnDeviceModelFeaturesEnum} feature
+   */
+  getAiControlState(feature) {
+    return this.getAIFeature(feature).aiControlState;
   },
 
   /**

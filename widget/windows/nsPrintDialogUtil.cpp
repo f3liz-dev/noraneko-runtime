@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,29 +19,35 @@ WIN_LIBS=                                       \
 
 ---------------------------------------------------------------------- */
 
+// clang-format off
 #include <windows.h>
 #include <tchar.h>
-
+// unknwn.h defines STDMETHOD, which commdlg.h needs for PrintDlgEx.
 #include <unknwn.h>
 #include <commdlg.h>
+#include <winspool.h>
+// clang-format on
 
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
+#include "nsCRT.h"
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsWin.h"
 #include "nsIPrinterList.h"
-#include "nsServiceManagerUtils.h"
-
+#include "nsReadableUtils.h"
 #include "nsRect.h"
-
-#include "nsCRT.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
 #include "prenv.h" /* for PR_GetEnv */
 
-#include <windows.h>
-#include <winspool.h>
+// winspool.h pollutes the global namespace, failing unified builds in e.g.
+// nsIFormControl::SetForm. Undo the damage.
+#undef AddForm
+#undef DeleteForm
+#undef EnumForms
+#undef GetForm
+#undef SetForm
 
 // For Localization
 
@@ -52,8 +57,8 @@ WIN_LIBS=                                       \
 // This is for extending the dialog
 #include <dlgs.h>
 
-#include "nsWindowsHelpers.h"
 #include "WinUtils.h"
+#include "nsWindowsHelpers.h"
 
 //-----------------------------------------------
 // Global Data

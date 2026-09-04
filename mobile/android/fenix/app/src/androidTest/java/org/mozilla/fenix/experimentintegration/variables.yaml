@@ -9,12 +9,10 @@ urls:
 smoke_tests:
   - AddressAutofillTest
   - BookmarksTest
-  - CookieBannerBlockerTest
   - CrashReportingTest
   - CreditCardAutofillTest
   - CustomTabsTest
   - DownloadTest
-  - EnhancedTrackingProtectionTest
   - FirefoxSuggestTest
   - HistoryTest
   - HomeScreenTest

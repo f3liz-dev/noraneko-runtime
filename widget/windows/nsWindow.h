@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,49 +9,48 @@
  * nsWindow - Native window management and event handling.
  */
 
-#include "mozilla/RefPtr.h"
-#include "nsIWidget.h"
-#include "CompositorWidget.h"
-#include "mozilla/EventForwards.h"
-#include "nsClassHashtable.h"
 #include <windows.h>
-#include "touchinjection_sdk80.h"
-#include "nsdefs.h"
-#include "nsUserIdleService.h"
-#include "nsToolkit.h"
-#include "nsString.h"
-#include "nsTArray.h"
-#include "gfxWindowsPlatform.h"
-#include "gfxWindowsSurface.h"
-#include "nsWindowDbg.h"
-#include "cairo.h"
-#include "nsRegion.h"
-#include "mozilla/EnumeratedArray.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/webrender/WebRenderTypes.h"
-#include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/DataMutex.h"
-#include "mozilla/UniquePtr.h"
-#include "nsMargin.h"
-#include "nsRegionFwd.h"
 
-#include "nsWinGesture.h"
+#include "CompositorWidget.h"
+#include "TaskbarWindowPreview.h"
 #include "WinPointerEvents.h"
 #include "WinUtils.h"
 #include "WindowHook.h"
-#include "TaskbarWindowPreview.h"
+#include "cairo.h"
+#include "gfxWindowsPlatform.h"
+#include "gfxWindowsSurface.h"
+#include "mozilla/DataMutex.h"
+#include "mozilla/EnumeratedArray.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/webrender/WebRenderTypes.h"
+#include "nsClassHashtable.h"
+#include "nsIWidget.h"
+#include "nsMargin.h"
+#include "nsRegion.h"
+#include "nsRegionFwd.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsToolkit.h"
+#include "nsUserIdleService.h"
+#include "nsWinGesture.h"
+#include "nsWindowDbg.h"
+#include "nsdefs.h"
+#include "touchinjection_sdk80.h"
 
 #ifdef ACCESSIBILITY
-#  include "oleacc.h"
 #  include "mozilla/a11y/LocalAccessible.h"
+#  include "oleacc.h"
 #endif
 
-#include "nsIUserIdleServiceInternal.h"
-
-#include "IMMHandler.h"
 #include "CheckInvariantWrapper.h"
+#include "IMMHandler.h"
+#include "nsIUserIdleServiceInternal.h"
 
 /**
  * Forward class definitions
@@ -201,8 +199,14 @@ class nsWindow final : public nsIWidget {
   bool IsVisible() const override;
   void ConstrainPosition(DesktopIntPoint&) override;
   void SetSizeConstraints(const SizeConstraints& aConstraints) override;
+  struct DeviceSizeConstraints {
+    int32_t mMinWidth;
+    int32_t mMinHeight;
+    int32_t mMaxWidth;
+    int32_t mMaxHeight;
+  };
+  DeviceSizeConstraints GetDeviceSizeConstraints() const;
   void LockAspectRatio(bool aShouldLock) override;
-  const SizeConstraints GetSizeConstraints() override;
   void SetInputRegion(const InputRegion&) override;
   void Move(const DesktopPoint&) override;
   void Resize(const DesktopSize&, bool aRepaint) override;
@@ -235,6 +239,9 @@ class nsWindow final : public nsIWidget {
   void* GetNativeData(uint32_t aDataType) override;
   nsresult SetTitle(const nsAString& aTitle) override;
   void SetIcon(const nsAString& aIconSpec) override;
+  // Apply WM_SETICON from an icon resource embedded in this process's
+  // executable. A resource ID of 0 reverts to IDI_APPICON.
+  void SetIconFromExeResource(uint16_t aResourceId);
   LayoutDeviceIntPoint WidgetToScreenOffset() override;
   LayoutDeviceIntMargin NormalSizeModeClientToWindowMargin() override;
   void EnableDragDrop(bool aEnable) override;
@@ -248,12 +255,12 @@ class nsWindow final : public nsIWidget {
       const LayoutDeviceIntRect& aButtonRect) override;
   nsresult SynthesizeNativeKeyEvent(
       int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
-      uint32_t aModifierFlags, const nsAString& aCharacters,
+      nsIWidget::NativeModifiers aModifierFlags, const nsAString& aCharacters,
       const nsAString& aUnmodifiedCharacters,
       nsISynthesizedEventCallback* aCallback) override;
   nsresult SynthesizeNativeMouseEvent(
       LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-      mozilla::MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+      mozilla::MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
       nsISynthesizedEventCallback* aCallback) override;
 
   nsresult SynthesizeNativeMouseMove(
@@ -261,12 +268,12 @@ class nsWindow final : public nsIWidget {
       nsISynthesizedEventCallback* aCallback) override {
     return SynthesizeNativeMouseEvent(
         aPoint, NativeMouseMessage::Move, mozilla::MouseButton::eNotPressed,
-        nsIWidget::Modifiers::NO_MODIFIERS, aCallback);
+        nsIWidget::NativeModifiers::NO_MODIFIERS, aCallback);
   }
 
   nsresult SynthesizeNativeMouseScrollEvent(
       LayoutDeviceIntPoint aPoint, uint32_t aNativeMessage, double aDeltaX,
-      double aDeltaY, double aDeltaZ, uint32_t aModifierFlags,
+      double aDeltaY, double aDeltaZ, nsIWidget::NativeModifiers aModifierFlags,
       uint32_t aAdditionalFlags,
       nsISynthesizedEventCallback* aCallback) override;
 
@@ -293,11 +300,12 @@ class nsWindow final : public nsIWidget {
    * Event helpers
    */
   enum class IsNonclient : bool { No = false, Yes = true };
-  bool DispatchMouseEvent(mozilla::EventMessage aEventMessage, WPARAM wParam,
-                          LPARAM lParam, bool aIsContextMenuKey,
-                          int16_t aButton, uint16_t aInputSource,
-                          WinPointerInfo* aPointerInfo = nullptr,
-                          IsNonclient aIgnoreAPZ = IsNonclient::No);
+  bool DispatchMouseEvent(
+      mozilla::EventMessage aEventMessage, WPARAM wParam, LPARAM lParam,
+      bool aIsContextMenuKey, int16_t aButton, uint16_t aInputSource,
+      WinPointerInfo* aPointerInfo = nullptr,
+      IsNonclient aIgnoreAPZ = IsNonclient::No,
+      mozilla::Maybe<LayoutDeviceIntPoint> aMovement = mozilla::Nothing());
   void DispatchPendingEvents();
   void DispatchCustomEvent(const nsString& eventName);
 
@@ -420,6 +428,21 @@ class nsWindow final : public nsIWidget {
   bool HandleAppCommandMsg(const MSG& aAppCommandMsg, LRESULT* aRetValue);
 
   const InputContext& InputContextRef() const { return mInputContext; }
+
+  /*
+   * Pointer lock handler.
+   */
+  void LockNativePointer(NativePointerLockMode aNativePointerLockMode) override;
+  void UnlockNativePointer() override;
+  void SetNativePointerLockMode(
+      NativePointerLockMode aNativePointerLockMode) override;
+  bool SupportsUnadjustedMovement() override { return true; }
+
+  static bool IsNativePointerLocked() { return sIsNativePointLocked; }
+  static bool IsUsingRawInputForMouseMove() {
+    MOZ_ASSERT_IF(sIsUsingRawInputForMouseMove, sIsNativePointLocked);
+    return sIsUsingRawInputForMouseMove;
+  }
 
  private:
   using TimeStamp = mozilla::TimeStamp;
@@ -545,7 +568,6 @@ class nsWindow final : public nsIWidget {
    */
   HWND GetTopLevelForFocus(HWND aCurWnd);
   void DispatchFocusToTopLevelWindow(bool aIsActivate);
-  bool DispatchStandardEvent(mozilla::EventMessage aMsg);
   void RelayMouseEvent(UINT aMsg, WPARAM wParam, LPARAM lParam);
   bool ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
                       LRESULT* aRetValue);
@@ -641,6 +663,7 @@ class nsWindow final : public nsIWidget {
    */
   void StopFlashing();
   static HWND WindowAtMouse();
+  static HWND NsWindowAtMouse();
   static bool IsTopLevelMouseExit(HWND aWnd);
   LayoutDeviceIntRegion GetRegionToPaint(const PAINTSTRUCT& ps, HDC aDC) const;
 
@@ -684,6 +707,10 @@ class nsWindow final : public nsIWidget {
   // is on, or Nothing if taskbar isn't hidden.
   mozilla::Maybe<UINT> GetHiddenTaskbarEdge();
 
+  void SetNativeLockedRegion();
+  void ReleaseNativeLockedRegion();
+  void MaybeUpdateNativeLockedRegion();
+
   static bool sTouchInjectInitialized;
   static InjectTouchInputPtr sInjectTouchFuncPtr;
   static uint32_t sInstanceCount;
@@ -694,6 +721,9 @@ class nsWindow final : public nsIWidget {
   static bool sJustGotActivate;
   static bool sIsInMouseCapture;
   static bool sIsRestoringSession;
+  static bool sIsNativePointLocked;
+  static bool sIsUsingRawInputForMouseMove;
+  static nsWindow* sNativePointLockedWindow;
 
   // Message postponement hack. See the definition-site of
   // WndProcUrgentInvocation::sDepth for details.
@@ -866,8 +896,6 @@ class nsWindow final : public nsIWidget {
   TimeStamp mCachedHitTestTime;
 
   RefPtr<mozilla::widget::InProcessWinCompositorWidget> mBasicLayersSurface;
-
-  double mSizeConstraintsScale;  // scale in effect when setting constraints
 
   // Will be calculated when layer manager is created.
   int32_t mMaxTextureSize = -1;

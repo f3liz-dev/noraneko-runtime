@@ -6,6 +6,7 @@ package mozilla.components.service.fxrelay
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import mozilla.appservices.fxaclient.FxaException
 import mozilla.appservices.relay.RelayAddress
 import mozilla.appservices.relay.RelayApiException
 import mozilla.appservices.relay.RelayClient
@@ -16,7 +17,6 @@ import mozilla.components.service.fxrelay.eligibility.RelayPlanTier
 import mozilla.components.service.fxrelay.ext.asEmailMask
 import mozilla.components.service.fxrelay.ext.freeLimitReached
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.kotlin.extractHostUrl
 
 private const val RELAY_SCOPE_URL = "https://identity.mozilla.com/apps/relay"
 private const val RELAY_BASE_URL = "https://relay.firefox.com"
@@ -42,14 +42,14 @@ interface FxRelay {
     /**
      * Creates a new email mask with the specified data, otherwise, falls back to using an existing one.
      *
-     * @param generatedFor The website for which the address is generated.
-     * @param description Optional description of the email address.
+     * @param generatedForHostUrl The host URL of the website for which the address is generated.
+     * @param descriptionHostUrl Optional host URL used as the description of the email address.
      *
      * @return the newly created email mask or `null` if the operation fails.
      */
     suspend fun createEmailMask(
-        generatedFor: String = "",
-        description: String = "",
+        generatedForHostUrl: String = "",
+        descriptionHostUrl: String = "",
     ): EmailMask?
 }
 
@@ -85,13 +85,20 @@ internal class FxRelayImpl(
 
     /**
      * Build or reuse a [RelayClient] with a fresh token.
-     * If no token is available, fail fast with an error.
      *
-     * @throws RelayApiException.Other if no FxA access token is available.
+     * @return a [RelayClientInterface], or `null` if no FxA access token is available or the
+     * account is not authorized for the Relay scope.
      */
-    private suspend fun getOrCreateClient(): RelayClientInterface {
-        val token = account.getAccessToken(RELAY_SCOPE_URL)?.token
-            ?: throw RelayApiException.Other("No FxA access token available for Relay")
+    private suspend fun getOrCreateClient(): RelayClientInterface? {
+        val token = try {
+            account.getAccessToken(RELAY_SCOPE_URL)?.token
+        } catch (e: FxaException.Forbidden) {
+            logger.error("Account is not authorized for the Relay scope", e)
+            return null
+        } ?: run {
+            logger.error("No FxA access token available for Relay")
+            return null
+        }
 
         return cachedClient.takeIf { cachedToken == token }
             ?: relayClientProvider(token).also {
@@ -144,24 +151,23 @@ internal class FxRelayImpl(
             RelayOperation.FETCH_ADDRESSES,
             { null },
         ) {
-            getOrCreateClient().fetchAddresses().map { it.asEmailMask() }
+            getOrCreateClient()?.fetchAddresses()?.map { it.asEmailMask() }
         }
     }
 
     override suspend fun createEmailMask(
-        generatedFor: String,
-        description: String,
+        generatedForHostUrl: String,
+        descriptionHostUrl: String,
     ): EmailMask? = withContext(Dispatchers.IO) {
         handleRelayExceptions(
             RelayOperation.CREATE_ADDRESS,
             { null },
         ) {
             try {
-                val extractedGeneratedFor = generatedFor.extractHostUrl()
-                val extractedDescription = description.extractHostUrl()
-                val address = getOrCreateClient().createAddress(
-                    description = extractedDescription,
-                    generatedFor = extractedGeneratedFor,
+                val client = getOrCreateClient() ?: return@handleRelayExceptions null
+                val address = client.createAddress(
+                    description = descriptionHostUrl,
+                    generatedFor = generatedForHostUrl,
                     usedOn = "", // always empty string for now until we can surface this property correctly.
                 )
 
@@ -190,7 +196,7 @@ internal class FxRelayImpl(
             RelayOperation.FETCH_PROFILE,
             { null },
         ) {
-            val client = getOrCreateClient()
+            val client = getOrCreateClient() ?: return@handleRelayExceptions null
             client.fetchProfile()
         }
     }

@@ -1,41 +1,33 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ScriptPreloader-inl.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Monitor.h"
-
 #include "mozilla/ScriptPreloader.h"
-#include "mozilla/loader/ScriptCacheActors.h"
 
-#include "mozilla/URLPreloader.h"
-
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Components.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/glean/JsXpconnectMetrics.h"
+#include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/IOBuffers.h"
+#include "mozilla/loader/ScriptCacheActors.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/scache/StartupCache.h"
+#include "mozilla/scache/StartupCacheUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/TaskController.h"
-#include "mozilla/glean/JsXpconnectMetrics.h"
-#include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/Try.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/scache/StartupCache.h"
-#include "mozilla/scache/StartupCacheUtils.h"
+#include "mozilla/URLPreloader.h"
 
 #include "crc32c.h"
-#include "js/CompileOptions.h"              // JS::ReadOnlyCompileOptions
-#include "js/experimental/JSStencil.h"      // JS::Stencil, JS::DecodeStencil
-#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize
-#include "js/Transcoding.h"
 #include "MainThreadUtils.h"
 #include "nsDebug.h"
 #include "nsDirectoryServiceUtils.h"
@@ -47,10 +39,25 @@
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
+#include "ScriptPreloader-inl.h"
 #include "xpcpublic.h"
 
+#include "js/CompileOptions.h"              // JS::ReadOnlyCompileOptions
+#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize
+#include "js/experimental/JSStencil.h"      // JS::Stencil, JS::DecodeStencil
+#include "js/Transcoding.h"
+
+#if defined(XP_LINUX)
+#  include <sys/mman.h>
+// MADV_COLD was added in Linux 5.4 / Android API 30; define it for older SDKs
+// so we can call madvise() unconditionally (the kernel will return EINVAL and
+// we ignore it).
+#  ifndef MADV_COLD
+#    define MADV_COLD 20
+#  endif
+#endif
+
 #define STARTUP_COMPLETE_TOPIC "browser-delayed-startup-finished"
-#define DOC_ELEM_INSERTED_TOPIC "document-element-inserted"
 #define CONTENT_DOCUMENT_LOADED_TOPIC "content-document-loaded"
 #define CACHE_WRITE_TOPIC "browser-idle-startup-tasks-finished"
 #define XPCOM_SHUTDOWN_TOPIC "xpcom-shutdown"
@@ -367,6 +374,16 @@ nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
     MOZ_ASSERT(XRE_IsParentProcess());
     mStartupHasAdvancedToCacheWritingStage = true;
 
+#if defined(XP_LINUX)
+    // Startup is complete; mark the cache mapping cold so the kernel can
+    // reclaim these pages under memory pressure without unmapping them.
+    if (mCacheData->initialized()) {
+      // MADV_COLD may return EINVAL on kernels older than 5.4.
+      uint8_t* ptr = const_cast<uint8_t*>(mCacheData->get<uint8_t>().get());
+      (void)madvise(ptr, mCacheData->size(), MADV_COLD);
+    }
+#endif
+
     StartCacheWriteIfReady();
   } else if (mContentStartupFinishedTopic.Equals(topic)) {
     // If this is an uninitialized about:blank viewer or a chrome: document
@@ -534,17 +551,16 @@ Result<Ok, nsresult> ScriptPreloader::InitCache(
   MOZ_RELEASE_ASSERT(obs);
 
   if (sProcessType == ProcessType::PrivilegedAbout) {
-    // Since we control all of the documents loaded in the privileged
-    // content process, we can increase the window of active time for the
-    // ScriptPreloader to include the scripts that are loaded until the
-    // first document finishes loading.
+    // Since we control all of the documents loaded in the privileged content
+    // process, the kBecomeUntrusted notification will never fire. Instead we
+    // increase the window of active time for the ScriptPreloader to include the
+    // scripts that are loaded until the first document finishes loading.
     mContentStartupFinishedTopic.AssignLiteral(CONTENT_DOCUMENT_LOADED_TOPIC);
   } else {
     // In the child process, we need to freeze the script cache before any
-    // untrusted code has been executed. The insertion of the first DOM
-    // document element may sometimes be earlier than is ideal, but at
-    // least it should always be safe.
-    mContentStartupFinishedTopic.AssignLiteral(DOC_ELEM_INSERTED_TOPIC);
+    // untrusted code has been executed. Use the shared kBecameUntrustedTopic
+    // notification as a proxy for this.
+    mContentStartupFinishedTopic = ContentChild::kBecameUntrustedTopic;
   }
   obs->AddObserver(this, mContentStartupFinishedTopic.get(), false);
 
@@ -1061,18 +1077,11 @@ already_AddRefed<JS::Stencil> ScriptPreloader::GetCachedStencil(
     RefPtr<JS::Stencil> stencil =
         mChildCache->GetCachedStencilInternal(cx, options, path);
     if (stencil) {
-      glean::script_preloader::requests
-          .EnumGet(glean::script_preloader::RequestsLabel::eHitchild)
-          .Add();
       return stencil.forget();
     }
   }
 
   RefPtr<JS::Stencil> stencil = GetCachedStencilInternal(cx, options, path);
-  glean::script_preloader::requests
-      .EnumGet(stencil ? glean::script_preloader::RequestsLabel::eHit
-                       : glean::script_preloader::RequestsLabel::eMiss)
-      .Add();
 
   return stencil.forget();
 }

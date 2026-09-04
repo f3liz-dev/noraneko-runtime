@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -12,14 +10,7 @@ using namespace js;
 using namespace js::jit;
 
 MoveEmitterARM::MoveEmitterARM(MacroAssembler& masm)
-    : inCycle_(0),
-      masm(masm),
-      pushedAtCycle_(-1),
-      pushedAtSpill_(-1),
-      spilledReg_(InvalidReg),
-      spilledFloatReg_(InvalidFloatReg) {
-  pushedAtStart_ = masm.framePushed();
-}
+    : masm(masm), pushedAtStart_(masm.framePushed()) {}
 
 void MoveEmitterARM::emit(const MoveResolver& moves) {
   if (moves.numCycles()) {
@@ -33,8 +24,6 @@ void MoveEmitterARM::emit(const MoveResolver& moves) {
     emit(moves.getMove(i));
   }
 }
-
-MoveEmitterARM::~MoveEmitterARM() { assertDone(); }
 
 Address MoveEmitterARM::cycleSlot(uint32_t slot, uint32_t subslot) const {
   int32_t offset = masm.framePushed() - pushedAtCycle_;
@@ -84,8 +73,8 @@ Register MoveEmitterARM::tempReg() {
   return spilledReg_;
 }
 
-void MoveEmitterARM::breakCycle(const MoveOperand& from, const MoveOperand& to,
-                                MoveOp::Type type, uint32_t slotId) {
+void MoveEmitterARM::breakCycle(const MoveOperand& to, MoveOp::Type type,
+                                uint32_t slotId) {
   // There is some pattern:
   //   (A -> B)
   //   (B -> A)
@@ -366,7 +355,7 @@ void MoveEmitterARM::emit(const MoveOp& move) {
   if (move.isCycleEnd() && move.isCycleBegin()) {
     // A fun consequence of aliased registers is you can have multiple
     // cycles at once, and one can end exactly where another begins.
-    breakCycle(from, to, move.endCycleType(), move.cycleBeginSlot());
+    breakCycle(to, move.endCycleType(), move.cycleBeginSlot());
     completeCycle(from, to, move.type(), move.cycleEndSlot());
     return;
   }
@@ -380,7 +369,7 @@ void MoveEmitterARM::emit(const MoveOp& move) {
   }
 
   if (move.isCycleBegin()) {
-    breakCycle(from, to, move.endCycleType(), move.cycleBeginSlot());
+    breakCycle(to, move.endCycleType(), move.cycleBeginSlot());
     inCycle_++;
   }
 
@@ -399,8 +388,6 @@ void MoveEmitterARM::emit(const MoveOp& move) {
       MOZ_CRASH("Unexpected move type");
   }
 }
-
-void MoveEmitterARM::assertDone() { MOZ_ASSERT(inCycle_ == 0); }
 
 void MoveEmitterARM::finish() {
   assertDone();

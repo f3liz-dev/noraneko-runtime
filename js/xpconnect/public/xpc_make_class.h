@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,9 @@
 // This file should be used to create JSClass instances for nsIXPCScriptable
 // instances. This includes any file that uses xpc_map_end.h.
 
-#include "xpcpublic.h"
 #include "mozilla/dom/DOMJSClass.h"
+
+#include "xpcpublic.h"
 
 bool XPC_WN_MaybeResolvingPropertyStub(JSContext* cx, JS::HandleObject obj,
                                        JS::HandleId id, JS::HandleValue v);

@@ -1,11 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "js/Warnings.h"
-#include "vm/Warnings.h"
 
 #include <stdarg.h>  // va_{list,start,end}
 
@@ -15,6 +12,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage
 #include "vm/ErrorReporting.h"        // IsWarning
 #include "vm/JSContext.h"  // js::ArgumentsAre{ASCII,Latin1,UTF8}, js::ReportError{Number}VA
+#include "vm/Warnings.h"
 
 using js::ArgumentsAreASCII;
 using js::ArgumentsAreLatin1;

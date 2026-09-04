@@ -7,6 +7,7 @@ import pickle
 import unittest
 
 import mozpack.path as mozpath
+from mozfile import json
 from mozpack.manifests import InstallManifest
 from mozunit import main
 
@@ -402,6 +403,68 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertIn("mozilla/mozilla1.h", m)
         self.assertIn("mozilla/dom/dom2.h", m)
 
+    def test_js_shell_archive(self):
+        """Ensure JS_SHELL_ARCHIVE_FILES is handled properly."""
+        env = self._consume("js-shell-archive", RecursiveMakeBackend)
+
+        manifest_path = mozpath.join(env.topobjdir, "jsshell-archive.list")
+        with open(manifest_path) as fh:
+            manifest_lines = fh.read().splitlines()
+        self.assertEqual(
+            manifest_lines, ["js", "libmozglue.so", "llvm-symbolizer", "fuzz-tests"]
+        )
+
+        top_backend = open(mozpath.join(env.topobjdir, "backend.mk")).read()
+        self.assertNotIn("jsshell-archive", top_backend)
+
+    def test_macos_bundle(self):
+        """Ensure MACOS_BUNDLES is handled properly."""
+        env = self._consume("macos-bundle", RecursiveMakeBackend)
+
+        spec_path = mozpath.join(env.topobjdir, "dist_bin_Test.app.bundle.json")
+        with open(spec_path) as fh:
+            spec = json.load(fh)
+        self.assertEqual(spec["lproj"], "English.lproj")
+        self.assertTrue(spec["bundle"].endswith("dist/bin/Test.app"))
+        self.assertTrue(spec["skeleton"].endswith("macos-bundle/skeleton"))
+        self.assertTrue(spec["info_plist"].endswith("Info.plist"))
+        self.assertTrue(spec["strings"].endswith("InfoPlist.strings"))
+        self.assertEqual(len(spec["binaries"]), 1)
+        self.assertEqual(spec["binaries"][0][1], "test-bin")
+        self.assertEqual(len(spec["extra_files"]), 1)
+        self.assertEqual(spec["extra_files"][0][1], "Frameworks/Extra.framework/Extra")
+        self.assertEqual(len(spec["copies"]), 1)
+        self.assertTrue(spec["copies"][0].endswith("dist/bin/Test-copy.app"))
+
+        with open(mozpath.join(env.topobjdir, "dist_Staged.app.bundle.json")) as fh:
+            staged = json.load(fh)
+        self.assertTrue(staged["stage"].endswith("dist/bin"))
+        self.assertTrue(staged["macos_files"].endswith("macos-files.txt"))
+        self.assertTrue(staged["macos_copy_files"].endswith("macos-copy.in"))
+        self.assertEqual(
+            staged["moves"],
+            [["ChannelPrefs.framework", "Frameworks/ChannelPrefs.framework"]],
+        )
+        self.assertEqual(staged["pkginfo"], "APPLMOZB")
+
+        # A bundle that shares a basename with another in the same directory
+        # gets its own spec rather than clobbering it.
+        with open(mozpath.join(env.topobjdir, "dist_other_Test.app.bundle.json")) as fh:
+            other = json.load(fh)
+        self.assertTrue(other["bundle"].endswith("dist/other/Test.app"))
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        backend = open(backend_path).read()
+        self.assertIn("py_action,assemble_macos_bundle Test.app", backend)
+        self.assertIn("dist_bin_Test.app.bundle.json", backend)
+        self.assertIn("py_action,assemble_macos_bundle Staged.app", backend)
+        self.assertIn("tools repackage::", backend)
+        self.assertIn(".PHONY: repackage", backend)
+
+        root_deps_path = mozpath.join(env.topobjdir, "root-deps.mk")
+        root_deps = [l.strip() for l in open(root_deps_path).readlines()]
+        self.assertIn("libs: gen/pre-compile", root_deps)
+
     def test_generated_files(self):
         """Ensure GENERATED_FILES is handled properly."""
         env = self._consume("generated-files", RecursiveMakeBackend)
@@ -434,6 +497,39 @@ class TestRecursiveMakeBackend(BackendTester):
 
         self.maxDiff = None
         self.assertEqual(lines, expected)
+
+    def test_generated_files_extra_deps(self):
+        """Ensure GENERATED_FILES extra_deps are handled properly."""
+        env = self._consume("generated-files-extra-deps", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "consumer", "backend.mk")
+        lines = [l.strip() for l in open(backend_path).readlines()[2:]]
+
+        expected = [
+            "include $(topsrcdir)/config/AB_rCD.mk",
+            "PRE_COMPILE_TARGETS += $(MDDEPDIR)/consumer.c.stub",
+            "consumer.c: $(MDDEPDIR)/consumer.c.stub ;",
+            "EXTRA_MDDEPEND_FILES += $(MDDEPDIR)/consumer.c.pp",
+            "$(MDDEPDIR)/consumer.c.stub: "
+            f"{env.topsrcdir}/consumer/generate-consumer.py "
+            "$(srcdir)/input-data "
+            "$(srcdir)/source-extra "
+            "$(DEPTH)/producer/producer.c",
+            "$(REPORT_BUILD)",
+            "$(call py_action,file_generate consumer.c,"
+            f"{env.topsrcdir}/consumer/generate-consumer.py main "
+            "consumer.c $(MDDEPDIR)/consumer.c.pp "
+            "$(MDDEPDIR)/consumer.c.stub $(srcdir)/input-data)",
+            "@$(TOUCH) $@",
+            "",
+        ]
+
+        self.maxDiff = None
+        self.assertEqual(lines, expected)
+
+        root_deps_path = mozpath.join(env.topobjdir, "root-deps.mk")
+        lines = [l.strip() for l in open(root_deps_path).readlines()]
+        self.assertIn("consumer/pre-compile: producer/pre-compile", lines)
 
     def test_generated_files_force(self):
         """Ensure GENERATED_FILES with .force is handled properly."""
@@ -616,6 +712,22 @@ class TestRecursiveMakeBackend(BackendTester):
         self.maxDiff = None
         self.assertEqual(lines, expected)
 
+    def test_objdir_files_rename(self):
+        """Ensure OBJDIR_FILES entries install with a copy rule that
+        preserves mode, renaming when a (source, target_basename) tuple
+        is given."""
+        env = self._consume("objdir-files-rename", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        backend = open(backend_path).read()
+        # The renamed entry is copied to its new name by a rule that preserves mode.
+        self.assertIn("misc:: $(topobjdir)/_tests/foo/renamed\n", backend)
+        self.assertIn("$(call py_action,install_objdir_file renamed,", backend)
+        self.assertIn(" $(topobjdir)/_tests/foo/renamed)\n", backend)
+        # A plain entry is copied under its own basename, also preserving mode.
+        self.assertIn("misc:: $(topobjdir)/_tests/foo/baz\n", backend)
+        self.assertIn("$(call py_action,install_objdir_file baz,", backend)
+
     def test_resources(self):
         """Ensure RESOURCE_FILES is handled properly."""
         env = self._consume("resources", RecursiveMakeBackend)
@@ -730,6 +842,58 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertTrue(os.path.isdir(p))
 
         self.assertTrue(os.path.isfile(mozpath.join(p, "Makefile")))
+
+    def test_webidl_build_writes_cppsrcs(self):
+        """Ensure _handle_webidl_build writes the unified variable into
+        webidlsrcs.mk and CPPSRCS lines into dom/bindings/backend.mk, so that
+        dom/bindings/Makefile.in no longer needs to declare them."""
+        env = self._get_environment("stub0")
+        backend = RecursiveMakeBackend(env)
+
+        bindings_dir = mozpath.join(env.topobjdir, "dom", "bindings")
+        os.makedirs(bindings_dir, exist_ok=True)
+
+        class FakeWebIDLCollection:
+            srcdir = mozpath.join(env.topsrcdir, "dom", "bindings")
+            objdir = bindings_dir
+            topsrcdir = env.topsrcdir
+            config = env
+
+            def all_non_static_basenames(self):
+                return ["GeneratedFooBinding.cpp"]
+
+            def all_test_stems(self):
+                return ["TestFoo"]
+
+            def all_preprocessed_sources(self):
+                return []
+
+        unified_source_mapping = [
+            ("UnifiedBindings0.cpp", ["FooBinding.cpp", "BarBinding.cpp"]),
+        ]
+        global_define_files = ["RegisterBindings.cpp"]
+
+        backend._handle_webidl_build(
+            bindings_dir,
+            unified_source_mapping,
+            FakeWebIDLCollection(),
+            expected_build_output_files=[],
+            global_define_files=global_define_files,
+        )
+
+        with open(mozpath.join(bindings_dir, "webidlsrcs.mk")) as fh:
+            webidlsrcs_contents = fh.read()
+        self.assertIn(
+            "unified_binding_cpp_files := UnifiedBindings0.cpp",
+            webidlsrcs_contents,
+        )
+        self.assertNotIn("CPPSRCS", webidlsrcs_contents)
+        self.assertNotIn("globalgen_sources", webidlsrcs_contents)
+
+        backend_file = backend._backend_files[bindings_dir]
+        backend_mk_contents = backend_file.fh.getvalue().decode("utf-8")
+        self.assertIn("CPPSRCS += RegisterBindings.cpp", backend_mk_contents)
+        self.assertIn("CPPSRCS += $(unified_binding_cpp_files)", backend_mk_contents)
 
     def test_test_support_files_tracked(self):
         env = self._consume("test-support-binaries-tracked", RecursiveMakeBackend)
@@ -1083,6 +1247,29 @@ class TestRecursiveMakeBackend(BackendTester):
             any(l == "recurse_compile: code/host code/target" for l in lines)
         )
 
+    def test_host_rust_program_output_category(self):
+        """Test that a host Rust program with output_category is written correctly."""
+        env = self._consume("host-rust-program-output-category", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            f"CARGO_FILE := {env.topsrcdir}/Cargo.toml",
+            f"CARGO_TARGET_DIR := {env.topobjdir}",
+            "HOST_RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "HOST_RUST_CARGO_PROGRAMS += test-host-program-output-category",
+            "test-category:: $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "MOZBUILD_NON_DEFAULT_TARGETS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "HOST_RUST_PROGRAM_OUTPUT_CATEGORY := test-category",
+        ]
+
+        self.assertEqual(lines, expected)
+
     def test_final_target(self):
         """Test that FINAL_TARGET is written to backend.mk correctly."""
         env = self._consume("final_target", RecursiveMakeBackend)
@@ -1135,6 +1322,35 @@ class TestRecursiveMakeBackend(BackendTester):
 
         found = [str for str in lines if "DIST_FILES" in str]
         self.assertEqual(found, expected)
+
+    def test_pp_files_extra_deps(self):
+        """Ensure PP_FILES_EXTRA_DEPS is written to backend.mk correctly."""
+        env = self._consume("pp-files-extra-deps", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "subdir", "backend.mk")
+        lines = [l.strip() for l in open(backend_path).readlines()[2:]]
+
+        expected = [
+            "DIST_FILES_0 += $(srcdir)/install.rdf",
+            "DIST_FILES_0 += $(srcdir)/main.js",
+            "DIST_FILES_0_PATH := $(DEPTH)/dist/bin/",
+            "DIST_FILES_0_TARGET := misc",
+            "DIST_FILES_0_EXTRA_DEPS := $(DEPTH)/generated-header.h "
+            "$(srcdir)/source-extra",
+            "PP_TARGETS += DIST_FILES_0",
+        ]
+
+        found = [str for str in lines if "DIST_FILES" in str]
+        self.assertEqual(found, expected)
+
+    def test_pp_files_extra_deps_post_process(self):
+        """PP_FILES_EXTRA_DEPS pointing at a generated file in another
+        directory adds a cross-directory build-order dependency."""
+        env = self._consume("pp-files-extra-deps-generated", RecursiveMakeBackend)
+
+        root_deps_path = mozpath.join(env.topobjdir, "root-deps.mk")
+        lines = [l.strip() for l in open(root_deps_path).readlines()]
+        self.assertIn("consumer/misc: export", lines)
 
     def test_localized_files(self):
         """Test that LOCALIZED_FILES is written to backend.mk correctly."""
@@ -1277,6 +1493,7 @@ class TestRecursiveMakeBackend(BackendTester):
                 "../static/bar/bar1.o",
                 "../static/bar/bar2.o",
                 "../static/bar/bar_helper/bar_helper1.o",
+                "../build-static-lib-archive/frob1.o",
             ],
             "shared/baz_so.list": ["baz/baz1.o"],
         }
@@ -1296,6 +1513,50 @@ class TestRecursiveMakeBackend(BackendTester):
             lines = [line.rstrip() for line in fh.readlines()]
 
         self.assertIn("qux.so_OBJS := qux1.o", lines)
+
+    def test_build_static_lib_archive(self):
+        """BUILD_STATIC_LIB_ARCHIVE builds an archive without changing linkage."""
+        env = self._consume("linkage", RecursiveMakeBackend)
+
+        with open(
+            os.path.join(env.topobjdir, "build-static-lib-archive", "backend.mk")
+        ) as fh:
+            lines = [line.rstrip() for line in fh.readlines()]
+
+        self.assertIn("LIBRARY := $(REAL_LIBRARY)", lines)
+        self.assertIn("frob.a_OBJS := frob1.o", lines)
+        self.assertIn("STATIC_LIB_FILES := $(REAL_LIBRARY)", lines)
+        self.assertIn("STATIC_LIB_DEST := $(DIST)/lib", lines)
+        self.assertIn("STATIC_LIB_TARGET := target", lines)
+        self.assertIn("INSTALL_TARGETS += STATIC_LIB", lines)
+
+        # NO_EXPAND_LIBS implies BUILD_STATIC_LIB_ARCHIVE.
+        with open(os.path.join(env.topobjdir, "real", "backend.mk")) as fh:
+            lines = [line.rstrip() for line in fh.readlines()]
+
+        self.assertIn("LIBRARY := $(REAL_LIBRARY)", lines)
+
+    def test_rust_library_depends_on_archive(self):
+        """A Rust library must depend on the archive of a BUILD_STATIC_LIB_ARCHIVE
+        library it uses, so the archive exists before cargo runs."""
+        env = self._consume("rust-library-archive-dep", RecursiveMakeBackend)
+
+        root_deps_path = mozpath.join(env.topobjdir, "root-deps.mk")
+        with open(root_deps_path) as fh:
+            lines = [l.strip() for l in fh.readlines()]
+
+        self.assertIn("rust/uniffi-target: archive/target", lines)
+        self.assertIn("archive/target: archive/target-objects", lines)
+
+        backend_path = mozpath.join(env.topobjdir, "archive", "backend.mk")
+        with open(backend_path) as fh:
+            backend = [l.strip() for l in fh.readlines()]
+
+        self.assertIn("LIBRARY := $(REAL_LIBRARY)", backend)
+        self.assertIn("STATIC_LIB_DEST := $(DIST)/lib", backend)
+        # Without the target tier the install defaults to libs, which runs
+        # after cargo has already looked for the archive in dist/lib.
+        self.assertIn("STATIC_LIB_TARGET := target", backend)
 
     def test_jar_manifests(self):
         env = self._consume("jar-manifests", RecursiveMakeBackend)
@@ -1358,6 +1619,46 @@ class TestRecursiveMakeBackend(BackendTester):
                     if line.startswith(prefix)
                 ][0]
                 self.assertEqual(program, expected_program)
+
+    def test_extra_link_deps(self):
+        """Test that EXTRA_LINK_DEPS is handled properly."""
+        env = self._consume("extra-link-deps", RecursiveMakeBackend)
+
+        subdir_backend = mozpath.join(env.topobjdir, "subdir", "backend.mk")
+        with open(subdir_backend) as fh:
+            subdir_content = fh.read()
+        self.assertIn(
+            "extra-link-deps-program: $(srcdir)/dep.txt",
+            subdir_content,
+        )
+        self.assertIn(
+            "extra-link-deps-program: generated.plist",
+            subdir_content,
+        )
+        self.assertIn("generated.plist:", subdir_content)
+
+        root_backend = mozpath.join(env.topobjdir, "backend.mk")
+        with open(root_backend) as fh:
+            root_content = fh.read()
+        self.assertNotIn("generated.plist:", root_content)
+
+    def test_shared_library_output_category(self):
+        """SharedLibrary with output_category should be excluded from
+        syms_targets, since the default %/syms: %/target static pattern in
+        recurse.mk doesn't apply to non-default tier libs."""
+        env = self._consume("shared-library-output-category", RecursiveMakeBackend)
+
+        root_path = mozpath.join(env.topobjdir, "root.mk")
+        with open(root_path) as fh:
+            content = fh.read()
+
+        syms_line = next(
+            (l for l in content.splitlines() if l.startswith("syms_targets :=")),
+            "",
+        )
+
+        self.assertIn("without-output-category/syms", syms_line)
+        self.assertNotIn("with-output-category/syms", syms_line)
 
     def test_shared_lib_paths(self):
         """SHARED_LIBRARYs with various moz.build settings that change the destination should

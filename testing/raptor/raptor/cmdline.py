@@ -65,6 +65,12 @@ GECKO_PROFILER_APPS = (FIREFOX, GECKOVIEW, REFBROW, FENIX)
 
 TRACE_APPS = (CHROME, CHROMIUM_RELEASE)
 
+SIMPLEPERF_APPS = (FENIX, GECKOVIEW)
+
+SAMPLY_PROFILE_APPS = (FIREFOX,)
+
+PERF_PROFILE_APPS = (FIREFOX,)
+
 APP_BINARIES = {
     "fenix": "org.mozilla.fenix",
     "focus": "org.mozilla.focus",
@@ -77,7 +83,7 @@ def print_all_activities():
     all_activities = []
     for next_app in APPS:
         if APPS[next_app].get("default_activity", None) is not None:
-            _activity = "%s:%s" % (next_app, APPS[next_app]["default_activity"])
+            _activity = f"{next_app}:{APPS[next_app]['default_activity']}"
             all_activities.append(_activity)
     return all_activities
 
@@ -86,7 +92,7 @@ def print_all_intents():
     all_intents = []
     for next_app in APPS:
         if APPS[next_app].get("default_intent", None) is not None:
-            _intent = "%s:%s" % (next_app, APPS[next_app]["default_intent"])
+            _intent = f"{next_app}:{APPS[next_app]['default_intent']}"
             all_intents.append(_intent)
     return all_intents
 
@@ -101,7 +107,7 @@ def create_parser(mach_interface=False):
         required=True,
         dest="test",
         help="Name of Raptor test to run (can be a top-level suite name i.e. "
-        "'--test raptor-speedometer','--test raptor-tp6-1', or for page-load "
+        "'--test speedometer3','--test raptor-tp6-1', or for page-load "
         "tests a suite sub-test i.e. '--test raptor-tp6-google-firefox')",
     )
     add_arg(
@@ -123,7 +129,7 @@ def create_parser(mach_interface=False):
         dest="activity",
         default=None,
         help="Name of Android activity used to launch the Android app."
-        "i.e.: %s" % print_all_activities(),
+        f"i.e.: {print_all_activities()}",
     )
     add_arg(
         "-i",
@@ -131,7 +137,7 @@ def create_parser(mach_interface=False):
         dest="intent",
         default=None,
         help="Name of Android intent action used to launch the Android app."
-        "i.e.: %s" % print_all_intents(),
+        f"i.e.: {print_all_intents()}",
     )
     add_arg(
         "--host",
@@ -230,6 +236,33 @@ def create_parser(mach_interface=False):
         action="store_true",
         default=False,
         help="Run the tests again with profiler enabled after the main run.",
+    )
+    add_arg(
+        "--simpleperf",
+        action="store_true",
+        dest="simpleperf",
+        help="Enable Simpleperf profiling (Android only).",
+    )
+    add_arg(
+        "--etw-profile",
+        action="store_true",
+        dest="etw_profile",
+        default=False,
+        help="Enable system-wide ETW profiling via Xperf (Windows only). ",
+    )
+    add_arg(
+        "--samply-profile",
+        action="store_true",
+        dest="samply_profile",
+        default=False,
+        help="Enable system-wide profiling via Samply (macOS only).",
+    )
+    add_arg(
+        "--perf-profile",
+        action="store_true",
+        dest="perf_profile",
+        default=False,
+        help="Enable system-wide profiling via perf (Linux only).",
     )
     add_arg(
         "--symbolsPath",
@@ -381,6 +414,16 @@ def create_parser(mach_interface=False):
         type=str,
         help="Name of conditioned profile to use. Prefix with `artifact:` "
         "if we should obtain the profile from CI.",
+    )
+    add_arg(
+        "--install-extension",
+        dest="install_extensions",
+        action="append",
+        default=[],
+        metavar="ADDON_ID_OR_URL",
+        help="Install a webextension into the test profile before running. Accepts "
+        "an AMO addon GUID/slug, a direct .xpi URL, or a local .xpi path. May be "
+        "specified multiple times.",
     )
     add_arg(
         "--test-bytecode-cache",
@@ -639,6 +682,12 @@ def verify_options(parser, args):
         if args.post_startup_delay < 0:
             parser.error("--post-startup-delay must be a positive integer (in ms).")
 
+    if args.simpleperf and args.app not in SIMPLEPERF_APPS:
+        parser.error(f"--simpleperf is only available in: {', '.join(SIMPLEPERF_APPS)}")
+
+    if args.simpleperf and args.gecko_profile:
+        parser.error("--simpleperf cannot be used with --gecko-profile.")
+
 
 def parse_args(argv=None):
     parser = create_parser()
@@ -689,11 +738,11 @@ class _PrintTests(_StopAction):
 
             # print in readable format
             if _app == "firefox":
-                title = "\nRaptor Tests Available for %s" % APPS[_app]["long_name"]
+                title = f"\nRaptor Tests Available for {APPS[_app]['long_name']}"
             else:
-                title = "\nRaptor Tests Available for %s (--app=%s)" % (
-                    APPS[_app]["long_name"],
-                    _app,
+                title = (
+                    f"\nRaptor Tests Available for {APPS[_app]['long_name']} "
+                    f"(--app={_app})"
                 )
 
             print(title)
@@ -728,12 +777,12 @@ class _PrintTests(_StopAction):
 
             # print the list in a nice, readable format
             for key in sorted(test_list.keys()):
-                print("\n%s" % key)
-                print("  type: %s" % test_list[key]["type"])
+                print(f"\n{key}")
+                print(f"  type: {test_list[key]['type']}")
                 if len(test_list[key]["subtests"]) != 0:
                     print("  subtests:")
                     for _sub in sorted(test_list[key]["subtests"]):
-                        print("    %s" % _sub)
+                        print(f"    {_sub}")
 
         print("\nDone.")
         # exit Raptor

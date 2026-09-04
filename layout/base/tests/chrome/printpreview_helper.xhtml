@@ -124,13 +124,17 @@ function finish() {
 
 async function runTests()
 {
-  // This ensures we actually test the lazy-load of images in printpreview_images.
   await SpecialPowers.pushPrefEnv({
     set: [
+      // Ensure we actually test the lazy-load of images in printpreview_images:
       ["dom.lazy-loading.margin.top", 0],
       ["dom.lazy-loading.margin.bottom", 0],
       ["dom.lazy-loading.margin.left", 0],
       ["dom.lazy-loading.margin.right", 0],
+
+      // Set pref to request callback from PDF.js, so we can tell when
+      // PDF documents are ready for screenshotting:
+      ["pdfjs.postMessageAfterPrintCallback", true],
     ],
   });
   startTest1();
@@ -162,6 +166,19 @@ function addHTMLContent(parent) {
   }
   s += "</table>";
   n.innerHTML = s;
+}
+
+// Convenience function to make a data URI for a document that has the given
+// width and height declared in a @page size rule, and is filled with blue.
+function makeBlueRectDoc(testName, width, height = width, numPages = 1){
+  let rects = '<div class="rect"></div>'.repeat(numPages);
+  return `data:text/html,<!-- ${testName} --><style> \
+      @page{ size: ${width} ${height}; margin: 0; } \
+      body { margin: 0; } \
+      .rect{ background: blue; width: ${width}; height: ${height}; } \
+      .rect + .rect { break-before: page; } \
+      </style> \
+      ${rects}`;
 }
 
 async function startTest1() {
@@ -448,6 +465,22 @@ async function runTest10() {
   requestAnimationFrame(function() { setTimeout(runTest11); } );
 }
 
+
+/* This function's 'options' param accepts a bundle of parameters that we
+ * pass along to printpreview() (typically grouped as 'options.test' and
+ * 'options.ref').
+ *
+ * Additionally, 'options' can contain several flags that let us wait for a
+ * signal before/after our printpreview() call, specifically for the testcase
+ * i.e. 'src1' (*not* for the reference case 'src2' which is assumed to be
+ * simpler):
+ * - 'waitForMessage': await a postMessage from the iframe before invoking
+ * printpreview().
+ * - 'waitForMessageDuringPrintPreview': after invoking printpreview(),
+ * await a postMessage from the iframe before taking our screenshot
+ * (using drawPrintPreviewWindow). This is needed if the testcase uses
+ * mozPrintCallback, e.g. PDF files rendered using PDF.js.
+ */
 async function compareFiles(src1, src2, options = {}) {
   const BASE = "https://example.org/chrome/layout/base/tests/chrome/";
 
@@ -476,11 +509,23 @@ async function compareFiles(src1, src2, options = {}) {
   }
 
   if (messagePromise) {
-    info("awaiting for message to arrive");
+    info("awaiting for message to arrive (before calling printpreview)");
     await messagePromise;
+    messagePromise = null;
   }
 
+  if (options.waitForMessageDuringPrintPreview) {
+    messagePromise = new Promise(resolve => {
+      iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+    });
+  }
   await printpreview(options.test || options);
+  if (messagePromise) {
+    info("awaiting for message to arrive (after calling printpreview)");
+    await messagePromise;
+    messagePromise = null;
+  }
+
   drawPrintPreviewWindow(ctx1);
   exitprintpreview();
 
@@ -1978,6 +2023,177 @@ async function runTest66() {
         printInColor: true,
       },
     },
+  });
+  requestAnimationFrame(() => setTimeout(runTest67));
+}
+
+// Test for basic PDF rendering: 2in blue square (on larger default-sized paper)
+async function runTest67() {
+  let test = "2in_blue.pdf";
+  let ref = makeBlueRectDoc("ref67", "2in");
+  await compareFiles(test, ref, { waitForMessageDuringPrintPreview: true });
+  requestAnimationFrame(() => setTimeout(runTest68));
+}
+
+// Test for basic PDF rendering: 2x3 blue square (on larger default-sized paper)
+async function runTest68() {
+  let test = "2in_by_3in_blue.pdf";
+  let ref = makeBlueRectDoc("ref68", "2in", "3in");
+  await compareFiles(test, ref, { waitForMessageDuringPrintPreview: true });
+  requestAnimationFrame(() => setTimeout(runTest69));
+}
+
+// Test for PDF rendering on smaller sheet of paper. The PDF should downscale
+// with a 'contain' constraint, and snap to top left corner of paper, rather
+// than filling/overflowing the paper.
+async function runTest69() {
+  let fuzz = navigator.platform.includes("Win") ? // Workaround for bug 1680838
+      { maxDifferent: 13490, maxDifference: 255 } :
+      { maxDifferent: 0, maxDifference: 0 };
+
+  let test = "2in_by_4in_blue.pdf";
+  let ref = makeBlueRectDoc("ref69", "1in", "2in");
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    settings: {
+      // Note: This 2x2 paper is too small to fit our 2x4 PDF, so we expect
+      // that the PDF will scale down by 50% to render as 1x2.
+      paperWidth: 2,
+      paperHeight: 2,
+      paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+    },
+    waitForMessageDuringPrintPreview: true,
+  });
+  requestAnimationFrame(() => setTimeout(runTest70));
+}
+
+// Test that when a PDF is scaled above 100% but it will not be larger than
+// the page being printed on, it will use the specified scale.
+async function runTest70() {
+  let test = "2in_blue.pdf#test70"
+  let ref = makeBlueRectDoc("ref70", "3in");
+  await compareFiles(test, ref, {
+    test: {
+      settings: {
+        paperWidth: 4,
+        paperHeight: 4,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 1.5,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 4,
+        paperHeight: 4,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 1.0,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    waitForMessageDuringPrintPreview: true
+  });
+  requestAnimationFrame(() => setTimeout(runTest71));
+}
+
+// Test that when a PDF is scaled above 100% and it would be larger than
+// the page being printed on, it will only scale up to be the size of the page.
+async function runTest71() {
+  let test = "2in_blue.pdf#test71"
+  let ref = makeBlueRectDoc("ref71", "3in");
+  // See bug 1680838
+  const fuzz = navigator.platform.includes("Win") ?
+      { maxDifferent: 15936, maxDifference: 255 } :
+      { maxDifferent: 0, maxDifference: 0 };
+  // Use a page that has a different width/height, so that we can tell that
+  // the scale is actually being limited, rather than the content being
+  // clipped.
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    test: {
+      settings: {
+        paperWidth: 3,
+        paperHeight: 4,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 2.0,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 3,
+        paperHeight: 4,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 1.0,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    waitForMessageDuringPrintPreview: true
+  });
+  requestAnimationFrame(() => setTimeout(runTest72));
+}
+
+async function runTest72() {
+  let test = "2in_blue.pdf#test72"
+  let ref = makeBlueRectDoc("ref72", "3in");
+  // See bug 1680838
+  const fuzz = navigator.platform.includes("Win") ?
+      { maxDifferent: 15936, maxDifference: 255 } :
+      { maxDifferent: 0, maxDifference: 0 };
+  await compareFiles(test, ref, {
+    maxDifferent: fuzz.maxDifferent,
+    maxDifference: fuzz.maxDifference,
+    test: {
+      settings: {
+        paperWidth: 4,
+        paperHeight: 3,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 2.0,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    ref: {
+      settings: {
+        paperWidth: 4,
+        paperHeight: 3,
+        paperSizeUnit: Ci.nsIPrintSettings.kPaperSizeInches,
+        scaling: 1.0,
+        shrinkToFit: false,
+        printBGColors: true,
+        honorPageRuleMargins: true,
+        usePageRuleSizeAsPaperSize: false,
+      },
+    },
+    waitForMessageDuringPrintPreview: true
+  });
+  requestAnimationFrame(() => setTimeout(runTest73));
+}
+
+// Test that a multi-page PDF preserves the correct shrink-to-fit width.
+// Note: the test framework only screenshots the first page, which suffices
+// for this test.
+async function runTest73() {
+  let test = "2in_blue_3pages.pdf#test73";
+  let ref = makeBlueRectDoc("ref73", "2in", "2in", 3);
+  await compareFiles(test, ref, {
+    waitForMessageDuringPrintPreview: true,
   });
   finish();
 }

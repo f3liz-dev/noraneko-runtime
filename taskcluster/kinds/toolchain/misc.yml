@@ -13,6 +13,7 @@ linux64-binutils-2.31.1:
     treeherder:
         symbol: TL(binutil2.31)
     run:
+        clone-with: hg
         script: build-binutils-linux.sh
         resources:
             - 'build/unix/build-binutils/build-binutils.sh'
@@ -30,6 +31,7 @@ linux64-binutils:
     treeherder:
         symbol: TL(binutil)
     run:
+        clone-with: hg
         script: build-binutils-linux.sh
         resources:
             - 'build/unix/build-binutils/build-binutils.sh'
@@ -45,8 +47,10 @@ linux64-cctools-port:
     treeherder:
         symbol: TL(cctools-clang)
     run:
+        clone-with: hg
         script: build-cctools-port.sh
         resources:
+            - taskcluster/scripts/misc/cctools-ld64-dead-strip-compiler-builtins.patch
             - taskcluster/scripts/misc/libtapi.patch
         toolchain-artifact: public/build/cctools.tar.zst
     fetches:
@@ -66,6 +70,7 @@ linux64-hfsplus:
     treeherder:
         symbol: TL(hfs+)
     run:
+        clone-with: hg
         script: build-hfsplus-linux.sh
         resources:
             - 'build/unix/build-hfsplus/build-hfsplus.sh'
@@ -83,6 +88,7 @@ linux64-libdmg:
     treeherder:
         symbol: TL(libdmg-hfs+)
     run:
+        clone-with: hg
         script: build-dmg-hfsplus.sh
         toolchain-artifact: public/build/dmg.tar.zst
         toolchain-alias: linux64-dmg
@@ -100,6 +106,7 @@ linux64-mkbom:
     treeherder:
         symbol: TL(mkbom)
     run:
+        clone-with: hg
         script: build-mkbom-linux.sh
         toolchain-artifact: public/build/mkbom.tar.zst
     fetches:
@@ -116,6 +123,7 @@ linux64-xar:
     treeherder:
         symbol: TL(xar)
     run:
+        clone-with: hg
         script: build-xar-linux.sh
         toolchain-artifact: public/build/xar.tar.zst
     fetches:
@@ -133,6 +141,7 @@ linux64-mar-tools:
         toolchain:
             - linux64-clang-toolchain
     run:
+        clone-with: hg
         script: build-mar-tools.sh
         sparse-profile: null
         toolchain-artifact: public/build/mar-tools.tar.zst
@@ -153,6 +162,7 @@ linux64-zucchini-bin:
         toolchain:
             - linux64-clang-toolchain
     run:
+        clone-with: hg
         script: build-zucchini.sh
         sparse-profile: null
         toolchain-artifact: public/build/zucchini.tar.xz
@@ -164,21 +174,13 @@ linux64-zucchini-bin:
             - third_party/zucchini/
             - tools/zucchini/
 
-linux64-upx:
-    description: "UPX build"
-    treeherder:
-        symbol: TL(upx)
-        tier: 1
-    run:
-        script: build-upx.sh
-        toolchain-artifact: public/build/upx.tar.zst
-
 linux64-msix-packaging:
     description: "msix-packaging build"
     treeherder:
         symbol: TL(msix-packaging)
         tier: 1
     run:
+        clone-with: hg
         script: build-msix-packaging.sh
         toolchain-artifact: public/build/msix-packaging.tar.zst
     fetches:
@@ -196,6 +198,7 @@ linux64-custom-v8:
         docker-image: {in-tree: custom-v8}
         max-run-time: 3600
     run:
+        clone-with: hg
         script: build-custom-v8.sh
         arguments: [
             d8.tar.zst,
@@ -203,6 +206,28 @@ linux64-custom-v8:
             target_cpu="x64"
         ]
         toolchain-artifact: public/build/d8.tar.zst
+
+linux64-marannon:
+    description: "marannon"
+    treeherder:
+        symbol: TL(marannon)
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust
+            - sysroot-x86_64-linux-gnu
+    run:
+        clone-with: hg
+        script: build-rust-based-toolchain.sh
+        sparse-profile: null
+        toolchain-artifact: public/build/marannon.tar.zst
+        resources:
+            - tools/update-verify/marannon/**
+        arguments: ["x86_64-unknown-linux-gnu"]
+    worker:
+        env:
+            CRATE_PATH: tools/update-verify/marannon
+            RUN_TESTS: "1"
 
 macosx64-xz:
     description: "xz development library"
@@ -213,50 +238,15 @@ macosx64-xz:
         max-run-time: 30000
     use-python: system  # dependency of taskcluster python
     run:
+        clone-with: hg
         script: build-xz.sh
         toolchain-artifact: public/build/xz.tar.zst
     fetches:
         fetch:
-            - xz-5.8.1
+            - xz
         toolchain:
             - macosx64-clang-toolchain
             - macosx64-sdk-toolchain
-
-macosx-custom-car:
-    description: "Custom chromium-as-release build for mac (x64, cross compiled on arm)"
-    worker-type: b-osx-arm64
-    attributes:
-        cached_task: false
-    treeherder:
-        symbol: TM(custom-car)
-        tier: 2
-    worker:
-        max-run-time: 15000
-    use-python: "3.11"
-    run-on-projects: []
-    run:
-        script: build-custom-car.sh
-        arguments: [
-            car_macosx.tar.zst,
-            blink_symbol_level=0,
-            chrome_pgo_phase=2,
-            dcheck_always_on=false,
-            enable_nacl=false,
-            enable_resource_allowlist_generation=false,
-            is_chrome_branded=false,
-            is_clang=true,
-            is_component_build=false,
-            is_debug=false,
-            is_official_build=true,
-            symbol_level=0,
-            target_cpu="x64",
-            use_v8_context_snapshot=false,
-            v8_symbol_level=0
-        ]
-        toolchain-artifact: public/build/car_macosx.tar.zst
-    fetches:
-        toolchain:
-            - MacOSX26.2.sdk
 
 macosx-arm64-custom-car:
     description: "Custom chromium-as-release build for mac (apple silicon)"
@@ -271,6 +261,7 @@ macosx-arm64-custom-car:
     use-python: "3.11"
     run-on-projects: []
     run:
+        clone-with: hg
         script: build-custom-car.sh
         arguments: [
             car_macosx_arm.tar.zst,
@@ -286,13 +277,15 @@ macosx-arm64-custom-car:
             is_official_build=true,
             symbol_level=0,
             target_cpu="arm64",
+            use_clang_modules=false,
             use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_macosx_arm.tar.zst
     fetches:
         toolchain:
-            - MacOSX26.2.sdk
+            - MacOSX26.5.sdk
+            - macosx64-aarch64-uv
 
 android-custom-car:
     description: "Custom chromium-as-release build for Android"
@@ -307,6 +300,7 @@ android-custom-car:
     use-python: "3.11"
     run-on-projects: []
     run:
+        clone-with: hg
         script: build-custom-car.sh
         arguments: [
             car_android.tar.zst,
@@ -340,6 +334,7 @@ linux64-custom-car:
     use-python: "3.11"
     run-on-projects: []
     run:
+        clone-with: hg
         script: build-custom-car.sh
         arguments: [
             car_linux.tar.zst,
@@ -374,6 +369,7 @@ win64-custom-car:
     use-python: "3.11"
     run-on-projects: []
     run:
+        clone-with: hg
         script: build-custom-car.sh
         arguments: [
             car_win64.tar.zst,
@@ -393,13 +389,14 @@ win64-custom-car:
         toolchain-artifact: public/build/car_win64.tar.zst
     fetches:
         toolchain:
-            - win64-vs2022-car
+            - win64-vs2026
 
 browsertime:
     description: "npm install browsertime node_modules"
     treeherder:
         symbol: TL(browsertime)
     run:
+        clone-with: hg
         script: browsertime.sh
         sparse-profile: null
         resources:
@@ -416,12 +413,11 @@ puppeteer-build:
     treeherder:
         symbol: TL(puppeteer-build)
     run:
+        clone-with: hg
         script: puppeteer-build.sh
         sparse-profile: null
         resources:
-            - 'remote/test/puppeteer/package.json'
-            - 'remote/test/puppeteer/package-lock.json'
-            - 'remote/test/puppeteer/test/package.json'
+            - 'remote/test/puppeteer/**'
         toolchain-artifact: public/build/puppeteer-build.tar.zst
     fetches:
         toolchain:
@@ -432,6 +428,7 @@ aboutwelcome-node-modules:
     treeherder:
         symbol: TL(aboutwelcome-node)
     run:
+        clone-with: hg
         script: generic-node-modules.sh
         arguments: ['aboutwelcome', 'browser/components/aboutwelcome/']
         sparse-profile: null
@@ -448,6 +445,7 @@ asrouter-node-modules:
     treeherder:
         symbol: TL(asrouter-node)
     run:
+        clone-with: hg
         script: generic-node-modules.sh
         arguments: ['asrouter', 'browser/components/asrouter/']
         sparse-profile: null
@@ -464,6 +462,7 @@ eslint-plugin-mozilla:
     treeherder:
         symbol: TL(epm)
     run:
+        clone-with: hg
         script: eslint-plugin-mozilla.sh
         sparse-profile: null
         resources:
@@ -479,6 +478,7 @@ stylelint-plugin-mozilla:
     treeherder:
         symbol: TL(spm)
     run:
+        clone-with: hg
         script: stylelint-plugin-mozilla.sh
         sparse-profile: null
         resources:
@@ -494,6 +494,7 @@ terser:
     treeherder:
         symbol: TL(terser)
     run:
+        clone-with: hg
         script: terser.sh
         sparse-profile: null
         resources:
@@ -509,6 +510,7 @@ newtab-node-modules:
     treeherder:
         symbol: TL(newtab-node)
     run:
+        clone-with: hg
         script: generic-node-modules.sh
         arguments: ['newtab', 'browser/extensions/newtab/']
         sparse-profile: null
@@ -525,6 +527,7 @@ node-modules:
     treeherder:
         symbol: TL(node)
     run:
+        clone-with: hg
         script: node-modules.sh
         sparse-profile: null
         resources:
@@ -547,6 +550,7 @@ wrench-deps:
     worker:
         docker-image: {in-tree: webrender}
     run:
+        clone-with: hg
         script: wrench-deps-vendoring.sh
         sparse-profile: null
         resources:
@@ -568,6 +572,7 @@ linux64-wine:
     worker:
         max-run-time: 10800
     run:
+        clone-with: hg
         script: build-wine.sh
         toolchain-artifact: public/build/wine.tar.zst
     fetches:
@@ -581,6 +586,7 @@ linux64-winchecksec:
     treeherder:
         symbol: TL(winchecksec)
     run:
+        clone-with: hg
         script: build-winchecksec.sh
         arguments: ['x86_64-unknown-linux-gnu']
         toolchain-artifact: public/build/winchecksec.tar.zst
@@ -596,6 +602,7 @@ win64-winchecksec:
     treeherder:
         symbol: TW64(winchecksec)
     run:
+        clone-with: hg
         script: build-winchecksec.sh
         arguments: ['x86_64-pc-windows-msvc']
         toolchain-artifact: public/build/winchecksec.tar.zst
@@ -615,6 +622,7 @@ linux64-makecab:
         env:
             FETCH: rust-makecab
     run:
+        clone-with: hg
         script: build-rust-based-toolchain.sh
         arguments: ['x86_64-unknown-linux-gnu']
         toolchain-artifact: public/build/makecab.tar.zst
@@ -626,86 +634,6 @@ linux64-makecab:
             - linux64-rust-toolchain
             - sysroot-x86_64-linux-gnu
 
-linux64-samply:
-    description: "samply toolchain build for x86_64 Linux"
-    treeherder:
-        symbol: TL(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-unknown-linux-gnu']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust
-            - sysroot-x86_64-linux-gnu
-
-macosx64-samply:
-    description: "samply toolchain build for x86_64 macOS"
-    treeherder:
-        symbol: TM(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-apple-darwin']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-macos
-            - macosx64-sdk-toolchain
-
-macosx64-aarch64-samply:
-    description: "samply toolchain build for aarch64 macOS"
-    treeherder:
-        symbol: TMA64(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['aarch64-apple-darwin']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-macos
-            - macosx64-sdk-toolchain
-
-win64-samply:
-    description: "samply toolchain build for Windows"
-    treeherder:
-        symbol: TW64(samply)
-    worker:
-        env:
-            FETCH: samply/samply
-    run:
-        script: build-rust-based-toolchain.sh
-        arguments: ['x86_64-pc-windows-msvc']
-        toolchain-artifact: public/build/samply.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - samply
-        toolchain:
-            - linux64-clang-toolchain
-            - linux64-rust-windows
-            - vs-toolchain
-
 win64-mozmake:
     description: "mozmake for Windows"
     attributes:
@@ -713,6 +641,7 @@ win64-mozmake:
     treeherder:
         symbol: TW64(mozmake)
     run:
+        clone-with: hg
         script: build-mozmake.sh
         arguments: ['x86_64-pc-windows-msvc']
         toolchain-artifact: public/build/mozmake.tar.zst
@@ -730,6 +659,7 @@ win64-aarch64-mozmake:
     treeherder:
         symbol: TWA64(mozmake)
     run:
+        clone-with: hg
         script: build-mozmake.sh
         arguments: ['aarch64-pc-windows-msvc']
         toolchain-artifact: public/build/mozmake.tar.zst
@@ -747,6 +677,7 @@ nsis:
     treeherder:
         symbol: TL(nsis)
     run:
+        clone-with: hg
         script: build-nsis.sh
         toolchain-artifact: public/build/nsis.tar.zst
     fetches:
@@ -756,23 +687,6 @@ nsis:
         toolchain:
             - linux64-clang-toolchain
             - sysroot-x86_64-linux-gnu
-
-win64-vs2022-car:
-    description: "VS 2022 toolchain with SDK 10.0.26100.x, for CaR builds"
-    attributes:
-        local-toolchain: true
-    treeherder:
-        symbol: TW64(msvc2022-car)
-    worker:
-        env:
-            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
-    run:
-        script: get_vs.py
-        arguments:
-            - build/vs/vs2022-car.yaml
-        resources:
-            - build/vs/vs2022-car.yaml
-        toolchain-artifact: project/gecko/vs/vs.tar.zst
 
 win64-vs2026:
     description: "VS 2026"
@@ -784,6 +698,7 @@ win64-vs2026:
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
     run:
+        clone-with: hg
         script: get_vs.py
         arguments:
             - build/vs/vs2026.yaml
@@ -801,8 +716,9 @@ win64-WindowsAppSDK:
     treeherder:
         symbol: TW64(WindowsAppSDK)
     run:
+        clone-with: hg
         script: build-WindowsAppSDK.sh
-        arguments: ['x64', '1.8']
+        arguments: ['x64', '2']
         toolchain-artifact: public/build/winappsdk-x86_64-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-x86_64-pc-windows-msvc
     fetches:
@@ -817,8 +733,9 @@ win32-WindowsAppSDK:
     treeherder:
         symbol: TW32(WindowsAppSDK)
     run:
+        clone-with: hg
         script: build-WindowsAppSDK.sh
-        arguments: ['x86', '1.8']
+        arguments: ['x86', '2']
         toolchain-artifact: public/build/winappsdk-x86-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-x86-pc-windows-msvc
     fetches:
@@ -833,8 +750,9 @@ win64-aarch64-WindowsAppSDK:
     treeherder:
         symbol: TWA64(WindowsAppSDK)
     run:
+        clone-with: hg
         script: build-WindowsAppSDK.sh
-        arguments: ['arm64', '1.8']
+        arguments: ['arm64', '2']
         toolchain-artifact: public/build/winappsdk-aarch64-pc-windows-msvc.tar.zst
         toolchain-alias: winappsdk-aarch64-pc-windows-msvc
     fetches:
@@ -851,6 +769,7 @@ win64-aarch64-vs2026:
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
     run:
+        clone-with: hg
         script: get_vs.py
         arguments:
             - build/vs/vs2026-aarch64.yaml
@@ -859,21 +778,21 @@ win64-aarch64-vs2026:
         toolchain-artifact: project/gecko/vs/vs.tar.zst
         toolchain-alias: win64-aarch64-vs
 
-linux64-afl-instrumentation-4.0:
+linux64-afl-instrumentation:
     description: "AFL++ instrumentation toolchain build"
     treeherder:
         symbol: TL(afl++)
     worker:
         max-run-time: 3600
     run:
+        clone-with: hg
         script: build-afl.sh
         resources:
             - taskcluster/scripts/misc/afl-nyx.patch
         toolchain-artifact: public/build/afl-instrumentation.tar.zst
-        toolchain-alias: linux64-afl-instrumentation
     fetches:
         fetch:
-            - afl-plus-plus-4.0
+            - afl-plus-plus
         toolchain:
             - linux64-clang
             - linux64-toolchain-sysroot
@@ -886,6 +805,7 @@ linux64-cargo-apk:
         env:
             FETCH: android-ndk-rs/cargo-apk
     run:
+        clone-with: hg
         script: build-rust-based-toolchain.sh
         arguments: ['x86_64-unknown-linux-gnu']
         resources:
@@ -904,6 +824,7 @@ win64-cmake:
     treeherder:
         symbol: TW64(cmake)
     run:
+        clone-with: hg
         script: build-cmake.sh
         toolchain-artifact: public/build/cmake.tar.zst
     fetches:
@@ -922,6 +843,7 @@ talos-pdfs:
     worker:
         max-run-time: 3600
     run:
+        clone-with: hg
         script: run-fetch-talos-pdfs.sh
         sparse-profile: null
         resources:
@@ -930,17 +852,3 @@ talos-pdfs:
     fetches:
         fetch:
             - mozilla-pdf.js
-
-symbolicator-cli:
-    description: "symbolicator-cli from firefox profiler"
-    treeherder:
-        symbol: TL(symbolicator-cli)
-    run:
-        script: build-symbolicator-cli.sh
-        toolchain-artifact: public/build/symbolicator-cli.tar.zst
-    run-on-projects: []
-    fetches:
-        fetch:
-            - firefox-profiler
-        toolchain:
-            - linux64-node

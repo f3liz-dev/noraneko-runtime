@@ -69,7 +69,7 @@ auto WebrtcGlobalStatsHistory::Entry::MakeReportElement(
   auto* elem = new ReportElement();
   elem->report = std::move(aReport);
   // We don't want to store a copy of the SDP history with each stats entry.
-  // SDP History is stored seperately, see MakeSdpElements.
+  // SDP History is stored separately, see MakeSdpElements.
   elem->report->mSdpHistory.Clear();
   return elem;
 }
@@ -81,9 +81,7 @@ auto WebrtcGlobalStatsHistory::Entry::MakeSdpElementsSince(
   AutoCleanLinkedList<WebrtcGlobalStatsHistory::Entry::SdpElement> result;
   for (auto& sdpHist : aSdpHistory) {
     if (!aSdpAfter || aSdpAfter.value() < sdpHist.mTimestamp) {
-      auto* element = new SdpElement();
-      element->sdp = sdpHist;
-      result.insertBack(element);
+      result.insertBack(new SdpElement(std::move(sdpHist)));
     }
   }
   return result;

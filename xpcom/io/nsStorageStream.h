@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,9 +13,9 @@
 #ifndef _nsStorageStream_h_
 #define _nsStorageStream_h_
 
-#include "nsIStorageStream.h"
-#include "nsIOutputStream.h"
 #include "mozilla/Mutex.h"
+#include "nsIOutputStream.h"
+#include "nsIStorageStream.h"
 
 #define NS_STORAGESTREAM_CID                  \
   {/* 669a9795-6ff7-4ed4-9150-c34ce2971b63 */ \

@@ -14,7 +14,6 @@ kind-dependencies:
     - toolchain
 
 task-defaults:
-    run-on-repo-type: [hg]
     use-python: default
 
 tasks:
@@ -41,6 +40,7 @@ tasks:
                 in-tree: debian12-base
             max-run-time: 600
         run:
+            clone-with: hg
             using: run-task
             checkout: false
             command: /bin/true

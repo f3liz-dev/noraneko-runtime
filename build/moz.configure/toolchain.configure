@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -177,6 +175,20 @@ def compiling_android(compile_env, target):
 
 include("android-ndk.configure", when=compiling_android)
 
+
+@depends(target, host)
+def is_windows(target, host):
+    return host.kernel == "WINNT" or target.kernel == "WINNT"
+
+
+include("windows-toolchain.configure", when=is_windows)
+
+@depends(android_toolchain_flags, windows_toolchain_flags)
+def extra_toolchain_flags(android_toolchain_flags,
+                          windows_toolchain_flags):
+    return (android_toolchain_flags or []) + (windows_toolchain_flags or [])
+
+
 with only_when(target_is_osx):
     # MacOS deployment target version
     # ==============================================================
@@ -240,7 +252,7 @@ with only_when(host_is_osx | target_is_osx):
     )
 
     def mac_sdk_min_version():
-        return "26.2"
+        return "26.5"
 
     @depends(
         "--with-macos-sdk",
@@ -481,7 +493,7 @@ def try_preprocess(
 @imports(_from="mozbuild.configure.constants", _import="OS_preprocessor_checks")
 @imports(_from="textwrap", _import="dedent")
 @imports(_from="__builtin__", _import="Exception")
-def get_compiler_info(configure_cache, compiler, language):
+def get_compiler_info(configure_cache, compiler, language, wrapper=[]):
     """Returns information about the given `compiler` (command line in the
     form of a list or tuple), in the given `language`.
 
@@ -555,7 +567,9 @@ def get_compiler_info(configure_cache, compiler, language):
     """
     )
 
-    result = try_preprocess(configure_cache, compiler, language, check)
+    result = try_preprocess(
+        configure_cache, compiler, language, check, wrapper=wrapper
+    )
 
     if not result:
         raise FatalCheckError("Unknown compiler or compiler not supported.")
@@ -641,8 +655,10 @@ def same_arch_different_bits():
 
 @imports(_from="mozshellutil", _import="quote")
 @imports(_from="mozbuild.configure.constants", _import="OS_preprocessor_checks")
-def check_compiler(configure_cache, compiler, language, target, android_version):
-    info = get_compiler_info(configure_cache, compiler, language)
+def check_compiler(
+    configure_cache, compiler, language, target, android_version, wrapper=[]
+):
+    info = get_compiler_info(configure_cache, compiler, language, wrapper)
 
     flags = []
 
@@ -683,6 +699,9 @@ def check_compiler(configure_cache, compiler, language, target, android_version)
         # This makes clang define __ANDROID_API__ and use versioned library
         # directories from the NDK.
         toolchain = "%s%d" % (target.toolchain, android_version)
+    elif target.kernel == "WASI" and info.type == "clang" and info.version >= Version("22.1"):
+        # The wasm32-wasi target was renamed to wasm32-wasip1 in LLVM 22.1.
+        toolchain = "wasm32-wasip1"
     else:
         toolchain = target.toolchain
 
@@ -742,196 +761,6 @@ def check_compiler(configure_cache, compiler, language, target, android_version)
     )
 
 
-@imports(_from="__builtin__", _import="open")
-@imports(_from="mozfile", _import="json")
-@imports("os")
-def get_vc_paths(host, topsrcdir):
-    def vswhere(args):
-        program_files = os.environ.get("PROGRAMFILES(X86)") or os.environ.get(
-            "PROGRAMFILES"
-        )
-        if not program_files:
-            return []
-        vswhere = os.path.join(
-            program_files, "Microsoft Visual Studio", "Installer", "vswhere.exe"
-        )
-        if not os.path.exists(vswhere):
-            return []
-        return json.loads(check_cmd_output(vswhere, "-format", "json", *args))
-
-    variant = "arm64" if host.cpu == "aarch64" else "x86.x64"
-    for install in vswhere(
-        [
-            "-products",
-            "*",
-            "-requires",
-            f"Microsoft.VisualStudio.Component.VC.Tools.{variant}",
-        ]
-    ):
-        path = install["installationPath"]
-        tools_version = (
-            open(
-                os.path.join(
-                    path, r"VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt"
-                ),
-                "r",
-            )
-            .read()
-            .strip()
-        )
-        tools_path = os.path.join(path, r"VC\Tools\MSVC", tools_version)
-        yield (Version(install["installationVersion"]), tools_path)
-
-
-@depends(target, host)
-def is_windows(target, host):
-    return host.kernel == "WINNT" or target.kernel == "WINNT"
-
-
-# Calling this a sysroot is a little weird, but it's the terminology clang went
-# with with its -winsysroot flag.
-option(
-    env="WINSYSROOT",
-    nargs=1,
-    when=is_windows,
-    help='Path to a Windows "sysroot" (directory containing MSVC, SDKs)',
-)
-
-
-@depends(
-    "WINSYSROOT",
-    bootstrap_path(
-        "vs",
-        when=depends("WINSYSROOT", when=is_windows)(lambda x: not x),
-    ),
-    when=is_windows,
-)
-def winsysroot(winsysroot, bootstrapped):
-    if bootstrapped:
-        return bootstrapped
-    if winsysroot:
-        return winsysroot[0]
-
-
-option(
-    env="VC_PATH",
-    nargs=1,
-    when=is_windows,
-    help="Path to the Microsoft Visual C/C++ compiler",
-)
-
-
-@depends(
-    host,
-    build_environment,
-    "VC_PATH",
-    winsysroot,
-    when=is_windows,
-)
-@imports("os")
-@imports(_from="operator", _import="itemgetter")
-def vc_compiler_paths_for_version(host, env, vc_path, winsysroot):
-    if winsysroot:
-        if vc_path:
-            die("WINSYSROOT and VC_PATH cannot be set together.")
-        base_vc_path = os.path.join(winsysroot, "VC", "Tools", "MSVC")
-        versions = os.listdir(base_vc_path)
-        vc_path = [os.path.join(base_vc_path, str(max(Version(v) for v in versions)))]
-    if vc_path:
-        # Use an arbitrary version, it doesn't matter.
-        all_versions = [(Version("15"), vc_path[0])]
-    elif host.kernel != "WINNT":
-        # Don't try to do anything when VC_PATH is not set on cross-compiles.
-        return
-    else:
-        all_versions = sorted(get_vc_paths(host, env.topsrcdir), key=itemgetter(0))
-    if not all_versions:
-        return
-    # Choose the newest version.
-    path = all_versions[-1][1]
-    host_dir = {
-        "x86_64": "Hostx64",
-        "x86": "Hostx86",
-        "aarch64": "Hostarm64",
-    }.get(host.cpu)
-    if host_dir:
-        path = os.path.join(path, "bin", host_dir)
-        return {
-            "x64": [os.path.join(path, "x64")],
-            # The cross toolchains require DLLs from the native x64 toolchain.
-            "x86": [os.path.join(path, "x86"), os.path.join(path, "x64")],
-            "arm64": [os.path.join(path, "arm64"), os.path.join(path, "x64")],
-        }
-
-
-@depends(target, host, vc_compiler_paths_for_version, when=is_windows)
-def vc_compiler_path(target, host, paths):
-    cpu = target.cpu if target.os == "WINNT" else host.cpu
-    vc_target = {
-        "x86": "x86",
-        "x86_64": "x64",
-        "arm": "arm",
-        "aarch64": "arm64",
-    }.get(cpu)
-    if not paths:
-        return
-    return paths.get(vc_target)
-
-
-@depends(vc_compiler_path, original_path)
-@imports("os")
-@imports(_from="os", _import="environ")
-def vc_toolchain_search_path(vc_compiler_path, original_path):
-    result = list(original_path)
-
-    if vc_compiler_path:
-        # The second item, if there is one, is necessary to have in $PATH for
-        # Windows to load the required DLLs from there.
-        if len(vc_compiler_path) > 1:
-            environ["PATH"] = os.pathsep.join(result + vc_compiler_path[1:])
-
-        # The first item is where the programs are going to be
-        result.append(vc_compiler_path[0])
-
-    return result
-
-
-@depends_if(vc_compiler_path, when=is_windows)
-def vc_compiler_version(vc_compiler_path):
-    version = Version(
-        os.path.basename(
-            os.path.dirname(os.path.dirname(os.path.dirname(vc_compiler_path[0])))
-        )
-    )
-    # MSVC path with version 14.x is actually version 19.x
-    if version.major == 14:
-        return Version(f"19.{version.minor}")
-
-
-@depends_if(vc_compiler_version)
-def msvs_version(vc_compiler_version):
-    # clang-cl emulates the same version scheme as cl. And MSVS_VERSION needs to
-    # be set for GYP on Windows.
-    if vc_compiler_version >= Version("19.30"):
-        return "2022"
-    configure_error("Only Visual Studio 2022 or newer are supported")
-
-    return ""
-
-
-set_config("MSVS_VERSION", msvs_version)
-
-with only_when(target_is_windows):
-
-    @depends(target)
-    def dxc_task_name(target):
-        return "dxc-" + target.cpu + "-pc-windows-msvc"
-
-    @depends_if(bootstrap_path(dxc_task_name))
-    def dxc_dll_path(bootstrap):
-        return os.path.join(bootstrap, "dxcompiler.dll")
-
-
 clang_search_path = bootstrap_search_path("clang/bin")
 
 
@@ -964,25 +793,59 @@ def rust_search_path(rust_path, original_path):
 # cygwin dll errors during configure if we get called from another msys2
 # environment, see bug 1801826.
 @depends(
-    mozillabuild_bin_paths, clang_search_path, rust_search_path, target, original_path
+    build_environment,
+    mozillabuild_bin_paths,
+    clang_search_path,
+    rust_search_path,
+    target,
+    original_path,
 )
 @imports("os")
+@imports(_from="mach.util", _import="get_virtualenv_base_dir")
 def altered_path(
-    mozillabuild_bin_paths, clang_search_path, rust_search_path, target, original_path
+    build_env,
+    mozillabuild_bin_paths,
+    clang_search_path,
+    rust_search_path,
+    target,
+    original_path,
 ):
-    altered_path = mozillabuild_bin_paths
+    # Trim trailing empty entries so a stray `;;` in the input doesn't
+    # surface as a blank PATH entry.
+    def strip_trailing_empty_entries(path):
+        path = list(path)
+        while path and not path[-1]:
+            path.pop()
+        return path
+
     if target.kernel == "Darwin":
         # The rust compiler wants to execute dsymutil, but it does so in a
         # non-configurable way (https://github.com/rust-lang/rust/issues/52728)
         # so we add the clang path.
-        path = clang_search_path
+        path = strip_trailing_empty_entries(clang_search_path)
     else:
-        path = original_path
+        path = strip_trailing_empty_entries(original_path)
     # cargo needs the rust search path to find cargo-$subcommand.
-    path += rust_search_path
-    for p in path:
-        if p not in altered_path:
-            altered_path.append(p)
+    path.extend(strip_trailing_empty_entries(rust_search_path))
+
+    # Bug 2040992: Strip mach virtualenv entries so any prepended venvs
+    # (from intermediate ./mach activations along the build chain) don't
+    # end up in the captured PATH. This is safe because the build never
+    # invokes anything in those dirs.
+    venv_prefix = normalize_path_list_entry(
+        get_virtualenv_base_dir(build_env.topsrcdir)
+    )
+
+    seen = set()
+    altered_path = []
+    for p in mozillabuild_bin_paths + path:
+        normalized = normalize_path_list_entry(p)
+        if normalized in seen:
+            continue
+        if normalized.startswith(venv_prefix):
+            continue
+        seen.add(normalized)
+        altered_path.append(normalized)
     return os.pathsep.join(altered_path)
 
 
@@ -1020,12 +883,7 @@ ccache = check_prog(
     allow_missing=True,
 )
 
-option(env="CCACHE_PREFIX", nargs=1, help="Compiler prefix to use when using ccache")
-
-ccache_prefix = depends_if("CCACHE_PREFIX")(lambda prefix: prefix[0])
-set_config("CCACHE_PREFIX", ccache_prefix)
-
-# Distinguish ccache from sccache.
+# Distinguish ccache from sccache and buildcache.
 
 
 @depends_if(ccache)
@@ -1033,14 +891,24 @@ def ccache_is_sccache(ccache):
     return check_cmd_output(ccache, "--version").startswith("sccache")
 
 
-@depends(ccache, ccache_is_sccache)
-def using_ccache(ccache, ccache_is_sccache):
-    return ccache and not ccache_is_sccache
+@depends_if(ccache)
+def ccache_is_buildcache(ccache):
+    return check_cmd_output(ccache, "--version").lower().startswith("buildcache")
+
+
+@depends(ccache, ccache_is_sccache, ccache_is_buildcache)
+def using_ccache(ccache, ccache_is_sccache, ccache_is_buildcache):
+    return ccache and not ccache_is_sccache and not ccache_is_buildcache
 
 
 @depends_if(ccache, ccache_is_sccache)
 def using_sccache(ccache, ccache_is_sccache):
     return ccache and ccache_is_sccache
+
+
+@depends_if(ccache, ccache_is_buildcache)
+def using_buildcache(ccache, ccache_is_buildcache):
+    return ccache and ccache_is_buildcache
 
 
 option(env="RUSTC_WRAPPER", nargs=1, help="Wrap rust compilation with given tool")
@@ -1081,6 +949,7 @@ def check_sccache_version(ccache, ccache_is_sccache, rustc_wrapper):
 
 set_config("MOZ_USING_CCACHE", using_ccache)
 set_config("MOZ_USING_SCCACHE", using_sccache)
+set_config("MOZ_USING_BUILDCACHE", using_buildcache)
 
 option(env="SCCACHE_VERBOSE_STATS", help="Print verbose sccache stats after build")
 
@@ -1091,6 +960,40 @@ def sccache_verbose_stats(using_sccache, verbose_stats):
 
 
 set_config("SCCACHE_VERBOSE_STATS", sccache_verbose_stats)
+
+
+@depends(when=using_sccache)
+def sccache_max_frame_length():
+    # Workaround for https://github.com/mozilla/sccache/issues/459#issuecomment-618756635
+    return "500000000"
+
+
+@depends(moz_automation)
+def sccache_client_side_default(moz_automation):
+    return "false" if moz_automation else "true"
+
+
+option(
+    env="SCCACHE_CLIENT_SIDE",
+    choices=("true", "false"),
+    default=sccache_client_side_default,
+    help="Whether to enable sccache client side mode",
+)
+
+
+@depends("SCCACHE_CLIENT_SIDE", using_sccache)
+def sccache_client_side(client_side, using_sccache):
+    if using_sccache:
+        return client_side[0]
+
+
+# The base directories are handled further below, where the sysroot and SDK
+# paths they contain are known.
+option(
+    env="SCCACHE_BASEDIRS",
+    nargs=1,
+    help="Base directories sccache rewrites to relative paths for cache keys",
+)
 
 
 @depends("--with-compiler-wrapper", ccache)
@@ -1115,6 +1018,19 @@ def compiler_wrapper(wrapper, ccache):
             return (ccache,)
     elif wrapper:
         return tuple(wrapper)
+
+
+set_config("COMPILER_WRAPPER", compiler_wrapper)
+
+
+@depends(compiler_wrapper)
+@imports("os")
+def cc_known_wrapper_custom(wrapper):
+    if wrapper:
+        return os.path.splitext(os.path.basename(wrapper[0]))[0]
+
+
+set_config("CC_KNOWN_WRAPPER_CUSTOM", cc_known_wrapper_custom)
 
 
 @dependable
@@ -1398,6 +1314,68 @@ target_multiarch_dir = multiarch_dir(target)
 host_multiarch_dir = multiarch_dir(host)
 
 
+@depends(
+    build_environment,
+    target_sysroot.path,
+    valid_windows_sdk_dir,
+    vc_path,
+    when=using_sccache,
+)
+@imports("os")
+def default_sccache_basedirs(build_env, sysroot_path, windows_sdk_dir, vc_path):
+    # sccache rewrites paths under these base directories to be relative
+    # before computing cache keys, so builds in different worktrees (or in
+    # automation versus locally) hit the same cache entries instead of
+    # missing on differing absolute paths. These are the same directories as
+    # the path remapping below: the object and source directories, plus the
+    # sysroot and SDKs.
+    basedirs = [build_env.topobjdir, build_env.topsrcdir]
+    if sysroot_path:
+        basedirs.append(sysroot_path)
+    if windows_sdk_dir:
+        basedirs.append(windows_sdk_dir.path)
+    if vc_path:
+        basedirs.append(vc_path)
+
+    return os.pathsep.join(basedirs)
+
+
+@depends("SCCACHE_BASEDIRS", default_sccache_basedirs, using_sccache)
+def sccache_basedirs(basedirs, default_basedirs, using_sccache):
+    if not using_sccache:
+        return
+
+    # Don't override a value the developer set explicitly.
+    return basedirs[0] if basedirs else default_basedirs
+
+
+@template
+def sccache_config(**kwargs):
+    """Set the given configuration items, and return a @depends function that
+    puts them in the environment. sccache reads its configuration from the
+    environment, and its server only does so when it starts, which can be from
+    one of the compiler checks below, so the variables need to be set before
+    that happens."""
+    for name, value in kwargs.items():
+        set_config(name, value)
+
+    @depends(*kwargs.values())
+    @imports("os")
+    def sccache_environment(*values):
+        for name, value in zip(kwargs, values):
+            if value:
+                os.environ[name] = value
+
+    return sccache_environment
+
+
+sccache_environment = sccache_config(
+    SCCACHE_BASEDIRS=sccache_basedirs,
+    SCCACHE_CLIENT_SIDE=sccache_client_side,
+    SCCACHE_MAX_FRAME_LENGTH=sccache_max_frame_length,
+)
+
+
 def minimum_gcc_version():
     return Version("10.1.0")
 
@@ -1496,6 +1474,7 @@ def compiler(
         multiarch_dir,
         winsysroot,
         host,
+        sccache_environment,
     )
     @checking("whether %s can be used" % what, lambda x: bool(x))
     @imports(_from="mozshellutil", _import="quote")
@@ -1514,7 +1493,14 @@ def compiler(
         multiarch_dir,
         winsysroot,
         host,
+        sccache_environment,
     ):
+        # This is only a dependency for its side effect of setting the sccache
+        # variables in the environment, which needs to happen before the
+        # compiler wrapper is invoked. The statement below is only there to
+        # appease configure's lint, which rejects unused dependencies.
+        sccache_environment
+
         wrapper = list(compiler_wrapper or ())
         flags = []
         if sysroot.path:
@@ -1531,10 +1517,11 @@ def compiler(
 
         info = check_compiler(
             configure_cache,
-            wrapper + [compiler] + flags,
+            [compiler] + flags,
             language,
             host_or_target,
             android_version,
+            wrapper=wrapper,
         )
 
         if host_or_target.os == "OSX" and macos_target:
@@ -1565,10 +1552,11 @@ def compiler(
                 flags += info.flags
                 info = check_compiler(
                     configure_cache,
-                    wrapper + [compiler] + flags,
+                    [compiler] + flags,
                     language,
                     host_or_target,
                     android_version,
+                    wrapper=wrapper,
                 )
         except FatalCheckError:
             pass
@@ -1660,9 +1648,9 @@ def compiler(
         # This version can be no higher than the version used in
         # src/bootstrap/src/core/build_steps/llvm.rs's check_llvm_version in the source
         # code of the minimum supported Rust version.
-        if info.type in ("clang", "clang-cl") and info.version < "17.0":
+        if info.type in ("clang", "clang-cl") and info.version < "19.0":
             raise FatalCheckError(
-                "Only %s 17.0 or newer is supported (found version %s)."
+                "Only %s 19.0 or newer is supported (found version %s)."
                 % (("clang/llvm" if info.type == "clang" else "clang-cl"), info.version)
             )
 
@@ -1721,13 +1709,12 @@ def compiler(
 
     # This excludes WASM_CC from the list.
     if var in ("CC", "CXX", "HOST_CC", "HOST_CXX"):
-        # FIXME: we should return a plain list here.
-        @depends_if(valid_compiler)
-        @imports(_from="mozshellutil", _import="quote")
-        def value(x):
-            return quote(*x.wrapper, x.compiler, *x.flags)
-
-        set_config(var, value)
+        set_config(
+            var,
+            depends_if(valid_compiler)(
+                lambda x: list(x.wrapper) + [x.compiler] + list(x.flags)
+            ),
+        )
 
     # Set CC_TYPE/CC_VERSION/HOST_CC_TYPE/HOST_CC_VERSION to allow
     # old-configure to do some of its still existing checks.
@@ -1798,52 +1785,11 @@ host_cxx_compiler = compiler(
     other_c_compiler=c_compiler,
 )
 
-
-@template
-def windows_abi(host_or_target, c_compiler):
-    @depends(host_or_target)
-    def windows_abi(host_or_target):
-        if host_or_target.os == "WINNT":
-            return host_or_target.abi
-
-    @depends(host_or_target, windows_abi)
-    def need_windows_abi_from_compiler(host_or_target, windows_abi):
-        return host_or_target.os == "WINNT" and windows_abi is None
-
-    @depends(host_or_target, c_compiler, when=need_windows_abi_from_compiler)
-    def windows_abi_from_compiler(host_or_target, c_compiler):
-        if host_or_target.os == "WINNT":
-            if c_compiler.type == "clang-cl":
-                return "msvc"
-            return "mingw"
-
-    return windows_abi | windows_abi_from_compiler
-
-
-target_windows_abi = windows_abi(target, c_compiler)
-host_windows_abi = windows_abi(host, host_c_compiler)
-
-
 # Generic compiler-based conditions.
 building_with_gcc = depends(c_compiler)(lambda info: info.type == "gcc")
 building_with_gnu_compatible_cc = depends(c_compiler)(
     lambda info: info.type != "clang-cl"
 )
-
-
-@depends(cxx_compiler, ccache_prefix)
-@imports("os")
-def cxx_is_icecream(info, ccache_prefix):
-    if (
-        os.path.islink(info.compiler)
-        and os.path.basename(os.readlink(info.compiler)) == "icecc"
-    ):
-        return True
-    if ccache_prefix and os.path.basename(ccache_prefix) == "icecc":
-        return True
-
-
-set_config("CXX_IS_ICECREAM", cxx_is_icecream)
 
 
 # Libstdc++ compatibility hacks
@@ -1942,7 +1888,7 @@ def select_linker_tmpl(host_or_target):
             dependable(None),
             host_c_compiler,
             developer_options,
-            dependable(None),
+            dependable([]),
             host,
             stdcxx_compat,
             when=is_not_winnt_or_sunos(host_or_target),
@@ -1988,9 +1934,7 @@ def select_linker_tmpl(host_or_target):
                 linker_flag = ["-fuse-ld=" + linker]
             else:
                 linker_flag = []
-            cmd = cmd_base + linker_flag + version_check
-            if toolchain_flags:
-                cmd += toolchain_flags
+            cmd = cmd_base + linker_flag + version_check + toolchain_flags
 
             # ld64 doesn't have anything to print out a version. It does print out
             # "ld64: For information on command line options please use 'man ld'."
@@ -2192,28 +2136,28 @@ using_msvc_stl = depends(cxx_compiler)(lambda c: c.type == "clang-cl")
 
 using_msvc_stl_202503_or_newer = try_compile(
     language="C++",
-    includes=["new"],
+    includes=["version"],
     body="#if !defined(_MSVC_STL_UPDATE) || _MSVC_STL_UPDATE < 202503L\n#error 1\n#endif",
     when=using_msvc_stl,
 )
 
 using_libstdcxx = try_compile(
     language="C++",
-    includes=["new"],
+    includes=["version"],
     body="#ifndef __GLIBCXX__\n#error 1\n#endif",
     when=~using_msvc_stl,
 )
 
 using_libcxx = try_compile(
     language="C++",
-    includes=["new"],
+    includes=["version"],
     body="#ifndef _LIBCPP_VERSION\n#error 1\n#endif",
     when=~using_libstdcxx,
 )
 
 using_libcxx_19_or_newer = try_compile(
     language="C++",
-    includes=["new"],
+    includes=["version"],
     body="#if _LIBCPP_VERSION < 190000\n#error 1\n#endif",
     when=using_libcxx,
 )
@@ -2289,7 +2233,21 @@ def default_debug_flags(compiler_info, target):
     # The oldest versions of supported compilers default to DWARF-4, but
     # newer versions may default to DWARF-5 or newer (e.g. clang 14), which
     # Valgrind doesn't support. Force-use DWARF-4.
-    return ("-gdwarf-4",)
+    flags = ("-gdwarf-4",)
+    if compiler_info.type == "clang":
+        # This improves debuginfo size.
+        flags += (
+            "-gsimple-template-names",
+            # clang will warn about this argument not being used in some compiler
+            # invocations that don't involve codegen (like clang-plugin checks or
+            # linking), and we don't have a great way of conditionally skipping it...
+            # See https://reviews.llvm.org/D18706 and http://reviews.llvm.org/D11374 for
+            # context about this flag.
+            "--start-no-unused-arguments",
+            "-mllvm=-dwarf-linkage-names=Abstract",
+            "--end-no-unused-arguments",
+        )
+    return flags
 
 
 option(env="MOZ_DEBUG_FLAGS", nargs=1, help="Debug compiler flags")
@@ -2458,9 +2416,6 @@ def check_thread(target, c_compiler):
         return False
     if target.os == "Android":
         # The custom dynamic linker doesn't support TLS variables
-        return False
-    if target.kernel == "OpenBSD":
-        # OpenBSD doesn't have TLS support, and the test succeeds with clang++
         return False
     return c_compiler.type != "clang-cl"
 
@@ -2752,11 +2707,11 @@ def ubsan(options, optimize):
 def ubsan_flags(ubsan_checks, c_compiler, compilation_flags, linker_flags, build_env):
     ubsan_txt = os.path.join(build_env.topobjdir, "ubsan_blacklist.txt")
     with open(ubsan_txt, "w") as out_fd:
-        for blacklist in glob(
+        for blacklist in sorted(glob(
             os.path.join(
                 build_env.topsrcdir, "build", "sanitizers", "ubsan_*_blacklist.txt"
             )
-        ):
+        )):
             with open(blacklist) as in_fd:
                 shutil.copyfileobj(in_fd, out_fd)
 
@@ -2920,9 +2875,10 @@ def security_hardening_cflags(
 
             if (
                 c_compiler.type == "clang"
-                and c_compiler.version >= "11.0.1"
-                and target.os not in ("WINNT", "OSX", "OpenBSD")
-                and target.cpu in ("x86", "x86_64", "ppc64", "s390x")
+                and target.os not in ("WINNT", "OSX", "OpenBSD", "iOS")
+                and ((c_compiler.version >= "11.0.1" and target.cpu in ("x86", "x86_64", "ppc64", "s390x"))
+                    or
+                     (c_compiler.version >= "18.1.0" and target.cpu == "aarch64"))
             ):
                 flags.append("-fstack-clash-protection")
                 ldflags.append("-fstack-clash-protection")
@@ -3001,7 +2957,7 @@ set_config(
 
 @depends(moz_debug, target)
 def want_stl_hardening(debug, target):
-    return debug or target.os == "OSX"
+    return debug or target.os in ("WINNT", "OSX")
 
 
 option(
@@ -3205,14 +3161,19 @@ option(env="AS", nargs=1, help="Path to the assembler")
 @depends(target, c_compiler)
 def as_info(target, c_compiler):
     if c_compiler.type == "clang-cl":
+        if target.cpu == "aarch64":
+            return namespace(type="armasm", names=("armasm64.exe",))
         ml = {
             "x86": "ml.exe",
             "x86_64": "ml64.exe",
-            "aarch64": "armasm64.exe",
         }.get(target.cpu)
         return namespace(type="masm", names=(ml,))
     # When building with anything but clang-cl, we just use the C compiler as the assembler.
     return namespace(type="gcc", names=(c_compiler.compiler,))
+
+
+assembler_is_masm = depends(as_info)(lambda info: info.type == "masm")
+assembler_is_armasm = depends(as_info)(lambda info: info.type == "armasm")
 
 
 # One would expect the assembler to be specified merely as a program.  But in
@@ -3236,7 +3197,7 @@ def as_with_flags(as_info, assembler, provided_assembler, c_compiler):
     if provided_assembler:
         return provided_assembler.wrapper + [assembler] + provided_assembler.flags
 
-    if as_info.type == "masm":
+    if as_info.type in ("masm", "armasm"):
         return assembler
 
     assert as_info.type == "gcc"
@@ -3257,9 +3218,7 @@ def gnu_as(assembler, c_compiler, toolchain_flags):
         return True
 
     if c_compiler.type == "gcc":
-        cmd = [assembler] + c_compiler.flags
-        if toolchain_flags:
-            cmd += toolchain_flags
+        cmd = [assembler] + c_compiler.flags + toolchain_flags
         cmd += ["-Wa,--version", "-c", "-o", devnull, "-x", "assembler", "-"]
         # We don't actually have to provide any input on stdin, `Popen.communicate` will
         # close the stdin pipe.
@@ -3272,10 +3231,10 @@ def gnu_as(assembler, c_compiler, toolchain_flags):
 set_config("GNU_AS", gnu_as)
 
 
-@depends(as_info, target)
-def as_dash_c_flag(as_info, target):
+@depends(as_info)
+def as_dash_c_flag(as_info):
     # armasm64 doesn't understand -c.
-    if as_info.type == "masm" and target.cpu == "aarch64":
+    if as_info.type == "armasm":
         return ""
     else:
         return "-c"
@@ -3284,10 +3243,10 @@ def as_dash_c_flag(as_info, target):
 set_config("AS_DASH_C_FLAG", as_dash_c_flag)
 
 
-@depends(as_info, target)
-def as_outoption(as_info, target):
+@depends(as_info)
+def as_outoption(as_info):
     # The uses of ASOUTOPTION depend on the spacing for -o/-Fo.
-    if as_info.type == "masm" and target.cpu != "aarch64":
+    if as_info.type == "masm":
         return "-Fo"
 
     return "-o "
@@ -3572,7 +3531,7 @@ def add_libfuzzer_flags(libfuzzer_flags, linker_flags):
 
 
 # The LLVM symbolizer is used by all sanitizers
-check_prog(
+llvm_symbolizer = check_prog(
     "LLVM_SYMBOLIZER",
     ("llvm-symbolizer",),
     allow_missing=True,
@@ -3718,7 +3677,7 @@ def ar_supports_response_files(c_compiler, extra_toolchain_flags, ar, ar_config)
                 [c_compiler.compiler] + c_compiler.flags,
                 c_compiler.language,
                 "void foo() {}",
-                ["-c", "-o", obj_path] + (extra_toolchain_flags or []),
+                ["-c", "-o", obj_path] + extra_toolchain_flags,
                 wrapper=c_compiler.wrapper,
                 onerror=lambda: None,
             )

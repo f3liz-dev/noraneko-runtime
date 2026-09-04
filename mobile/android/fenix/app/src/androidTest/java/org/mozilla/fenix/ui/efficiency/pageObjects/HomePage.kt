@@ -4,7 +4,13 @@
 
 package org.mozilla.fenix.ui.efficiency.pageObjects
 
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.filter
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onFirst
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.ui.efficiency.helpers.BasePage
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
@@ -54,7 +60,7 @@ class HomePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *
         NavigationRegistry.register(
             from = "MainMenuPage",
             to = "DownloadsPage",
-            steps = listOf(NavigationStep.Click(MainMenuSelectors.DOWLOADS_BUTTON)),
+            steps = listOf(NavigationStep.Click(MainMenuSelectors.DOWNLOADS_BUTTON)),
         )
 
         NavigationRegistry.register(
@@ -62,13 +68,24 @@ class HomePage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *
             to = "PasswordsPage",
             steps = listOf(NavigationStep.Click(MainMenuSelectors.PASSWORDS_BUTTON)),
         )
+
+        NavigationRegistry.register(
+            from = "MainMenuPage",
+            to = pageName,
+            steps = listOf(NavigationStep.PressBack),
+        )
     }
 
     override fun mozGetSelectorsByGroup(group: String): List<Selector> {
         return HomeSelectors.all.filter { it.groups.contains(group) }
     }
 
-    /**
+    private fun safeId(prefix: String, raw: String): String {
+        val cleaned = raw.replace(Regex("[^A-Za-z0-9_\\-]"), "_")
+        return "'$prefix'_$cleaned".take(120)
+    }
+
+    /*
      * Temporary stub for the Test Factory demo.
      *
      * This method exists only to illustrate how the `SettingsPrivateBrowsingTest`

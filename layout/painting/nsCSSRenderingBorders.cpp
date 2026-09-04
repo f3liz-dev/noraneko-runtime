@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -144,14 +142,16 @@ nsCSSBorderRenderer::nsCSSBorderRenderer(
     nsPresContext* aPresContext, DrawTarget* aDrawTarget,
     const Rect& aDirtyRect, Rect& aOuterRect,
     const StyleBorderStyle* aBorderStyles, const Margin& aBorderWidths,
-    RectCornerRadii& aBorderRadii, const nscolor* aBorderColors,
-    bool aBackfaceIsVisible, const Maybe<Rect>& aClipRect)
+    RectCornerRadii& aBorderRadii, const Margin& aBorderInset,
+    const nscolor* aBorderColors, bool aBackfaceIsVisible,
+    const Maybe<Rect>& aClipRect)
     : mPresContext(aPresContext),
       mDrawTarget(aDrawTarget),
       mDirtyRect(aDirtyRect),
       mOuterRect(aOuterRect),
       mBorderWidths(aBorderWidths),
       mBorderRadii(aBorderRadii),
+      mBorderInset(aBorderInset),
       mBackfaceIsVisible(aBackfaceIsVisible),
       mLocalClip(aClipRect) {
   PodCopy(mBorderStyles, aBorderStyles, 4);
@@ -2486,7 +2486,7 @@ void nsCSSBorderRenderer::DrawFallbackSolidCorner(mozilla::Side aSide,
     mPresContext->SetHasWarnedAboutTooLargeDashedOrDottedRadius();
     nsContentUtils::ReportToConsole(
         nsIScriptError::warningFlag, "CSS"_ns, mPresContext->Document(),
-        nsContentUtils::eCSS_PROPERTIES,
+        PropertiesFile::CSS_PROPERTIES,
         mBorderStyles[aSide] == StyleBorderStyle::Dashed
             ? "TooLargeDashedRadius"
             : "TooLargeDottedRadius");
@@ -3294,7 +3294,9 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
         wr::ToBorderSide(ToDeviceColor(mBorderColors[i]), mBorderStyles[i]);
   }
 
+  wr::LayoutSideOffsets borderWidths = wr::ToBorderWidths(mBorderWidths);
   wr::BorderRadius borderRadius = wr::ToBorderRadius(mBorderRadii);
+  wr::LayoutSideOffsets borderInset = wr::ToLayoutSideOffsets(mBorderInset);
 
   if (mLocalClip) {
     LayoutDeviceRect localClip =
@@ -3303,8 +3305,8 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
   }
 
   Range<const wr::BorderSide> wrsides(side, 4);
-  aBuilder.PushBorder(roundedRect, clipRect, mBackfaceIsVisible,
-                      wr::ToBorderWidths(mBorderWidths), wrsides, borderRadius);
+  aBuilder.PushBorder(roundedRect, clipRect, mBackfaceIsVisible, borderWidths,
+                      wrsides, borderRadius, borderInset);
 }
 
 /* static */

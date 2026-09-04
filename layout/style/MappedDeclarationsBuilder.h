@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,7 @@
 #define mozilla_MappedDeclarationsBuilder_h
 
 #include "NonCustomCSSPropertyId.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoBindings.h"
@@ -47,7 +46,8 @@ class MOZ_STACK_CLASS MappedDeclarationsBuilder final {
 
   // Check if we already contain a certain longhand
   bool PropertyIsSet(NonCustomCSSPropertyId aId) const {
-    return mDecls && Servo_DeclarationBlock_PropertyIsSet(mDecls, aId);
+    CSSPropertyId id{aId};
+    return mDecls && Servo_DeclarationBlock_HasProperty(mDecls, &id);
   }
 
   // Set a property to an identifier (string)
@@ -82,15 +82,13 @@ class MOZ_STACK_CLASS MappedDeclarationsBuilder final {
     }
   }
 
-  template <typename T,
-            typename = typename std::enable_if<std::is_enum<T>::value>::type>
+  template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
   void SetKeywordValue(NonCustomCSSPropertyId aId, T aValue) {
     static_assert(EnumTypeFitsWithin<T, int32_t>::value,
                   "aValue must be an enum that fits within 32 bits");
     SetKeywordValue(aId, static_cast<int32_t>(aValue));
   }
-  template <typename T,
-            typename = typename std::enable_if<std::is_enum<T>::value>::type>
+  template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
   void SetKeywordValueIfUnset(NonCustomCSSPropertyId aId, T aValue) {
     static_assert(EnumTypeFitsWithin<T, int32_t>::value,
                   "aValue must be an enum that fits within 32 bits");

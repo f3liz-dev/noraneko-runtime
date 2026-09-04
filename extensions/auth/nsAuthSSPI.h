@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +8,7 @@
 #include "nsAuth.h"
 #include "nsIAuthModule.h"
 #include "nsString.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 #include <windows.h>
 
@@ -42,6 +42,11 @@ class nsAuthSSPI final : public nsIAuthModule {
 
  private:
   nsresult MakeSN(const nsACString& principal, nsCString& result);
+
+  // Builds the SEC_CHANNEL_BINDINGS blob describing the "tls-server-end-point"
+  // binding for the server certificate stored in mCertDERData.
+  nsresult MakeChannelBindings(mozilla::UniqueFreePtr<char>& aBuffer,
+                               uint32_t& aBufferLength);
 
   CredHandle mCred;
   CtxtHandle mCtxt;

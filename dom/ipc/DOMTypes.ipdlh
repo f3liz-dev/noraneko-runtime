@@ -1,5 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,6 +74,12 @@ struct MessagePortIdentifier
   bool neutered;
 };
 
+struct NavigationEntriesTruncation
+{
+  MaybeDiscardedBrowsingContext context;
+  uint32_t newLength;
+};
+
 struct ScreenDetails {
   LayoutDeviceIntRect rect;
   DesktopIntRect rectDisplayPix;
@@ -91,6 +95,8 @@ struct ScreenDetails {
   uint16_t orientationAngle;
   bool isPseudoDisplay;
   bool isHDR;
+  float sdrContentBrightness;
+  float hdrPeakBrightness;
 };
 
 struct DimensionInfo
@@ -206,8 +212,9 @@ struct DocShellLoadStateInit
   // nsCOMPtr<nsIDocShell> mSourceDocShell;
   // bool mIsSrcDocLoad; // useless without sourcedocshell
   // nsIChannel pendingRedirectedChannel; // sent through other mechanism
+  // DocumentLoadListener mSpeculativeListener; // parent-process only
 
-  bool ChannelInitialized;
+  bool HasSpeculativeListener;
 
   bool TryToReplaceWithSessionHistoryLoad;
 
@@ -228,6 +235,7 @@ struct TimedChannelInfo
   TimeStamp redirectEnd;
   nsString initiatorType;
   bool allRedirectsSameOrigin;
+  bool allRedirectsSameOriginIgnoringInternal;
   bool allRedirectsPassTimingAllowCheck;
   bool? timingAllowCheckForPrincipal;
   bool renderBlocking;
@@ -251,7 +259,6 @@ struct ReplacementChannelConfigInit
   TimedChannelInfo? timedChannelInfo;
   nullable RemoteLazyInputStream uploadStream;
   uint64_t uploadStreamLength;
-  bool uploadStreamHasHeaders;
   nsCString? contentType;
   nsCString? contentLength;
 };
@@ -295,6 +302,7 @@ struct ParentShowInfo
   float dpi;
   int32_t widgetRounding;
   double defaultScale;
+  double desktopToDeviceScale;
 };
 
 // Struct with information to show an iframe from the process that owns the

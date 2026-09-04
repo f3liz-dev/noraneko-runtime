@@ -39,6 +39,7 @@ class JsepSessionCopyableStuff {
   bool mRemoteIsIceLite = false;
   std::vector<std::string> mIceOptions;
   JsepBundlePolicy mBundlePolicy = kBundleBalanced;
+  JsepRtcpMuxPolicy mRtcpMuxPolicy = kRtcpMuxNegotiate;
   std::vector<JsepDtlsFingerprint> mDtlsFingerprints;
   uint64_t mSessionId = 0;
   uint64_t mSessionVersion = 0;
@@ -70,16 +71,20 @@ class JsepSessionImpl : public JsepSession, public JsepSessionCopyableStuff {
       : JsepSession(name),
         mUuidGen(std::move(uuidgen)),
         mSdpHelper(&mLastError),
-        mParser(new HybridSdpParser()) {}
+        mParser(MakeUnique<HybridSdpParser>()) {}
 
   JsepSessionImpl(const JsepSessionImpl& aOrig);
 
-  JsepSession* Clone() const override { return new JsepSessionImpl(*this); }
+  UniquePtr<JsepSession> Clone() const override {
+    return MakeUnique<JsepSessionImpl>(*this);
+  }
 
   // Implement JsepSession methods.
   virtual nsresult Init() override;
 
   nsresult SetBundlePolicy(JsepBundlePolicy policy) override;
+  nsresult SetRtcpMuxPolicy(JsepRtcpMuxPolicy policy) override;
+  JsepRtcpMuxPolicy GetRtcpMuxPolicy() const override { return mRtcpMuxPolicy; }
 
   virtual bool RemoteIsIceLite() const override { return mRemoteIsIceLite; }
 
@@ -203,15 +208,17 @@ class JsepSessionImpl : public JsepSession, public JsepSessionCopyableStuff {
   nsresult SetupIds();
   void SetState(JsepSignalingState state);
   // Non-const so it can set mLastError
-  nsresult ParseSdp(const std::string& sdp, UniquePtr<Sdp>* parsedp);
+  JsepSession::Result ParseSdp(const std::string& sdp, UniquePtr<Sdp>* parsedp);
   nsresult SetLocalDescriptionOffer(UniquePtr<Sdp> offer);
   nsresult SetLocalDescriptionAnswer(JsepSdpType type, UniquePtr<Sdp> answer);
   nsresult SetRemoteDescriptionOffer(UniquePtr<Sdp> offer);
   nsresult SetRemoteDescriptionAnswer(JsepSdpType type, UniquePtr<Sdp> answer);
-  nsresult ValidateLocalDescription(const Sdp& description, JsepSdpType type);
-  nsresult ValidateRemoteDescription(const Sdp& description);
-  nsresult ValidateOffer(const Sdp& offer);
-  nsresult ValidateAnswer(const Sdp& offer, const Sdp& answer);
+  JsepSession::Result ValidateLocalDescription(const Sdp& description,
+                                               JsepSdpType type);
+  JsepSession::Result ValidateRemoteDescription(const Sdp& description);
+  JsepSession::Result ValidateOffer(const Sdp& offer);
+  JsepSession::Result ValidateAnswer(const Sdp& offer, const Sdp& answer);
+  JsepSession::Result CheckRtcpMux(const Sdp& description);
   nsresult UpdateTransceiversFromRemoteDescription(const Sdp& remote);
   Maybe<JsepTransceiver> GetTransceiverForLevel(size_t level) const;
   Maybe<JsepTransceiver> GetTransceiverForMid(const std::string& mid) const;
@@ -222,7 +229,7 @@ class JsepSessionImpl : public JsepSession, public JsepSessionCopyableStuff {
       const std::string& transportId) const;
   // The w3c and IETF specs have a lot of "magical" behavior that happens when
   // addTrack is used. This was a deliberate design choice. Sadface.
-  Maybe<JsepTransceiver> FindUnassociatedTransceiver(
+  Maybe<JsepTransceiver> FindUnassociatedRtpTransceiver(
       SdpMediaSection::MediaType type, bool magic);
   // Called for rollback of local description
   void RollbackLocalOffer();

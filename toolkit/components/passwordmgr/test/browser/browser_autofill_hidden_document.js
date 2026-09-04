@@ -146,14 +146,14 @@ testUrls.forEach(testUrl => {
 
 testUrlsWithForm.forEach(testUrl => {
   add_task(async function test_immediate_autofill_with_primarypassword() {
-    LoginTestUtils.primaryPassword.enable();
+    await LoginTestUtils.primaryPassword.enable();
     await LoginTestUtils.reloadData();
     info(
       `Have enabled primaryPassword, now isLoggedIn? ${Services.logins.isLoggedIn}`
     );
 
     registerCleanupFunction(async function () {
-      LoginTestUtils.primaryPassword.disable();
+      await LoginTestUtils.primaryPassword.disable();
       await LoginTestUtils.reloadData();
     });
 
@@ -184,7 +184,7 @@ testUrlsWithForm.forEach(testUrl => {
       "The first tab should be backgrounded"
     );
 
-    const dialogObserved = waitForMPDialog("authenticate", tab1.ownerGlobal);
+    const dialogObserved = waitForMPDialog("authenticate", tab1.documentGlobal);
 
     // In this case we will try to autofill while hidden, so look for the passwordmgr-processed-form
     // to be observed

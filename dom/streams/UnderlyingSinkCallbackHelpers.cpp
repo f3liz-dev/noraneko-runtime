@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,15 +151,16 @@ already_AddRefed<Promise> UnderlyingSinkAlgorithmsWrapper::AbortCallback(
       aRv);
 }
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(WritableStreamToOutput,
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(WritableStreamToOutputAlgorithms,
                                              UnderlyingSinkAlgorithmsBase,
                                              nsIOutputStreamCallback)
-NS_IMPL_CYCLE_COLLECTION_INHERITED(WritableStreamToOutput,
+NS_IMPL_CYCLE_COLLECTION_INHERITED(WritableStreamToOutputAlgorithms,
                                    UnderlyingSinkAlgorithmsBase, mParent,
                                    mOutput, mPromise)
 
 NS_IMETHODIMP
-WritableStreamToOutput::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
+WritableStreamToOutputAlgorithms::OnOutputStreamReady(
+    nsIAsyncOutputStream* aStream) {
   if (!mData) {
     return NS_OK;
   }
@@ -192,7 +191,7 @@ WritableStreamToOutput::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
   nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentSerialEventTarget();
   rv = mOutput->AsyncWait(this, 0, 0, target);
   if (NS_FAILED(rv)) {
-    mPromise->MaybeRejectWithUnknownError("error waiting to write data");
+    mPromise->MaybeRejectWithUnknownError("error waiting to write data"_ns);
     ClearData();
     // XXX should we add mErrored and fail future calls immediately?
     // New calls to Write() will fail, note
@@ -203,7 +202,7 @@ WritableStreamToOutput::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
   return NS_OK;
 }
 
-already_AddRefed<Promise> WritableStreamToOutput::WriteCallbackImpl(
+already_AddRefed<Promise> WritableStreamToOutputAlgorithms::WriteCallbackImpl(
     JSContext* aCx, JS::Handle<JS::Value> aChunk,
     WritableStreamDefaultController& aController, ErrorResult& aRv) {
   BufferSource data;
@@ -231,7 +230,7 @@ already_AddRefed<Promise> WritableStreamToOutput::WriteCallbackImpl(
     nsresult rv = mOutput->Write(mozilla::AsChars(dataSpan).Elements(),
                                  dataSpan.Length(), &written);
     if (NS_FAILED(rv) && rv != NS_BASE_STREAM_WOULD_BLOCK) {
-      promise->MaybeRejectWithAbortError("error writing data");
+      promise->MaybeRejectWithAbortError("error writing data"_ns);
       return;
     }
     if (NS_SUCCEEDED(rv)) {
@@ -260,37 +259,41 @@ already_AddRefed<Promise> WritableStreamToOutput::WriteCallbackImpl(
   nsresult rv = mOutput->AsyncWait(this, 0, 0, target);
   if (NS_FAILED(rv)) {
     ClearData();
-    promise->MaybeRejectWithUnknownError("error waiting to write data");
+    promise->MaybeRejectWithUnknownError("error waiting to write data"_ns);
   }
   return promise.forget();
 }
 
-already_AddRefed<Promise> WritableStreamToOutput::AbortCallbackImpl(
+already_AddRefed<Promise> WritableStreamToOutputAlgorithms::AbortCallbackImpl(
     JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
     ErrorResult& aRv) {
   // https://streams.spec.whatwg.org/#writablestream-set-up
   // Step 3. Let abortAlgorithmWrapper be an algorithm that runs these steps:
 
-  if (aReason.WasPassed() && aReason.Value().isObject()) {
-    JS::Rooted<JSObject*> obj(aCx, &aReason.Value().toObject());
-    RefPtr<WebTransportError> error;
-    UnwrapObject<prototypes::id::WebTransportError, WebTransportError>(
-        obj, error, nullptr);
-    if (error) {
-      mOutput->CloseWithStatus(net::GetNSResultFromWebTransportError(
-          error->GetStreamErrorCode().Value()));
-      return nullptr;
-    }
-  }
-
   // XXX The close or rather a dedicated abort should be async. For now we have
   // to always fall back to the Step 3.3 below.
-  // XXX how do we know this stream is used by webtransport?
-  mOutput->CloseWithStatus(NS_ERROR_WEBTRANSPORT_CODE_BASE);
+  mOutput->CloseWithStatus(BuildErrorStatus(aCx, aReason));
 
   // Step 3.3. Return a promise resolved with undefined.
   // Wrapper handles this
   return nullptr;
 }
 
-void WritableStreamToOutput::ReleaseObjects() { mOutput->Close(); }
+nsresult WritableStreamToOutputAlgorithms::BuildErrorStatus(
+    JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason) {
+  if (aReason.WasPassed() && aReason.Value().isObject()) {
+    JS::Rooted<JSObject*> obj(aCx, &aReason.Value().toObject());
+    RefPtr<WebTransportError> error;
+    UnwrapObject<prototypes::id::WebTransportError, WebTransportError>(
+        obj, error, nullptr);
+    if (error) {
+      return net::GetNSResultFromWebTransportError(
+          error->GetStreamErrorCode().Value());
+    }
+  }
+
+  // XXX how do we know this stream is used by webtransport?
+  return NS_ERROR_WEBTRANSPORT_CODE_BASE;
+}
+
+void WritableStreamToOutputAlgorithms::ReleaseObjects() { mOutput->Close(); }

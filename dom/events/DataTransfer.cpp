@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,6 +12,7 @@
 #include "mozilla/Span.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/AutoSuppressEventHandlingAndSuspend.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DOMStringList.h"
@@ -49,6 +48,7 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIXPConnect.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsReadableUtils.h"
@@ -370,6 +370,7 @@ DataTransfer::WaitForClipboardDataSnapshotAndCreate(
     return nullptr;
   }
 
+  AutoSuppressEventHandlingAndSuspend autoSuppress(bc->Group());
   if (!SpinEventLoopUntil(
           "DataTransfer::WaitForClipboardDataSnapshotAndCreate"_ns,
           [&]() { return callback->IsComplete(); })) {
@@ -514,7 +515,7 @@ void DataTransfer::GetData(const nsAString& aFormat, nsAString& aData,
         lastidx = idx + 1;
       }
     } else {
-      aData = stringdata;
+      aData = std::move(stringdata);
     }
   }
 }
@@ -838,7 +839,11 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
           formats, *mClipboardType, wc, getter_AddRefs(clipboardDataSnapshot));
     }
   } else {
-    AutoTArray<nsCString, std::size(kNonPlainTextExternalFormats) + 4> formats;
+    AutoTArray<nsCString, std::size(kNonPlainTextExternalFormats) + 5> formats;
+    if (StaticPrefs::dom_clipboard_customFormatSupport_enabled()) {
+      // Adding kWebCustomFormatMapType to retrieve the web custom formats.
+      formats.AppendElement(kWebCustomFormatMapType);
+    }
     formats.AppendElements(
         Span<const nsLiteralCString>(kNonPlainTextExternalFormats));
     // We will be using this snapshot to provide the data to paste in
@@ -863,7 +868,7 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
     if (rv == NS_ERROR_CONTENT_BLOCKED) {
       // Use the empty snapshot created in
       // GetClipboardDataSnapshotWithContentAnalysisSync()
-      mClipboardDataSnapshot = clipboardDataSnapshot;
+      mClipboardDataSnapshot = std::move(clipboardDataSnapshot);
     }
     return;
   }
@@ -872,13 +877,21 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
   // the sequence specified in kNonPlainTextExternalFormats.
   AutoTArray<nsCString, std::size(kNonPlainTextExternalFormats)> flavors;
   clipboardDataSnapshot->GetFlavorList(flavors);
+
+  // First, adding web custom formats.
+  for (const auto& flavor : flavors) {
+    if (StringBeginsWith(flavor, nsLiteralCString(kWebCustomFormatPrefix))) {
+      aResult.AppendElement(flavor);
+    }
+  }
+  // Second, adding format in kNonPlainTextExternalFormats sequence.
   for (const auto& format : kNonPlainTextExternalFormats) {
     if (flavors.Contains(format)) {
       aResult.AppendElement(format);
     }
   }
 
-  mClipboardDataSnapshot = clipboardDataSnapshot;
+  mClipboardDataSnapshot = std::move(clipboardDataSnapshot);
 }
 
 /* static */
@@ -1169,6 +1182,13 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
         }
       }
 
+      // If the data is web custom format, use it directly.
+      if (isCustomFormat &&
+          StringBeginsWith(
+              type, NS_LITERAL_STRING_FROM_CSTRING(kWebCustomFormatPrefix))) {
+        isCustomFormat = false;
+      }
+
       uint32_t lengthInBytes;
       nsCOMPtr<nsISupports> convertedData;
 
@@ -1375,6 +1395,23 @@ bool DataTransfer::ConvertFromVariant(nsIVariant* aVariant,
     return true;
   }
 
+  if (type == nsIDataType::VTYPE_CSTRING) {
+    nsAutoCString cStr;
+    if (NS_FAILED(aVariant->GetAsACString(cStr))) {
+      return false;
+    }
+    nsCOMPtr<nsISupportsCString> cStrSupports(
+        do_CreateInstance(NS_SUPPORTS_CSTRING_CONTRACTID));
+    if (!cStrSupports) {
+      return false;
+    }
+    cStrSupports->SetData(cStr);
+    cStrSupports.forget(aSupports);
+    *aLength = cStr.Length();
+
+    return true;
+  }
+
   nsAutoString str;
   nsresult rv = aVariant->GetAsAString(str);
   if (NS_FAILED(rv)) {
@@ -1467,7 +1504,7 @@ already_AddRefed<nsIGlobalObject> DataTransfer::GetGlobal() const {
   nsCOMPtr<nsIGlobalObject> global;
   // This is annoying, but DataTransfer may have various things as parent.
   if (nsCOMPtr<EventTarget> target = do_QueryInterface(mParent)) {
-    global = target->GetOwnerGlobal();
+    global = target->GetRelevantGlobal();
   } else if (RefPtr<Event> event = do_QueryObject(mParent)) {
     global = event->GetParentObject();
   }

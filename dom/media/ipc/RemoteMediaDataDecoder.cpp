@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +11,9 @@ namespace mozilla {
 #ifdef LOG
 #  undef LOG
 #endif  // LOG
-#define LOG(arg, ...)                                                  \
-  DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, "::%s: " arg, __func__, \
-            ##__VA_ARGS__)
+#define LOG(arg, ...)                                                      \
+  DDMOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, "::{}: " arg, __func__, \
+                ##__VA_ARGS__)
 
 RemoteMediaDataDecoder::RemoteMediaDataDecoder(RemoteDecoderChild* aChild)
     : mChild(aChild),
@@ -25,7 +23,7 @@ RemoteMediaDataDecoder::RemoteMediaDataDecoder(RemoteDecoderChild* aChild)
       mIsHardwareAccelerated(false),
       mConversion(ConversionRequired::kNeedNone),
       mShouldDecoderAlwaysBeRecycled(false) {
-  LOG("%p is created", this);
+  LOG("{} is created", fmt::ptr(this));
 }
 
 RemoteMediaDataDecoder::~RemoteMediaDataDecoder() {
@@ -44,7 +42,7 @@ RemoteMediaDataDecoder::~RemoteMediaDataDecoder() {
               });
         }));
   }
-  LOG("%p is released", this);
+  LOG("{} is released", fmt::ptr(this));
 }
 
 RefPtr<MediaDataDecoder::InitPromise> RemoteMediaDataDecoder::Init() {
@@ -75,9 +73,10 @@ RefPtr<MediaDataDecoder::InitPromise> RemoteMediaDataDecoder::Init() {
             mDecodeProperties = mChild->GetDecodeProperties();
             mShouldDecoderAlwaysBeRecycled =
                 mChild->ShouldDecoderAlwaysBeRecycled();
-            LOG("%p RemoteDecoderChild has been initialized - description: %s, "
-                "process: %s, codec: %s",
-                this, mDescription.get(), mProcessName.get(), mCodecName.get());
+            LOG("{} RemoteDecoderChild has been initialized - description: {}, "
+                "process: {}, codec: {}",
+                fmt::ptr(this), mDescription.get(), mProcessName.get(),
+                mCodecName.get());
             return InitPromise::CreateAndResolve(aTrack, __func__);
           },
           [self](const MediaResult& aError) {

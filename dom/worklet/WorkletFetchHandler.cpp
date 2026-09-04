@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -464,14 +462,11 @@ void WorkletFetchHandler::ResolvePromises() {
 
 nsresult WorkletFetchHandler::StartFetch(JSContext* aCx, nsIURI* aURI,
                                          nsIURI* aReferrer) {
-  nsAutoCString spec;
-  nsresult res = aURI->GetSpec(spec);
+  RequestOrUTF8String requestInput;
+  nsresult res = aURI->GetSpec(requestInput.SetAsUTF8String());
   if (NS_WARN_IF(NS_FAILED(res))) {
     return NS_ERROR_FAILURE;
   }
-
-  RequestOrUTF8String requestInput;
-  requestInput.SetAsUTF8String().ShareOrDependUpon(spec);
 
   RootedDictionary<RequestInit> requestInit(aCx);
   requestInit.mCredentials.Construct(mCredentials);

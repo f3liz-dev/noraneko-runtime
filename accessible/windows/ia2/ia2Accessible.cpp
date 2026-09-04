@@ -1,30 +1,25 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AccessibleWrap.h"
-
-#include "Accessible2_i.c"
+#include "AccAttributes.h"
 #include "Accessible2_2_i.c"
+#include "Accessible2_i.c"
 #include "AccessibleRole.h"
 #include "AccessibleStates.h"
-
-#include "AccAttributes.h"
+#include "AccessibleWrap.h"
 #include "ApplicationAccessible.h"
 #include "Compatibility.h"
-#include "ia2AccessibleRelation.h"
 #include "IUnknownImpl.h"
-#include "nsAccUtils.h"
-#include "nsCoreUtils.h"
-#include "nsIAccessibleTypes.h"
-#include "mozilla/a11y/PDocAccessible.h"
 #include "Relation.h"
 #include "TextRange-inl.h"
-#include "nsAccessibilityService.h"
-
+#include "ia2AccessibleRelation.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/a11y/PDocAccessible.h"
+#include "nsAccUtils.h"
+#include "nsAccessibilityService.h"
+#include "nsCoreUtils.h"
+#include "nsIAccessibleTypes.h"
 #include "nsISimpleEnumerator.h"
 
 using namespace mozilla;
@@ -105,8 +100,7 @@ ia2Accessible::get_relation(long aRelationIndex,
 
     RelationType relationType = sRelationTypePairs[idx].first;
     Relation rel = acc->RelationByType(relationType);
-    RefPtr<ia2AccessibleRelation> ia2Relation =
-        new ia2AccessibleRelation(relationType, &rel);
+    auto ia2Relation = MakeRefPtr<ia2AccessibleRelation>(relationType, &rel);
     if (ia2Relation->HasTargets()) {
       if (relIdx == aRelationIndex) {
         ia2Relation.forget(aRelation);
@@ -139,8 +133,7 @@ ia2Accessible::get_relations(long aMaxRelations,
 
     RelationType relationType = sRelationTypePairs[idx].first;
     Relation rel = acc->RelationByType(relationType);
-    RefPtr<ia2AccessibleRelation> ia2Rel =
-        new ia2AccessibleRelation(relationType, &rel);
+    auto ia2Rel = MakeRefPtr<ia2AccessibleRelation>(relationType, &rel);
     if (ia2Rel->HasTargets()) {
       ia2Rel.forget(aRelation + (*aNRelations));
       (*aNRelations)++;
@@ -451,6 +444,17 @@ ia2Accessible::get_attributes(BSTR* aAttributes) {
     // IAccessible2 expects heading level to be exposed as an object attribute.
     // However, all other group position info is exposed via groupPosition.
     nsAccUtils::SetAccGroupAttrs(attributes, acc);
+  } else if (acc->IsEditableRoot()) {
+    // JAWS requires text-model:a1 to be specified on editable text controls
+    // with a role other than ROLE_SYSTEM_TEXT outside of web content in order
+    // for it to use IAccessibleText. For example, this is needed for the
+    // Firefox address bar, which has role="combobox". Although we don't really
+    // need to expose it on editable text controls beyond this specific case,
+    // there's no harm in doing so and Chromium also does this. This attribute
+    // is documented here:
+    // https://wiki.linuxfoundation.org/accessibility/ia2/ia2_implementation_guide#iaccessibletext_model
+    RefPtr<nsAtom> textModel = NS_Atomize("text-model");
+    attributes->SetAttributeStringCopy(textModel, u"a1"_ns);
   }
   return ConvertToIA2Attributes(attributes, aAttributes);
 }

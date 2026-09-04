@@ -1,27 +1,28 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Data conversion between native and JavaScript types. */
 
+#include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/PrimitiveConversions.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/Range.h"
 #include "mozilla/Sprintf.h"
 
-#include "xpcprivate.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "nsIScriptError.h"
 #include "nsISimpleEnumerator.h"
-#include "nsWrapperCache.h"
 #include "nsJSUtils.h"
 #include "nsQueryObject.h"
 #include "nsScriptError.h"
-#include "WrapperFactory.h"
-
+#include "nsWrapperCache.h"
 #include "nsWrapperCacheInlines.h"
+#include "WrapperFactory.h"
+#include "xpcprivate.h"
 
-#include "jsapi.h"
-#include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType, JS_GetArrayBufferViewData, JS_GetTypedArrayLength, JS_IsTypedArrayObject
@@ -29,11 +30,6 @@
 #include "js/Object.h"              // JS::GetClass
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_GetElement
 #include "js/String.h"              // JS::StringHasLatin1Chars
-
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/PrimitiveConversions.h"
-#include "mozilla/dom/Promise.h"
 
 using namespace xpc;
 using namespace mozilla;
@@ -100,10 +96,10 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       d.setNumber(static_cast<double>(*static_cast<const uint64_t*>(s)));
       return true;
     case nsXPTType::T_FLOAT:
-      d.setNumber(*static_cast<const float*>(s));
+      d.setNumber(double(*static_cast<const float*>(s)));
       return true;
     case nsXPTType::T_DOUBLE:
-      d.set(JS_NumberValue(*static_cast<const double*>(s)));
+      d.setNumber(*static_cast<const double*>(s));
       return true;
     case nsXPTType::T_BOOL:
       d.setBoolean(*static_cast<const bool*>(s));
@@ -1263,14 +1259,9 @@ nsresult XPCConvert::JSValToXPCException(JSContext* cx, MutableHandleValue s,
     } else {
       // XXX all this nsISupportsDouble code seems a little redundant
       // now that we're storing the Value in the exception...
-      nsCOMPtr<nsISupportsDouble> data;
-      nsCOMPtr<nsIComponentManager> cm;
-      if (NS_FAILED(NS_GetComponentManager(getter_AddRefs(cm))) || !cm ||
-          NS_FAILED(cm->CreateInstanceByContractID(
-              NS_SUPPORTS_DOUBLE_CONTRACTID, NS_GET_IID(nsISupportsDouble),
-              getter_AddRefs(data)))) {
-        return NS_ERROR_FAILURE;
-      }
+      nsCOMPtr<nsISupportsDouble> data =
+          do_CreateInstance("@mozilla.org/supports-double;1");
+      NS_ENSURE_TRUE(data, NS_ERROR_FAILURE);
       data->SetData(number);
       rv = ConstructException(NS_ERROR_XPC_JS_THREW_NUMBER, nullptr, ifaceName,
                               methodName, data, exceptn, cx, s.address());

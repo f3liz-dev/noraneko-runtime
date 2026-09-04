@@ -2129,13 +2129,14 @@ files_changed:
 - browser/components/enterprisepolicies/tests/xpcshell/test_simple_pref_policies.js
 filters:
 - target_tasks_method
+head_git_repository: https://github.com/mozilla-firefox/firefox
+head_git_rev: f18a08cd59a4c299c1f9bd6ed0d735647ca58d5b
 head_ref: c3bba5162c988aa7e1791df8827c1a1575eddcc1
 head_repository: https://hg.mozilla.org/releases/mozilla-release
 head_rev: c3bba5162c988aa7e1791df8827c1a1575eddcc1
 head_tag: ''
 hg_branch: default
 level: '3'
-message: ''
 moz_build_date: '20250421163656'
 next_version: 138.0.1
 optimize_strategies: null
@@ -2156,8 +2157,6 @@ release_partners: null
 release_product: firefox-android
 release_type: release
 repository_type: hg
-required_signoffs: []
-signoff_urls: {}
 target_tasks_method: push_android
 tasks_for: hg-push
 test_manifest_loader: default

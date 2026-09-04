@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106,47 +105,6 @@ nsresult StateUpdatingCommandBase::GetCommandStateParams(
 }
 
 /*****************************************************************************
- * mozilla::PasteNoFormattingCommand
- *****************************************************************************/
-
-StaticRefPtr<PasteNoFormattingCommand> PasteNoFormattingCommand::sInstance;
-
-bool PasteNoFormattingCommand::IsCommandEnabled(Command aCommand,
-                                                EditorBase* aEditorBase) const {
-  HTMLEditor* htmlEditor = HTMLEditor::GetFrom(aEditorBase);
-  if (!htmlEditor) {
-    return false;
-  }
-  return htmlEditor->CanPaste(nsIClipboard::kGlobalClipboard);
-}
-
-nsresult PasteNoFormattingCommand::DoCommand(Command aCommand,
-                                             EditorBase& aEditorBase,
-                                             nsIPrincipal* aPrincipal) const {
-  HTMLEditor* htmlEditor = aEditorBase.GetAsHTMLEditor();
-  if (NS_WARN_IF(!htmlEditor)) {
-    return NS_ERROR_FAILURE;
-  }
-  // Known live because we hold a ref above in "editor"
-  nsresult rv =
-      MOZ_KnownLive(htmlEditor)
-          ->PasteNoFormattingAsAction(nsIClipboard::kGlobalClipboard,
-                                      EditorBase::DispatchPasteEvent::Yes,
-                                      nullptr, aPrincipal);
-  NS_WARNING_ASSERTION(
-      NS_SUCCEEDED(rv),
-      "HTMLEditor::PasteNoFormattingAsAction(DispatchPasteEvent::Yes) failed");
-  return rv;
-}
-
-nsresult PasteNoFormattingCommand::GetCommandStateParams(
-    Command aCommand, nsCommandParams& aParams, EditorBase* aEditorBase,
-    nsIEditingSession* aEditingSession) const {
-  return aParams.SetBool(STATE_ENABLED,
-                         IsCommandEnabled(aCommand, aEditorBase));
-}
-
-/*****************************************************************************
  * mozilla::StyleUpdatingCommand
  *****************************************************************************/
 
@@ -177,7 +135,7 @@ nsresult StyleUpdatingCommand::GetCurrentState(nsStaticAtom& aTagName,
 nsresult StyleUpdatingCommand::ToggleState(nsStaticAtom& aTagName,
                                            HTMLEditor& aHTMLEditor,
                                            nsIPrincipal* aPrincipal) const {
-  RefPtr<nsCommandParams> params = new nsCommandParams();
+  RefPtr params = MakeRefPtr<nsCommandParams>();
 
   // tags "href" and "name" are special cases in the core editor
   // they are used to remove named anchor/link and shouldn't be used for
@@ -241,7 +199,7 @@ nsresult ListCommand::GetCurrentState(nsStaticAtom& aTagName,
 nsresult ListCommand::ToggleState(nsStaticAtom& aTagName,
                                   HTMLEditor& aHTMLEditor,
                                   nsIPrincipal* aPrincipal) const {
-  RefPtr<nsCommandParams> params = new nsCommandParams();
+  RefPtr params = MakeRefPtr<nsCommandParams>();
   nsresult rv = GetCurrentState(aTagName, aHTMLEditor, *params);
   if (NS_FAILED(rv)) {
     NS_WARNING("ListCommand::GetCurrentState() failed");
@@ -308,7 +266,7 @@ nsresult ListItemCommand::ToggleState(nsStaticAtom& aTagName,
                                       HTMLEditor& aHTMLEditor,
                                       nsIPrincipal* aPrincipal) const {
   // Need to use aTagName????
-  RefPtr<nsCommandParams> params = new nsCommandParams();
+  RefPtr params = MakeRefPtr<nsCommandParams>();
   GetCurrentState(aTagName, aHTMLEditor, *params);
   ErrorResult error;
   bool inList = params->GetBool(STATE_ALL, error);
@@ -1163,7 +1121,7 @@ StaticRefPtr<InsertHTMLCommand> InsertHTMLCommand::sInstance;
 bool InsertHTMLCommand::IsCommandEnabled(Command aCommand,
                                          EditorBase* aEditorBase) const {
   HTMLEditor* htmlEditor = HTMLEditor::GetFrom(aEditorBase);
-  if (!htmlEditor) {
+  if (!htmlEditor || htmlEditor->ComputeEditContext()) {
     return false;
   }
   return htmlEditor->IsModifiable() && htmlEditor->IsSelectionEditable();
@@ -1239,6 +1197,9 @@ nsresult InsertTagCommand::DoCommand(Command aCommand, EditorBase& aEditorBase,
   if (NS_WARN_IF(!htmlEditor)) {
     return NS_ERROR_FAILURE;
   }
+  if (!htmlEditor->IsStyleEditable()) {
+    return NS_SUCCESS_DOM_NO_OPERATION;
+  }
 
   RefPtr<Element> newElement =
       MOZ_KnownLive(htmlEditor)
@@ -1280,6 +1241,9 @@ nsresult InsertTagCommand::DoCommandParam(Command aCommand,
   HTMLEditor* htmlEditor = aEditorBase.GetAsHTMLEditor();
   if (NS_WARN_IF(!htmlEditor)) {
     return NS_ERROR_FAILURE;
+  }
+  if (!htmlEditor->IsStyleEditable()) {
+    return NS_SUCCESS_DOM_NO_OPERATION;
   }
 
   // filter out tags we don't know how to insert

@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/AppShutdown.h"
 #include "mozilla/IdlePeriodState.h"
+
+#include "mozilla/AppShutdown.h"
 #include "mozilla/StaticPrefs_idle_period.h"
-#include "mozilla/ipc/IdleSchedulerChild.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/ipc/IdleSchedulerChild.h"
 #include "nsIIdlePeriod.h"
 #include "nsThreadManager.h"
 #include "nsXPCOM.h"
@@ -18,7 +17,7 @@ static uint64_t sIdleRequestCounter = 0;
 
 namespace mozilla {
 
-IdlePeriodState::IdlePeriodState(already_AddRefed<nsIIdlePeriod>&& aIdlePeriod)
+IdlePeriodState::IdlePeriodState(already_AddRefed<nsIIdlePeriod> aIdlePeriod)
     : mIdlePeriod(aIdlePeriod) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Why are we touching idle state off the main thread?");

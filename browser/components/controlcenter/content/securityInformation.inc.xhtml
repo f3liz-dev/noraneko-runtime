@@ -22,20 +22,35 @@
           </box>
         </hbox>
 
-        <vbox id="identity-popup-securityView-extended-info" class="identity-popup-section">
+
+        <vbox id="identity-popup-securityView-extended-info">
           <!-- (EV) Certificate Information -->
-          <description id="identity-popup-content-owner-label"
-                       when-connection="secure-ev secure-etsi" data-l10n-id="identity-ev-owner-label"></description>
-          <description id="identity-popup-content-owner"
-                       when-connection="secure-ev secure-etsi"
-                       class="header"/>
-          <description id="identity-popup-content-supplemental"
-                       when-connection="secure-ev secure-etsi"/>
-          <description id="identity-popup-content-verifier"
-                       when-connection="secure secure-ev secure-etsi secure-cert-user-overridden"/>
-          <description id="identity-popup-content-etsi"
-                       when-connection="secure-etsi"
-                       data-l10n-id="identity-etsi"/>
+          <hbox id="identity-popup-content-cert-info">
+            <vbox>
+              <description id="identity-popup-content-owner-label"
+                           when-connection="secure-ev secure-etsi"
+                           data-l10n-id="identity-ev-owner-label2"/>
+              <description id="identity-popup-content-owner"
+                           when-connection="secure-ev secure-etsi"
+                           class="header"/>
+              <description id="identity-popup-content-supplemental"
+                           when-connection="secure-ev secure-etsi"/>
+              <description id="identity-popup-content-verifier-label"
+                           when-connection="secure secure-ev secure-etsi"
+                           data-l10n-id="identity-verifier-label2"/>
+              <description id="identity-popup-content-verifier"
+                           when-connection="secure secure-ev secure-etsi"
+                           class="header"/>
+              <description id="identity-popup-content-etsi"
+                           when-connection="secure-etsi"
+                           data-l10n-id="identity-etsi"/>
+              <description id="identity-popup-content-cert-exception-overridden"
+                           when-connection="secure-cert-user-overridden"
+                           data-l10n-id="identity-cert-exception-overridden"/>
+            </vbox>
+            <image flex="1" id="identity-popup-content-eu-trust-mark"
+                   when-connection="secure-etsi"/>
+          </hbox>
           <description id="identity-popup-content-verifier-unknown"
                        class="identity-popup-warning-box identity-popup-warning-gray"
                        when-customroot="true">
@@ -109,5 +124,12 @@
               <description when-httpsonlystatus="failed-top" flex="1" data-l10n-id="identity-https-only-info-no-upgrade"></description>
             </vbox>
           </vbox>
+
+          <vbox id="identity-popup-content-tls-key-logging" when-tlskeylogging="true">
+            <description data-l10n-id="identity-description-tls-key-logging-heading" class="header"></description>
+            <description data-l10n-id="identity-description-tls-key-logging-message"></description>
+            <html:a is="moz-support-link" id="identity-popup-tls-key-logging-learn-more" support-page="sslkeylogfile-warning"/>
+          </vbox>
+
         </vbox>
       </vbox>

@@ -126,6 +126,32 @@ class MediaSession {
     }
 
     /**
+     * The W3C Audio Session type a tab is currently claiming, used to pick the
+     * matching platform audio-focus request. Mirrors the AudioSessionType
+     * WebIDL enum; see https://w3c.github.io/audio-session/#audio-session-type
+     */
+    enum class AudioSessionType {
+        AUTO,
+        PLAYBACK,
+        TRANSIENT,
+        TRANSIENT_SOLO,
+        AMBIENT,
+        PLAY_AND_RECORD,
+    }
+
+    /**
+     * A system audio-focus change reported by the platform, routed to the
+     * tab's Audio Session interrupt: a transient or permanent focus loss
+     * interrupts the tab's audible sources (media elements, Web Audio, and Web
+     * Speech), and a focus gain resumes what the interruption silenced.
+     */
+    enum class SystemAudioFocusChange {
+        GAIN,
+        TRANSIENT_LOSS,
+        PERMANENT_LOSS,
+    }
+
+    /**
      * Controller for controlling playback of a media element.
      */
     interface Controller {
@@ -189,5 +215,14 @@ class MediaSession {
          * @param mute True if audio for this media session should be muted.
          */
         fun muteAudio(mute: Boolean)
+
+        /**
+         * Route a system audio-focus change to the tab's Audio Session
+         * interrupt, suspending or resuming the tab's audible sources (media
+         * elements, Web Audio, and Web Speech).
+         *
+         * @param change The system audio-focus change to apply.
+         */
+        fun onSystemAudioFocusChanged(change: SystemAudioFocusChange) = Unit
     }
 }

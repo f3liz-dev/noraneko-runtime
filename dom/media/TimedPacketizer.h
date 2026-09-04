@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,8 +22,8 @@ class TimedPacketizer {
         mTimeStamp(media::TimeUnit(aInitialTick, aBase)),
         mBase(aBase) {}
 
-  void Input(const InputType* aFrames, uint32_t aFrameCount) {
-    mPacketizer.Input(aFrames, aFrameCount);
+  [[nodiscard]] nsresult Input(const InputType* aFrames, uint32_t aFrameCount) {
+    return mPacketizer.Input(aFrames, aFrameCount);
   }
 
   media::TimeUnit Output(OutputType* aOutputBuffer) {

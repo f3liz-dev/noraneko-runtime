@@ -17,7 +17,6 @@ use cssparser::Parser;
 use std::fmt::Write;
 use style_derive::Animate;
 use style_traits::ParseError;
-use style_traits::StyleParseErrorKind;
 use style_traits::ToCss;
 use style_traits::{CssWriter, SpecifiedValueInfo};
 
@@ -29,8 +28,10 @@ use style_traits::{CssWriter, SpecifiedValueInfo};
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedValue,
     ToAnimatedZero,
@@ -40,9 +41,7 @@ use style_traits::{CssWriter, SpecifiedValueInfo};
     ToShmem,
     ToTyped,
 )]
-#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C, u8)]
-#[typed_value(derive_fields)]
 pub enum GenericLengthPercentageOrAuto<LengthPercent> {
     LengthPercentage(LengthPercent),
     Auto,
@@ -160,7 +159,6 @@ impl<LengthPercentage: Parse> Parse for LengthPercentageOrAuto<LengthPercentage>
     ToTyped,
 )]
 #[repr(C, u8)]
-#[typed_value(derive_fields)]
 pub enum GenericSize<LengthPercent> {
     LengthPercentage(LengthPercent),
     Auto,
@@ -190,7 +188,13 @@ where
 {
     fn collect_completion_keywords(f: style_traits::KeywordsCollectFn) {
         LengthPercent::collect_completion_keywords(f);
-        f(&["auto", "fit-content", "max-content", "min-content"]);
+        f(&[
+            "auto",
+            "fit-content",
+            "max-content",
+            "min-content",
+            "anchor-size",
+        ]);
         if cfg!(feature = "gecko") {
             f(&["-moz-available"]);
         }
@@ -199,9 +203,6 @@ where
         }
         if static_prefs::pref!("layout.css.webkit-fill-available.enabled") {
             f(&["-webkit-fill-available"]);
-        }
-        if static_prefs::pref!("layout.css.anchor-positioning.enabled") {
-            f(&["anchor-size"]);
         }
     }
 }
@@ -240,7 +241,6 @@ impl<LengthPercentage> Size<LengthPercentage> {
     ToTyped,
 )]
 #[repr(C, u8)]
-#[typed_value(derive_fields)]
 pub enum GenericMaxSize<LengthPercent> {
     LengthPercentage(LengthPercent),
     None,
@@ -270,7 +270,13 @@ where
 {
     fn collect_completion_keywords(f: style_traits::KeywordsCollectFn) {
         LP::collect_completion_keywords(f);
-        f(&["none", "fit-content", "max-content", "min-content"]);
+        f(&[
+            "none",
+            "fit-content",
+            "max-content",
+            "min-content",
+            "anchor-size",
+        ]);
         if cfg!(feature = "gecko") {
             f(&["-moz-available"]);
         }
@@ -279,9 +285,6 @@ where
         }
         if static_prefs::pref!("layout.css.webkit-fill-available.enabled") {
             f(&["-webkit-fill-available"]);
-        }
-        if static_prefs::pref!("layout.css.anchor-positioning.enabled") {
-            f(&["anchor-size"]);
         }
     }
 }
@@ -399,6 +402,7 @@ impl<LengthPercent> LengthPercentageOrNormal<LengthPercent> {
     ToTyped,
 )]
 #[repr(C)]
+#[typed(todo_derive_fields)]
 pub struct GenericAnchorSizeFunction<Fallback> {
     /// Anchor name of the element to anchor to.
     /// If omitted (i.e. empty), selects the implicit anchor element.
@@ -459,9 +463,6 @@ where
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        if !static_prefs::pref!("layout.css.anchor-positioning.enabled") {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-        }
         input.expect_function_matching("anchor-size")?;
         Self::parse_inner(context, input, |i| Fallback::parse(context, i))
     }
@@ -636,10 +637,7 @@ where
 {
     fn collect_completion_keywords(f: style_traits::KeywordsCollectFn) {
         LP::collect_completion_keywords(f);
-        f(&["auto"]);
-        if static_prefs::pref!("layout.css.anchor-positioning.enabled") {
-            f(&["anchor-size"]);
-        }
+        f(&["auto", "anchor-size"]);
     }
 }
 

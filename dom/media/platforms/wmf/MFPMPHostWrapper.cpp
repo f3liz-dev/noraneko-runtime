@@ -4,6 +4,8 @@
 
 #include "MFPMPHostWrapper.h"
 
+#include <cstring>
+
 #include "MFMediaEngineUtils.h"
 #include "WMF.h"
 #include "mozilla/EMEUtils.h"
@@ -12,7 +14,8 @@ namespace mozilla {
 
 using Microsoft::WRL::ComPtr;
 
-#define LOG(msg, ...) EME_LOG("MFPMPHostWrapper=%p, " msg, this, ##__VA_ARGS__)
+#define LOG(msg, ...) \
+  EME_LOG("MFPMPHostWrapper={}, " msg, fmt::ptr(this), ##__VA_ARGS__)
 
 HRESULT MFPMPHostWrapper::RuntimeClassInitialize(
     Microsoft::WRL::ComPtr<IMFPMPHost>& aHost) {
@@ -43,7 +46,7 @@ STDMETHODIMP MFPMPHostWrapper::UnlockProcess() {
 STDMETHODIMP MFPMPHostWrapper::ActivateClassById(LPCWSTR aId, IStream* aStream,
                                                  REFIID aRiid,
                                                  void** aActivatedClass) {
-  LOG("ActivateClassById, id=%ls", aId);
+  LOG("ActivateClassById, id={}", NS_ConvertUTF16toUTF8(aId).get());
   ComPtr<IMFAttributes> creationAttributes;
   RETURN_IF_FAILED(wmf::MFCreateAttributes(&creationAttributes, 2));
   RETURN_IF_FAILED(creationAttributes->SetString(GUID_ClassName, aId));
@@ -52,13 +55,24 @@ STDMETHODIMP MFPMPHostWrapper::ActivateClassById(LPCWSTR aId, IStream* aStream,
     STATSTG statstg;
     RETURN_IF_FAILED(
         aStream->Stat(&statstg, STATFLAG_NOOPEN | STATFLAG_NONAME));
-    nsTArray<uint8_t> streamBlob;
-    streamBlob.SetLength(statstg.cbSize.LowPart);
-    unsigned long readSize = 0;
-    RETURN_IF_FAILED(
-        aStream->Read(&streamBlob[0], streamBlob.Length(), &readSize));
-    RETURN_IF_FAILED(creationAttributes->SetBlob(GUID_ObjectStream,
-                                                 &streamBlob[0], readSize));
+    if (statstg.cbSize.HighPart != 0) {
+      return E_INVALIDARG;
+    }
+    if (statstg.cbSize.LowPart > 0) {
+      nsTArray<uint8_t> streamBlob;
+      if (!streamBlob.SetLength(statstg.cbSize.LowPart, fallible)) {
+        return E_OUTOFMEMORY;
+      }
+      std::memset(streamBlob.Elements(), 0, streamBlob.Length());
+      unsigned long readSize = 0;
+      RETURN_IF_FAILED(
+          aStream->Read(&streamBlob[0], streamBlob.Length(), &readSize));
+      if (readSize > streamBlob.Length()) {
+        return E_UNEXPECTED;
+      }
+      RETURN_IF_FAILED(creationAttributes->SetBlob(GUID_ObjectStream,
+                                                   &streamBlob[0], readSize));
+    }
   }
 
   ComPtr<IStream> outputStream;
@@ -72,11 +86,12 @@ STDMETHODIMP MFPMPHostWrapper::ActivateClassById(LPCWSTR aId, IStream* aStream,
       CLSID_EMEStoreActivate, outputStream.Get(), IID_PPV_ARGS(&activator)));
   RETURN_IF_FAILED(activator->ActivateObject(aRiid, aActivatedClass));
   if (aActivatedClass) {
-    LOG("Get class %p for id=%ls", *aActivatedClass, aId);
+    LOG("Get class {} for id={}", fmt::ptr(*aActivatedClass),
+        NS_ConvertUTF16toUTF8(aId).get());
   } else {
-    LOG("No class for id=%ls", aId);
+    LOG("No class for id={}", NS_ConvertUTF16toUTF8(aId).get());
   }
-  LOG("Done ActivateClassById, id=%ls", aId);
+  LOG("Done ActivateClassById, id={}", NS_ConvertUTF16toUTF8(aId).get());
   return S_OK;
 }
 

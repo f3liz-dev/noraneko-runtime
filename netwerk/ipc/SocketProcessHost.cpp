@@ -1,21 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SocketProcessHost.h"
 
+#include "ProfilerParent.h"
 #include "SocketProcessParent.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "nsAppRunner.h"
 #include "nsIOService.h"
 #include "nsIObserverService.h"
-#include "ProfilerParent.h"
 #include "nsNetUtil.h"
-#include "mozilla/ipc/Endpoint.h"
-#include "mozilla/ipc/ProcessChild.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxBroker.h"
@@ -35,6 +34,10 @@ using namespace mozilla::ipc;
 
 namespace mozilla {
 namespace net {
+
+#if defined(XP_MACOSX) || defined(XP_IOS)
+static bool sAppleFastDatapathProbeAllowed = true;
+#endif
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 bool SocketProcessHost::sLaunchWithMacSandbox = false;
@@ -177,6 +180,10 @@ void SocketProcessHost::InitAfterConnect(bool aSucceeded) {
   }
 #endif  // XP_LINUX && MOZ_SANDBOX
 
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  attributes.mAppleFastDatapathProbeAllowed() = sAppleFastDatapathProbeAllowed;
+#endif
+
   (void)GetActor()->SendInit(attributes);
 
   (void)GetActor()->SendInitProfiler(
@@ -211,6 +218,12 @@ void SocketProcessHost::Shutdown() {
 
 void SocketProcessHost::OnChannelClosed() {
   MOZ_ASSERT(NS_IsMainThread());
+
+#if defined(XP_MACOSX) || defined(XP_IOS)
+  if (!mShutdownRequested && !mAppleFastDatapathProbeResultReceived) {
+    sAppleFastDatapathProbeAllowed = false;
+  }
+#endif
 
   mChannelClosed = true;
 

@@ -15,14 +15,20 @@ add_task(async function password_validation() {
       set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
     });
     let sandbox = sinon.createSandbox();
-    let settings = browser.contentDocument.querySelector("backup-settings");
+    let settings = await waitForBackupSettings(browser);
 
+    settings.backupServiceState.archiveEnabledStatus = true;
+    settings.backupServiceState.scheduledBackupsEnabled = true;
     settings.backupServiceState.encryptionEnabled = true;
     await settings.requestUpdate();
     await settings.updateComplete;
 
     let changePasswordButton = settings.changePasswordButtonEl;
     Assert.ok(changePasswordButton, "Change password button should be found");
+    Assert.ok(
+      !changePasswordButton.disabled,
+      "Change password button should be enabled"
+    );
 
     changePasswordButton.click();
     await settings.updateComplete;
@@ -90,7 +96,7 @@ add_task(async function password_validation() {
      * Plus, visibility changes are delayed due to transitions. Use waitForCondition instead to wait for the animation to finish and
      * validate the tooltip's final visibility state.
      */
-    let hiddenPromise = BrowserTestUtils.waitForCondition(() => {
+    let hiddenPromise = TestUtils.waitForCondition(() => {
       return !passwordInputs.passwordRulesEl.open;
     });
 

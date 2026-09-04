@@ -11,9 +11,22 @@ skip-if = [
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1996741
 ]
 
+["browser_aboutCertError_accesskey.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
+
+["browser_aboutCertError_caInvalid.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
+
 ["browser_aboutCertError_cca_telemetry.js"]
 
 ["browser_aboutCertError_clockSkew.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_coep.js"]
 support-files = [
@@ -27,18 +40,33 @@ support-files = [
 ]
 
 ["browser_aboutCertError_exception.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_mitm.js"]
 
 ["browser_aboutCertError_noSubjectAltName.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_notYetValid.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_offlineSupport.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_offlineSupport_feltPrivacyV1.js"]
 
 ["browser_aboutCertError_revoked.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutCertError_telemetry.js"]
 
@@ -47,9 +75,15 @@ support-files = [
 ["browser_aboutDialog_distribution.js"]
 skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && msix && verify-standalone",
 ]
 
+["browser_aboutDialog_referrals.js"]
+
 ["browser_aboutNetError.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutNetError_basicHttpAuth.js"]
 support-files = [
@@ -61,6 +95,13 @@ support-files = [
   "blank_page.sjs",
 ]
 
+["browser_aboutNetError_connectionFailure.js"]
+
+["browser_aboutNetError_contentEncodingError.js"]
+support-files = [
+  "invalid_content_encoding.sjs",
+]
+
 ["browser_aboutNetError_csp_iframe.js"]
 https_first_disabled = true
 support-files = [
@@ -70,7 +111,17 @@ support-files = [
 
 ["browser_aboutNetError_emptyResponse.js"]
 
+["browser_aboutNetError_feltprivacy_illustrations.js"]
+support-files = [
+  "server_error.sjs",
+]
+
+["browser_aboutNetError_fileNotFound.js"]
+
 ["browser_aboutNetError_httpAuthDisabled.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 2062455
+]
 
 ["browser_aboutNetError_internet_connection_offline.js"]
 
@@ -81,19 +132,27 @@ support-files = [
   "invalid_header.sjs",
 ]
 
+["browser_aboutNetError_netInterrupt.js"]
+
 ["browser_aboutNetError_server_error.js"]
 support-files = [
   "http_error.sjs",
   "server_error.sjs",
 ]
 
-["browser_aboutNetError_trr.js"]
+["browser_aboutNetError_sslKeyLoggingDisabled.js"]
+
+["browser_aboutNetError_telemetry.js"]
+
+["browser_aboutNetError_timeout.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1831977
   "socketprocess_networking",
 ]
 
-["browser_aboutNetError_neterror_telemetry.js"]
+["browser_aboutNetError_trr.js"]
+skip-if = [
+  "socketprocess_networking",
+]
 
 ["browser_aboutNetError_xfo_iframe.js"]
 https_first_disabled = true
@@ -118,10 +177,10 @@ skip-if = [
 
 ["browser_aboutNewTab_bookmarksToolbarPrefs.js"]
 
-["browser_aboutStopReload.js"]
-
 ["browser_aboutSupport.js"]
 tags = "remote-settings"
+
+["browser_aboutSupport_graphics_media.js"]
 
 ["browser_aboutSupport_newtab_security_state.js"]
 
@@ -142,3 +201,5 @@ skip-if = [
 ["browser_bug633691.js"]
 
 ["browser_bug2008464.js"]
+
+["browser_releaseNotesURL.js"]

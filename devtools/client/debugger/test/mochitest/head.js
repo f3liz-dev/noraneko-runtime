@@ -115,6 +115,33 @@ async function assertSourceTreeNode(dbg, text) {
 }
 
 /**
+ * Assert the source tree has the expected nodes and levels.
+ *
+ * @param {object} dbg
+ * @param {Array<Array<string, number>>} expected
+ *        An array of arrays where each inner array contains the node label and its level.
+ */
+function checkSourceTree(dbg, expected) {
+  const treeNodes = getDisplayedSourceTree(dbg);
+  is(
+    expected.length,
+    treeNodes.length,
+    "The source tree has the expected number of nodes"
+  );
+
+  for (let i = 0; i < expected.length; i++) {
+    const node = treeNodes[i];
+    const [label, level] = expected[i];
+    is(
+      node.querySelector(".label").textContent,
+      label,
+      `The node has the expected label`
+    );
+    is(Number(node.ariaLevel), level, `The node has the expected level`);
+  }
+}
+
+/**
  * Assert precisely the list of all breakable line for a given source
  *
  * @param {object} dbg
@@ -201,6 +228,45 @@ function getEventListenersPanel(dbg) {
   return findElementWithSelector(dbg, ".event-listeners-pane .event-listeners");
 }
 
+/**
+ * After reloading the page, wait for the breakpoint checkbox state to be
+ * restored as checked.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} undefined
+ */
+async function waitForEventBreakpointChecked(
+  dbg,
+  eventBreakpointGroup,
+  eventBreakpointName
+) {
+  const eventCheckbox = await getEventBreakpointCheckbox(
+    dbg,
+    eventBreakpointGroup,
+    eventBreakpointName
+  );
+
+  info("Wait for the event breakpoint checkbox state to be restored");
+  await waitFor(() => eventCheckbox.checked);
+}
+
+/**
+ * Toggle the breakpoint checkbox.
+ * If the page is reloaded immediately before this, the consumer should
+ * call waitForEventBreakpointChecked to ensure that the breakpoint
+ * state is fully restored.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} undefined
+ */
 async function toggleEventBreakpoint(
   dbg,
   eventBreakpointGroup,
@@ -228,6 +294,16 @@ async function toggleEventBreakpoint(
   });
 }
 
+/**
+ * Get the breakpoint checkbox.
+ *
+ * @param {object} dbg
+ * @param {string} eventBreakpointGroup
+ *        The name of the breakpoint's group, such as "Load"
+ * @param {string} eventBreakpointName
+ *        The name of the breakpoint, such as "event.load.unload"
+ * @return {Promise} checkbox element
+ */
 async function getEventBreakpointCheckbox(
   dbg,
   eventBreakpointGroup,
@@ -257,4 +333,109 @@ async function getEventBreakpointCheckbox(
   }
 
   return findElementWithSelector(dbg, `input[value="${eventBreakpointName}"]`);
+}
+
+/**
+ * Edits the stylesheet content within the editor
+ *
+ * @param {object} dbg
+ * @param {number} cursorPosLine
+ * @param {number} cursorPosColumn
+ * @param {number} noOfCharactersToRemove
+ * @param {string} textToType
+ */
+async function editSelectedSourceContent(
+  dbg,
+  cursorPosLine,
+  cursorPosColumn,
+  noOfCharactersToRemove,
+  textToType
+) {
+  getCMEditor(dbg).focus();
+  await setEditorCursorAt(dbg, cursorPosLine, cursorPosColumn);
+  let x = noOfCharactersToRemove;
+  while (x > 0) {
+    pressKey(dbg, "Backspace");
+    x--;
+  }
+  type(dbg, textToType);
+}
+
+/**
+ * Toogle the visibility of the stylesheet by clicking the icon and assert
+ * the background color changed.
+ *
+ * @param {object} dbg
+ * @param {string} expectedPageColor
+ */
+async function toggleVisibilityAndAssertTheBackgroundPageColor(
+  dbg,
+  expectedPageColor
+) {
+  const bgColorChanged = waitForStylePropertyValueChange(
+    dbg,
+    "backgroundColor",
+    expectedPageColor
+  );
+
+  info("Click to toggle the stylesheet");
+  await toggleStylesheetsVisibility(dbg);
+  await bgColorChanged;
+  ok(true, "The body background color has changed");
+
+  const currentBgColor =
+    await getCurrentPageStylePropertyValue("backgroundColor");
+  is(currentBgColor, expectedPageColor, "The background color is correct");
+}
+
+/**
+ * Waits until the value of a specified style property on the page changes
+ *
+ * @param {object} dbg
+ * @param {string} property
+ * @param {string} expectedPropertyValue
+ * @returns
+ */
+function waitForStylePropertyValueChange(dbg, property, expectedPropertyValue) {
+  return waitFor(async () => {
+    const currentPropertyValue =
+      await getCurrentPageStylePropertyValue(property);
+    return currentPropertyValue == expectedPropertyValue;
+  });
+}
+
+/**
+ * This gets the current value of the specified style property
+ *
+ * @returns
+ */
+function getCurrentPageStylePropertyValue(property) {
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [property],
+    function (styleProperty) {
+      const bodyStyles = content.getComputedStyle(content.document.body);
+      return bodyStyles[styleProperty];
+    }
+  );
+}
+
+/**
+ * Toogle the visibility of the stylesheet by clicking the icon.
+ * This should apply/unapply the stylesheet to the web page.
+ *
+ * @param {object} dbg
+ * @returns
+ */
+async function toggleStylesheetsVisibility(dbg) {
+  const el = findElementWithSelector(
+    dbg,
+    ".toggleStyleSheetVisibility .dbg-img-eye-opened"
+  );
+  const buttonUpdated = waitForElementWithSelector(
+    dbg,
+    `.toggleStyleSheetVisibility .dbg-img-eye-${el ? "closed" : "opened"}`
+  );
+  clickElement(dbg, "toggleStyleSheetVisibilityButton");
+  return buttonUpdated;
 }

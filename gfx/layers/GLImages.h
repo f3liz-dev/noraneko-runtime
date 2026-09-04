@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,10 +9,10 @@
 #include "GLTypes.h"
 #include "ImageContainer.h"      // for Image
 #include "ImageTypes.h"          // for ImageFormat::SHARED_GLTEXTURE
-#include "nsCOMPtr.h"            // for already_AddRefed
 #include "mozilla/Maybe.h"       // for Maybe
 #include "mozilla/gfx/Matrix.h"  // for Matrix4x4
 #include "mozilla/gfx/Point.h"   // for IntSize
+#include "nsCOMPtr.h"            // for already_AddRefed
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "AndroidSurfaceTexture.h"
@@ -47,7 +45,7 @@ class SurfaceTextureImage final : public GLImage {
  public:
   class SetCurrentCallback {
    public:
-    virtual void operator()(void) = 0;
+    virtual bool operator()(bool aRender) = 0;
     virtual ~SetCurrentCallback() {}
   };
 
@@ -93,7 +91,7 @@ class SurfaceTextureImage final : public GLImage {
 
   void OnSetCurrent() override {
     if (mSetCurrentCallback) {
-      (*mSetCurrentCallback)();
+      (*mSetCurrentCallback)(/* aRender */ true);
       mSetCurrentCallback.reset();
     }
   }

@@ -6,15 +6,16 @@ package org.mozilla.fenix.ui
 
 import android.os.Build
 import android.view.autofill.AutofillManager
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.filters.SdkSuppress
 import org.junit.Before
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SkipLeaks
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
@@ -28,13 +29,13 @@ import org.mozilla.fenix.helpers.TestHelper.scrollToElementByText
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.setPageObjectText
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  * Tests for verifying:
@@ -42,19 +43,23 @@ import org.mozilla.fenix.ui.robots.setPageObjectText
  * - save login prompts.
  * - saving logins based on the user's preferences.
  */
-class LoginsTest : TestSetup() {
-    @get:Rule
+class LoginsTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
+        AndroidComposeTestRuleV2(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     @Before
-    override fun setUp() {
-        super.setUp()
+    fun setUp() {
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.R) {
             val autofillManager: AutofillManager =
                 TestHelper.appContext.getSystemService(AutofillManager::class.java)
@@ -208,9 +213,13 @@ class LoginsTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1508171
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.LoginsTest#verifyUpdatedLoginIsSavedTest"],
+        bug = 2060474,
+        since = "2026-08",
+    )
     @SmokeTest
     @Test
-    @SkipLeaks
     fun verifyUpdatedLoginIsSavedTest() {
         val saveLoginTest = mockWebServer.saveLoginAsset
 
@@ -245,6 +254,11 @@ class LoginsTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1049971
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.LoginsTest#verifyMultipleLoginsSelectionsTest"],
+        bug = 2060474,
+        since = "2026-08",
+    )
     @SmokeTest
     @Test
     fun verifyMultipleLoginsSelectionsTest() {
@@ -493,6 +507,11 @@ class LoginsTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/517818
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.SettingsPasswordsTest#verifyNeverSaveLoginOptionTest"],
+        bug = 2057407,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     @SkipLeaks(reasons = ["https://bugzilla.mozilla.org/show_bug.cgi?id=1935209"])

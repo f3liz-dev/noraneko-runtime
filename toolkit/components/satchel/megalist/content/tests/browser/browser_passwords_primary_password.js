@@ -6,11 +6,12 @@ add_setup(async function () {
     set: [
       ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
+      ["signon.rustMirror.enabled", false],
     ],
   });
-  registerCleanupFunction(() => {
-    LoginTestUtils.clearData();
-    LoginTestUtils.primaryPassword.disable();
+  registerCleanupFunction(async () => {
+    await LoginTestUtils.clearData();
+    await LoginTestUtils.primaryPassword.disable();
   });
 });
 
@@ -69,7 +70,7 @@ add_task(async function test_primary_password_authentication_causes_refresh() {
   );
 
   await addMockPasswords();
-  LoginTestUtils.primaryPassword.enable();
+  await LoginTestUtils.primaryPassword.enable();
   let ppDialogShownMegalist = waitForPPDialog("cancel", 5000);
   const megalist = await openPasswordsSidebar();
 

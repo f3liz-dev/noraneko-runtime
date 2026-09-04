@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +5,10 @@
 #ifndef MOZILLA_GFX_LOGGING_H_
 #define MOZILLA_GFX_LOGGING_H_
 
-#include <string>
-#include <sstream>
 #include <stdio.h>
+
+#include <sstream>
+#include <string>
 #include <vector>
 
 #ifdef MOZ_LOGGING
@@ -20,11 +19,11 @@
 #  include "nsDebug.h"
 #endif
 #include "2D.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "Point.h"
 #include "BaseRect.h"
-#include "Matrix.h"
 #include "LoggingConstants.h"
+#include "Matrix.h"
+#include "Point.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #if defined(MOZ_LOGGING)
 extern GFX2D_API mozilla::LogModule* GetGFX2DLog();
@@ -646,6 +645,9 @@ class Log final {
           break;
         case SurfaceType::RECORDING:
           mMessage << "SurfaceType::RECORDING";
+          break;
+        case SurfaceType::CANVAS_RECORDING:
+          mMessage << "SurfaceType::CANVAS_RECORDING";
           break;
         case SurfaceType::DATA_SHARED:
           mMessage << "SurfaceType::DATA_SHARED";

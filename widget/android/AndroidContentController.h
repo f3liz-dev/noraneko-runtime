@@ -1,15 +1,14 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef AndroidContentController_h_
 #define AndroidContentController_h_
 
-#include "mozilla/layers/ChromeProcessController.h"
 #include "mozilla/EventForwards.h"  // for Modifiers
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/layers/ChromeProcessController.h"
 #include "nsTArray.h"
 #include "nsWindow.h"
 

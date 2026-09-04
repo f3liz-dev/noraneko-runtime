@@ -8,13 +8,13 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2026-02-19T16:52:21.341701+00:00'
+updated_at: '2026-08-10T15:43:04.147480+00:00'
 export:
-  path: ./docs/mots/index.rst
-  format: rst
+  path: ./docs/mots/index.md
+  format: md
   searchfox_enabled: true
 description: |
-  Mozilla operates under a `module ownership governance system <https://www.mozilla.org/hacking/module-ownership.html>`_. A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
+  Mozilla operates under a [module ownership governance system](https://www.mozilla.org/hacking/module-ownership.html). A module is a discrete unit of code or activity. An owner is the person in charge of a module or sub-module. A peer is a person whom the owner has appointed to help them. A module may have multiple peers and, very occasionally, multiple owners.
 
   The system is overseen by the owner and peers of the Module Ownership module. For the modules that make up Firefox, oversight is provided by the Firefox Technical Leadership module. Owners may add and remove peers from their modules as they wish, without reference to anyone else.
 
@@ -46,10 +46,18 @@ people:
     bmo_id: 382067
     name: Andrew Halberstadt
     nick: ahal
+  - &ahale
+    bmo_id: 706885
+    name: Ashley Hale
+    nick: ahale
   - &ahochheiden
     bmo_id: 693303
     name: Alex Hochheiden
     nick: ahochheiden
+  - &alaskanemily
+    bmo_id: 650458
+    name: Emily McDonough
+    nick: alaskanemily
   - &aleiserson
     bmo_id: 713407
     name: Andy Leiserson
@@ -73,6 +81,10 @@ people:
     bmo_id: 339940
     name: André Bargull
     nick: anba
+  - &andhuang
+    bmo_id: 789204
+    name: Andy Huang
+    nick: andhuang
   - &andi
     bmo_id: 555858
     name: Andi
@@ -93,6 +105,10 @@ people:
     bmo_id: 310076
     name: Tooru Fujisawa
     nick: arai
+  - &artem
+    bmo_id: 783324
+    name: Artem Popov
+    nick: artem
   - &aryx
     bmo_id: 258347
     name: Sebastian Hengst
@@ -113,6 +129,10 @@ people:
     bmo_id: 272464
     name: Bas Schouten
     nick: bas.schouten
+  - &basti
+    bmo_id: 635633
+    name: Sebastian Streich
+    nick: basti
   - &bc
     bmo_id: 23402
     name: Bob Clary
@@ -164,6 +184,10 @@ people:
     bmo_id: 474533
     name: Botond Ballo
     nick: botond
+  - &bradwerth
+    bmo_id: 571010
+    name: Brad Werth
+    nick: bradwerth
   - bmo_id: 560379
     name: Bryce Seager van Dyk
     nick: bryce
@@ -324,10 +348,6 @@ people:
     bmo_id: 455480
     name: Edgar Chen
     nick: edgar
-  - &edgul
-    bmo_id: 701256
-    name: edgul
-    nick: edgul
   - &eeejay
     bmo_id: 291675
     name: Eitan Isaacson
@@ -376,6 +396,10 @@ people:
     bmo_id: 566192
     name: Andreas Farre
     nick: farre
+  - &fchasen
+    bmo_id: 710281
+    name: Fred Chasen
+    nick: fchasen
   - bmo_id: 417695
     name: Nick Fitzgerald
     nick: fitzgen
@@ -389,7 +413,7 @@ people:
     nick: florian
   - &fredwang
     bmo_id: 739410
-    name: Frédéric Wang
+    name: Frédéric Wang Nélar
     nick: fred.wang
   - &freddy
     bmo_id: 428608
@@ -454,6 +478,10 @@ people:
     bmo_id: 506442
     name: David Parks
     nick: handyman
+  - &hannaa
+    bmo_id: 708282
+    name: Hanna Alemu
+    nick: hanna_a
   - &hiro
     bmo_id: 131213
     name: Hiroyuki Ikezoe
@@ -490,6 +518,10 @@ people:
     bmo_id: 353822
     name: Itiel
     nick: itiel_yn8
+  - &jaas
+    bmo_id: 18821
+    name: Josh Aas
+    nick: jaas
   - &Jamie
     bmo_id: 219126
     name: James Teh
@@ -594,6 +626,10 @@ people:
     bmo_id: 621062
     name: Josh Groves
     nick: josh
+  - &jprickett
+    bmo_id: 708280
+    name: Jason Prickett
+    nick: jprickett
   - &jrmuizel
     bmo_id: 309398
     name: Jeff Muizelaar
@@ -725,6 +761,10 @@ people:
     bmo_id: 240353
     name: Marco Bonardo
     nick: mak
+  - &manuel
+    bmo_id: 688976
+    name: Manuel Bucher
+    nick: manuel
   - &marco
     bmo_id: 420453
     name: Marco Castelluccio
@@ -777,6 +817,10 @@ people:
     bmo_id: 638884
     name: Mandy Cheang
     nick: mcheang
+  - &mcleinman
+    bmo_id: 723979
+    name: Matt Cleinman
+    nick: mcleinman
   - &mconley
     bmo_id: 403756
     name: Mike Conley
@@ -925,6 +969,10 @@ people:
     bmo_id: 697076
     name: Perry McManis
     nick: perry.mcmanis
+  - &polly
+    bmo_id: 750904
+    name: Polly McEldowney
+    nick: polly
   - &prathiksha
     bmo_id: 580428
     name: ''
@@ -933,10 +981,6 @@ people:
     bmo_id: 5630
     name: ''
     nick: rbs
-  - &relud
-    bmo_id: 444787
-    name: Daniel Thorn
-    nick: relud
   - &rhamoui
     bmo_id: 690143
     name: Reem Hamoui
@@ -945,6 +989,10 @@ people:
     bmo_id: 573202
     name: Ryan Hunt
     nick: rhunt
+  - &rking
+    bmo_id: 760874
+    name: Becca King
+    nick: rking
   - &rkraesig
     bmo_id: 699639
     name: Ray Kraesig
@@ -961,12 +1009,15 @@ people:
     bmo_id: 339062
     name: Luca Greco
     nick: rpl
+  - &rrando
+    bmo_id: 732678
+    name: Rolf Rando
+    nick: rrando
   - &rrelyea
     bmo_id: 11099
     name: Robert Relyea
     nick: rrelyea
-  - &rsainani
-    bmo_id: 718207
+  - bmo_id: 718207
     name: Rahul Sainani
     nick: rsainani
   - &ryansleevi
@@ -977,6 +1028,10 @@ people:
     bmo_id: 75935
     name: Ryan VanderMeulen
     nick: RyanVM
+  - &sachung
+    bmo_id: 753877
+    name: Sarah Chung
+    nick: sachung
   - &saschanaz
     bmo_id: 473060
     name: Kagami Rosylight
@@ -1084,6 +1139,10 @@ people:
     bmo_id: 663555
     name: Tarik Eshaq
     nick: teshaq
+  - &tetchart
+    bmo_id: 783580
+    name: Tyler Etchart
+    nick: tetchart
   - &tgiles
     bmo_id: 666930
     name: Tim Giles
@@ -1366,6 +1425,7 @@ modules:
       - *dimi
       - *emz
       - *tjr
+      - *manuel
     machine_name: core_antitracking
 
   - name: 'Core: APZ (Graphics submodule)'
@@ -1437,7 +1497,7 @@ modules:
         - Mitchell Hentges
         - *andi
       group: dev-builds
-      url: :ref:`Build System`
+      url: '{ref}`Build System`'
       components:
         - Core::Build Config
     owners:
@@ -1447,9 +1507,9 @@ modules:
       - *sergesanspaille
     submodules:
 
-      - name: 'Core: Build Config - Fennec'
-        description: Submodule of the build config covering Fennec's build system
-          in mobile/android.
+      - name: 'Core: Build Config - Fenix'
+        description: Submodule of the build config covering Fenix's build system in
+          mobile/android.
         meta:
           group: dev-builds
           components:
@@ -1547,18 +1607,19 @@ modules:
         - Honza Bambas
         - Emma Zühlcke
         - Tom Schuster
+        - Ed Guloien
       group: dev-platform
       components:
         - 'Core::Networking: Cookies'
       review_group: cookies
     owners:
-      - *dveditz
       - *timhuang
-      - *valentin
       - *baku
     peers:
-      - *edgul
+      - *manuel
       - *bvandersloot
+      - *valentin
+      - *dveditz
     machine_name: core_cookies
 
   - name: 'Core: Crash reporting'
@@ -1577,7 +1638,7 @@ modules:
         - Aria Beingessner
         - Kris Wright
       group: dev-platform
-      url: :ref:`Crash Reporter`
+      url: '{ref}`Crash Reporter`'
       components:
         - Toolkit::Crash Reporting
     owners:
@@ -1785,7 +1846,7 @@ modules:
       owners_emeritus:
         - Ehsan Akhgari
       group: dev-platform
-      url: :ref:`Editor`
+      url: '{ref}`Editor`'
       components:
         - 'Core::DOM: Editor'
     owners:
@@ -1879,7 +1940,7 @@ modules:
         - Aaron Klotz
         - Jim Chen
         - Randall E. Barker
-        - Jon Almeida
+        - Jonathan Almeida
       url: https://wiki.mozilla.org/Mobile/GeckoView
       components:
         - GeckoView::General
@@ -1914,6 +1975,8 @@ modules:
     includes:
       - gfx/**/*
       - dom/canvas/**/*
+    excludes:
+      - gfx/wgpu_bindings/**/*
     meta:
       owners_emeritus:
         - Robert O'Callahan
@@ -1945,9 +2008,8 @@ modules:
       review_group: gfx-reviewers
     owners:
       - *jrmuizel
-    peers:
       - *nical
-      - *jgilbert
+    peers:
       - *mstange
       - *basschouten
       - *jfkthame
@@ -1956,6 +2018,7 @@ modules:
       - *gw
       - *lsalzman
       - *aosmond
+      - *ahale
     machine_name: core_graphics
 
   - name: 'Core: HAL'
@@ -1997,7 +2060,7 @@ modules:
         - Jungshik Shin
         - Simon Montagu
       group: dev-i18n
-      url: :ref:`Internationalization`
+      url: '{ref}`Internationalization`'
       components:
         - Core::Internationalization
     owners:
@@ -2200,6 +2263,7 @@ modules:
       - *emilio
       - *TYLin
       - *jwatt
+      - *alaskanemily
     machine_name: core_layout_engine
 
   - name: 'Core: Legacy HTML Parser'
@@ -2260,19 +2324,58 @@ modules:
   - machine_name: core_machine_learning
     name: 'Core: Machine Learning'
     description: AI services and local inference
-    includes:
-      - browser/components/genai/
-      - toolkit/components/aboutinference/
-      - toolkit/components/ml/
     meta:
-      components:
-        - Core::Machine Learning
-      review_group: firefox-ai-ml-reviewers
+      owners_emeritus:
+        - *tarek
     owners:
       - *Mardak
-      - *tarek
     peers:
       - *gregtatum
+      - *pdahiya
+      - *rrando
+      - *tetchart
+    submodules:
+      - machine_name: core_machine_learning_frontend
+        name: 'Machine Learning: Frontend'
+        includes:
+          - browser/components/aiwindow/
+          - browser/components/genai/
+        meta:
+          components:
+            - 'Core::Machine Learning: Frontend'
+          review_group: ai-frontend-reviewers
+        owners:
+          - *Mardak
+        peers:
+          - *pdahiya
+
+      - machine_name: core_machine_learning_models
+        name: 'Machine Learning: Models'
+        includes:
+          - browser/components/aiwindow/models/
+          - browser/components/aiwindow/services/
+        meta:
+          components:
+            - 'Core::Machine Learning: General'
+          review_group: ai-models-reviewers
+        owners:
+          - *rrando
+          - *tetchart
+
+      - machine_name: core_machine_learning_platform
+        name: 'Machine Learning: Platform'
+        includes:
+          - toolkit/components/aboutinference/
+          - toolkit/components/ml/
+          - toolkit/components/pageextractor/
+        meta:
+          components:
+            - 'Core::Machine Learning: On Device'
+          review_group: ai-platform-reviewers
+        owners:
+          - *gregtatum
+        peers:
+          - *nordzilla
 
   - name: 'Core: MathML'
     description: MathML is a low-level specification for describing mathematics which
@@ -2473,7 +2576,7 @@ modules:
         - Jason Duell
         - Junior Hsu
       group: dev-tech-network
-      url: :ref:`Networking`
+      url: '{ref}`Networking`'
       components:
         - Core::Networking
         - 'Core::Networking: Cache'
@@ -2528,7 +2631,7 @@ modules:
       - toolkit/system/gnome/nsAlertsIconListener*
       - toolkit/system/gnome/nsSystemAlertsService*
       - widget/windows/ToastNotification*
-      - widget/cocoa/OSXNotificationCenter*
+      - widget/cocoa/MacOSNotificationCenter*
     meta:
       group: dev-platform
       components:
@@ -2549,7 +2652,7 @@ modules:
       owners_emeritus:
         - Wan-Teh Chang
       group: dev-tech-nspr
-      url: :ref:`NSPR`
+      url: '{ref}`NSPR`'
       components:
         - NSPR
     owners:
@@ -2736,8 +2839,8 @@ modules:
       - *gcp
     machine_name: core_sandboxing_linux
 
-  - name: 'Core: Sandboxing (OSX)'
-    description: Sandboxing for the OSX platform
+  - name: 'Core: Sandboxing (macOS)'
+    description: Sandboxing for the macOS platform
     includes:
       - security/sandbox/mac/**/*
     meta:
@@ -2783,12 +2886,13 @@ modules:
         - Wan-Teh Chang
         - Tim Taubert
         - J.C. Jones
+        - *beurdouche
       peers_emeritus:
         - Elio Maldonado
         - Franziskus Kiefer
         - Kevin Jacobs
       group: dev-tech-crypto
-      url: :ref:`Network Security Services (NSS)`
+      url: '{ref}`Network Security Services (NSS)`'
       components:
         - NSS
         - JSS
@@ -2796,9 +2900,9 @@ modules:
         - 'Core::Security: S/MIME'
       review_group: nss-reviewers
     owners:
-      - *beurdouche
       - *rrelyea
       - *mt
+      - *jschanck
     peers:
       - *KaiE
       - *ryansleevi
@@ -2806,7 +2910,6 @@ modules:
       - *ueno
       - *annaweine
       - *djackson
-      - *jschanck
     machine_name: core_security
 
   - name: 'Core: Security - Mozilla PSM Glue'
@@ -2846,7 +2949,7 @@ modules:
     meta:
       components:
         - 'Core::Security: RLBox'
-  - name: 'Core: Static analysis & rewriting for C++'
+  - name: Static analysis & rewriting for C++
     description: Tools for checking C++ code looking for problems at compile time,
       plus tools for automated rewriting of C++ code.
     includes:
@@ -2861,7 +2964,7 @@ modules:
         - Ehsan Akhgari
       group: dev-platform
       components:
-        - Core::Rewriting & Analysis
+        - Developer Infrastructure::Source Code Analysis
       review_group: static-analysis-reviewers
     owners:
       - *sergesanspaille
@@ -2899,7 +3002,7 @@ modules:
       - xpcom/string/**/*
     meta:
       group: dev-tech-xpcom
-      url: :ref:`String Guide`
+      url: '{ref}`String Guide`'
       components:
         - Core::String
       owners_emeritus:
@@ -2936,6 +3039,7 @@ modules:
       - *dshin
       - *tlouw
       - *zrhoffman
+      - *alaskanemily
     machine_name: core_style_system
 
   - name: 'Core: Supply Chain'
@@ -2999,7 +3103,8 @@ modules:
     description: The View Manager is responsible for handling "heavyweight" rendering
       (some clipping, compositing) and event handling tasks.
     includes:
-      - view/**/*
+      - layout/base/**/*
+      - layout/painting/**/*
     meta:
       owners_emeritus:
         - Robert O'Callahan
@@ -3041,7 +3146,7 @@ modules:
       # TODO: "the display list and layer related methods on nsIFrame and its subclasses"
     meta:
       group: dev-platform
-      url: :ref:`Style system (CSS) & Layout`
+      url: '{ref}`Style system (CSS) & Layout`'
       components:
         - 'Core::Layout: Web Painting'
       owners_emeritus:
@@ -3246,6 +3351,7 @@ modules:
         - Robert O'Callahan
       group: dev-platform
       url: http://www.mozilla.org/ports/gtk/
+      review_group: gtk-reviewers
       components:
         - 'Core::Widget: Gtk'
     owners:
@@ -3279,7 +3385,6 @@ modules:
         - Robert O'Callahan
         - Markus Stange
       peers_emeritus:
-        - Josh Aas
         - Benoit Girard
         - Steven Michaud
       group: dev-platform
@@ -3291,6 +3396,8 @@ modules:
     peers:
       - *mstange
       - *haik
+      - *jaas
+      - *bradwerth
     machine_name: core_widget_macos
 
   - name: 'Core: Widget - Windows'
@@ -3315,6 +3422,7 @@ modules:
       group: dev-platform
       components:
         - 'Core::Widget: Win32'
+      review_group: win-reviewers
     owners:
       - *cmartin
     peers:
@@ -3391,7 +3499,7 @@ modules:
         - Simon Giesecke
         - *KrisWright
       group: dev-platform
-      url: :ref:`XPCOM`
+      url: '{ref}`XPCOM`'
       components:
         - Core::XPCOM
         - Toolkit::IOUtils and PathUtils
@@ -3441,7 +3549,7 @@ modules:
         - Mike Shaver
         - Josh 'timeless' Soref
       group: dev-tech-xpcom
-      url: :ref:`XPIDL`
+      url: '{ref}`XPIDL`'
     owners:
       - *nika
     peers:
@@ -3544,10 +3652,12 @@ modules:
           - *adw
         peers:
           - *daisuke
+          - *daleharvey
           - *dao
           - *jteow
           - *mak
           - *mbeier
+          - *mcheang
           - *standard8
         meta:
           components:
@@ -3680,6 +3790,8 @@ modules:
         meta:
           owners_emeritus:
             - Michael Cooper
+          peers_emeritus:
+            - Daniel Thorn
           components:
             - Firefox::Normandy
             - Firefox::Nimbus Desktop Client
@@ -3691,7 +3803,7 @@ modules:
           - *Gijs
           - *emcminn
           - *charlie
-          - *relud
+          - *aminomancer
         machine_name: normandy
 
       - machine_name: firefox_view
@@ -3731,6 +3843,28 @@ modules:
           - *janika
         machine_name: form_autofill
 
+      - name: IP Protection
+        description: Built-in IP Protection (VPN) in the browser.
+        includes:
+          - browser/components/ipprotection/**/*
+          - toolkit/components/ipprotection/**/*
+        meta:
+          components:
+            - Firefox::IP Protection
+          url: https://firefox-source-docs.mozilla.org/toolkit/ipprotection/
+          review_group: ip-protection-reviewers
+        owners:
+          - *fchasen
+        peers:
+          - *kpatenio
+          - *rking
+          - *niklas
+          - *basti
+          - *artem
+          - *mcleinman
+          - *baku
+        machine_name: ip_protection
+
       - name: In-product Messaging
         description: The system for delivering in-product messaging and onboarding,
           including ASRouter, about:welcome, and reusable messaging templates like
@@ -3740,6 +3874,10 @@ modules:
           - browser/components/aboutwelcome/**/*
           - browser/components/uitour/**/*
           - toolkit/components/messaging-system/**/*
+          - browser/components/asrouter/docs/**/*
+          - browser/components/aboutwelcome/docs/**/*
+          - toolkit/components/messaging-system/schemas/**/*
+          - browser/components/uitour/docs/**/*
         meta:
           components:
             - Firefox::Messaging System
@@ -3756,6 +3894,10 @@ modules:
           - *dmosedale
           - *emcminn
           - *mimi
+          - *hannaa
+          - *jprickett
+          - *sachung
+          - *andhuang
         machine_name: inproduct_messaging
 
       - name: Launcher Process
@@ -3936,6 +4078,7 @@ modules:
           - *emz
         peers:
           - *timhuang
+          - *daleharvey
         machine_name: security_and_privacy_ui
 
       - name: Session Restore
@@ -4105,8 +4248,10 @@ modules:
       - *gl
     peers:
       - *royang
-      - *rsainani
+      - *polly
     meta:
+      peers_emeritus:
+        - Rahul Sainani
     submodules:
 
       - machine_name: fenix_addons
@@ -4473,7 +4618,7 @@ modules:
         - 'Testing :: Performance'
         - 'Testing :: mozperftest'
         - 'Testing :: Condprofile'
-      url: :ref:`Performance Testing`
+      url: '{ref}`Performance Testing`'
       review_group: perftest-reviewers
   - machine_name: testing_reftest
     name: Reftest (+ jsreftest + crashtest)
@@ -4581,7 +4726,7 @@ modules:
           owners_emeritus:
             - Georg Fritzsche
           group: fx-data-dev
-          url: :ref:`Telemetry`
+          url: '{ref}`Telemetry`'
           peers_emeritus:
             - *perrymcmanis
         owners:
@@ -4590,6 +4735,7 @@ modules:
           - *Dexter
           - *janerik
           - *travis
+          - *charlie
         machine_name: telemetry
 
       - name: UI Widgets
@@ -4708,10 +4854,10 @@ modules:
       - netwerk/url-classifier/**/*
     excludes: []
     owners:
-      - *dimi
+      - *timhuang
       - *groovecoder
     peers:
-      - *timhuang
+      - *dimi
       - *gcp
     meta:
       url: https://github.com/mozilla-services/shavar https://wiki.mozilla.org/Phishing_Protection
@@ -4723,5 +4869,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: 646c8326f315b7fe2474f195e552e5336cd8e6a2
-  export: a558bad93dcd116f12d934fb441ba2238f40d648
+  config: 047f362e10b5d3c0d197644c02c888be932b73dd
+  export: b38e97f0df6cea50fe3a137e2bb1a48c1fb3c0f2

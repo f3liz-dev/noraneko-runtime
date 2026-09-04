@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,7 @@ package org.mozilla.geckoview;
 
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
@@ -488,7 +487,7 @@ public class Autofill {
       ThreadUtils.assertOnUiThread();
 
       if (DEBUG) {
-        Log.d(LOGTAG, "fillViewStructure");
+        Log.d(LOGTAG, "fillViewStructure: node=" + node);
       }
 
       final NodeData data = dataFor(node);
@@ -552,7 +551,7 @@ public class Autofill {
             structure.setInputType(
                 android.text.InputType.TYPE_CLASS_TEXT
                     | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-            break;
+            return;
           }
         case Hint.PASSWORD:
           {
@@ -560,14 +559,14 @@ public class Autofill {
             structure.setInputType(
                 android.text.InputType.TYPE_CLASS_TEXT
                     | android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD);
-            break;
+            return;
           }
         case Hint.URI:
           {
             structure.setInputType(
                 android.text.InputType.TYPE_CLASS_TEXT
                     | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-            break;
+            return;
           }
         case Hint.USERNAME:
           {
@@ -575,31 +574,41 @@ public class Autofill {
             structure.setInputType(
                 android.text.InputType.TYPE_CLASS_TEXT
                     | android.text.InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
-            break;
+            return;
           }
-        case Hint.NONE:
-          {
-            // Nothing to do.
-            break;
-          }
+        default:
+          break;
       }
+
+      // No hint information available, fallback to input type if possible.
 
       switch (node.getInputType()) {
         case InputType.NUMBER:
           {
             structure.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-            break;
+            return;
           }
         case InputType.PHONE:
           {
             structure.setAutofillHints(new String[] {View.AUTOFILL_HINT_PHONE});
             structure.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
-            break;
+            return;
           }
         case InputType.TEXT:
-        case InputType.NONE:
+          {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1 || node.getHint() != Hint.NONE) {
+              break;
+            }
+            final String[] datalist = node.getDatalist();
+            if (datalist != null && datalist.length > 0) {
+              structure.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+              structure.setAutofillOptions(datalist);
+            }
+            break;
+          }
+        default:
           // Nothing to do.
-          break;
+          return;
       }
     }
   }
@@ -623,6 +632,7 @@ public class Autofill {
     private final @NonNull String mTag;
     private final @NonNull String mDomain;
     private final String mSessionId;
+    private final @Nullable String[] mDatalist;
 
     /**
      * Gets the UUID of this node.
@@ -800,6 +810,16 @@ public class Autofill {
     }
 
     /**
+     * Get data list values of this node if available.
+     *
+     * @return The data list values of this node, or null if not available.
+     */
+    @AnyThread
+    public @Nullable String[] getDatalist() {
+      return mDatalist;
+    }
+
+    /**
      * Creates a new dummy root node for a session.
      *
      * @param dimensions The dimensions for the root node
@@ -831,6 +851,7 @@ public class Autofill {
       mTag = "";
       mDomain = "";
       mChildren = new HashMap<>();
+      mDatalist = null;
     }
 
     @Override
@@ -871,8 +892,17 @@ public class Autofill {
           .append(", tag=")
           .append(mTag)
           .append(", domain=")
-          .append(mDomain)
-          .append("}");
+          .append(mDomain);
+
+      if (mDatalist != null) {
+        builder.append(", datalist=[");
+        for (final String item : mDatalist) {
+          builder.append("\"").append(item).append("\", ");
+        }
+        builder.append("]");
+      }
+
+      builder.append("}");
 
       return builder.toString();
     }
@@ -958,7 +988,14 @@ public class Autofill {
       final String type = bundle.getString("type", "text").toLowerCase(Locale.ROOT);
       final String hint = bundle.getString("autofillhint", "").toLowerCase(Locale.ROOT);
       mInputType = typeFromBundle(type, hint);
-      mHint = hintFromBundle(type, hint);
+      mHint = hintFromBundle(type, hint, mEnabled);
+
+      final String[] datalist = bundle.getStringArray("datalist");
+      if (datalist != null && datalist.length > 0) {
+        mDatalist = datalist;
+      } else {
+        mDatalist = null;
+      }
     }
 
     private boolean enabledFromBundle(
@@ -979,7 +1016,12 @@ public class Autofill {
       }
     }
 
-    private @AutofillHint int hintFromBundle(final String type, final String hint) {
+    private @AutofillHint int hintFromBundle(
+        final String type, final String hint, final boolean enabled) {
+      if (enabled && hint.equals("username")) {
+        return Hint.USERNAME;
+      }
+
       switch (type) {
         case "email":
           return Hint.EMAIL_ADDRESS;
@@ -987,16 +1029,9 @@ public class Autofill {
           return Hint.PASSWORD;
         case "url":
           return Hint.URI;
-        case "text":
-          {
-            if (hint.equals("username")) {
-              return Hint.USERNAME;
-            }
-            break;
-          }
+        default:
+          return Hint.NONE;
       }
-
-      return Hint.NONE;
     }
 
     private @AutofillInputType int typeFromBundle(final String type, final String hint) {

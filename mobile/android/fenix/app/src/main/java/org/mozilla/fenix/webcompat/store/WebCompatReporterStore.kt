@@ -15,23 +15,29 @@ import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.R
 
+private const val MIN_PROBLEM_DESCRIPTION_LENGTH = 10
+
 /**
  * Value type that represents the state of the WebCompat Reporter.
  *
  * @property tabUrl The URL of the current tab when the reporter was opened.
  * @property enteredUrl The URL that is being reported as broken.
  * @property reason Specifies the reason that [enteredUrl] is broken.
+ * @property showEditUrlDialog Whether or not the Edit Url Confirmation Dialog is shown.
+ * @property editedUrl The temporary Url currently being edited in the dialog.
  * @property problemDescription Description of the encountered problem.
  * @property includeEtpBlockedUrls Checks if the user wants to include ETP-blocked URLs in the report.
- * @property previewJSON The JSON data of the WebCompatReporter to be displayed in the preview.
+ * @property previewReporterItems The list of items to be displayed in the WebCompat report preview.
  */
 data class WebCompatReporterState(
     val tabUrl: String = "",
     val enteredUrl: String = "",
     val reason: BrokenSiteReason? = null,
+    val showEditUrlDialog: Boolean = false,
+    val editedUrl: String = "",
     val problemDescription: String = "",
     val includeEtpBlockedUrls: Boolean = false,
-    val previewJSON: String = "",
+    val previewReporterItems: List<PreviewReporterItem> = emptyList(),
 ) : State {
 
     /**
@@ -42,20 +48,26 @@ data class WebCompatReporterState(
     enum class BrokenSiteReason(
         @param:StringRes val displayStringId: Int,
     ) {
+        NotSupported(
+            displayStringId = R.string.webcompat_reporter_reason_notsupported_2,
+        ),
         Load(
             displayStringId = R.string.webcompat_reporter_reason_load,
-        ),
-        Checkout(
-            displayStringId = R.string.webcompat_reporter_reason_checkout,
-        ),
-        Slow(
-            displayStringId = R.string.webcompat_reporter_reason_slow2,
         ),
         Media(
             displayStringId = R.string.webcompat_reporter_reason_media2,
         ),
+        DeceptiveSite(
+            displayStringId = R.string.webcompat_reporter_reason_site_is_deceptive,
+        ),
         Content(
             displayStringId = R.string.webcompat_reporter_reason_content2,
+        ),
+        Slow(
+            displayStringId = R.string.webcompat_reporter_reason_slow2,
+        ),
+        Checkout(
+            displayStringId = R.string.webcompat_reporter_reason_checkout,
         ),
         Account(
             displayStringId = R.string.webcompat_reporter_reason_account2,
@@ -63,19 +75,31 @@ data class WebCompatReporterState(
         AdBlocker(
             displayStringId = R.string.webcompat_reporter_reason_turn_off_adblocker,
         ),
-        NotSupported(
-            displayStringId = R.string.webcompat_reporter_reason_notsupported,
-        ),
         Other(
             displayStringId = R.string.webcompat_reporter_reason_other,
         ),
     }
 
     /**
+     * Helper function to strictly validate the URL.
+     */
+    private fun isValidUrl(urlToValidate: String): Boolean {
+        if (urlToValidate.contains(" ")) return false
+
+        return URLUtil.isNetworkUrl(urlToValidate)
+    }
+
+    /**
      * Whether the URL text field has an error.
      */
     val hasUrlTextError: Boolean
-        get() = !URLUtil.isNetworkUrl(enteredUrl)
+        get() = !isValidUrl(enteredUrl)
+
+    /**
+     * Whether the edited Url in the edit dialog has an error.
+     */
+    val hasEditedUrlError: Boolean
+        get() = !isValidUrl(editedUrl)
 
     /**
      * Whether the reason dropdown has an error.
@@ -84,11 +108,34 @@ data class WebCompatReporterState(
         get() = reason == null
 
     /**
+     * Whether the problem description label should be mandatory.
+     */
+    val problemDescriptionRequiredLabel: Boolean
+        get() = reason == BrokenSiteReason.Other
+
+    /**
+     * Whether the problem description has an error.
+     */
+    val hasDescriptionError: Boolean
+        get() = reason == BrokenSiteReason.Other && problemDescription.trim().length < MIN_PROBLEM_DESCRIPTION_LENGTH
+
+    /**
      * Whether the submit button is enabled.
      */
     val isSubmitEnabled: Boolean
-        get() = !hasUrlTextError && !hasReasonDropdownError
+        get() = !hasUrlTextError && !hasReasonDropdownError && !hasDescriptionError
 }
+
+/**
+ * Represents a single category of data to be displayed in the WebCompat report preview.
+ *
+ * @property title The header or category name for this group of items.
+ * @property data A map of key-value pairs representing the specific data points in this category.
+ */
+data class PreviewReporterItem(
+    val title: String,
+    val data: Map<String, String>,
+)
 
 /**
  * [Action] implementation related to [WebCompatReporterStore].
@@ -120,6 +167,11 @@ sealed class WebCompatReporterAction : Action {
     data class ReasonChanged(val newReason: WebCompatReporterState.BrokenSiteReason) : WebCompatReporterAction()
 
     /**
+     * Dispatched when the user deselects their chosen reason to return to the list.
+     */
+    data object ReasonCleared : WebCompatReporterAction()
+
+    /**
      * Dispatched when the ETP checkbox is toggled.
      *
      * @property include The value of the checkbox being toggled or not.
@@ -132,6 +184,13 @@ sealed class WebCompatReporterAction : Action {
      * @property newProblemDescription The updated problem description.
      */
     data class ProblemDescriptionChanged(val newProblemDescription: String) : WebCompatReporterAction()
+
+    /**
+     * Dispatched when the user edits the Url in the dialog
+     *
+     * @property newUrl The updated Url that the user enters.
+     */
+    data class EditUrlChanged(val newUrl: String) : WebCompatReporterAction()
 
     /**
      * [Action] fired when the user navigates within the WebCompat Reporter.
@@ -149,6 +208,11 @@ sealed class WebCompatReporterAction : Action {
     data object SendReportClicked : WebCompatReporterAction()
 
     /**
+     * Dispatched when the user selects the "Deceptive site" reason.
+     */
+    data object DeceptiveSiteReportSelected : WebCompatReporterAction(), NavigationAction
+
+    /**
      * Dispatched when the WebCompat report has been submitted.
      */
     data object ReportSubmitted : WebCompatReporterAction(), NavigationAction
@@ -159,21 +223,13 @@ sealed class WebCompatReporterAction : Action {
     data object OpenPreviewClicked : WebCompatReporterAction()
 
     /**
-     * Dispatched when the preview of the report is opened up.
-     *
-     * @property previewJSON The data of the WebCompat Report as a JSON string.
-     */
-    data class PreviewJSONUpdated(val previewJSON: String) : WebCompatReporterAction()
-
-    /**
-     * Dispatched when the WebCompat "Send More Info" report has been submitted.
-     */
-    data object SendMoreInfoSubmitted : WebCompatReporterAction(), NavigationAction
-
-    /**
-     * Dispatched when the user requests to add more info.
-     */
-    data object AddMoreInfoClicked : WebCompatReporterAction(), WebCompatReporterStorageAction
+    * Dispatched when the preview of the report is opened up.
+    *
+    * @property previewReporterItems The list of items to be displayed in the WebCompat Report preview.
+    */
+    data class PreviewItemsUpdated(
+        val previewReporterItems: List<PreviewReporterItem>,
+    ) : WebCompatReporterAction()
 
     /**
      * Dispatched when the user requests to cancel the report.
@@ -181,9 +237,19 @@ sealed class WebCompatReporterAction : Action {
     data object CancelClicked : WebCompatReporterAction(), WebCompatReporterStorageAction, NavigationAction
 
     /**
-     * Dispatched when the user requests to navigate to the previous page.
+     * Dispatched when the user clicks the field to open the Edit Url Dialog.
      */
-    data object BackPressed : WebCompatReporterAction(), WebCompatReporterStorageAction, NavigationAction
+    data object EditUrlClicked : WebCompatReporterAction()
+
+    /**
+     * Dispatched when the user saves their edits in the Edit Url Dialog.
+     */
+    data object SaveEditedUrlClicked : WebCompatReporterAction()
+
+    /**
+     * Dispatched when the user dismisses the Edit Url Dialog.
+     */
+    data object DismissEditUrlDialog : WebCompatReporterAction()
 
     /**
      * Dispatched when a previous [WebCompatReporterState] has been restored.
@@ -203,14 +269,29 @@ private fun reduce(
     WebCompatReporterAction.Initialized -> state
     is WebCompatReporterAction.StateRestored -> action.restoredState
     is WebCompatReporterAction.OpenPreviewClicked -> state
-    is WebCompatReporterAction.PreviewJSONUpdated -> state.copy(
-        previewJSON = action.previewJSON,
+    is WebCompatReporterAction.PreviewItemsUpdated -> state.copy(
+        previewReporterItems = action.previewReporterItems,
     )
+    is WebCompatReporterAction.DeceptiveSiteReportSelected -> state
     is WebCompatReporterAction.NavigationAction -> state
     WebCompatReporterAction.SendReportClicked -> state
-    WebCompatReporterAction.AddMoreInfoClicked -> state
     WebCompatReporterAction.LearnMoreClicked -> state
     is WebCompatReporterAction.IncludeEtpBlockedUrlsChanged -> state.copy(includeEtpBlockedUrls = action.include)
+    is WebCompatReporterAction.EditUrlChanged -> state.copy(
+        editedUrl = action.newUrl,
+    )
+    WebCompatReporterAction.EditUrlClicked -> state.copy(
+        showEditUrlDialog = true,
+        editedUrl = state.enteredUrl,
+    )
+    WebCompatReporterAction.DismissEditUrlDialog -> state.copy(
+        showEditUrlDialog = false,
+    )
+    WebCompatReporterAction.SaveEditedUrlClicked -> state.copy(
+        showEditUrlDialog = false,
+        enteredUrl = state.editedUrl,
+    )
+    WebCompatReporterAction.ReasonCleared -> state.copy(reason = null)
 }
 
 /**

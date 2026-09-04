@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <android/multinetwork.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <resolv.h>
+
 #include "GetAddrInfo.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/net/DNSPacket.h"
 #include "nsIDNSService.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/StaticPrefs_network.h"
-
-#include <netinet/in.h>
-#include <resolv.h>
-#include <poll.h>
-#include <android/multinetwork.h>
 
 namespace mozilla::net {
 
@@ -30,15 +27,21 @@ typedef int (*android_res_nquery_ptr)(net_handle_t network, const char* dname,
                                       uint32_t flags);
 static Atomic<android_res_nquery_ptr> sAndroidResNQuery;
 
+// https://developer.android.com/ndk/reference/group/networking#android_res_nresult
+// The function android_res_nresult is defined in <android/multinetwork.h>
+typedef int (*android_res_nresult_ptr)(int fd, int* rcode, uint8_t* answer,
+                                       size_t anslen);
+static Atomic<android_res_nresult_ptr> sAndroidResNResult;
+
 #define LOG(msg, ...) \
   MOZ_LOG(gGetAddrInfoLog, LogLevel::Debug, ("[DNS]: " msg, ##__VA_ARGS__))
 
 nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
                                 nsIDNSService::DNSFlags aFlags,
-                                TypeRecordResultType& aResult, uint32_t& aTTL) {
+                                TypeRecordResultType& aResult, uint32_t& aTTL,
+                                nsACString& aAliasName) {
   DNSPacket packet;
   nsAutoCString host(aHost);
-  nsAutoCString cname;
   nsresult rv;
 
   if (xpc::IsInAutomation() &&
@@ -49,13 +52,14 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
   if (!sLibLoading.exchange(true)) {
     // We're the first call here, load the library and symbols.
     if (__builtin_available(android 29, *)) {
-      sAndroidResNQuery = android_res_nquery;  // API 29
+      sAndroidResNQuery = android_res_nquery;    // API 29
+      sAndroidResNResult = android_res_nresult;  // API 29
     } else {
       LOG("No android_res_nquery symbol");
     }
   }
 
-  if (!sAndroidResNQuery) {
+  if (!sAndroidResNQuery || !sAndroidResNResult) {
     LOG("nquery not loaded");
     // The library hasn't been loaded yet.
     return NS_ERROR_UNKNOWN_HOST;
@@ -96,19 +100,18 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
           return -1;
         }
 
-        ssize_t len = recv(fd, response, DNSPacket::MAX_SIZE - 1, 0);
-        if (len <= 8) {
-          LOG("size too small %zd", len);
-          return len < 0 ? len : -1;
+        // android_res_nresult reads the DNS answer and closes the fd, so
+        // disarm the scope exit to avoid closing it a second time.
+        int rcode = 0;
+        int len =
+            sAndroidResNResult(fd, &rcode, response, DNSPacket::MAX_SIZE - 1);
+        fd = -1;
+        if (len < 0) {
+          LOG("android_res_nresult failed %d", len);
+          return len;
         }
 
-        // The first 8 bytes are UDP header.
-        // XXX: we should consider avoiding this move somehow.
-        for (int i = 0; i < len - 8; i++) {
-          response[i] = response[i + 8];
-        }
-
-        return len - 8;
+        return len;
       });
   mozilla::glean::networking::dns_native_https_call_time.AccumulateRawDuration(
       TimeStamp::Now() - startTime);
@@ -116,33 +119,8 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
     LOG("failed rv");
     return rv;
   }
-  packet.SetNativePacket(true);
 
-  int32_t loopCount = 64;
-  while (loopCount > 0 && aResult.is<Nothing>()) {
-    loopCount--;
-    DOHresp resp;
-    nsClassHashtable<nsCStringHashKey, DOHresp> additionalRecords;
-    rv = packet.Decode(host, TRRTYPE_HTTPSSVC, cname, true, resp, aResult,
-                       additionalRecords, aTTL);
-    if (NS_FAILED(rv)) {
-      LOG("Decode failed %x", static_cast<uint32_t>(rv));
-      return rv;
-    }
-    if (!cname.IsEmpty() && aResult.is<Nothing>()) {
-      host = cname;
-      cname.Truncate();
-      continue;
-    }
-  }
-
-  if (aResult.is<Nothing>()) {
-    LOG("Result is nothing");
-    // The call succeeded, but no HTTPS records were found.
-    return NS_ERROR_UNKNOWN_HOST;
-  }
-
-  return NS_OK;
+  return ParseHTTPSRecord(host, packet, aResult, aTTL, aAliasName);
 }
 
 void DNSThreadShutdown() {}

@@ -5,6 +5,8 @@
 package org.mozilla.fenix.home.topsites.interactor
 
 import mozilla.components.feature.top.sites.TopSite
+import org.mozilla.fenix.home.topsites.AddShortcutEntryPoint
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 import org.mozilla.fenix.home.topsites.controller.TopSiteController
 
 /**
@@ -77,9 +79,23 @@ interface TopSiteInteractor {
 
     /**
      * Sends telemetry related to the shortcuts library being viewed.
-     *
      */
     fun onShortcutsLibraryViewed()
+
+    /**
+     * Saves a new shortcut. Called when the user confirms adding a website from the "Add shortcut" dialog.
+     *
+     * @param title The title of the new shortcut.
+     * @param url The URL of the new shortcut.
+     * @param source The [AddShortcutSource] of how the shortcut was added.
+     * @param entryPoint The [AddShortcutEntryPoint] of where the add flow was started from.
+     */
+    fun onSaveShortcut(
+        title: String,
+        url: String,
+        source: AddShortcutSource,
+        entryPoint: AddShortcutEntryPoint,
+    )
 }
 
 /**
@@ -128,6 +144,20 @@ class DefaultTopSiteInteractor(
 
     override fun onShowAllTopSitesClicked() {
         controller.handleShowAllTopSitesClicked()
+    }
+
+    override fun onSaveShortcut(
+        title: String,
+        url: String,
+        source: AddShortcutSource,
+        entryPoint: AddShortcutEntryPoint,
+    ) {
+        controller.handleSaveShortcut(
+            title = title,
+            url = url,
+            source = source,
+            entryPoint = entryPoint,
+        )
     }
 
     override fun onShortcutsLibraryViewed() {

@@ -1,26 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SharedPlanarYCbCrImage.h"
-#include <stddef.h>              // for size_t
-#include <stdio.h>               // for printf
-#include "gfx2DGlue.h"           // for Moz2D transition helpers
+
+#include <stddef.h>  // for size_t
+#include <stdio.h>   // for printf
+
 #include "ISurfaceAllocator.h"   // for ISurfaceAllocator, etc
+#include "gfx2DGlue.h"           // for Moz2D transition helpers
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/gfx/Types.h"   // for SurfaceFormat::SurfaceFormat::YUV
-#include "mozilla/layers/ImageClient.h"     // for ImageClient
+#include "mozilla/ipc/Shmem.h"
+#include "mozilla/layers/BufferTexture.h"
+#include "mozilla/layers/ImageBridgeChild.h"  // for ImageBridgeChild
+#include "mozilla/layers/ImageClient.h"       // for ImageClient
+#include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
-#include "mozilla/layers/BufferTexture.h"
-#include "mozilla/layers/ImageDataSerializer.h"
-#include "mozilla/layers/ImageBridgeChild.h"  // for ImageBridgeChild
-#include "mozilla/mozalloc.h"                 // for operator delete
-#include "nsISupportsImpl.h"                  // for Image::AddRef
-#include "mozilla/ipc/Shmem.h"
+#include "mozilla/mozalloc.h"  // for operator delete
+#include "nsISupportsImpl.h"   // for Image::AddRef
 
 namespace mozilla {
 namespace layers {
@@ -169,17 +169,18 @@ nsresult SharedPlanarYCbCrImage::CreateEmptyBuffer(
   // do not set mBuffer like in PlanarYCbCrImage because the later
   // will try to manage this memory without knowing it belongs to a
   // shmem.
-  mBufferSize = ImageDataSerializer::ComputeYCbCrBufferSize(
+  Maybe<uint32_t> bufferSize = ImageDataSerializer::ComputeYCbCrBufferSize(
       mData.mPictureRect, aYSize, mData.mYStride, aCbCrSize, mData.mCbCrStride,
       mData.mColorDepth, mData.mChromaSubsampling);
+  mBufferSize = bufferSize.valueOr(0);
   mSize = mData.mPictureRect.Size();
   mOrigin = mData.mPictureRect.TopLeft();
 
   mTextureClient->Unlock();
 
-  // ImageDataSerializer::ComputeYCbCrBufferSize may return zero when the size
-  // requested is out of the limit.
-  return mBufferSize > 0 ? NS_OK : NS_ERROR_INVALID_ARG;
+  // ImageDataSerializer::ComputeYCbCrBufferSize may return Nothing() when the
+  // size requested is out of the limit.
+  return bufferSize.isSome() ? NS_OK : NS_ERROR_INVALID_ARG;
 }
 
 void SharedPlanarYCbCrImage::SetIsDRM(bool aIsDRM) {

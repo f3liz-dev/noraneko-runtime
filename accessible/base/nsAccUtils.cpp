@@ -1,30 +1,28 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAccUtils.h"
 
-#include "AccAttributes.h"
 #include "ARIAMap.h"
-#include "nsCoreUtils.h"
-#include "nsGenericHTMLElement.h"
+#include "AccAttributes.h"
 #include "DocAccessible.h"
 #include "DocAccessibleParent.h"
 #include "HyperTextAccessible.h"
-#include "nsIAccessibleTypes.h"
-#include "mozilla/a11y/Role.h"
 #include "States.h"
 #include "TextLeafAccessible.h"
-
-#include "nsIBaseWindow.h"
-#include "nsIDocShellTreeOwner.h"
-#include "nsIDOMXULContainerElement.h"
 #include "mozilla/a11y/RemoteAccessible.h"
+#include "mozilla/a11y/Role.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInternals.h"
 #include "nsAccessibilityService.h"
+#include "nsCoreUtils.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIAccessibleTypes.h"
+#include "nsIBaseWindow.h"
+#include "nsIDOMXULContainerElement.h"
+#include "nsIDocShellTreeOwner.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -166,6 +164,13 @@ nsStaticAtom* nsAccUtils::NormalizeARIAToken(const AttrArray* aAttrs,
         aAttrs->FindAttrValueIn(kNameSpaceID_None, aAttr, tokens, eCaseMatters);
     // If the token is present, return it, otherwise TRUE as per spec.
     return (idx >= 0) ? tokens[idx] : nsGkAtoms::_true;
+  }
+
+  if (aAttr == nsGkAtoms::aria_haspopup) {
+    if (aAttrs->AttrValueIs(kNameSpaceID_None, aAttr, nsGkAtoms::_true,
+                            eCaseMatters)) {
+      return nsGkAtoms::menu;
+    }
   }
 
   static AttrArray::AttrValuesArray tokens[] = {

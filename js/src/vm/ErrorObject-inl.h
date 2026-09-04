@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,7 +8,6 @@
 #include "vm/ErrorObject.h"
 
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
-
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 
@@ -20,7 +17,7 @@ inline JSString* js::ErrorObject::fileName(JSContext* cx) const {
 }
 
 inline uint32_t js::ErrorObject::sourceId() const {
-  Value val = getReservedSlot(SOURCEID_SLOT);
+  Value val = getReservedSlotTyped(SOURCEID_SLOT);
   return val.isInt32() ? val.toInt32() : 0;
 }
 
@@ -41,7 +38,7 @@ inline JS::ColumnNumberOneOrigin js::ErrorObject::columnNumber() const {
 inline JSObject* js::ErrorObject::stack() const {
   // If the stack was a CCW, it might have been turned into a dead object proxy
   // by NukeCrossCompartmentWrapper. Return nullptr in this case.
-  JSObject* obj = getReservedSlot(STACK_SLOT).toObjectOrNull();
+  JSObject* obj = getReservedSlotTyped(STACK_SLOT).toObjectOrNull();
   if (obj && obj->canUnwrapAs<SavedFrame>()) {
     return obj;
   }

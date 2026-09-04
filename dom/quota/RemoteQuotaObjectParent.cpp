@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,6 +24,11 @@ mozilla::ipc::IPCResult RemoteQuotaObjectParent::RecvMaybeUpdateSize(
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_ASSERT(!mozilla::ipc::IsOnBackgroundThread());
   MOZ_ASSERT(!GetCurrentThreadWorkerPrivate());
+
+  QM_TRY(OkIf(aSize >= 0), [&aResult](const auto&) {
+    *aResult = false;
+    return IPC_OK();
+  });
 
   *aResult = mCanonicalQuotaObject->MaybeUpdateSize(aSize, aTruncate);
   return IPC_OK();

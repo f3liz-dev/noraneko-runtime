@@ -17,6 +17,7 @@
 \.gcov$
 \.tsbuildinfo$
 (^|/)compile_commands\.json$
+(^|/)ccache\.conf$
 
 # emacs backup files #filename# in any directory.
 # lint-ignore-next-line: syntax-difference
@@ -231,6 +232,12 @@ _OPT\.OBJ/
 # Android Gradle artifacts.
 ^mobile/android/gradle/\.gradle
 
+# Written by `mach android gradle-dependencies`, one per Gradle build it
+# enumerates, plus the copies it collects for the toolchain task to check.
+^gradle/verification-metadata\.dryrun\.xml
+^gradle/dependency-inventories/
+^mobile/android/.*/gradle/verification-metadata\.dryrun\.xml
+
 # Android build cache
 ^mobile/android/.*/.build-cache
 ^mobile/android/.*/.gradle
@@ -259,6 +266,9 @@ services/app-services/tools/nimbus-gradle-plugin/build
 ^dom/base/rust/target/
 ^servo/components/style/target/
 ^dom/webgpu/tests/cts/vendor/target/
+^third_party/application-services/.*/target/
+^third_party/application-services/.*/Cargo.lock
+^tools/update-verify/marannon/target/
 
 # Ignore mozharness execution files
 ^testing/mozharness/\.tox/
@@ -377,13 +387,13 @@ toolkit/themes/shared/design-system/node_modules/
 ^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/.*en_US-mozilla.*
 
 # Ignore automatically generated mots documentation
-^docs/mots/index\.rst
+^docs/mots/index\.md
 
 # Ignore generated directory with .class files for GeckoView annotation processor
 ^mobile/android/annotations/bin/
 
 # Ignore generated log files under media/libvpx
-^media/libvpx/config/.*/config.log
+^media/libvpx/config/.*/config\.log
 
 # Ignore generated files resulting from building the minidump analyzer binary.
 ^toolkit/crashreporter/minidump-analyzer/target/
@@ -393,4 +403,11 @@ toolkit/themes/shared/design-system/node_modules/
 
 # Ignore personal preferences files
 ^CLAUDE\.local\.md
-.claude/settings.local.json
+\.claude/settings\.local\.json
+
+# Ignore claude scheduled task lock file
+\.claude/scheduled_tasks\.lock
+
+# Ignore Claude Code worktrees
+\.claude/worktrees/
+\.worktreeinclude

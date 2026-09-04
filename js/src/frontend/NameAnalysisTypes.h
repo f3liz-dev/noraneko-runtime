@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -81,10 +79,8 @@ enum class DeclarationKind : uint8_t {
   Var,
   Let,
   Const,
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   Using,
   AwaitUsing,
-#endif
   Class,  // Handled as same as `let` after parsing.
   Import,
   BodyLevelFunction,
@@ -126,11 +122,9 @@ static inline BindingKind DeclarationKindToBindingKind(DeclarationKind kind) {
     case DeclarationKind::Const:
       return BindingKind::Const;
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case DeclarationKind::AwaitUsing:
     case DeclarationKind::Using:
       return BindingKind::Using;
-#endif
 
     case DeclarationKind::Import:
       return BindingKind::Import;
@@ -188,7 +182,6 @@ class DeclaredNameInfo {
         closedOver_(bool(closedOver)),
         privateNameKind_(PrivateNameKind::None),
         placement_(FieldPlacement::Unspecified) {
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     // TODO: present we are brute forcing our way to
     // enforce creating an environment object whenever we encounter
     // a using declaration. This is temporary for prototyping
@@ -196,7 +189,6 @@ class DeclaredNameInfo {
     if (kind == DeclarationKind::Using || kind == DeclarationKind::AwaitUsing) {
       closedOver_ = true;
     }
-#endif
   }
 
   // Needed for InlineMap.

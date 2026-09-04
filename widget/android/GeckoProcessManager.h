@@ -1,5 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,15 +6,14 @@
 #define GeckoProcessManager_h
 
 #include "WidgetUtils.h"
-#include "nsAppShell.h"
-#include "nsContentUtils.h"
-#include "nsIObserver.h"
-#include "nsWindow.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentProcessManager.h"
 #include "mozilla/java/GeckoProcessManagerNatives.h"
+#include "nsAppShell.h"
+#include "nsContentUtils.h"
+#include "nsIObserver.h"
+#include "nsWindow.h"
 
 namespace mozilla {
 
@@ -70,13 +68,7 @@ class GeckoProcessManager final
   static void Init();
 
   static void GetEditableParent(jni::Object::Param aEditableChild,
-                                int64_t aContentId, int64_t aTabId) {
-    nsCOMPtr<nsIWidget> widget = GetWidget(aContentId, aTabId);
-    if (RefPtr<nsWindow> window = nsWindow::From(widget)) {
-      java::GeckoProcessManager::SetEditableChildParent(
-          aEditableChild, window->GetEditableParent());
-    }
-  }
+                                int64_t aContentId, int64_t aTabId);
 };
 
 }  // namespace mozilla

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -97,10 +95,15 @@ struct EnterJITStack {
  *              CalleeToken calleeToken, JSObject* scopeChain, Value* vp)
  *   ...using standard EABI calling convention
  */
-void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
+void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm,
+                                  EnterJitMode mode) {
   AutoCreatedBy acb(masm, "JitRuntime::generateEnterJIT");
 
-  enterJITOffset_ = startTrampolineCode(masm);
+  if (mode == EnterJitMode::GeneratorResume) {
+    enterJITGeneratorResumeOffset_ = startTrampolineCode(masm);
+  } else {
+    enterJITOffset_ = startTrampolineCode(masm);
+  }
 
   const Address slot_token(sp, offsetof(EnterJITStack, token));
   const Address slot_vp(sp, offsetof(EnterJITStack, vp));
@@ -136,20 +139,25 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   // Save stack pointer.
   masm.movePtr(sp, r11);
 
-  // Load the number of actual arguments into r10.
-  masm.loadPtr(slot_vp, r10);
-  masm.unboxInt32(Address(r10, 0), r10);
-
-  Register argcReg = r1;
   Register argvReg = r2;
   Register calleeTokenReg = r9;
-  generateEnterJitShared(masm, argcReg, argvReg, calleeTokenReg, r4, r5, r6);
 
-  // Push the frame descriptor.
-  masm.pushFrameDescriptorForJitCall(FrameType::CppToJSJit, r10, r10);
+  if (mode == EnterJitMode::GeneratorResume) {
+    generateEnterJitResumeShared(masm, argvReg, calleeTokenReg, r4, r5);
+  } else {
+    // Load the number of actual arguments into r10.
+    masm.loadPtr(slot_vp, r10);
+    masm.unboxInt32(Address(r10, 0), r10);
+
+    Register argcReg = r1;
+    generateEnterJitShared(masm, argcReg, argvReg, calleeTokenReg, r4, r5, r6);
+
+    // Push the frame descriptor.
+    masm.pushFrameDescriptorForJitCall(FrameType::CppToJSJit, r10, r10);
+  }
 
   Label returnLabel;
-  {
+  if (mode != EnterJitMode::GeneratorResume) {
     // Handle Interpreter -> Baseline OSR.
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
     MOZ_ASSERT(!regs.has(r11));
@@ -209,7 +217,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     masm.push(r0);  // jitcode
 
-    using Fn = bool (*)(BaselineFrame* frame, InterpreterFrame* interpFrame,
+    using Fn = void (*)(BaselineFrame* frame, InterpreterFrame* interpFrame,
                         uint32_t numStackValues);
     masm.setupUnalignedABICall(scratch);
     masm.passABIArg(framePtrScratch);  // BaselineFrame
@@ -223,9 +231,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     MOZ_ASSERT(jitcode != ReturnReg);
 
-    Label error;
     masm.addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), sp);
-    masm.branchIfFalseBool(ReturnReg, &error);
 
     // If OSR-ing, then emit instrumentation for setting lastProfilerFrame
     // if profiler instrumentation is enabled.
@@ -241,14 +247,6 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
 
     masm.jump(jitcode);
 
-    // OOM: frame epilogue, load error value, discard return address and return.
-    masm.bind(&error);
-    masm.mov(FramePointer, sp);
-    masm.pop(FramePointer);
-    masm.addPtr(Imm32(sizeof(uintptr_t)), sp);  // Return address.
-    masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
-    masm.jump(&returnLabel);
-
     masm.bind(&notOsr);
     // Load the scope chain in R1.
     MOZ_ASSERT(R1.scratchReg() != r0);
@@ -263,8 +261,10 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   // Call the function.
   masm.callJitNoProfiler(r0);
 
-  // Interpreter -> Baseline OSR will return here.
-  masm.bind(&returnLabel);
+  if (mode != EnterJitMode::GeneratorResume) {
+    // Interpreter -> Baseline OSR will return here.
+    masm.bind(&returnLabel);
+  }
 
   // Discard arguments and padding. Set sp to the address of the EnterJITStack
   // on the stack.

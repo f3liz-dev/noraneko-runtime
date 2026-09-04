@@ -22,10 +22,10 @@
 /// |    edge flags               |   +--------------------+  |                   |              | | |
 /// |    part index               |   |     Picture task   |  | bounds            | rect         | | |
 /// |    segment index            |   |                    |  | clip              | uv rect      | | |
-/// | w: picture task address    +--> | task rect          |  | pattern transform |              | | |
-/// +-----------------------------+   | device pixel scale |  | color             |              | | |
-///                                   | content origin     |  +-------------------+--------------+-+-+
-///                                   +--------------------+
+/// | w: picture task address    +--> | task rect          |  | uv rect           |              | | |
+/// +-----------------------------+   | device pixel scale |  | pattern transform |              | | |
+///                                   | content origin     |  | color             |              | | |
+///                                   +--------------------+  +-------------------+--------------+-+-+
 ///
 /// To use the quad infrastructure, a shader must define the following entry
 /// points in the corresponding shader stages:
@@ -33,7 +33,11 @@
 /// - vec4 pattern_fragment(vec4 base_color)
 ///```
 
+// Default to a sampler2D source if the shader was compiled without an
+// explicit texture-kind feature.
+#if !defined(WR_FEATURE_TEXTURE_2D) && !defined(WR_FEATURE_TEXTURE_RECT) && !defined(WR_FEATURE_TEXTURE_EXTERNAL) && !defined(WR_FEATURE_TEXTURE_EXTERNAL_BT709) && !defined(WR_FEATURE_TEXTURE_EXTERNAL_ESSL1)
 #define WR_FEATURE_TEXTURE_2D
+#endif
 
 #include shared,rect,transform,render_task,gpu_buffer
 
@@ -83,8 +87,8 @@ struct QuadSegment {
 struct PrimitiveInfo {
     vec2 local_pos;
 
-    RectWithEndpoint local_prim_rect;
-    RectWithEndpoint local_clip_rect;
+    RectWithEndpoint pattern_rect;
+    RectWithEndpoint bounds;
 
     QuadSegment segment;
 
@@ -94,8 +98,10 @@ struct PrimitiveInfo {
 };
 
 struct QuadPrimitive {
+    // The (clipped) coverage rect.
     RectWithEndpoint bounds;
-    RectWithEndpoint clip;
+    // The rect that situates the source pattern.
+    RectWithEndpoint pattern_rect;
     RectWithEndpoint uv_rect;
     vec4 pattern_scale_offset;
     vec4 color;
@@ -118,7 +124,7 @@ QuadPrimitive fetch_primitive(int index) {
     vec4 texels[5] = fetch_from_gpu_buffer_5f(index);
 
     prim.bounds = RectWithEndpoint(texels[0].xy, texels[0].zw);
-    prim.clip = RectWithEndpoint(texels[1].xy, texels[1].zw);
+    prim.pattern_rect = RectWithEndpoint(texels[1].xy, texels[1].zw);
     prim.uv_rect = RectWithEndpoint(texels[2].xy, texels[2].zw);
     prim.pattern_scale_offset = texels[3];
     prim.color = texels[4];
@@ -257,9 +263,11 @@ PrimitiveInfo quad_primive_info(void) {
     //  - Expanded for AA edges where appropriate
     RectWithEndpoint local_coverage_rect = seg.rect;
 
-    // Apply local clip rect
-    local_coverage_rect.p0 = max(local_coverage_rect.p0, prim.clip.p0);
-    local_coverage_rect.p1 = min(local_coverage_rect.p1, prim.clip.p1);
+    // Clamp the (possibly per-segment) coverage rect to the primitive bounds.
+    // Note: if we ensure on the CPU side that segments are contained in the
+    // prim bounds we can get rif of this here.
+    local_coverage_rect.p0 = max(local_coverage_rect.p0, prim.bounds.p0);
+    local_coverage_rect.p1 = min(local_coverage_rect.p1, prim.bounds.p1);
     local_coverage_rect.p1 = max(local_coverage_rect.p0, local_coverage_rect.p1);
 
     float aa_left   = (qi.edge_flags & EDGE_AA_LEFT)   != 0 ? 1.0 : 0.0;
@@ -345,8 +353,8 @@ PrimitiveInfo quad_primive_info(void) {
 
     return PrimitiveInfo(
         scale_offset_map_point(pattern_tx, vi.local_pos),
+        scale_offset_map_rect(pattern_tx, prim.pattern_rect),
         scale_offset_map_rect(pattern_tx, prim.bounds),
-        scale_offset_map_rect(pattern_tx, prim.clip),
         seg,
         qi.edge_flags,
         qi.quad_flags,
@@ -366,10 +374,7 @@ void antialiasing_vertex(PrimitiveInfo prim) {
 
     // The "transform bounds" define the edges along which anti-aliasing
     // is applied in the fragment shader.
-    RectWithEndpoint xf_bounds = RectWithEndpoint(
-        max(prim.local_prim_rect.p0, prim.local_clip_rect.p0),
-        min(prim.local_prim_rect.p1, prim.local_clip_rect.p1)
-    );
+    RectWithEndpoint xf_bounds = prim.bounds;
 
     // In order to prevent the edges with no anti-aliasing from getting
     // anti-aliased, we have to move the aa rect *away* from them.

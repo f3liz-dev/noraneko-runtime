@@ -1,19 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Http3WebTransportStream.h"
 
-#include "HttpLog.h"
 #include "Http3Session.h"
 #include "Http3WebTransportSession.h"
+#include "HttpLog.h"
 #include "mozilla/TimeStamp.h"
 #include "nsHttpHandler.h"
 #include "nsIOService.h"
 #include "nsIPipe.h"
-#include "nsSocketTransportService2.h"
 #include "nsIWebTransportStream.h"
+#include "nsSocketTransportService2.h"
 
 namespace mozilla::net {
 
@@ -45,7 +44,7 @@ class DummyWebTransportStreamTransaction : public nsAHttpTransaction {
   void Close(nsresult reason) override {}
   nsHttpConnectionInfo* ConnectionInfo() override { return nullptr; }
   void SetProxyConnectFailed() override {}
-  nsHttpRequestHead* RequestHead() override { return nullptr; }
+  const nsHttpRequestHead* RequestHead() override { return nullptr; }
   uint32_t Http1xTransactionCount() override { return 0; }
   [[nodiscard]] nsresult TakeSubTransactions(
       nsTArray<RefPtr<nsAHttpTransaction>>& outTransactions) override {
@@ -642,11 +641,18 @@ void Http3WebTransportStream::SendStopSending(uint8_t aErrorCode) {
   mSession->StreamHasDataToWrite(this);
 }
 
-void Http3WebTransportStream::SetSendOrder(Maybe<int64_t> aSendOrder) {
+void Http3WebTransportStream::SetSendOrder(int64_t aSendOrder) {
   if (!mSession) {
     return;
   }
   mSession->SetSendOrder(this, aSendOrder);
+}
+
+void Http3WebTransportStream::SetSendGroup(uint64_t aSendGroupId) {
+  if (!mSession) {
+    return;
+  }
+  mSession->SetSendGroup(this, aSendGroupId);
 }
 
 }  // namespace mozilla::net

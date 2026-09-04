@@ -1,5 +1,3 @@
-/* -*- Mode: javascript; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4
- * -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -282,7 +280,7 @@ bool ShellModuleWrapperGetter(JSContext* cx, const JS::CallArgs& args,
   JS::Rooted<T*> wrapper(cx, &args.thisv().toObject().as<T>());
   if constexpr (std::is_same_v<T, ShellModuleObjectWrapper>) {
     if (!wrapper->get()->hasCyclicModuleFields()) {
-      args.rval().set(UndefinedValue());
+      args.rval().setUndefined();
       return true;
     }
   }
@@ -346,7 +344,7 @@ bool ShellModuleNativeWrapperGetter(JSContext* cx, const JS::CallArgs& args,
   JS::Rooted<T*> wrapper(cx, &args.thisv().toObject().as<T>());
   if constexpr (std::is_same_v<T, ShellModuleObjectWrapper>) {
     if (!wrapper->get()->hasCyclicModuleFields()) {
-      args.rval().set(UndefinedValue());
+      args.rval().setUndefined();
       return true;
     }
   }
@@ -376,14 +374,48 @@ bool ModuleTypeToString(JSContext* cx, JS::Handle<JSObject*> owner,
       to.setString(cx->names().json);
       break;
     case JS::ModuleType::CSS:
-      MOZ_ASSERT_UNREACHABLE("CSS modules are not supported in the shell");
+      to.setString(cx->names().css);
       break;
     case JS::ModuleType::Bytes:
       to.setString(cx->names().bytes);
       break;
+    case JS::ModuleType::Text:
+      to.setString(cx->names().text);
+      break;
   }
 
   MOZ_ASSERT(!to.isUndefined());
+  return true;
+}
+
+static Value ImportNameValueTypeInt32Value(js::ImportNameValueType type) {
+  return Int32Value(static_cast<int32_t>(type));
+}
+
+bool ImportNameValueTypeFilter(JSContext* cx, JS::Handle<JS::Value> raw,
+                               JS::MutableHandle<JS::Value> to) {
+  const char* name = nullptr;
+  switch (static_cast<js::ImportNameValueType>(raw.toInt32())) {
+    case js::ImportNameValueType::String:
+      name = "string";
+      break;
+    case js::ImportNameValueType::Namespace:
+      name = "namespace";
+      break;
+    case js::ImportNameValueType::Source:
+      name = "source";
+      break;
+    case js::ImportNameValueType::AllButDefault:
+      name = "all-but-default";
+      break;
+  }
+  MOZ_ASSERT(name, "unexpected ImportNameValueType");
+
+  JSString* str = JS_NewStringCopyZ(cx, name);
+  if (!str) {
+    return false;
+  }
+  to.setString(str);
   return true;
 }
 
@@ -424,6 +456,9 @@ static const JSPropertySpec ShellModuleRequestObjectWrapper_accessors[] = {
 DEFINE_GETTER_FUNCTIONS(ImportEntry, moduleRequest, ObjectOrNullValue,
                         SingleFilter<ShellModuleRequestObjectWrapper>)
 DEFINE_GETTER_FUNCTIONS(ImportEntry, importName, StringOrNullValue, IdentFilter)
+DEFINE_GETTER_FUNCTIONS(ImportEntry, importNameValueType,
+                        ImportNameValueTypeInt32Value,
+                        ImportNameValueTypeFilter)
 DEFINE_GETTER_FUNCTIONS(ImportEntry, localName, StringValue, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ImportEntry, lineNumber, Uint32Value, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ImportEntry, columnNumber, ColumnNumberOneOriginValue,
@@ -432,6 +467,8 @@ DEFINE_GETTER_FUNCTIONS(ImportEntry, columnNumber, ColumnNumberOneOriginValue,
 static const JSPropertySpec ShellImportEntryWrapper_accessors[] = {
     JS_PSG("moduleRequest", ShellImportEntryWrapper_moduleRequestGetter, 0),
     JS_PSG("importName", ShellImportEntryWrapper_importNameGetter, 0),
+    JS_PSG("importNameValueType",
+           ShellImportEntryWrapper_importNameValueTypeGetter, 0),
     JS_PSG("localName", ShellImportEntryWrapper_localNameGetter, 0),
     JS_PSG("lineNumber", ShellImportEntryWrapper_lineNumberGetter, 0),
     JS_PSG("columnNumber", ShellImportEntryWrapper_columnNumberGetter, 0),
@@ -442,6 +479,9 @@ DEFINE_GETTER_FUNCTIONS(ExportEntry, exportName, StringOrNullValue, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, moduleRequest, ObjectOrNullValue,
                         SingleFilter<ShellModuleRequestObjectWrapper>)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, importName, StringOrNullValue, IdentFilter)
+DEFINE_GETTER_FUNCTIONS(ExportEntry, importNameValueType,
+                        ImportNameValueTypeInt32Value,
+                        ImportNameValueTypeFilter)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, localName, StringOrNullValue, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, lineNumber, Uint32Value, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, columnNumber, ColumnNumberOneOriginValue,
@@ -451,6 +491,8 @@ static const JSPropertySpec ShellExportEntryWrapper_accessors[] = {
     JS_PSG("exportName", ShellExportEntryWrapper_exportNameGetter, 0),
     JS_PSG("moduleRequest", ShellExportEntryWrapper_moduleRequestGetter, 0),
     JS_PSG("importName", ShellExportEntryWrapper_importNameGetter, 0),
+    JS_PSG("importNameValueType",
+           ShellExportEntryWrapper_importNameValueTypeGetter, 0),
     JS_PSG("localName", ShellExportEntryWrapper_localNameGetter, 0),
     JS_PSG("lineNumber", ShellExportEntryWrapper_lineNumberGetter, 0),
     JS_PSG("columnNumber", ShellExportEntryWrapper_columnNumberGetter, 0),

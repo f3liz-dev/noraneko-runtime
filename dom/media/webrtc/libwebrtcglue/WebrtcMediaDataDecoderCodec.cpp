@@ -4,6 +4,8 @@
 
 #include "WebrtcMediaDataDecoderCodec.h"
 
+#include <optional>
+
 #include "ImageContainer.h"
 #include "MediaDataDecoderProxy.h"
 #include "PDMFactory.h"
@@ -13,8 +15,61 @@
 #include "mozilla/media/MediaUtils.h"
 // #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
+#include "modules/video_coding/utility/vp8_header_parser.h"
+#include "modules/video_coding/utility/vp9_uncompressed_header_parser.h"
 
 namespace mozilla {
+
+/* static */
+bool WebrtcMediaDataDecoder::IsCodecEnabled(webrtc::VideoCodecType aCodec) {
+  switch (aCodec) {
+    case webrtc::VideoCodecType::kVideoCodecVP8:
+    case webrtc::VideoCodecType::kVideoCodecVP9:
+      return StaticPrefs::media_navigator_mediadatadecoder_vpx_enabled();
+    case webrtc::VideoCodecType::kVideoCodecH264:
+      return StaticPrefs::media_navigator_mediadatadecoder_h264_enabled();
+    case webrtc::VideoCodecType::kVideoCodecGeneric:
+    case webrtc::VideoCodecType::kVideoCodecAV1:
+    case webrtc::VideoCodecType::kVideoCodecH265:
+      return false;
+  }
+  return false;
+}
+
+/* static */
+CreateDecoderParams::OptionSet WebrtcMediaDataDecoder::WebrtcDecoderOptions() {
+  return CreateDecoderParams::OptionSet(
+      CreateDecoderParams::Option::LowLatency,
+      CreateDecoderParams::Option::FullH264Parsing,
+      CreateDecoderParams::Option::ErrorIfNoInitializationData);
+}
+
+/* static */
+media::DecodeSupportSet WebrtcMediaDataDecoder::Supports(
+    webrtc::VideoCodecType aCodecType, SupportDecoderParams aParams) {
+  if (!IsCodecEnabled(aCodecType)) {
+    return {};
+  }
+  aParams.mOptions = WebrtcDecoderOptions();
+  auto support = MakeRefPtr<PDMFactory>()->Supports(aParams, nullptr);
+  // With media.webrtc.hw.h264.enabled off, drop hardware H.264 support so
+  // WebRTC uses the software decoder, but only when one actually exists. On
+  // hardware-only platforms (which bug 2044499 made us report accurately),
+  // dropping it would leave H.264 with no support and fall back to OpenH264
+  // which isn't a reliable substitute for every WebRTC stream (bug 2052237)
+  if (aCodecType == webrtc::VideoCodecType::kVideoCodecH264 &&
+      !StaticPrefs::media_webrtc_hw_h264_enabled() &&
+      support.contains(media::DecodeSupport::SoftwareDecode)) {
+    support -= media::DecodeSupport::HardwareDecode;
+  }
+#ifdef MOZ_WIDGET_GTK
+  if (aCodecType == webrtc::VideoCodecType::kVideoCodecVP8 &&
+      !StaticPrefs::media_navigator_mediadatadecoder_vp8_hardware_enabled()) {
+    support -= media::DecodeSupport::HardwareDecode;
+  }
+#endif
+  return support;
+}
 
 WebrtcMediaDataDecoder::WebrtcMediaDataDecoder(nsACString& aCodecMimeType,
                                                TrackingId aTrackingId)
@@ -29,7 +84,7 @@ WebrtcMediaDataDecoder::WebrtcMediaDataDecoder(nsACString& aCodecMimeType,
       mCodecType(aCodecMimeType),
       mTrackingId(std::move(aTrackingId)) {}
 
-WebrtcMediaDataDecoder::~WebrtcMediaDataDecoder() {}
+WebrtcMediaDataDecoder::~WebrtcMediaDataDecoder() = default;
 
 bool WebrtcMediaDataDecoder::Configure(
     const webrtc::VideoDecoder::Settings& settings) {
@@ -47,6 +102,23 @@ bool WebrtcMediaDataDecoder::Configure(
 #endif
 
   return WEBRTC_VIDEO_CODEC_OK == CreateDecoder();
+}
+
+std::optional<uint8_t> WebrtcMediaDataDecoder::ExtractQp(
+    const webrtc::EncodedImage& aImage) {
+  // Platform decoders don't expose the QP, so parse it from the bitstream for
+  // the inbound-rtp qpSum stat. Bug 2049503 will expose it from PEMs/PDMs.
+  int qp = -1;
+  if (mInfo.mMimeType.EqualsLiteral("video/vp8")) {
+    if (webrtc::vp8::GetQp(aImage.data(), aImage.size(), &qp)) {
+      return static_cast<uint8_t>(qp);
+    }
+  } else if (mInfo.mMimeType.EqualsLiteral("video/vp9")) {
+    if (webrtc::vp9::GetQp(aImage.data(), aImage.size(), &qp)) {
+      return static_cast<uint8_t>(qp);
+    }
+  }
+  return std::nullopt;
 }
 
 int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
@@ -71,8 +143,8 @@ int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
   auto disabledHardwareAcceleration =
       MakeScopeExit([&] { mDisabledHardwareAcceleration = true; });
 
-  RefPtr<MediaRawData> compressedFrame =
-      new MediaRawData(aInputImage.data(), aInputImage.size());
+  RefPtr compressedFrame =
+      MakeRefPtr<MediaRawData>(aInputImage.data(), aInputImage.size());
   if (!compressedFrame->Data()) {
     return WEBRTC_VIDEO_CODEC_MEMORY;
   }
@@ -92,6 +164,7 @@ int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
         },
         [&](const MediaResult& aError) { mError = aError; });
 
+    const std::optional<uint8_t> qp = ExtractQp(aInputImage);
     for (auto& frame : mResults) {
       MOZ_ASSERT(frame->mType == MediaData::Type::VIDEO_DATA);
       RefPtr<VideoData> video = frame->As<VideoData>();
@@ -108,7 +181,7 @@ int32_t WebrtcMediaDataDecoder::Decode(const webrtc::EncodedImage& aInputImage,
                             .set_timestamp_rtp(aInputImage.RtpTimestamp())
                             .set_rotation(aInputImage.rotation_)
                             .build();
-      mCallback->Decoded(videoFrame);
+      mCallback->Decoded(videoFrame, /* decode_time_ms */ std::nullopt, qp);
     }
     mResults.Clear();
   }
@@ -160,37 +233,30 @@ int32_t WebrtcMediaDataDecoder::CreateDecoder() {
   RefPtr<TaskQueue> tq =
       TaskQueue::Create(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
                         "webrtc decode TaskQueue");
+  auto options = WebrtcDecoderOptions();
+  if (mDisabledHardwareAcceleration) {
+    options += CreateDecoderParams::Option::HardwareDecoderNotAllowed;
+  }
   RefPtr<MediaDataDecoder> decoder;
 
-  media::Await(do_AddRef(mThreadPool), InvokeAsync(tq, __func__, [&] {
-                 RefPtr<GenericPromise> p =
-                     mFactory
-                         ->CreateDecoder(
-                             {mInfo,
-                              CreateDecoderParams::OptionSet(
-                                  CreateDecoderParams::Option::LowLatency,
-                                  CreateDecoderParams::Option::FullH264Parsing,
-                                  CreateDecoderParams::Option::
-                                      ErrorIfNoInitializationData,
-                                  mDisabledHardwareAcceleration
-                                      ? CreateDecoderParams::Option::
-                                            HardwareDecoderNotAllowed
-                                      : CreateDecoderParams::Option::Default),
-                              mTrackType, mImageContainer, knowsCompositor,
-                              Some(mTrackingId)})
-                         ->Then(
-                             tq, __func__,
-                             [&](RefPtr<MediaDataDecoder>&& aDecoder) {
-                               decoder = std::move(aDecoder);
-                               return GenericPromise::CreateAndResolve(
-                                   true, __func__);
-                             },
-                             [](const MediaResult& aResult) {
-                               return GenericPromise::CreateAndReject(
-                                   NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
-                             });
-                 return p;
-               }));
+  media::Await(
+      do_AddRef(mThreadPool), InvokeAsync(tq, __func__, [&] {
+        RefPtr<GenericPromise> p =
+            mFactory
+                ->CreateDecoder({mInfo, options, mTrackType, mImageContainer,
+                                 knowsCompositor, Some(mTrackingId)})
+                ->Then(
+                    tq, __func__,
+                    [&](RefPtr<MediaDataDecoder>&& aDecoder) {
+                      decoder = std::move(aDecoder);
+                      return GenericPromise::CreateAndResolve(true, __func__);
+                    },
+                    [](const MediaResult& aResult) {
+                      return GenericPromise::CreateAndReject(
+                          NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
+                    });
+        return p;
+      }));
 
   if (!decoder) {
     return WEBRTC_VIDEO_CODEC_ERROR;

@@ -540,6 +540,7 @@ impl<'a> Context<'a> {
     }
 
     /// Internal implementation of [`lower`](Self::lower)
+    #[allow(clippy::large_stack_frames)] // TODO(https://github.com/gfx-rs/wgpu/issues/9456)
     fn lower_inner(
         &mut self,
         stmt: &StmtContext,
@@ -998,7 +999,27 @@ impl<'a> Context<'a> {
                     .lower_expect_inner(stmt, frontend, expr, ExprPos::Rhs)?
                     .0;
 
-                self.add_expression(Expression::Unary { op, expr }, meta)?
+                if let TypeInner::Matrix { scalar, .. } = *self.resolve_type(expr, meta)? {
+                    // Naga IR doesn't support matrix negation, so we need to turn it into
+                    // multiplication by scalar -1.
+                    let minus_one = Literal::minus_one(scalar).ok_or_else(|| Error {
+                        kind: ErrorKind::SemanticError(
+                            format!("Cannot apply operator {op:?} to type {scalar:?}").into(),
+                        ),
+                        meta,
+                    })?;
+                    let lhs = self.add_expression(Expression::Literal(minus_one), meta)?;
+                    self.add_expression(
+                        Expression::Binary {
+                            op: BinaryOperator::Multiply,
+                            left: lhs,
+                            right: expr,
+                        },
+                        meta,
+                    )?
+                } else {
+                    self.add_expression(Expression::Unary { op, expr }, meta)?
+                }
             }
             HirExprKind::Variable(ref var) => match pos {
                 ExprPos::Lhs => {

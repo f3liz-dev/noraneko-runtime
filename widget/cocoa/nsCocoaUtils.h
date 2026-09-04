@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,10 +8,10 @@
 #import <Cocoa/Cocoa.h>
 
 #include "InputData.h"
-#include "nsRect.h"
-#include "imgIContainer.h"
-#include "nsTArray.h"
 #include "Units.h"
+#include "imgIContainer.h"
+#include "nsRect.h"
+#include "nsTArray.h"
 
 // This must be the last include:
 #include "nsObjCExceptions.h"
@@ -37,6 +36,8 @@ extern NSString* const kUrlsWithTitlesPboardType;
 extern NSString* const kMozWildcardPboardType;
 extern NSString* const kMozCustomTypesPboardType;
 extern NSString* const kMozFileUrlsPboardType;
+extern NSString* const kWebCustomFormatPboardTypePrefix;
+extern NSString* const kWebCustomFormatMapPboardType;
 
 @interface UTIHelper : NSObject
 + (NSString*)stringFromPboardType:(NSString*)aType;
@@ -88,12 +89,12 @@ class nsAutoreleasePool {
 
 @interface NSApplication (Undocumented)
 
-// Present in all versions of OS X from (at least) 10.2.8 through 10.5.
+// Present in all versions of macOS from (at least) 10.2.8 through 10.5.
 - (BOOL)_isRunningModal;
 - (BOOL)_isRunningAppModal;
 
 // Send an event to the current Cocoa app-modal session.  Present in all
-// versions of OS X from (at least) 10.2.8 through 10.5.
+// versions of macOS from (at least) 10.2.8 through 10.5.
 - (void)_modalSession:(NSModalSession)aSession sendEvent:(NSEvent*)theEvent;
 
 @end
@@ -249,14 +250,6 @@ class nsCocoaUtils {
    * at login?
    */
   static BOOL ShouldRestoreStateDueToLaunchAtLogin();
-
-  /**
-   * Returns true if the application is ready to run an app modal dialog, false
-   * otherwise. This has to be balanced with a call to
-   * CleanUpAfterNativeAppModalDialog once the app modal dialog is closed.
-   */
-  static bool PrepareForNativeAppModalDialog();
-  static void CleanUpAfterNativeAppModalDialog();
 
   // 3 utility functions to go from a frame of imgIContainer to CGImage and then
   // to NSImage Convert imgIContainer -> CGImageRef, caller owns result
@@ -429,7 +422,7 @@ class nsCocoaUtils {
    * to native modifier flags of macOS.
    */
   static NSEventModifierFlags ConvertWidgetModifiersToMacModifierFlags(
-      nsIWidget::Modifiers aNativeModifiers);
+      nsIWidget::NativeModifiers aNativeModifiers);
 
   /**
    * Get the mouse button, which depends on the event's type and buttonNumber.
@@ -509,7 +502,7 @@ class nsCocoaUtils {
       mozilla::Modifiers aModifiers);
 
   /**
-   * Return true if aAvailableType is a vaild NSPasteboard type.
+   * Return true if aAvailableType is a valid NSPasteboard type.
    */
   static bool IsValidPasteboardType(NSString* aAvailableType,
                                     bool aAllowFileURL);
@@ -526,6 +519,11 @@ class nsCocoaUtils {
   static void SetTransferDataForTypeFromPasteboardItem(
       nsITransferable* aTransferable, const nsCString& aFlavor,
       NSPasteboardItem* aItem);
+
+  /**
+   * Converts a POPUPPOSITION value to the closest corresponding NSRectEdge.
+   */
+  static NSRectEdge PopupPositionToNSRectEdge(int8_t aPosition);
 
  private:
   /**

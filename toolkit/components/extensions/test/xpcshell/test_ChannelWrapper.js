@@ -52,6 +52,8 @@ const EXPECTATION_BASIC_FETCH = {
   canModify: true,
   frameId: 0, // Top-level frame.
   parentFrameId: -1,
+  documentInnerWindowId: EXPECT_TRUTHY,
+  parentDocumentInnerWindowId: 0, // Top-level frame has no parent document.
   browserElement: EXPECT_TRUTHY,
   frameAncestors: [], // Top-level frame does not have ancestors.
   urlClassification: {
@@ -65,7 +67,7 @@ const EXPECTATION_BASIC_FETCH = {
 
 const EXPECTATION_BASIC_FETCH_COMPLETED = {
   ...EXPECTATION_BASIC_FETCH,
-  contentType: "text/plain",
+  contentType: "application/x-unknown-content-type",
   statusCode: 200,
   statusLine: "HTTP/1.1 200 OK",
   remoteAddress: "127.0.0.1",
@@ -107,8 +109,10 @@ const EXPECTATION_INVALID_CHANNEL = {
   originURI: null,
   documentURI: null,
   canModify: false,
-  frameId: 0,
+  frameId: -1, // Not associated with a frame.
   parentFrameId: -1,
+  documentInnerWindowId: 0,
+  parentDocumentInnerWindowId: 0,
   browserElement: EXPECT_FALSEY,
   frameAncestors: null,
   urlClassification: {
@@ -186,7 +190,7 @@ function checkChannelWrapperMethodsAfterGC(channelWrapper) {
     "channelWrapper.matches() returns"
   );
   Assert.equal(
-    channelWrapper.registerTraceableChannel(dummyPolicy, null),
+    channelWrapper.registerTraceableChannel(dummyPolicy),
     undefined,
     "registerTraceableChannel() returns"
   );
@@ -225,7 +229,7 @@ function createChannel(url) {
     /* loadingNode */ null,
     /* loadingPrincipal */ dummyPrincipal,
     /* triggeringPrincipal */ dummyPrincipal,
-    /* securityFlags */ 0,
+    /* securityFlags */ Ci.nsILoadInfo.SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT,
     /* contentPolicyType */ Ci.nsIContentPolicy.TYPE_FETCH
   );
 }
@@ -322,14 +326,20 @@ add_task(async function after_basic_fetch_and_gc() {
 // getRegisteredChannel should be called before the response has started. In
 // this test case we instantiate ChannelWrapper after the request completed,
 // and confirm that there are no weird crashes or assertion failures.
+// This was originally a regression test for bug 1910110, later also a partial
+// regression test for bug 2044517. A full regression test for bug 2044517 can
+// be found at test_ext_webRequest_StreamFilter_redirect_race.js
 add_task(async function getRegisteredChannel_after_response_start() {
-  const dummyPolicy = new WebExtensionPolicy({
-    id: "@dummyPolicy",
-    mozExtensionHostname: "c3c73091-8fab-4229-83cf-84c061dd9ead",
-    baseURL: "resource://modules/whatever_does_not_need_to_exist",
-    allowedOrigins: new MatchPatternSet(["*://*/*"]),
-    localizeCallback: () => "",
+  // Need extension process for remoteTab.
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["<all_urls>"] },
+    background() {},
   });
+  await extension.startup();
+  const dummyPolicy = extension.extension.policy;
+  const { remoteTab } =
+    extension.extension.backgroundContext.xulBrowser.frameLoader;
+
   let promise = TestUtils.topicObserved("http-on-modify-request");
   await gContentPage.spawn([], async () => {
     let res = await content.fetch("http://example.com/dummy");
@@ -344,14 +354,14 @@ add_task(async function getRegisteredChannel_after_response_start() {
   // NOTE: registerTraceableChannel() should return early when a channel is
   // past OnStartRequest, but if ChannelWrapper.get() is called after that,
   // then ChannelWrapper::mResponseStarted is not set, and the implementation
-  // is unaware of the fact that the response has already started. While not
-  // ideal, it may happen in practice, so confirm that there are no crashes or
-  // assertion failures.
-  channelWrapper.registerTraceableChannel(dummyPolicy, null);
+  // is unaware of the fact that the response has already started. Fortunately,
+  // the implementation is able to detect this and return null, see bug 2044517
+  // for details.
+  channelWrapper.registerTraceableChannel(dummyPolicy);
   Assert.equal(
-    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, null),
-    channelWrapper,
-    "getRegisteredChannel() returns wrapper after registerTraceableChannel()"
+    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, remoteTab),
+    null,
+    "registerTraceableChannel after channel start does not register"
   );
   // Reset internal cached fields via ChannelWrapper::SetChannel.
   channelWrapper.channel = channel;
@@ -361,12 +371,58 @@ add_task(async function getRegisteredChannel_after_response_start() {
 
   Assert.equal(channelWrapper.channel, null, "Channel has been GC'd");
   Assert.equal(
-    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, null),
+    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, remoteTab),
     null,
     "getRegisteredChannel() returns nothing after channel was GC'd"
   );
   channelWrapperEquals(channelWrapper, EXPECTATION_INVALID_CHANNEL);
   checkChannelWrapperMethodsAfterGC(channelWrapper);
+
+  await extension.unload();
+});
+
+add_task(async function getRegisteredChannel_after_open() {
+  // Need extension process for remoteTab.
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: { permissions: ["<all_urls>"] },
+    background() {},
+  });
+  await extension.startup();
+  const dummyPolicy = extension.extension.policy;
+  const { remoteTab } =
+    extension.extension.backgroundContext.xulBrowser.frameLoader;
+
+  if (WebExtensionPolicy.useRemoteWebExtensions) {
+    ok(remoteTab, "remoteTab always exists when an extension has started");
+  } else {
+    strictEqual(remoteTab, null, "remoteTab is null when in parent process");
+  }
+
+  const channel = createChannel("http://example.com/home");
+  const channelWrapper = ChannelWrapper.get(channel);
+  const channelId = channelWrapper.id;
+
+  channelWrapper.registerTraceableChannel(dummyPolicy);
+  Assert.equal(
+    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, remoteTab),
+    null,
+    "registerTraceableChannel before channel open is ignored"
+  );
+  channel.asyncOpen({
+    QueryInterface: ChromeUtils.generateQI(["nsIStreamListener"]),
+    onStartRequest() {},
+    onStopRequest() {},
+    onDataAvailable() {},
+  });
+  channelWrapper.registerTraceableChannel(dummyPolicy);
+  Assert.equal(
+    ChannelWrapper.getRegisteredChannel(channelId, dummyPolicy, remoteTab),
+    channelWrapper,
+    "registerTraceableChannel after channel open is accepted"
+  );
+
+  channel.cancel(Cr.NS_ERROR_ABORT);
+  await extension.unload();
 });
 
 add_task(async function ChannelWrapper_https_url() {
@@ -403,6 +459,9 @@ add_task(async function ChannelWrapper_https_url() {
     documentURL: "", // triggeringPrincipal is null principal in createChannel.
     originURI: null,
     documentURI: null,
+    frameId: -1, // simulated load not associated with a frame.
+    documentInnerWindowId: 0, // simulated load not associated with a document.
+    parentDocumentInnerWindowId: 0,
     browserElement: null, // simulated load not associated with any <browser>.
     frameAncestors: null, // simulated load not associated with BrowsingContext.
   });

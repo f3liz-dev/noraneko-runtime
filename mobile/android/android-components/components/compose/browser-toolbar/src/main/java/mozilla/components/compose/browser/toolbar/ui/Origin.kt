@@ -64,6 +64,8 @@ import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.T
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.utils.PageOriginContextualMenuBuilder
+import mozilla.components.compose.browser.toolbar.utils.sanitizeUrlForDisplay
+import mozilla.components.compose.browser.toolbar.utils.truncateUrlAroundDomain
 import mozilla.components.support.ktx.kotlin.getRegistrableDomainIndexRange
 import mozilla.components.support.utils.ClipboardHandler
 
@@ -197,14 +199,20 @@ private fun Url(
 ) {
     // Ensure compatibility with MaterialTheme attributes. See bug 1936346 for more context.
     val materialTextStyle = LocalTextStyle.current
-    val urlString = remember(url) { url.toString() }
-    val registrableDomainIndexRange = remember(url) {
-        url.getRegistrableDomainIndexRange()
+
+    val (urlString, registrableDomainIndexRange) = remember(url) {
+        sanitizeUrlForDisplay(
+            url = url.toString(),
+            registrableDomainIndexRange = url.getRegistrableDomainIndexRange(),
+        )
+    }
+    val (truncatedUrl, adjustedDomainIndexRange) = remember(urlString, registrableDomainIndexRange) {
+        truncateUrlAroundDomain(urlString, registrableDomainIndexRange)
     }
 
     HighlightedDomainUrl(
-        url = urlString,
-        registrableDomainIndexRange = registrableDomainIndexRange,
+        url = truncatedUrl,
+        registrableDomainIndexRange = adjustedDomainIndexRange,
         fadedTextStyle = materialTextStyle.merge(
             fontSize = fontSize.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

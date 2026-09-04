@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jit_x86_shared_Assembler_x86_shared_h
 #define jit_x86_shared_Assembler_x86_shared_h
 
+#include "mozilla/EndianUtils.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <cstddef>
@@ -468,6 +467,9 @@ class AssemblerX86Shared : public AssemblerShared {
 
   // Size of the instruction stream, in bytes.
   size_t size() const { return masm.size(); }
+  // Size of the instruction stream that we can read during construction.
+  // Since there are no constant pools, this is the same as `size()`.
+  size_t readableSize() const { return masm.size(); }
   // Size of the jump relocation table, in bytes.
   size_t jumpRelocationTableBytes() const { return jumpRelocations_.length(); }
   size_t dataRelocationTableBytes() const { return dataRelocations_.length(); }

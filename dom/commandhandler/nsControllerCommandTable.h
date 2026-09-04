@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,7 +17,7 @@ class nsICommandParams;
 
 class nsControllerCommandTable final {
  public:
-  nsControllerCommandTable();
+  nsControllerCommandTable() = default;
 
   NS_INLINE_DECL_REFCOUNTING(nsControllerCommandTable);
 
@@ -40,10 +38,12 @@ class nsControllerCommandTable final {
   void GetSupportedCommands(nsTArray<nsCString>&) const;
 
  private:
-  ~nsControllerCommandTable();
+  ~nsControllerCommandTable() = default;
+  // This value is used to size the hash table. Just a sensible upper bound
+  static constexpr size_t num_commands_length = 32;
   // Hash table of nsIControllerCommands, keyed by command name.
   nsRefPtrHashtable<nsCStringHashKey, mozilla::ControllerCommand>
-      mCommandsTable;
+      mCommandsTable{num_commands_length};
 
   // Are we mutable?
   bool mMutable = true;

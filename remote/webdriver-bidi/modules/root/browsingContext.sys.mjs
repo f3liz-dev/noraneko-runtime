@@ -16,9 +16,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
+  generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   getTimeoutMultiplier: "chrome://remote/content/shared/AppInfo.sys.mjs",
   getWebDriverSessionById:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
+  isWebdriverSafeNavigationURL:
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   modal: "chrome://remote/content/shared/Prompt.sys.mjs",
   registerNavigationId:
@@ -33,15 +36,20 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PromptListener:
     "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
   RemoteAgent: "chrome://remote/content/components/RemoteAgent.sys.mjs",
+  SessionDataCategory:
+    "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   SessionDataMethod:
     "chrome://remote/content/shared/messagehandler/sessiondata/SessionData.sys.mjs",
   setDefaultAndAssertSerializationOptions:
     "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+  truncate: "chrome://remote/content/shared/Format.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
   waitForInitialNavigationCompleted:
     "chrome://remote/content/shared/Navigate.sys.mjs",
+  waitForTopBrowsingContextToBeReady:
+    "chrome://remote/content/shared/BrowsingContextUtils.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
   windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
@@ -188,6 +196,8 @@ export const MozContextScope = {
   CONTENT: "content",
 };
 
+const NULL = Symbol("NULL");
+
 /**
  * Used as an argument for browsingContext._updateNavigableViewport command
  * to represent an object which holds viewport settings which should be applied.
@@ -207,7 +217,9 @@ class BrowsingContextModule extends RootBiDiModule {
   #contextListener;
   #navigationListener;
   #promptListener;
+  #screencastRecordings;
   #subscribedEvents;
+  #waitForContextCreatedEvent;
 
   /**
    * Create a new module instance.
@@ -253,8 +265,16 @@ class BrowsingContextModule extends RootBiDiModule {
     // Treat the event of moving a page to BFCache as context discarded event for iframes.
     this.messageHandler.on("windowglobal-pagehide", this.#onPageHideEvent);
 
-    // Maps browsers to a promise and resolver that is used to block the create method.
+    // Maps browsers to a promise and resolver that is used to block the create method
+    // until configurations are applied.
     this.#blockedCreateCommands = new WeakMap();
+
+    // Maps screencast ids to an object of recording settings.
+    this.#screencastRecordings = new Map();
+
+    // Maps browsing contexts to a promise and resolver that is used to block the create method
+    // until "browsingContext.contextCreated" event is submitted.
+    this.#waitForContextCreatedEvent = new WeakMap();
   }
 
   destroy() {
@@ -284,9 +304,17 @@ class BrowsingContextModule extends RootBiDiModule {
     this.#promptListener.off("opened", this.#onPromptOpened);
     this.#promptListener.destroy();
 
+    for (const screencastRecording of this.#screencastRecordings.values()) {
+      // Don't await to avoid making destroy method asynchronous.
+      this.#stopScreencastRecording(screencastRecording);
+    }
+    this.#screencastRecordings = new Map();
+
     this.#subscribedEvents = null;
 
     this.messageHandler.off("windowglobal-pagehide", this.#onPageHideEvent);
+
+    this.#waitForContextCreatedEvent = new WeakMap();
   }
 
   /**
@@ -554,7 +582,9 @@ class BrowsingContextModule extends RootBiDiModule {
       lazy.pprint`Expected "promptUnload" to be a boolean, got ${promptUnload}`
     );
 
-    const context = this._getNavigable(contextId);
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
     lazy.assert.topLevel(
       context,
       lazy.pprint`Browsing context with id ${contextId} is not top-level`
@@ -751,18 +781,45 @@ class BrowsingContextModule extends RootBiDiModule {
       this.#blockedCreateCommands.set(browser, blocker);
     }
 
+    const browsingContext = browser.browsingContext;
+    const sessionData =
+      this.messageHandler.sessionData.getSessionDataForContext(
+        "browsingContext",
+        "event",
+        browsingContext
+      );
+
+    const hasEventSubscriptionToContextCreated = sessionData.some(
+      item => item.value === "browsingContext.contextCreated"
+    );
+
+    let waitForContextCreatedEvent = Promise.withResolvers();
+
+    // If a client subscribed to "browsingContext.contextCreated" event,
+    // we have to wait for it to be submitted.
+    if (hasEventSubscriptionToContextCreated) {
+      if (!this.#waitForContextCreatedEvent.has(browsingContext)) {
+        this.#waitForContextCreatedEvent.set(
+          browsingContext,
+          Promise.withResolvers()
+        );
+      }
+      waitForContextCreatedEvent =
+        this.#waitForContextCreatedEvent.get(browsingContext);
+    } else {
+      waitForContextCreatedEvent.resolve();
+    }
     await Promise.all([
-      lazy.waitForInitialNavigationCompleted(
-        browser.browsingContext.webProgress,
-        {
-          unloadTimeout: 5000,
-        }
-      ),
+      lazy.waitForInitialNavigationCompleted(browsingContext.webProgress, {
+        unloadTimeout: 5000,
+      }),
       waitForVisibilityStatePromise,
       blocker.promise,
+      waitForContextCreatedEvent.promise,
     ]);
 
     this.#blockedCreateCommands.delete(browser);
+    this.#waitForContextCreatedEvent.delete(browsingContext);
 
     // The tab on Android is always opened in the foreground,
     // so we need to select the previous tab,
@@ -792,6 +849,9 @@ class BrowsingContextModule extends RootBiDiModule {
 
     return {
       context: lazy.NavigableManager.getIdForBrowser(browser),
+      userContext: lazy.UserContextManager.getIdByBrowsingContext(
+        browser.browsingContext
+      ),
     };
   }
 
@@ -895,7 +955,9 @@ class BrowsingContextModule extends RootBiDiModule {
         );
       }
 
-      contexts = [this._getNavigable(rootId, { supportsChromeScope: true })];
+      contexts = [
+        this._getNavigable(rootId, { supportsPrivilegedScope: true }),
+      ];
     } else {
       switch (scope) {
         case MozContextScope.CHROME: {
@@ -1323,13 +1385,17 @@ class BrowsingContextModule extends RootBiDiModule {
       );
     }
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since navigate needs to work regardless of
+    // the current page. The URL safety check below handles destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
 
     // webProgress will be stable even if the context navigates, retrieve it
     // immediately before doing any asynchronous call.
     const webProgress = context.webProgress;
 
-    const base = await this.messageHandler.handleCommand({
+    const baseURL = await this.messageHandler.handleCommand({
       moduleName: "browsingContext",
       commandName: "_getBaseURL",
       destination: {
@@ -1337,15 +1403,28 @@ class BrowsingContextModule extends RootBiDiModule {
         id: context.id,
       },
       retryOnAbort: true,
+      // Reading the base URL is safe and must work while navigating a privileged page.
+      skipPrivilegeCheck: true,
     });
 
     let targetURI;
     try {
-      const baseURI = Services.io.newURI(base);
+      const baseURI = Services.io.newURI(baseURL);
       targetURI = Services.io.newURI(url, null, baseURI);
     } catch (e) {
       throw new lazy.error.InvalidArgumentError(
         `Expected "url" to be a valid URL (${e.message})`
+      );
+    }
+
+    // Disallow navigations to unsafe URLs unless
+    // system access is explicitly allowed.
+    if (
+      !lazy.RemoteAgent.allowSystemAccess &&
+      !lazy.isWebdriverSafeNavigationURL(targetURI, context)
+    ) {
+      throw new lazy.error.UnsupportedOperationError(
+        lazy.truncate`Navigation to "${targetURI.spec}" is not allowed in this context`
       );
     }
 
@@ -1567,16 +1646,46 @@ class BrowsingContextModule extends RootBiDiModule {
       );
     }
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since reload needs to work regardless of
+    // the current page. The URL safety check below handles destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
+
+    // Disallow refreshing privileged URLs
+    // unless system access is enabled.
+    if (
+      !lazy.RemoteAgent.allowSystemAccess &&
+      !lazy.isWebdriverSafeNavigationURL(context.currentURI, context)
+    ) {
+      throw new lazy.error.UnsupportedOperationError(
+        lazy.truncate`Reloading "${context.currentURI.spec}" is not allowed in this context`
+      );
+    }
 
     // webProgress will be stable even if the context navigates, retrieve it
     // immediately before doing any asynchronous call.
-    const webProgress = context.webProgress;
-
+    const { webProgress } = context;
     return this.#awaitNavigation(
       webProgress,
       () => {
-        context.reload(Ci.nsIWebNavigation.LOAD_FLAGS_NONE);
+        const { sessionHistory } = context;
+        const flags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+
+        // Bug 2026546: If available, use sessionHistory to properly reload
+        // top-level contexts which contain frames. Note that sessionHistory
+        // always belongs to the top-level context, so it must only be used
+        // for top-level navigables, otherwise reloading a child navigable
+        // would reload the whole tab.
+        if (
+          context.parent === null &&
+          sessionHistory?.count &&
+          sessionHistory?.index >= 0
+        ) {
+          sessionHistory.reload(flags);
+        } else {
+          context.reload(flags);
+        }
       },
       { wait }
     );
@@ -1721,7 +1830,7 @@ class BrowsingContextModule extends RootBiDiModule {
           }
         );
         sessionDataItems.push({
-          category: "viewport-override",
+          category: lazy.SessionDataCategory.ViewportOverride,
           moduleName: "_configuration",
           values: [viewportOverride],
           contextDescriptor: {
@@ -1734,7 +1843,7 @@ class BrowsingContextModule extends RootBiDiModule {
     } else {
       for (const navigable of navigables) {
         sessionDataItems.push({
-          category: "viewport-override",
+          category: lazy.SessionDataCategory.ViewportOverride,
           moduleName: "_configuration",
           values: [viewportOverride],
           contextDescriptor: {
@@ -1768,6 +1877,280 @@ class BrowsingContextModule extends RootBiDiModule {
   }
 
   /**
+   * Used as an argument for the browsingContext.startScreencast command
+   * to configure the video track of the recording.
+   *
+   * @typedef MediaTrackConstraints
+   *
+   * @property {number=} frameRate
+   *     The target frame rate of the recording.
+   * @property {number=} height
+   *     The height of the recorded video in pixels.
+   * @property {number=} width
+   *     The width of the recorded video in pixels.
+   */
+
+  /**
+   * An object that holds the output of the "browsingContext.startScreencast" command
+   *
+   * @typedef StartScreencastResult
+   *
+   * @property {string} screencast
+   *     The id of the recording.
+   * @property {string} path
+   *     The absolute path of the file the recording
+   *     is being written to.
+   */
+
+  /**
+   * Start recording a screencast of the viewport of the provided
+   * top-level browsing context, saving the output to a file.
+   *
+   * @param {object=} options
+   * @param {string} options.context
+   *     Id of the top-level browsing context to record.
+   * @param {MediaTrackConstraints=} options.video
+   *     An object describing the desired video track.
+   * @param {boolean=} options.audio
+   *     Whether to also record the audio track. Defaults to `false`.
+   * @param {string=} options.mimeType
+   *     The MIME type of the output file. Defaults to `video/webm`.
+   *
+   * @returns {StartScreencastResult}
+   *     The result of the starting screencast recording.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchFrameError}
+   *     If the browsing context cannot be found.
+   * @throws {UnknownError}
+   *     If the file for the recording couldn't be created.
+   * @throws {UnsupportedOperationError}
+   *     If the requested `mimeType` is not supported by the platform,
+   *     or if the audio track is requested.
+   */
+  async startScreencast(options = {}) {
+    const {
+      context: contextId,
+      mimeType = "video/webm",
+      video = NULL,
+      audio = false,
+    } = options;
+
+    lazy.assert.string(
+      contextId,
+      lazy.pprint`Expected "context" to be a string, got ${contextId}`
+    );
+
+    const navigable = this._getNavigable(contextId);
+
+    lazy.assert.topLevel(
+      navigable,
+      lazy.pprint`Browsing context with id ${contextId} is not top-level`
+    );
+
+    lazy.assert.string(
+      mimeType,
+      lazy.pprint`Expected "mimeType" to be a string, got ${mimeType}`
+    );
+
+    if (mimeType === "" || !MediaRecorder.isTypeSupported(mimeType)) {
+      throw new lazy.error.UnsupportedOperationError(
+        `"mimeType" with value: ${mimeType} is not supported`
+      );
+    }
+
+    if (video !== NULL) {
+      lazy.assert.object(
+        video,
+        lazy.pprint`Expected "video" to be an object, got ${video}`
+      );
+
+      const { frameRate = NULL, height = NULL, width = NULL } = video;
+
+      if (frameRate !== NULL) {
+        lazy.assert.positiveInteger(
+          frameRate,
+          lazy.pprint`Expected "frameRate" to be a positive integer, got ${frameRate}`
+        );
+      }
+
+      if (height !== NULL) {
+        lazy.assert.positiveInteger(
+          height,
+          lazy.pprint`Expected "height" to be a positive integer, got ${height}`
+        );
+      }
+
+      if (width !== NULL) {
+        lazy.assert.positiveInteger(
+          width,
+          lazy.pprint`Expected "width" to be a positive integer, got ${width}`
+        );
+      }
+    }
+
+    lazy.assert.boolean(
+      audio,
+      lazy.pprint`Expected "audio" to be a boolean, got ${audio}`
+    );
+
+    if (audio) {
+      // Bug 2047554. Audio track support requires audio support in getDisplayMedia.
+      throw new lazy.error.UnsupportedOperationError(
+        "The audio track is not supported"
+      );
+    }
+
+    // Get the chrome window for privileged capture and MediaRecorder.
+    const chromeWindow =
+      lazy.windowManager.getChromeWindowForBrowsingContext(navigable);
+
+    const stream = await chromeWindow.navigator.mediaDevices.getUserMedia({
+      audio,
+      video: {
+        deviceId: { exact: String(navigable.browserId) },
+        mediaSource: "browser",
+        ...(video === NULL
+          ? {}
+          : {
+              frameRate: video.frameRate,
+              height: video.height,
+              width: video.width,
+            }),
+      },
+    });
+
+    const downloadsDir = Services.dirsvc.get("DfltDwnld", Ci.nsIFile).path;
+    const screencast = lazy.generateUUID();
+
+    // Extract video file extension from mimeType.
+    // We only have to take care of the mime types that are supported by MediaRecorder.
+    let fileExtension = mimeType.match(/\/([\w-]+)/)[1];
+    if (fileExtension.endsWith("matroska")) {
+      fileExtension = "mkv";
+    } else if (fileExtension === "ogg") {
+      // Use more common `.ogv` extension.
+      fileExtension = "ogv";
+    }
+
+    const path = PathUtils.join(
+      downloadsDir,
+      `screencast-${screencast}.${fileExtension}`
+    );
+
+    const mediaRecorder = new chromeWindow.MediaRecorder(stream, {
+      mimeType,
+    });
+
+    const recording = {
+      mediaRecorder,
+      path,
+      state: "recording",
+      stream,
+      writeChain: Promise.resolve(),
+      writeError: null,
+    };
+    this.#screencastRecordings.set(screencast, recording);
+
+    try {
+      // Create an empty file.
+      await IOUtils.write(path, new Uint8Array([]));
+    } catch (e) {
+      recording.writeError = e.message;
+
+      await this.#stopScreencastRecording(recording);
+
+      throw new lazy.error.UnknownError(
+        `Failed to create screencast recording file "${path}": ${e.message}`
+      );
+    }
+
+    mediaRecorder.ondataavailable = async event => {
+      if (event.data.size) {
+        recording.writeChain = recording.writeChain.then(async () => {
+          const buffer = await event.data.arrayBuffer();
+          try {
+            await IOUtils.write(path, new Uint8Array(buffer), {
+              mode: "append",
+            });
+          } catch (e) {
+            recording.writeError = e.message;
+            await this.#stopScreencastRecording(recording);
+          }
+        });
+      }
+    };
+
+    try {
+      // Use timeslice of 10s to get better quality and bitrate.
+      mediaRecorder.start(10000);
+    } catch (e) {
+      recording.writeError = e.message;
+    }
+
+    return { path, screencast };
+  }
+
+  /**
+   * An object that holds the output of the "browsingContext.stopScreencast" command.
+   *
+   * @typedef StopScreencastResult
+   *
+   * @property {string} path
+   *     The absolute path of the file the recording
+   *     is being written to.
+   * @property {string=} error
+   *     Optionally, an error message if the error occurred
+   *     during recording or saving the data to the file.
+   */
+
+  /**
+   * Stop an in-progress screencast recording started with
+   * "browsingContext.startScreencast".
+   *
+   * @param {object=} options
+   * @param {string} options.screencast
+   *     The id of the screencast, as returned by
+   *     browsingContext.startScreencast.
+   *
+   * @returns {StopScreencastResult}
+   *     The result of the stopping screencast recording.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchScreencastError}
+   *     If the screencast cannot be found.
+   */
+  async stopScreencast(options = {}) {
+    const { screencast } = options;
+
+    lazy.assert.string(
+      screencast,
+      lazy.pprint`Expected "screencast" to be a string, got ${screencast}`
+    );
+
+    if (!this.#screencastRecordings.has(screencast)) {
+      throw new lazy.error.NoSuchScreencastError(
+        `Screencast with id ${screencast} not found`
+      );
+    }
+
+    const screencastRecording = this.#screencastRecordings.get(screencast);
+    const { path } = screencastRecording;
+
+    await this.#stopScreencastRecording(screencastRecording);
+
+    this.#screencastRecordings.delete(screencast);
+
+    const body = { path };
+    if (screencastRecording.writeError !== null) {
+      body.error = screencastRecording.writeError;
+    }
+    return body;
+  }
+
+  /**
    * Traverses the history of a given context by a given delta.
    *
    * @param {object=} options
@@ -1791,7 +2174,12 @@ class BrowsingContextModule extends RootBiDiModule {
       lazy.pprint`Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = this._getNavigable(contextId);
+    // Skip the privilege check here since traverseHistory needs to work
+    // regardless of the current page. The URL safety check below handles
+    // destination restrictions.
+    const context = this._getNavigable(contextId, {
+      skipPrivilegeCheck: true,
+    });
 
     lazy.assert.topLevel(
       context,
@@ -1813,6 +2201,18 @@ class BrowsingContextModule extends RootBiDiModule {
       throw new lazy.error.NoSuchHistoryEntryError(
         `History entry with delta ${delta} not found`
       );
+    }
+
+    if (!lazy.RemoteAgent.allowSystemAccess) {
+      const targetEntry = sessionHistory.getEntryAtIndex(targetIndex);
+
+      // Disallow traversing to privileged URLs
+      // unless system access is enabled.
+      if (!lazy.isWebdriverSafeNavigationURL(targetEntry.URI, context)) {
+        throw new lazy.error.UnsupportedOperationError(
+          lazy.truncate`Navigation to "${targetEntry.URI.spec}" is not allowed in this context`
+        );
+      }
     }
 
     context.goToIndex(targetIndex);
@@ -1843,7 +2243,7 @@ class BrowsingContextModule extends RootBiDiModule {
    * @param {Function} startNavigationFn
    *     A callback that starts a navigation.
    * @param {object} options
-   * @param {string=} options.targetURI
+   * @param {nsIURI=} options.targetURI
    *     The target URI for the navigation.
    * @param {WaitCondition} options.wait
    *     The WaitCondition to use to wait for the navigation.
@@ -2037,6 +2437,17 @@ class BrowsingContextModule extends RootBiDiModule {
         return;
       }
 
+      // If `waitForTopBrowsingContextToBeReady` returns `null`,
+      // it means that the browsing context was discarded.
+      // Do not send an event in this case.
+      if (
+        !browsingContext.parent &&
+        (await lazy.waitForTopBrowsingContextToBeReady(browsingContext)) ===
+          null
+      ) {
+        return;
+      }
+
       const browsingContextInfo = getBrowsingContextInfo(browsingContext, {
         maxDepth: 0,
       });
@@ -2050,18 +2461,34 @@ class BrowsingContextModule extends RootBiDiModule {
       // This is an internal event is used by the script module
       // to ensure that "script.realmCreated" event is emitted
       // after "browsingContext.contextCreated".
-      this.messageHandler.emitEvent(
+      this.emitEvent(
         "browsingContext._contextCreatedEmitted",
         { browsingContext },
         browsingContextInfo
       );
+
+      if (!this.#waitForContextCreatedEvent.has(browsingContext)) {
+        this.#waitForContextCreatedEvent.set(
+          browsingContext,
+          Promise.withResolvers()
+        );
+      }
+
+      this.#waitForContextCreatedEvent.get(browsingContext).resolve();
     }
   };
 
   #onContextDiscarded = async (eventName, data = {}) => {
-    if (this.#subscribedEvents.has("browsingContext.contextDestroyed")) {
-      const { browsingContext, why } = data;
+    const { browsingContext, why } = data;
 
+    // In case the newly created browsing context got discarded immediately resolve pending promise.
+    if (this.#waitForContextCreatedEvent.has(browsingContext)) {
+      const waitForContextCreatedEvent =
+        this.#waitForContextCreatedEvent.get(browsingContext);
+      waitForContextCreatedEvent.resolve();
+    }
+
+    if (this.#subscribedEvents.has("browsingContext.contextDestroyed")) {
       // Filter out top-level browsing contexts that are destroyed because of a
       // cross-group navigation.
       if (why === "replace") {
@@ -2107,6 +2534,7 @@ class BrowsingContextModule extends RootBiDiModule {
       const {
         canceled,
         contextId,
+        downloadId,
         filepath,
         navigableId,
         navigationId,
@@ -2116,12 +2544,14 @@ class BrowsingContextModule extends RootBiDiModule {
 
       const browsingContextInfo = {
         context: navigableId,
+        download: downloadId,
         navigation: navigationId,
         status: canceled
           ? DownloadEndStatus.canceled
           : DownloadEndStatus.complete,
         timestamp,
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       if (!canceled) {
@@ -2142,6 +2572,7 @@ class BrowsingContextModule extends RootBiDiModule {
     if (this.#subscribedEvents.has("browsingContext.downloadWillBegin")) {
       const {
         contextId,
+        downloadId,
         navigationId,
         navigableId,
         suggestedFilename,
@@ -2151,10 +2582,12 @@ class BrowsingContextModule extends RootBiDiModule {
 
       const browsingContextInfo = {
         context: navigableId,
+        download: downloadId,
         navigation: navigationId,
         suggestedFilename,
         timestamp,
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2174,6 +2607,7 @@ class BrowsingContextModule extends RootBiDiModule {
         navigation: navigationId,
         timestamp: Date.now(),
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2192,6 +2626,7 @@ class BrowsingContextModule extends RootBiDiModule {
         context: navigableId,
         timestamp: Date.now(),
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2224,6 +2659,7 @@ class BrowsingContextModule extends RootBiDiModule {
         context: navigableId,
         accepted: detail.accepted,
         type: detail.promptType,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
         userText: detail.userText,
       };
 
@@ -2273,6 +2709,7 @@ class BrowsingContextModule extends RootBiDiModule {
         handler: handlerConfig.handler,
         message,
         type,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       if (defaultValue !== null) {
@@ -2296,6 +2733,7 @@ class BrowsingContextModule extends RootBiDiModule {
         navigation: navigationId,
         timestamp: Date.now(),
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2315,6 +2753,7 @@ class BrowsingContextModule extends RootBiDiModule {
         navigation: navigationId,
         timestamp: Date.now(),
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2334,6 +2773,7 @@ class BrowsingContextModule extends RootBiDiModule {
         navigation: navigationId,
         timestamp: Date.now(),
         url,
+        userContext: lazy.UserContextManager.getIdByNavigableId(navigableId),
       };
 
       this.#emitContextEventForBrowsingContext(
@@ -2391,6 +2831,41 @@ class BrowsingContextModule extends RootBiDiModule {
     if (!hasPromptEvent) {
       this.#promptListener.stopListening();
     }
+  }
+
+  /**
+   * Stop a screencast recording.
+   *
+   * @see https://www.w3.org/TR/webdriver-bidi/#stop-a-screencast-recording
+   */
+  async #stopScreencastRecording(recording) {
+    const { mediaRecorder, state, stream } = recording;
+
+    if (state != "recording") {
+      return;
+    }
+
+    recording.state = "stopping";
+    if (mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+      await new Promise(r => (mediaRecorder.onstop = r));
+    }
+
+    // mediaRecorder.stop() queues a final "dataavailable" task before the
+    // "stop" event, so by the time onstop resolves the ondataavailable
+    // handler has already extended screencastRecording.writeChain to
+    // include the final chunk. Wait for that latest chain to ensure the
+    // closing cluster is flushed to disk before returning.
+    await recording.writeChain;
+
+    mediaRecorder.ondataavailable = null;
+    mediaRecorder.onstop = null;
+
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    recording.state = "stopped";
   }
 
   #subscribeEvent(event) {
@@ -2452,7 +2927,12 @@ class BrowsingContextModule extends RootBiDiModule {
       "_awaitVisibilityState",
       browsingContext.id,
       { value: expectedState, timeout },
-      { retryOnAbort: true }
+      {
+        retryOnAbort: true,
+        // Awaiting the visibility state is safe and can target a context
+        // (e.g. a previously selected tab) regardless of its privilege level.
+        skipPrivilegeCheck: true,
+      }
     );
   }
 
@@ -2550,13 +3030,12 @@ class BrowsingContextModule extends RootBiDiModule {
     }
 
     if (targetHeight !== currentHeight || targetWidth !== currentWidth) {
-      if (!navigable.isActive) {
-        // Force a synchronous update of the remote browser dimensions so that
-        // background tabs get resized.
-        browser.ownerDocument.synchronouslyUpdateRemoteBrowserDimensions(
-          /* aIncludeInactive = */ true
-        );
-      }
+      // Force a synchronous update of the remote browser dimensions so that
+      // background tabs get resized.
+      browser.ownerDocument.synchronouslyUpdateRemoteBrowserDimensions(
+        /* aIncludeInactive = */ true
+      );
+
       // Wait until the viewport has been resized
       await this._forwardToWindowGlobal(
         "_awaitViewportDimensions",
@@ -2565,9 +3044,18 @@ class BrowsingContextModule extends RootBiDiModule {
           height: targetHeight,
           width: targetWidth,
         },
-        { retryOnAbort: true }
+        {
+          retryOnAbort: true,
+          // Awaiting the resized viewport dimensions is safe
+          // regardless of the context's privilege level.
+          skipPrivilegeCheck: true,
+        }
       );
     }
+  }
+
+  static get supportedCommandsFromContent() {
+    return ["_onConfigurationComplete"];
   }
 
   static get supportedEvents() {

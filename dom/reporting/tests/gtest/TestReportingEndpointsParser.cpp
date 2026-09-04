@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,5 +103,39 @@ TEST(ReportingEndpointsParser, Basic)
   count = ReportingHeader::ParseReportingEndpointsHeader(
       "csp-endpoint=1"_ns, uri1, endpointConstructor);
 
+  ASSERT_EQ(count, 0u);
+}
+
+// https://w3c.github.io/reporting/#header requires endpoints to be parsed when
+// the document URL is potentially trustworthy, which includes http://localhost.
+TEST(ReportingEndpointsParser, LoopbackDocumentIsTrustworthy)
+{
+  EndpointsList endpoints;
+
+  auto endpointConstructor = [&endpoints](const nsAString& aKey,
+                                          nsCOMPtr<nsIURI> aEndpointURL) {
+    endpoints.mData.EmplaceBack(
+        ReportingHeader::Endpoint::Create(aEndpointURL.forget(), aKey));
+  };
+
+  nsCOMPtr<nsIURI> localhostURI;
+  nsresult rv =
+      NS_NewURI(getter_AddRefs(localhostURI), "http://localhost/document");
+  ASSERT_EQ(NS_OK, rv);
+
+  size_t count = ReportingHeader::ParseReportingEndpointsHeader(
+      "csp-endpoint=\"https://example.com/csp-reports\""_ns, localhostURI,
+      endpointConstructor);
+  ASSERT_EQ(count, 1u);
+  ASSERT_EQ(1u, endpoints.mData.Length());
+
+  endpoints.mData.Clear();
+  nsCOMPtr<nsIURI> insecureURI;
+  rv = NS_NewURI(getter_AddRefs(insecureURI), "http://example.com/document");
+  ASSERT_EQ(NS_OK, rv);
+
+  count = ReportingHeader::ParseReportingEndpointsHeader(
+      "csp-endpoint=\"https://example.com/csp-reports\""_ns, insecureURI,
+      endpointConstructor);
   ASSERT_EQ(count, 0u);
 }

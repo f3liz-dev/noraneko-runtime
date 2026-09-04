@@ -141,6 +141,7 @@ const PREFS_UNIMPORTANT_LOCKED = [
   "dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled",
   "extensions.backgroundServiceWorker.enabled",
   "privacy.restrict3rdpartystorage.url_decorations",
+  "security.storage.encryption.sqlite.enabled",
 ];
 
 function getPref(name) {
@@ -473,24 +474,27 @@ var dataProviders = {
   },
 
   async environmentVariables(done) {
-    let Subprocess;
-    try {
-      // Subprocess is not available in all builds
-      Subprocess = ChromeUtils.importESModule(
-        "resource://gre/modules/Subprocess.sys.mjs"
-      ).Subprocess;
-    } catch (ex) {
+    if (AppConstants.platform == "android") {
+      // Subprocess is not available.
       done({});
       return;
     }
+    const { Subprocess } = ChromeUtils.importESModule(
+      "resource://gre/modules/Subprocess.sys.mjs"
+    );
 
     let environment = Subprocess.getEnvironment();
     let filteredEnvironment = {};
     // Limit the environment variables to those that we
     // know may affect Firefox to reduce leaking PII.
     let filteredEnvironmentKeys = ["xre_", "moz_", "gdk", "display"];
+    let exactEnvironmentKeys = ["sslkeylogfile"];
     for (let key of Object.keys(environment)) {
-      if (filteredEnvironmentKeys.some(k => key.toLowerCase().startsWith(k))) {
+      let lowerKey = key.toLowerCase();
+      if (
+        filteredEnvironmentKeys.some(k => lowerKey.startsWith(k)) ||
+        exactEnvironmentKeys.includes(lowerKey)
+      ) {
         filteredEnvironment[key] = environment[key];
       }
     }
@@ -1089,7 +1093,7 @@ var dataProviders = {
 if (AppConstants.MOZ_CRASHREPORTER) {
   dataProviders.crashes = function crashes(done) {
     const { CrashReports } = ChromeUtils.importESModule(
-      "resource://gre/modules/CrashReports.sys.mjs"
+      "moz-src:///toolkit/crashreporter/CrashReports.sys.mjs"
     );
     let reports = CrashReports.getReports();
     let now = new Date();

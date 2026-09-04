@@ -20,17 +20,21 @@
 #include "absl/strings/string_view.h"
 #include "api/fec_controller.h"
 #include "api/frame_transformer_interface.h"
+#include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
 #include "api/transport/bandwidth_estimation_settings.h"
 #include "api/transport/bitrate_settings.h"
 #include "api/transport/network_control.h"
 #include "api/transport/network_types.h"
+#include "api/units/data_size.h"
 #include "api/units/timestamp.h"
 #include "call/rtp_config.h"
 #include "call/rtp_transport_controller_send_interface.h"
+#include "modules/congestion_controller/rtp/congestion_controller_feedback_stats.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
+#include "rtc_base/containers/flat_map.h"
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/network_route.h"
 #include "test/gmock.h"
@@ -115,18 +119,20 @@ class MockRtpTransportControllerSend
               GetNetworkController,
               (),
               (override));
-  MOCK_METHOD(void,
-              EnableCongestionControlFeedbackAccordingToRfc8888,
-              (),
-              (override));
+  MOCK_METHOD(void, SetPreferredRtcpCcAckType, (RtcpFeedbackType), (override));
   MOCK_METHOD(std::optional<int>,
               ReceivedCongestionControlFeedbackCount,
+              (),
+              (const, override));
+  MOCK_METHOD((flat_map<uint32_t, ReceivedCongestionControlFeedbackStats>),
+              GetCongestionControlFeedbackStatsPerSsrc,
               (),
               (const, override));
   MOCK_METHOD(std::optional<int>,
               ReceivedTransportCcFeedbackCount,
               (),
               (const, override));
+  MOCK_METHOD(DataSize, GetTransportOverhead, (), (const, override));
 };
 }  // namespace webrtc
 #endif  // CALL_TEST_MOCK_RTP_TRANSPORT_CONTROLLER_SEND_H_

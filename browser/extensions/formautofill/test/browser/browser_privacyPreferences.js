@@ -99,24 +99,20 @@ add_task(async function test_openManageAutofillDialogs() {
         MANAGE_ADDRESSES_DIALOG_URL,
         MANAGE_CREDIT_CARDS_DIALOG_URL,
       ];
-      await SpecialPowers.spawn(
-        browser,
-        [args],
-        ([selectors, addrUrl, ccUrl]) => {
-          function testManageDialogOpened(expectedUrl) {
-            return {
-              open: openUrl => is(openUrl, expectedUrl, "Manage dialog called"),
-            };
-          }
-
-          let realgSubDialog = content.window.gSubDialog;
-          content.window.gSubDialog = testManageDialogOpened(addrUrl);
-          content.document.querySelector(selectors.savedAddressesBtn).click();
-          content.window.gSubDialog = testManageDialogOpened(ccUrl);
-          content.document.querySelector(selectors.savedCreditCardsBtn).click();
-          content.window.gSubDialog = realgSubDialog;
+      await SpecialPowers.spawn(browser, args, (selectors, addrUrl, ccUrl) => {
+        function testManageDialogOpened(expectedUrl) {
+          return {
+            open: openUrl => is(openUrl, expectedUrl, "Manage dialog called"),
+          };
         }
-      );
+
+        let realgSubDialog = content.window.gSubDialog;
+        content.window.gSubDialog = testManageDialogOpened(addrUrl);
+        content.document.querySelector(selectors.savedAddressesBtn).click();
+        content.window.gSubDialog = testManageDialogOpened(ccUrl);
+        content.document.querySelector(selectors.savedCreditCardsBtn).click();
+        content.window.gSubDialog = realgSubDialog;
+      });
     }
   );
 });
@@ -334,7 +330,7 @@ add_task(async function test_addressAutofillNotAvailableViaRegion() {
     AUTOFILL_ADDRESSES_AVAILABLE_PREF
   );
   is(
-    FormAutofill.isAutofillAddressesAvailable,
+    FormAutofill.isAutofillTypeAvailable("address"),
     false,
     "Address autofill should not be available due to unsupported region"
   );

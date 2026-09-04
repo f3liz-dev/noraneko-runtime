@@ -11,10 +11,14 @@ prefs = [
   "layout.css.webkit-fill-available.all-size-properties.enabled=true",
   "layout.css.basic-shape-shape.enabled=true",
   "layout.css.field-sizing.enabled=true",
-  "layout.css.anchor-positioning.enabled=true",
-  "layout.css.anchor-positioning.position-try-order.enabled=true",
+  "layout.css.attr.enabled=true",
   "layout.css.scroll-state.enabled=true",
+  "layout.css.style-queries.enabled=true",
   "layout.css.text-box.enabled=true",
+  "layout.css.text-decoration-inset-percentage.enabled=true",
+  "layout.css.link-parameters.enabled=true",
+  "layout.css.ellipse-corners.enabled=true",
+  "layout.css.calc-typed-arithmetic.enabled=true"
 ]
 support-files = [
   "animation_utils.js",
@@ -409,6 +413,8 @@ skip-if = [
 
 ["test_dynamic_change_causing_reflow.html"]
 
+["test_dynamic_change_causing_reflow_content.html"]
+
 ["test_exposed_prop_accessors.html"]
 
 ["test_extra_inherit_initial.html"]
@@ -620,6 +626,8 @@ skip-if = [
 
 ["test_pseudoelement_state.html"]
 
+["test_query_condition_matches_element.html"]
+
 ["test_query_container_for.html"]
 
 ["test_redundant_font_download.html"]
@@ -686,6 +694,8 @@ fail-if = [
 ["test_stylesheet_additions.html"]
 
 ["test_stylesheet_clone_font_face.html"]
+
+["test_stylesheet_deleteRule.html"]
 
 ["test_supports_rules.html"]
 
@@ -793,6 +803,9 @@ support-files = ["support/external-variable-url.css"]
 ["test_video_object_fit.html"]
 
 ["test_viewport_scrollbar_causing_reflow.html"]
+skip-if = [
+  "standalone", # Bug 2026600
+]
 
 ["test_viewport_units.html"]
 

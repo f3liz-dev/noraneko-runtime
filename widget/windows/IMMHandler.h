@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,22 +5,20 @@
 #ifndef IMMHandler_h_
 #define IMMHandler_h_
 
+#include <windows.h>
+
 #include "mozilla/ContentData.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/WritingModes.h"
-
-#include "windef.h"
-#include "winnetwk.h"
 #include "npapi.h"
-
 #include "nsCOMPtr.h"
 #include "nsIWidget.h"
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsTArray.h"
-
-#include <windows.h>
+#include "windef.h"
+#include "winnetwk.h"
 
 class nsWindow;
 
@@ -32,7 +29,7 @@ struct MSGResult;
 
 class IMEContext final {
  public:
-  IMEContext() : mWnd(nullptr), mIMC(nullptr) {}
+  IMEContext() = default;
 
   explicit IMEContext(HWND aWnd);
   explicit IMEContext(nsWindow* aWindowBase);
@@ -88,8 +85,8 @@ class IMEContext final {
  protected:
   IMEContext(const IMEContext& aOther) { MOZ_CRASH("Don't copy IMEContext"); }
 
-  HWND mWnd;
-  HIMC mIMC;
+  HWND mWnd{nullptr};
+  HIMC mIMC{nullptr};
 };
 
 class IMMHandler final {
@@ -123,6 +120,7 @@ class IMMHandler final {
   static void OnSelectionChange(nsWindow* aWindow,
                                 const IMENotification& aIMENotification,
                                 bool aIsIMMActive);
+  static void OnDestroyWindow(nsWindow* aWindow);
 
   static IMENotificationRequests GetIMENotificationRequests();
 
@@ -369,9 +367,15 @@ class IMMHandler final {
     mPassedIMEChar.AppendElement(msg);
   }
 
+  void ClearComposingData() {
+    mComposingWindow = nullptr;
+    mDispatcher = nullptr;
+    mIsComposing = false;
+  }
+
   TextEventDispatcher* GetTextEventDispatcherFor(nsWindow* aWindow);
 
-  nsWindow* mComposingWindow;
+  RefPtr<nsWindow> mComposingWindow;
   RefPtr<TextEventDispatcher> mDispatcher;
   nsString mCompositionString;
   nsTArray<uint32_t> mClauseArray;

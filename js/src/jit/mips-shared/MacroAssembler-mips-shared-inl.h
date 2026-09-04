@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -484,7 +482,7 @@ void MacroAssembler::ctz32(Register src, Register dest, bool knownNotZero) {
 }
 
 void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
-  // Equivalent to GCC output of mozilla::CountPopulation32()
+  // Equivalent to GCC output of std::popcount()
   ma_move(output, input);
   ma_sra(tmp, input, Imm32(1));
   ma_and(tmp, Imm32(0x55555555));
@@ -1504,31 +1502,31 @@ void MacroAssembler::spectreZeroRegister(Condition cond, Register scratch,
 // ========================================================================
 // Memory access primitives.
 
-FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+FaultingCodeRange MacroAssembler::storeDouble(FloatRegister src,
+                                              const Address& addr) {
+  return ma_sd(src, addr);
+}
+FaultingCodeRange MacroAssembler::storeDouble(FloatRegister src,
+                                              const BaseIndex& addr) {
+  return ma_sd(src, addr);
+}
+
+FaultingCodeRange MacroAssembler::storeFloat32(FloatRegister src,
                                                const Address& addr) {
-  return ma_sd(src, addr);
+  return ma_ss(src, addr);
 }
-FaultingCodeOffset MacroAssembler::storeDouble(FloatRegister src,
+FaultingCodeRange MacroAssembler::storeFloat32(FloatRegister src,
                                                const BaseIndex& addr) {
-  return ma_sd(src, addr);
-}
-
-FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
-                                                const Address& addr) {
-  return ma_ss(src, addr);
-}
-FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
-                                                const BaseIndex& addr) {
   return ma_ss(src, addr);
 }
 
-FaultingCodeOffset MacroAssembler::storeFloat16(FloatRegister src,
-                                                const Address& dest, Register) {
+FaultingCodeRange MacroAssembler::storeFloat16(FloatRegister src,
+                                               const Address& dest, Register) {
   MOZ_CRASH("Not supported for this target");
 }
-FaultingCodeOffset MacroAssembler::storeFloat16(FloatRegister src,
-                                                const BaseIndex& dest,
-                                                Register) {
+FaultingCodeRange MacroAssembler::storeFloat16(FloatRegister src,
+                                               const BaseIndex& dest,
+                                               Register) {
   MOZ_CRASH("Not supported for this target");
 }
 

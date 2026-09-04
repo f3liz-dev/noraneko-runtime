@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,6 +5,7 @@
 #ifndef ToastNotification_h_
 #define ToastNotification_h_
 
+#include "mozilla/AlertNotification.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "nsIAlertsService.h"
@@ -13,7 +13,6 @@
 #include "nsIThread.h"
 #include "nsIWindowsAlertsService.h"
 #include "nsRefPtrHashtable.h"
-#include "mozilla/AlertNotification.h"
 
 namespace mozilla {
 namespace widget {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +6,15 @@
 
 #include "ClientHandleParent.h"
 #include "ClientSourceParent.h"
+#include "ClientValidation.h"
 #include "mozilla/dom/PClientManagerParent.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla::dom {
+
+using mozilla::ipc::BackgroundParent;
+using mozilla::ipc::IPCResult;
 
 ClientSourceParent* ClientHandleOpParent::GetSource() const {
   auto handle = static_cast<ClientHandleParent*>(Manager());
@@ -23,9 +26,16 @@ void ClientHandleOpParent::ActorDestroy(ActorDestroyReason aReason) {
   mSourcePromiseRequestHolder.DisconnectIfExists();
 }
 
-void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
+IPCResult ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
   RefPtr<ClientHandleParent> handle =
       static_cast<ClientHandleParent*>(Manager());
+
+  if (!IsValidClientOpConstructorArgs(
+          aArgs,
+          BackgroundParent::GetLoadedOrigins(handle->Manager()->Manager()))) {
+    return IPC_FAIL(this, "Invalid ClientOpConstructorArgs!");
+  }
+
   handle->EnsureSource()
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
@@ -62,6 +72,8 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
             return;
           })
       ->Track(mSourcePromiseRequestHolder);
+
+  return IPC_OK();
 }
 
 }  // namespace mozilla::dom

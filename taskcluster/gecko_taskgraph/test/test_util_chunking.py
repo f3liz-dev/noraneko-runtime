@@ -5,6 +5,7 @@
 
 import re
 from itertools import combinations
+from unittest.mock import patch
 
 import pytest
 from mozunit import main
@@ -51,10 +52,10 @@ def mock_manifest_runtimes_file():
             "test-linux2404-64-shippable/opt-reftest",
             "test-linux2404-64-shippable/opt-xpcshell",
             "test-linux2404-64-shippable/opt-web-platform-tests",
-            "test-windows11-64-24h2-shippable/opt-crashtest",
-            "test-windows11-64-24h2-shippable/opt-reftest",
-            "test-windows11-64-24h2-shippable/opt-xpcshell",
-            "test-windows11-64-24h2-shippable/opt-web-platform-tests",
+            "test-windows11-64-25h2-shippable/opt-crashtest",
+            "test-windows11-64-25h2-shippable/opt-reftest",
+            "test-windows11-64-25h2-shippable/opt-xpcshell",
+            "test-windows11-64-25h2-shippable/opt-web-platform-tests",
             "test-android-em-14-x86_64-shippable/opt-geckoview-crashtest",
             "test-android-em-14-x86_64-shippable/opt-geckoview-reftest",
             "test-android-em-14-x86_64-shippable/opt-geckoview-xpcshell",
@@ -80,11 +81,10 @@ def mock_manifest_runtimes_file():
         },
     }
 
-    # Inject mock data directly into the memoize cache
-    chunking._load_manifest_runtimes_data[()] = mock_data
-    yield
-    # Clean up
-    chunking._load_manifest_runtimes_data.clear()
+    with patch.object(chunking, "_load_manifest_runtimes_data", return_value=mock_data):
+        chunking.get_runtimes.cache_clear()
+        yield
+    chunking.get_runtimes.cache_clear()
 
 
 @pytest.fixture(scope="module")
@@ -219,6 +219,7 @@ def mock_mozinfo():
             "webgpu": False,
             "webcodecs": False,
             "eme": False,
+            "webrtc": False,
             "privatebrowsing": False,
             "tag": tag,
         }
@@ -286,10 +287,10 @@ def test_guess_mozinfo_from_task(params, exception, mock_task_definition):
         ("linux2404-64-shippable/opt", "reftest"),
         ("linux2404-64-shippable/opt", "web-platform-tests"),
         ("linux2404-64-shippable/opt", "xpcshell"),
-        ("windows11-64-24h2-shippable/opt", "crashtest"),
-        ("windows11-64-24h2-shippable/opt", "reftest"),
-        ("windows11-64-24h2-shippable/opt", "web-platform-tests"),
-        ("windows11-64-24h2-shippable/opt", "xpcshell"),
+        ("windows11-64-25h2-shippable/opt", "crashtest"),
+        ("windows11-64-25h2-shippable/opt", "reftest"),
+        ("windows11-64-25h2-shippable/opt", "web-platform-tests"),
+        ("windows11-64-25h2-shippable/opt", "xpcshell"),
         ("android-em-14-x86_64-shippable/opt", "crashtest"),
         ("android-em-14-x86_64-shippable/opt", "reftest"),
         ("android-em-14-x86_64-shippable/opt", "web-platform-tests"),
@@ -299,7 +300,7 @@ def test_guess_mozinfo_from_task(params, exception, mock_task_definition):
 def test_get_runtimes(platform, suite, mock_manifest_runtimes_file):
     """Tests that runtime information is returned for known good configurations."""
     # Clear get_runtimes cache so each parametrized test gets fresh results
-    chunking.get_runtimes.clear()
+    chunking.get_runtimes.cache_clear()
 
     result = chunking.get_runtimes(platform, suite)
     assert isinstance(result, dict)
@@ -480,6 +481,63 @@ def test_chunk_manifests(suite, platform, chunks, mock_mozinfo):
     assert chunked_manifests
     assert len(chunked_manifests) == chunks
     assert all(chunked_manifests)
+
+
+@pytest.mark.parametrize("subsuite", sorted(chunking.WPT_SUBSUITES))
+@pytest.mark.parametrize(
+    "platform",
+    [
+        ("mac", "x86_64"),
+        ("win", "x86_64"),
+        ("linux", "x86_64"),
+    ],
+)
+def test_get_manifests_wpt_subsuite(platform, subsuite, mock_mozinfo):
+    """A subsuite run only loads manifests under that subsuite's path prefixes."""
+    mozinfo = mock_mozinfo(*platform)
+    # Mark this as the given subsuite's run.
+    mozinfo[subsuite] = True
+
+    loader = chunking.DefaultLoader([])
+    manifests = loader.get_manifests("web-platform-tests", frozenset(mozinfo.items()))
+
+    assert manifests["active"]
+    subsuite_paths = chunking.WPT_SUBSUITES[subsuite]
+    assert all(
+        any(
+            m.startswith("/" + p) or m.startswith("/_mozilla/" + p)
+            for p in subsuite_paths
+        )
+        for m in manifests["active"]
+    ), f"Every manifest should be under one of the {subsuite} subsuite's path prefixes"
+
+
+@pytest.mark.parametrize(
+    "platform",
+    [
+        ("mac", "x86_64"),
+        ("win", "x86_64"),
+        ("linux", "x86_64"),
+    ],
+)
+def test_get_manifests_wpt_general_excludes_subsuites(platform, mock_mozinfo):
+    """A non-subsuite run excludes every subsuite's manifests."""
+    mozinfo = mock_mozinfo(*platform)
+
+    loader = chunking.DefaultLoader([])
+    manifests = loader.get_manifests("web-platform-tests", frozenset(mozinfo.items()))
+
+    assert manifests["active"]
+    subsuite_prefixes = [
+        path for paths in chunking.WPT_SUBSUITES.values() for path in paths
+    ]
+    for m in manifests["active"]:
+        assert not any(
+            m.startswith("/" + p) or m.startswith("/_mozilla/" + p)
+            for p in subsuite_prefixes
+        ), (
+            f"{m} should have been excluded from the general web-platform-tests run, since it belongs to a subsuite"
+        )
 
 
 if __name__ == "__main__":

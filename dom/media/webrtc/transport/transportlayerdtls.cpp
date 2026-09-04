@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 
 #include <algorithm>
 #include <iomanip>
-#include <queue>
 #include <sstream>
 
 #include "dtlsidentity.h"
@@ -396,6 +393,7 @@ nsresult TransportLayerDtls::InitInternal() {
 void TransportLayerDtls::WasInserted() {
   // Connect to the lower layers
   if (!Setup()) {
+    mErrorDescription = "Internal error";
     TL_SET_STATE(TS_ERROR);
   }
 }
@@ -800,6 +798,19 @@ bool TransportLayerDtls::SetupCipherSuites(UniquePRFileDesc& ssl_fd) {
     }
   }
 
+  rv = SSL_AlertSentCallback(ssl_fd.get(),
+                             TransportLayerDtls::SentAlertCallback, this);
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Unable to register alert sent callback");
+  }
+
+  rv = SSL_AlertReceivedCallback(
+      ssl_fd.get(), TransportLayerDtls::ReceivedAlertCallback, this);
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR,
+              LAYER_INFO << "Unable to register alert received callback");
+  }
+
   for (const auto& cipher : EnabledCiphers) {
     MOZ_MTLOG(ML_DEBUG, LAYER_INFO << "Enabling: " << cipher);
     rv = SSL_CipherPrefSet(ssl_fd.get(), cipher, PR_TRUE);
@@ -832,20 +843,64 @@ bool TransportLayerDtls::SetupCipherSuites(UniquePRFileDesc& ssl_fd) {
   return true;
 }
 
-nsresult TransportLayerDtls::GetCipherSuite(uint16_t* cipherSuite) const {
+nsresult TransportLayerDtls::GetChannelInfo(SSLChannelInfo* info) const {
   CheckThread();
+  if (state_ != TS_OPEN) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (SSL_GetChannelInfo(ssl_fd_.get(), info, sizeof(*info)) != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+nsTArray<nsTArray<uint8_t>> TransportLayerDtls::GetPeerCertChainDer() const {
+  CheckThread();
+  nsTArray<nsTArray<uint8_t>> result;
+  UniqueCERTCertList chain(SSL_PeerCertificateChain(ssl_fd_.get()));
+  if (!chain) {
+    MOZ_MTLOG(ML_NOTICE,
+              LAYER_INFO << "SSL_PeerCertificateChain returned no certs");
+    return result;
+  }
+  for (CERTCertListNode* node = CERT_LIST_HEAD(chain);
+       !CERT_LIST_END(node, chain); node = CERT_LIST_NEXT(node)) {
+    const SECItem& der = node->cert->derCert;
+    nsTArray<uint8_t> bytes;
+    bytes.AppendElements(der.data, der.len);
+    result.AppendElement(std::move(bytes));
+  }
+  return result;
+}
+
+nsTArray<uint8_t> TransportLayerDtls::GetLocalCertDer() const {
+  CheckThread();
+  nsTArray<uint8_t> result;
+  if (!identity_) {
+    return result;
+  }
+  const UniqueCERTCertificate& cert = identity_->cert();
+  if (!cert) {
+    return result;
+  }
+  const SECItem& der = cert->derCert;
+  result.AppendElements(der.data, der.len);
+  return result;
+}
+
+nsresult TransportLayerDtls::GetCipherSuite(uint16_t* cipherSuite) const {
   if (!cipherSuite) {
     MOZ_MTLOG(ML_ERROR, LAYER_INFO << "GetCipherSuite passed a nullptr");
     return NS_ERROR_NULL_POINTER;
   }
-  if (state_ != TS_OPEN) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
   SSLChannelInfo info;
-  SECStatus rv = SSL_GetChannelInfo(ssl_fd_.get(), &info, sizeof(info));
-  if (rv != SECSuccess) {
-    MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "GetCipherSuite can't get channel info");
-    return NS_ERROR_FAILURE;
+  nsresult rv = GetChannelInfo(&info);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_FAILURE) {
+      MOZ_MTLOG(ML_NOTICE,
+                LAYER_INFO << "GetCipherSuite can't get channel info");
+    }
+    return rv;
   }
   *cipherSuite = info.cipherSuite;
   return NS_OK;
@@ -868,6 +923,20 @@ std::vector<uint16_t> TransportLayerDtls::GetDefaultSrtpCiphers() {
   return ciphers;
 }
 
+const char* TransportLayerDtls::GetSrtpCipherName(uint16_t cipher) {
+  switch (cipher) {
+    case kDtlsSrtpAes128CmHmacSha1_80:
+      return "SRTP_AES128_CM_HMAC_SHA1_80";
+    case kDtlsSrtpAes128CmHmacSha1_32:
+      return "SRTP_AES128_CM_HMAC_SHA1_32";
+    case kDtlsSrtpAeadAes128Gcm:
+      return "SRTP_AEAD_AES_128_GCM";
+    case kDtlsSrtpAeadAes256Gcm:
+      return "SRTP_AEAD_AES_256_GCM";
+  }
+  return nullptr;
+}
+
 void TransportLayerDtls::StateChange(TransportLayer* layer, State state) {
   switch (state) {
     case TS_NONE:
@@ -877,6 +946,7 @@ void TransportLayerDtls::StateChange(TransportLayer* layer, State state) {
     case TS_INIT:
       MOZ_MTLOG(ML_ERROR,
                 LAYER_INFO << "State change of lower layer to INIT forbidden");
+      mErrorDescription = "Internal Error";
       TL_SET_STATE(TS_ERROR);
       break;
 
@@ -910,6 +980,7 @@ void TransportLayerDtls::StateChange(TransportLayer* layer, State state) {
 
     case TS_ERROR:
       MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Lower layer experienced an error");
+      mErrorDescription = "ICE encountered an error";
       TL_SET_STATE(TS_ERROR);
       break;
   }
@@ -938,6 +1009,7 @@ void TransportLayerDtls::Handshake() {
     if (!cert_ok_) {
       MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Certificate check never occurred");
       RecordHandshakeCompletionTelemetry("CERT_FAILURE");
+      mErrorDescription = "Internal error";
       TL_SET_STATE(TS_ERROR);
       return;
     }
@@ -947,6 +1019,7 @@ void TransportLayerDtls::Handshake() {
       // (assuming the close_notify isn't dropped).
       ssl_fd_ = nullptr;
       RecordHandshakeCompletionTelemetry("ALPN_FAILURE");
+      // CheckAlpn sets mErrorDescription
       TL_SET_STATE(TS_ERROR);
       return;
     }
@@ -984,6 +1057,7 @@ void TransportLayerDtls::Handshake() {
         MOZ_MTLOG(ML_ERROR, LAYER_INFO << "DTLS handshake error " << err << " ("
                                        << err_msg << ")");
         RecordHandshakeCompletionTelemetry(err_msg);
+        mErrorDescription = "DTLS handshake failure";
         TL_SET_STATE(TS_ERROR);
         break;
     }
@@ -1006,6 +1080,7 @@ bool TransportLayerDtls::CheckAlpn() {
                                   &chosenAlpnLen, sizeof(chosenAlpn));
   if (rv != SECSuccess) {
     MOZ_MTLOG(ML_ERROR, LAYER_INFO << "ALPN error");
+    mErrorDescription = "Internal error";
     return false;
   }
   switch (alpnState) {
@@ -1019,16 +1094,21 @@ bool TransportLayerDtls::CheckAlpn() {
                            << (alpn_default_.empty() ? "failing"
                                                      : "selecting default"));
       alpn_ = alpn_default_;
+      if (alpn_.empty()) {
+        mErrorDescription = "No ALPN";
+      }
       return !alpn_.empty();
 
     case SSL_NEXT_PROTO_NO_OVERLAP:
       // This only happens if there is a custom NPN/ALPN callback installed
       // and that callback doesn't properly handle ALPN.
       MOZ_MTLOG(ML_ERROR, LAYER_INFO << "error in ALPN selection callback");
+      mErrorDescription = "Internal error";
       return false;
 
     case SSL_NEXT_PROTO_EARLY_VALUE:
       MOZ_CRASH("Unexpected 0-RTT ALPN value");
+      mErrorDescription = "Internal error";
       return false;
   }
 
@@ -1044,9 +1124,10 @@ bool TransportLayerDtls::CheckAlpn() {
     }
     MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Bad ALPN string: '" << chosen
                                    << "'; permitted:" << ss.str());
+    mErrorDescription = fmt::format("Invalid ALPN: {}", chosen);
     return false;
   }
-  alpn_ = chosen;
+  alpn_ = std::move(chosen);
   return true;
 }
 
@@ -1108,6 +1189,7 @@ void TransportLayerDtls::GetDecryptedPackets() {
           MOZ_MTLOG(ML_DEBUG, LAYER_INFO << "Receive would have blocked");
         } else {
           MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "NSS Error " << err);
+          mErrorDescription = "DTLS receive failed";
           TL_SET_STATE(TS_ERROR);
         }
       }
@@ -1167,6 +1249,7 @@ TransportResult TransportLayerDtls::SendPacket(MediaPacket& packet) {
   }
 
   MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "NSS Error " << err);
+  mErrorDescription = "DTLS send failed";
   TL_SET_STATE(TS_ERROR);
   return TE_ERROR;
 }
@@ -1289,8 +1372,7 @@ class TlsParser {
   bool error() const { return error_; }
   size_t remaining() const { return remaining_; }
 
-  template <typename T,
-            class = typename std::enable_if<std::is_unsigned<T>::value>::type>
+  template <typename T, class = std::enable_if_t<std::is_unsigned_v<T>>>
   void Read(T* v, size_t sz = sizeof(T)) {
     MOZ_ASSERT(sz <= sizeof(T),
                "Type is too small to hold the value requested");
@@ -1307,8 +1389,7 @@ class TlsParser {
     *v = result;
   }
 
-  template <typename T,
-            class = typename std::enable_if<std::is_unsigned<T>::value>::type>
+  template <typename T, class = std::enable_if_t<std::is_unsigned_v<T>>>
   void ReadVector(std::vector<T>* v, size_t w) {
     MOZ_ASSERT(v->empty(), "vector needs to be empty");
 
@@ -1409,6 +1490,26 @@ SECStatus TransportLayerDtls::HandleSrtpXtn(
   return SECFailure;
 }
 
+static constexpr uint8_t kAlertFatal = 2;
+
+/* static */
+void TransportLayerDtls::SentAlertCallback(const PRFileDesc* fd, void* arg,
+                                           const SSLAlert* alert) {
+  auto self = reinterpret_cast<TransportLayerDtls*>(arg);
+  if (alert->level == kAlertFatal && !self->mSentAlert.isSome()) {
+    self->mSentAlert = Some(alert->description);
+  }
+}
+
+/* static */
+void TransportLayerDtls::ReceivedAlertCallback(const PRFileDesc* fd, void* arg,
+                                               const SSLAlert* alert) {
+  auto self = reinterpret_cast<TransportLayerDtls*>(arg);
+  if (alert->level == kAlertFatal && !self->mReceivedAlert.isSome()) {
+    self->mReceivedAlert = Some(alert->description);
+  }
+}
+
 nsresult TransportLayerDtls::ExportKeyingMaterial(const std::string& label,
                                                   bool use_context,
                                                   const std::string& context,
@@ -1496,7 +1597,7 @@ SECStatus TransportLayerDtls::AuthCertificateHook(PRFileDesc* fd,
 
       // Checking functions call PR_SetError()
       SECStatus rv = SECFailure;
-      for (auto digest : digests_) {
+      for (const auto& digest : digests_) {
         rv = CheckDigest(digest, peer_cert);
 
         // Matches a digest, we are good to go
@@ -1510,6 +1611,7 @@ SECStatus TransportLayerDtls::AuthCertificateHook(PRFileDesc* fd,
       MOZ_CRASH();  // Can't happen
   }
 
+  mHasFingerprintError = true;
   return SECFailure;
 }
 
@@ -1543,10 +1645,12 @@ void TransportLayerDtls::RecordStartedHandshakeTelemetry() {
 void TransportLayerDtls::RecordTlsTelemetry() {
   MOZ_ASSERT(state_ == TS_OPEN);
   SSLChannelInfo info;
-  SECStatus ss = SSL_GetChannelInfo(ssl_fd_.get(), &info, sizeof(info));
-  if (ss != SECSuccess) {
-    MOZ_MTLOG(ML_NOTICE,
-              LAYER_INFO << "RecordTlsTelemetry failed to get channel info");
+  nsresult rv = GetChannelInfo(&info);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_FAILURE) {
+      MOZ_MTLOG(ML_NOTICE,
+                LAYER_INFO << "RecordTlsTelemetry failed to get channel info");
+    }
     return;
   }
 
@@ -1580,7 +1684,7 @@ void TransportLayerDtls::RecordTlsTelemetry() {
       info.keaType);
 
   uint16_t cipher;
-  nsresult rv = GetSrtpCipher(&cipher);
+  rv = GetSrtpCipher(&cipher);
 
   if (NS_FAILED(rv)) {
     MOZ_MTLOG(ML_DEBUG, "No SRTP cipher suite");

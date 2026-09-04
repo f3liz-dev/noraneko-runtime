@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -127,6 +126,38 @@ interface nsIProfiler : nsISupports
    * launched. The target directory must already exist.
    */
   void dumpProfileToFile(in string aFilename);
+
+  /**
+   * Schedule a one-shot profile dump performed off the main thread by the
+   * sampler thread once `aDelaySeconds` have elapsed, writing this process's
+   * profile to `aFilename` (a no-op if the profiler stops first).
+   *
+   * Because it runs on the sampler thread rather than a main-thread timer, it
+   * still fires while the main thread is blocked in a long synchronous run and
+   * can't write a profile itself. The caller that set the deadline is
+   * responsible for reporting the written file, and should call
+   * `cancelScheduledDump` if it no longer wants the dump.
+   *
+   * If `aExitAfterDump` is true, the process exits as soon as the profile has
+   * been written.
+   */
+  void scheduleDumpToFile(in double aDelaySeconds, in string aFilename,
+                          in boolean aExitAfterDump);
+
+  /**
+   * Cancel a dump scheduled by `scheduleDumpToFile`.
+   */
+  void cancelScheduledDump();
+
+  /**
+   * Block until an in-progress scheduled dump (see `scheduleDumpToFile`)
+   * finishes. A no-op if none is in progress, and always a no-op outside
+   * automation. This lets a caller on a fatal-abort path avoid acting over a
+   * half-written profile; when the dump was scheduled with `aExitAfterDump` the
+   * process exits on completion, so this never returns. It can block for as long
+   * as the dump takes, which is why it is restricted to automation.
+   */
+  void waitForScheduledDump();
 
   boolean IsActive();
 

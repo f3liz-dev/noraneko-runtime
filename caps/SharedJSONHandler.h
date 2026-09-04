@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,9 @@
 #ifndef mozilla_SharedJSONHandler_h
 #define mozilla_SharedJSONHandler_h
 
-#include "js/JSON.h"  // JS::JSONParseHandler
-
+#include "BasePrincipal.h"   // BasePrincipal
+#include "js/JSON.h"         // JS::JSONParseHandler
 #include "mozilla/RefPtr.h"  // RefPtr
-
-#include "BasePrincipal.h"  // BasePrincipal
 
 namespace mozilla {
 

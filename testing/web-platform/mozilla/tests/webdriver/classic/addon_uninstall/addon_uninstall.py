@@ -1,6 +1,6 @@
 import pytest
 from support.addons import get_ids_for_installed_addons
-from tests.support.asserts import assert_error, assert_success
+from tests.support.classic.asserts import assert_error, assert_success
 from tests.support.helpers import get_base64_for_extension_file
 
 from . import install_addon, uninstall_addon
@@ -11,7 +11,7 @@ def test_uninstall_nonexistent_addon(session):
     assert_error(response, "unknown error")
 
 
-@pytest.mark.allow_system_access
+@pytest.mark.geckodriver(allow_system_access=True)
 @pytest.mark.parametrize(
     "filename, temporary",
     [("firefox/signed.xpi", True), ("firefox/unsigned.xpi", False)],

@@ -17,26 +17,24 @@ ChromeUtils.defineESModuleGetters(this, {
  *
  * @param {Tab} aTab
  *        The tab that the web app should open with
+ * @param {{userContextId:number}} [aOptions]
+ *        Options to use when creating the web app
  * @returns {Promise}
  *        The web app window object.
  */
-async function openTaskbarTabWindow(aTab = null) {
+async function openTaskbarTabWindow(aTab = null, aOptions = null) {
   const url = Services.io.newURI("https://example.com");
-  const userContextId = 0;
+  const userContextId = aOptions?.userContextId ?? 0;
 
-  const registry = new TaskbarTabsRegistry();
+  const registry = createInMemoryRegistry();
   const taskbarTab = createTaskbarTab(registry, url, userContextId);
   const windowManager = new TaskbarTabsWindowManager();
 
-  const windowPromise = BrowserTestUtils.waitForNewWindow();
-
   if (aTab) {
-    windowManager.replaceTabWithWindow(taskbarTab, aTab);
-  } else {
-    windowManager.openWindow(taskbarTab);
+    return await windowManager.replaceTabWithWindow(taskbarTab, aTab);
   }
 
-  return await windowPromise;
+  return await windowManager.openWindow(taskbarTab);
 }
 
 /**
@@ -64,4 +62,21 @@ function createTaskbarTab(aRegistry, ...args) {
   }
 
   return check(result);
+}
+
+/**
+ * Creates a TaskbarTabsRegistry that doesn't save anything on disk.
+ *
+ * (This function is also in xpcshell/head.js.)
+ *
+ * @returns {TaskbarTabsRegistry}
+ *   The newly-created registry, which will be empty.
+ */
+function createInMemoryRegistry() {
+  return new TaskbarTabsRegistry(
+    {
+      save: () => {},
+    },
+    []
+  );
 }

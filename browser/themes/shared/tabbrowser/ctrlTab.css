@@ -6,14 +6,28 @@
 
 #ctrlTab-panel {
   appearance: none;
-  --panel-background: hsla(0, 0%, 40%, 0.85);
-  --panel-color: white;
+  --panel-background-color: hsla(0, 0%, 40%, 0.85);
+  --panel-text-color: white;
   --panel-border-color: transparent;
   --panel-padding: 20px 10px 10px;
   -moz-window-shadow: none;
+  background-color: transparent;
   @media not (-moz-platform: macos) {
     font-weight: var(--font-weight-bold);
   }
+}
+
+#ctrlTab-previews {
+  display: grid;
+  grid-template-columns: repeat(var(--ctrlTab-previews-per-row), minmax(0, 1fr));
+  /* Add 10px to offset the negative margin-top on .ctrlTab-preview-inner so
+     wrapped rows keep a full row of spacing instead of nearly touching. */
+  row-gap: calc(var(--space-medium) + 10px);
+}
+
+.ctrlTab-preview {
+  min-width: 0;
+  padding: 0;
 }
 
 .ctrlTab-preview,
@@ -102,6 +116,6 @@
 
 .ctrlTab-label {
   flex: 1;
-  justify-content: center;
+  text-align: center;
   contain: inline-size;
 }

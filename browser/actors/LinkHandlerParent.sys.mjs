@@ -91,7 +91,7 @@ export class LinkHandlerParent extends JSWindowActorParent {
       return;
     }
 
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
 
     let gBrowser = win.gBrowser;
 
@@ -109,6 +109,12 @@ export class LinkHandlerParent extends JSWindowActorParent {
         }
 
         this.notifyTestListeners("LoadingIcon", aMsg.data);
+        break;
+
+      case "Link:ExpireFavicons":
+        lazy.PlacesUtils.favicons
+          .expireFaviconsForPage(this.manager.documentURI)
+          .catch(console.error);
         break;
 
       case "Link:SetIcon":
@@ -164,7 +170,6 @@ export class LinkHandlerParent extends JSWindowActorParent {
     gBrowser,
     browser,
     {
-      pageURL,
       originalURL,
       expiration,
       iconURL,
@@ -247,7 +252,7 @@ export class LinkHandlerParent extends JSWindowActorParent {
       try {
         lazy.PlacesUtils.favicons
           .setFaviconForPage(
-            Services.io.newURI(pageURL),
+            this.manager.documentURI,
             Services.io.newURI(originalURL),
             iconURI,
             expiration && lazy.PlacesUtils.toPRTime(expiration),

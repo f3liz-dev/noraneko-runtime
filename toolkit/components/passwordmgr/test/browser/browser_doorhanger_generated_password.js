@@ -61,7 +61,7 @@ async function checkPromptContents(
     info(
       `Waiting for password value to be ${expectedPasswordLength} chars long`
     );
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return (
         notificationElement.querySelector("#password-notification-password")
           .value.length == expectedPasswordLength
@@ -109,7 +109,7 @@ async function openFormInNewTab(url, formValues, taskFn) {
       url,
     },
     async function (browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
       await formFilled;
 
       await SpecialPowers.spawn(
@@ -198,6 +198,22 @@ async function openFormInNewTab(url, formValues, taskFn) {
 }
 
 async function openAndVerifyDoorhanger(browser, type, expected) {
+  // The doorhanger's dismissed state is finalized asynchronously (it depends on
+  // async storage lookups), so wait for it to reach the expected state before
+  // asserting to avoid racing a still-transitioning notification.
+  await TestUtils.waitForCondition(
+    () => {
+      let n = PopupNotifications.getNotification("password", null);
+      return (
+        n &&
+        n.options.passwordNotificationType == type &&
+        n.dismissed == expected.dismissed
+      );
+    },
+    "Waiting for the doorhanger to reach the expected dismissed state",
+    100,
+    100
+  );
   // check a dismissed prompt was shown with extraAttr attribute
   let notif = getCaptureDoorhanger(type);
   Assert.ok(notif, `${type} doorhanger was created`);
@@ -241,9 +257,9 @@ async function openAndVerifyDoorhanger(browser, type, expected) {
 }
 
 async function appendContentInputvalue(browser, selector, str) {
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    { selector, str },
+    [{ selector, str }],
     async function ({ selector, str }) {
       const EventUtils = ContentTaskUtils.getEventUtils(content);
       let input = content.document.querySelector(selector);
@@ -597,6 +613,12 @@ add_task(async function autocomplete_generated_password_saved_username() {
         "passwordmgr-storage-changed",
         (_, data) => data == "modifyLogin"
       );
+      // Confirming the change both updates user1 and removes the auto-saved
+      // login, so wait for the removal too before checking the final state.
+      let removeLoginPromise = TestUtils.topicObserved(
+        "passwordmgr-storage-changed",
+        (_, data) => data == "removeLogin"
+      );
       info("waiting for submitForm");
       await submitForm(browser);
       promiseHidden = BrowserTestUtils.waitForEvent(
@@ -606,6 +628,7 @@ add_task(async function autocomplete_generated_password_saved_username() {
       clickDoorhangerButton(notif, CHANGE_BUTTON);
       await promiseHidden;
       await storageChangedPromise;
+      await removeLoginPromise;
       await verifyLogins([
         {
           timesUsed: user1LoginSnapshot.timesUsed + 1,
@@ -1113,7 +1136,7 @@ add_task(
         },
       },
       async function taskFn(browser) {
-        await SimpleTest.promiseFocus(browser.ownerGlobal);
+        await SimpleTest.promiseFocus(browser.documentGlobal);
 
         let storageChangedPromise = TestUtils.topicObserved(
           "passwordmgr-storage-changed",
@@ -1290,7 +1313,7 @@ add_task(async function autosaved_login_updated_to_existing_login_onsubmit() {
       },
     },
     async function taskFn(browser) {
-      await SimpleTest.promiseFocus(browser.ownerGlobal);
+      await SimpleTest.promiseFocus(browser.documentGlobal);
 
       // first, create an auto-saved login with generated password
       let storageChangedPromise = TestUtils.topicObserved(
@@ -1492,11 +1515,13 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
         "passwordmgr-storage-changed",
         (_, data) => data == "addLogin"
       );
-      // We don't need to wait to confirm the hint hides itelf every time
-      let forceClosePopup = true;
-      let hintShownAndVerified = verifyConfirmationHint(
-        browser,
-        forceClosePopup
+      // Wait for the confirmation hint's "shown" event rather than asserting
+      // the panel's transient open state, which races with the now-async
+      // auto-save.
+      let confirmationHint = document.getElementById("confirmation-hint");
+      let autoSaveHintShown = BrowserTestUtils.waitForPopupEvent(
+        confirmationHint,
+        "shown"
       );
 
       info("Filling generated password from AC menu");
@@ -1505,9 +1530,11 @@ add_task(async function form_change_from_autosaved_login_to_existing_login() {
       info("waiting for dismissed password-change notification");
       await waitForDoorhanger(browser, "password-change");
 
-      // Make sure confirmation hint was shown
-      info("waiting for verifyConfirmationHint");
-      await hintShownAndVerified;
+      // Make sure confirmation hint was shown, then close it so it doesn't leak
+      // into the later "no confirmation hint" assertion.
+      info("waiting for confirmation hint");
+      await autoSaveHintShown;
+      await closePopup(confirmationHint);
 
       info("waiting for addLogin");
       await storageChangedPromise;

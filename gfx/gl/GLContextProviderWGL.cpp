@@ -1,29 +1,25 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GLContextProvider.h"
 #include "GLContextWGL.h"
 #include "GLLibraryLoader.h"
-#include "nsDebug.h"
-#include "nsIWidget.h"
+#include "gfxCrashReporterUtils.h"
 #include "gfxPlatform.h"
 #include "gfxWindowsSurface.h"
-
-#include "gfxCrashReporterUtils.h"
-
-#include "prenv.h"
-
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SharedLibrary.h"
 #include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
+#include "nsDebug.h"
+#include "nsIWidget.h"
+#include "prenv.h"
 
 namespace mozilla {
 namespace gl {
@@ -31,7 +27,7 @@ namespace gl {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
-MOZ_RUNINIT WGLLibrary sWGLLib;
+constinit WGLLibrary sWGLLib;
 
 /*
 ScopedWindow::~ScopedWindow()
@@ -103,10 +99,7 @@ bool WGLLibrary::EnsureInitialized() {
       }                           \
     }                             \
   }
-#define END_OF_SYMBOLS \
-  {                    \
-    nullptr, {}        \
-  }
+#define END_OF_SYMBOLS {nullptr, {}}
 
   {
     const auto loader = SymbolLoader(*mOGLLibrary);

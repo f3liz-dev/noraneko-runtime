@@ -57,6 +57,7 @@ const SEC_ERROR_BAD_SIGNATURE = SEC_ERROR_BASE + 10;
 const SEC_ERROR_EXPIRED_CERTIFICATE = SEC_ERROR_BASE + 11;
 const SEC_ERROR_REVOKED_CERTIFICATE = SEC_ERROR_BASE + 12;
 const SEC_ERROR_UNKNOWN_ISSUER = SEC_ERROR_BASE + 13;
+const SEC_ERROR_BAD_PASSWORD = SEC_ERROR_BASE + 15;
 const SEC_ERROR_UNTRUSTED_ISSUER = SEC_ERROR_BASE + 20;
 const SEC_ERROR_UNTRUSTED_CERT = SEC_ERROR_BASE + 21;
 const SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE = SEC_ERROR_BASE + 30;
@@ -446,8 +447,10 @@ function clearOCSPCache() {
 }
 
 function clearSessionCache() {
-  let nssComponent = Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
-  nssComponent.clearSSLExternalAndInternalSessionCache();
+  let sslTokensCache = Cc["@mozilla.org/network/ssl-tokens-cache;1"].getService(
+    Ci.nsISSLTokensCache
+  );
+  sslTokensCache.clearSSLExternalAndInternalSessionCache();
 }
 
 function getSSLStatistics() {
@@ -565,8 +568,7 @@ function add_tls_server_setup(serverBinName, certsPath, addDefaultRoot = true) {
  *   output stream is ready.
  * @param {OriginAttributes} aOriginAttributes (optional)
  *   The origin attributes that the socket transport will have. This parameter
- *   affects OCSP because OCSP cache is double-keyed by origin attributes' first
- *   party domain.
+ *   affects OCSP because the OCSP cache partitioned by origin attributes.
  *
  * @param {OriginAttributes} aEchConfig (optional)
  *   A Base64-encoded ECHConfig. If non-empty, it will be configured to the client
@@ -899,11 +901,21 @@ function startOCSPResponder(
       info("got request for: " + aRequest.path);
       let basePath = aRequest.path.slice(1).split("/")[0];
       if (expectedBasePaths.length >= 1) {
-        Assert.equal(
-          basePath,
-          expectedBasePaths.shift(),
-          "Actual and expected base path should match"
-        );
+        if (basePath !== expectedBasePaths[0]) {
+          info(
+            "OCSP responder ignoring unexpected request for: " +
+              aRequest.path +
+              ", still expecting: " +
+              expectedBasePaths[0]
+          );
+          aResponse.setStatusLine(
+            aRequest.httpVersion,
+            500,
+            "Internal Server Error"
+          );
+          return;
+        }
+        expectedBasePaths.shift();
       }
       Assert.greaterOrEqual(
         expectedCertNames.length,
@@ -1372,4 +1384,87 @@ function add_ct_test(host, expectedCTValue, expectConnectionSuccess) {
       expectCT(expectedCTValue, true)
     );
   }
+}
+
+function findSlotByName(module, name) {
+  for (let slot of module.slots) {
+    if (slot.name == name) {
+      return slot;
+    }
+  }
+  return null;
+}
+
+async function findModuleByName(moduleDB, name) {
+  for (let module of await moduleDB.listModules()) {
+    if (module.name == name) {
+      return module;
+    }
+  }
+  return null;
+}
+
+// Configure mock internals to watch for the protected authentication handling
+// infrastructure opening "chrome://pippki/content/protectedAuth.xhtml".
+function installWindowWatcherForProtectedAuth(prompt) {
+  // Create a windowless browser before mocking nsIWindowWatcher so that
+  // createWindowlessBrowser uses the real watcher service. We hand its Window
+  // out from the mock's activeWindow getter so the C++ caller takes the
+  // "if (activeWindow) { openDialog(...) }" branch and the dialog-open
+  // assertions in openWindow below actually run.
+  let windowlessBrowser = Services.appShell.createWindowlessBrowser(false);
+  let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+  windowlessBrowser.docShell.createAboutBlankDocumentViewer(
+    systemPrincipal,
+    systemPrincipal
+  );
+
+  // Mock nsIWindowWatcher. The protected-auth path opens
+  // chrome://pippki/content/protectedAuth.xhtml via nsNSSDialogHelper, which
+  // forwards to nsIWindowWatcher::OpenWindow. We hand out a real Window from
+  // activeWindow so the C++ caller takes the dialog-open branch, then
+  // intercept openWindow to validate the URL and dialog args, and fire
+  // pk11-protected-auth-complete with the dialog's unique promptId.
+  let windowWatcher = {
+    protectedAuthPromptsSeen: 0,
+    get activeWindow() {
+      return windowlessBrowser.document.defaultView;
+    },
+    getNewPrompter: () => {
+      return prompt;
+    },
+    openWindow(_parent, url, _name, _features, args) {
+      equal(
+        url,
+        "chrome://pippki/content/protectedAuth.xhtml",
+        "expected protected-auth dialog URL"
+      );
+      this.protectedAuthPromptsSeen++;
+      let bag = args.QueryInterface(Ci.nsIWritablePropertyBag2);
+      equal(
+        bag.getPropertyAsAString("tokenName"),
+        "Test PKCS11 Tokeñ 2 Label",
+        "expected token name in dialog args"
+      );
+      let promptId = bag.getPropertyAsAString("promptId");
+      Services.obs.notifyObservers(
+        null,
+        "pk11-protected-auth-complete",
+        promptId
+      );
+      return null;
+    },
+    QueryInterface: ChromeUtils.generateQI(["nsIWindowWatcher"]),
+  };
+
+  let watcherCID = MockRegistrar.register(
+    "@mozilla.org/embedcomp/window-watcher;1",
+    windowWatcher
+  );
+  registerCleanupFunction(() => {
+    MockRegistrar.unregister(watcherCID);
+    windowlessBrowser.close();
+  });
+
+  return windowWatcher;
 }

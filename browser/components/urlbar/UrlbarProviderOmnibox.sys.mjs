@@ -20,7 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
 
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -34,10 +35,10 @@ export class UrlbarProviderOmnibox extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    return lazy.UrlbarShared.PROVIDER_TYPE.HEURISTIC;
   }
 
   /**
@@ -59,7 +60,7 @@ export class UrlbarProviderOmnibox extends UrlbarProvider {
         queryContext.searchString,
         queryContext.tokens[0].value
       ) &&
-      !queryContext.searchMode
+      !queryContext.restrictInSearchMode()
     ) {
       return true;
     }
@@ -99,19 +100,19 @@ export class UrlbarProviderOmnibox extends UrlbarProvider {
     let keyword = queryContext.tokens[0].value;
     let description = lazy.ExtensionSearchHandler.getDescription(keyword);
     let heuristicResult = new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.OMNIBOX,
-      source: UrlbarUtils.RESULT_SOURCE.ADDON,
+      type: lazy.UrlbarShared.RESULT_TYPE.OMNIBOX,
+      source: lazy.UrlbarShared.RESULT_SOURCE.ADDON,
       heuristic: true,
       payload: {
         title: description,
         content: queryContext.searchString,
         keyword: queryContext.tokens[0].value,
-        icon: UrlbarUtils.ICON.EXTENSION,
+        icon: lazy.UrlbarShared.ICON.EXTENSION,
       },
       highlights: {
-        title: UrlbarUtils.HIGHLIGHT.TYPED,
-        content: UrlbarUtils.HIGHLIGHT.TYPED,
-        keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+        title: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+        content: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+        keyword: lazy.UrlbarShared.HIGHLIGHT.TYPED,
       },
     });
     addCallback(this, heuristicResult);
@@ -134,19 +135,19 @@ export class UrlbarProviderOmnibox extends UrlbarProvider {
             continue;
           }
           let result = new lazy.UrlbarResult({
-            type: UrlbarUtils.RESULT_TYPE.OMNIBOX,
-            source: UrlbarUtils.RESULT_SOURCE.ADDON,
+            type: lazy.UrlbarShared.RESULT_TYPE.OMNIBOX,
+            source: lazy.UrlbarShared.RESULT_SOURCE.ADDON,
             payload: {
               title: suggestion.description,
               content,
               keyword: queryContext.tokens[0].value,
               isBlockable: suggestion.deletable,
-              icon: UrlbarUtils.ICON.EXTENSION,
+              icon: lazy.UrlbarShared.ICON.EXTENSION,
             },
             highlights: {
-              title: UrlbarUtils.HIGHLIGHT.TYPED,
-              content: UrlbarUtils.HIGHLIGHT.TYPED,
-              keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+              title: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+              content: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+              keyword: lazy.UrlbarShared.HIGHLIGHT.TYPED,
             },
           });
           addCallback(this, result);

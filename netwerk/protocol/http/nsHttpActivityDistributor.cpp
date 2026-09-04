@@ -3,18 +3,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "nsHttpActivityDistributor.h"
 
+#include "HttpLog.h"
+#include "NullHttpChannel.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "nsHttpActivityDistributor.h"
-#include "nsHttpHandler.h"
 #include "nsCOMPtr.h"
+#include "nsHttpHandler.h"
 #include "nsIOService.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsThreadUtils.h"
-#include "NullHttpChannel.h"
 
 namespace mozilla {
 namespace net {
@@ -33,11 +33,17 @@ nsHttpActivityDistributor::ObserveActivity(nsISupports* aHttpChannel,
                                            uint64_t aExtraSizeData,
                                            const nsACString& aExtraStringData) {
   MOZ_ASSERT(XRE_IsParentProcess() && NS_IsMainThread());
+  RefPtr<nsHttpActivityDistributor> self(this);
 
-  for (size_t i = 0; i < mObservers.Length(); i++) {
-    (void)mObservers[i]->ObserveActivity(aHttpChannel, aActivityType,
-                                         aActivitySubtype, aTimestamp,
-                                         aExtraSizeData, aExtraStringData);
+  ObserverArray observers;
+  {
+    MutexAutoLock lock(mLock);
+    observers = mObservers.Clone();
+  }
+  for (size_t i = 0; i < observers.Length(); i++) {
+    (void)observers[i]->ObserveActivity(aHttpChannel, aActivityType,
+                                        aActivitySubtype, aTimestamp,
+                                        aExtraSizeData, aExtraStringData);
   }
   return NS_OK;
 }
@@ -48,9 +54,15 @@ nsHttpActivityDistributor::ObserveConnectionActivity(
     bool aIsHttp3, uint32_t aActivityType, uint32_t aActivitySubtype,
     PRTime aTimestamp, const nsACString& aExtraStringData) {
   MOZ_ASSERT(XRE_IsParentProcess() && NS_IsMainThread());
+  RefPtr<nsHttpActivityDistributor> self(this);
 
-  for (size_t i = 0; i < mObservers.Length(); i++) {
-    (void)mObservers[i]->ObserveConnectionActivity(
+  ObserverArray observers;
+  {
+    MutexAutoLock lock(mLock);
+    observers = mObservers.Clone();
+  }
+  for (size_t i = 0; i < observers.Length(); i++) {
+    (void)observers[i]->ObserveConnectionActivity(
         aHost, aPort, aSSL, aHasECH, aIsHttp3, aActivityType, aActivitySubtype,
         aTimestamp, aExtraStringData);
   }

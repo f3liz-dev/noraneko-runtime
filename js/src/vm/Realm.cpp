@@ -1,11 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "js/shadow/Realm.h"  // JS::shadow::Realm
-#include "vm/Realm-inl.h"
 
 #include "mozilla/MemoryReporting.h"
 
@@ -23,6 +20,7 @@
 #include "js/Proxy.h"
 #include "js/RootingAPI.h"
 #include "js/Wrapper.h"
+#include "util/DefaultLocale.h"
 #include "util/RandomSeed.h"
 #include "vm/Compartment.h"
 #include "vm/DateTime.h"
@@ -33,6 +31,7 @@
 #include "gc/Marking-inl.h"
 #include "gc/WeakMap-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 
 using namespace js;
 
@@ -41,7 +40,9 @@ Realm::DebuggerVectorEntry::DebuggerVectorEntry(js::Debugger* dbg_,
     : dbg(dbg_), debuggerLink(link) {}
 
 ObjectRealm::ObjectRealm(JS::Zone* zone)
-    : innerViews(zone, zone), iteratorCache(zone) {}
+    : innerViews(zone, zone),
+      moduleScriptSources(zone, zone),
+      iteratorCache(zone) {}
 
 Realm::Realm(Compartment* comp, const JS::RealmOptions& options)
     : JS::shadow::Realm(comp),
@@ -343,6 +344,7 @@ void Realm::traceWeakGlobalEdge(JSTracer* trc) {
   // If the global is dead, free its GlobalObjectData.
   auto result = TraceWeakEdge(trc, &global_, "Realm::global_");
   if (result.isDead()) {
+    global_ = nullptr;
     result.initialTarget()->releaseData(runtime_->gcContext());
   }
 }
@@ -388,8 +390,8 @@ void Realm::setAllocationMetadataBuilder(
     }
   }
 
-  for (wasm::Instance* instance : wasm.instances()) {
-    instance->setAllocationMetadataBuilder(builder);
+  for (auto iter = wasm.instances().iter(); !iter.done(); iter.next()) {
+    iter.get()->setAllocationMetadataBuilder(builder);
   }
   allocationMetadataBuilder_ = builder;
 }
@@ -408,8 +410,8 @@ void Realm::forgetAllocationMetadataBuilder() {
 
   zone()->decNumRealmsWithAllocMetadataBuilder();
 
-  for (wasm::Instance* instance : wasm.instances()) {
-    instance->setAllocationMetadataBuilder(nullptr);
+  for (auto iter = wasm.instances().iter(); !iter.done(); iter.next()) {
+    iter.get()->setAllocationMetadataBuilder(nullptr);
   }
   allocationMetadataBuilder_ = nullptr;
 }
@@ -443,8 +445,7 @@ void Realm::setNewObjectMetadata(JSContext* cx, HandleObject obj) {
 void Realm::updateDebuggerObservesFlag(unsigned flag) {
   MOZ_ASSERT(isDebuggee());
   MOZ_ASSERT(flag == DebuggerObservesAllExecution ||
-             flag == DebuggerObservesCoverage ||
-             flag == DebuggerObservesAsmJS || flag == DebuggerObservesWasm ||
+             flag == DebuggerObservesCoverage || flag == DebuggerObservesWasm ||
              flag == DebuggerObservesNativeCall);
 
   GlobalObject* global =
@@ -457,8 +458,6 @@ void Realm::updateDebuggerObservesFlag(unsigned flag) {
                isTracingExecution_;
   } else if (flag == DebuggerObservesCoverage) {
     observes = DebugAPI::debuggerObservesCoverage(global);
-  } else if (flag == DebuggerObservesAsmJS) {
-    observes = DebugAPI::debuggerObservesAsmJS(global);
   } else if (flag == DebuggerObservesWasm) {
     observes = DebugAPI::debuggerObservesWasm(global);
   } else if (flag == DebuggerObservesNativeCall) {
@@ -552,9 +551,20 @@ void Realm::clearScriptCounts() { zone()->clearScriptCounts(this); }
 
 void Realm::clearScriptLCov() { zone()->clearScriptLCov(this); }
 
-const char* Realm::getLocale() const {
+LanguageId Realm::getLocale() {
   if (RefPtr<LocaleString> locale = behaviors_.localeOverride()) {
-    return locale->chars();
+    if (localeId_ == LanguageId::und()) {
+      localeId_ = DefaultLocaleFrom(locale.get()->chars());
+
+      // Replace "und" with "und-Zzzz-ZZ" to mark the locale as resolved.
+      //
+      // "und-Zzzz-ZZ" is an undetermined language with unknown script and
+      // region.
+      if (localeId_ == LanguageId::und()) {
+        localeId_ = LanguageId::fromValidBcp49("und-Zzzz-ZZ");
+      }
+    }
+    return localeId_;
   }
   return runtime_->getDefaultLocale();
 }
@@ -565,6 +575,7 @@ void Realm::setLocaleOverride(const char* locale) {
   ReleaseAllJITCode(runtime_->gcContext());
 
   behaviors_.setLocaleOverride(locale);
+  localeId_ = LanguageId::und();
 }
 
 js::DateTimeInfo* Realm::getDateTimeInfo() {
@@ -729,7 +740,7 @@ JS_PUBLIC_API void JS::SetRealmPrivate(JS::Realm* realm, void* data) {
 
 JS_PUBLIC_API void JS::SetDestroyRealmCallback(
     JSContext* cx, JS::DestroyRealmCallback callback) {
-  cx->runtime()->destroyRealmCallback = callback;
+  cx->runtime()->gc.setDestroyRealmCallback(callback);
 }
 
 JS_PUBLIC_API void JS::SetRealmNameCallback(JSContext* cx,
@@ -861,7 +872,7 @@ JS_PUBLIC_API Realm* JS::GetFunctionRealm(JSContext* cx, HandleObject objArg) {
 
 JS_PUBLIC_API void JS::ResetRealmMathRandomSeed(JSContext* cx) {
   MOZ_ASSERT(cx->realm());
-  auto rng = cx->realm()->getOrCreateRandomNumberGenerator();
+  auto& rng = cx->realm()->getOrCreateRandomNumberGenerator();
   mozilla::Array<uint64_t, 2> seed;
   GenerateXorShift128PlusSeed(seed);
   rng.setState(seed[0], seed[1]);

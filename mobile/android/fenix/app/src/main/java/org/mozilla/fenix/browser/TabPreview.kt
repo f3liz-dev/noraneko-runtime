@@ -9,7 +9,6 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -17,6 +16,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.doOnNextLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
@@ -44,21 +44,23 @@ import mozilla.components.support.ktx.kotlin.applyRegistrableDomainSpan
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import mozilla.components.support.ktx.util.URLStringUtils
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Normal
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Private
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.databinding.TabPreviewBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isTallWindow
 import org.mozilla.fenix.ext.isWideWindow
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.toolbar.BrowserSimpleToolbar
+import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.search.BrowserToolbarSearchMiddleware
 import org.mozilla.fenix.settings.ShortcutType
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.ThemeManager
+import org.mozilla.fenix.translations.TranslationsEnabledSettings
 import kotlin.math.min
 import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.feature.summarize.R as summariesR
 import mozilla.components.ui.icons.R as iconsR
-import mozilla.components.ui.tabcounter.R as tabcounterR
 
 /**
  * A 'dummy' view of a tab used by [ToolbarGestureHandler] to support switching tabs by swiping the address bar.
@@ -72,6 +74,10 @@ class TabPreview @JvmOverloads constructor(
 ) : CoordinatorLayout(context, attrs, defStyle) {
     private val binding = TabPreviewBinding.inflate(LayoutInflater.from(context), this)
     private val thumbnailLoader = ThumbnailLoader(context.components.core.thumbnailStorage)
+    private val appStore = context.components.appStore
+    private val browserStore = context.components.core.store
+    private val summarizationFeatureSettings = context.components.core.summarizeFeatureSettings
+    private val translationsFeatureSettings = TranslationsEnabledSettings.dataStore(context)
 
     private lateinit var mockToolbarView: View
     private val browserToolbarStore: BrowserToolbarStore by lazy(LazyThreadSafetyMode.NONE) {
@@ -91,6 +97,7 @@ class TabPreview @JvmOverloads constructor(
         Share,
         Translate,
         Homepage,
+        Summarize,
     }
 
     private data class ToolbarActionConfig(
@@ -198,8 +205,14 @@ class TabPreview @JvmOverloads constructor(
                         highlighted = highlight,
                         onClick = object : BrowserToolbarEvent {},
                     )
+                } else if (tab?.content?.securityInfo?.isSecure != true) {
+                    ActionButtonRes(
+                        drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+                        contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
+                        highlighted = highlight,
+                        onClick = object : BrowserToolbarEvent {},
+                    )
                 } else if (
-                    tab?.content?.securityInfo?.isSecure == true &&
                     tab.trackingProtection.enabled &&
                     !tab.trackingProtection.ignoredOnTrackingProtection
                 ) {
@@ -211,7 +224,7 @@ class TabPreview @JvmOverloads constructor(
                     )
                 } else {
                     ActionButtonRes(
-                        drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+                        drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
                         contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
                         highlighted = highlight,
                         onClick = object : BrowserToolbarEvent {},
@@ -235,6 +248,16 @@ class TabPreview @JvmOverloads constructor(
                 contentDescription = R.string.browser_menu_homepage,
                 onClick = object : BrowserToolbarEvent {},
             )
+
+            ToolbarAction.Summarize -> ActionButtonRes(
+                drawableResId = iconsR.drawable.mozac_ic_lightning_24,
+                contentDescription = summariesR.string.mozac_summarize_settings_summarize_pages,
+                state = when (appStore.state.mode) {
+                    Normal -> ActionButton.State.DEFAULT
+                    Private -> ActionButton.State.DISABLED
+                },
+                onClick = object : BrowserToolbarEvent {},
+            )
         }
     }
     private fun buildSearchEngineSelector(selectedSearchEngine: SearchEngine?): List<Action> {
@@ -255,7 +278,7 @@ class TabPreview @JvmOverloads constructor(
     private fun initializeView() {
         bindToolbar()
 
-        val isToolbarAtTop = context.settings().toolbarPosition == ToolbarPosition.TOP
+        val isToolbarAtTop = context.components.settings.toolbarPosition == ToolbarPosition.TOP
         if (isToolbarAtTop) {
             mockToolbarView.updateLayoutParams<LayoutParams> {
                 gravity = Gravity.TOP
@@ -266,16 +289,12 @@ class TabPreview @JvmOverloads constructor(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
 
-        updateToolbar(
-            new = {},
-            old = { binding.tabButton.setCount(currentOpenedTabsCount) },
-        )
-
-        binding.previewThumbnail.translationY = if (context.settings().toolbarPosition == ToolbarPosition.TOP) {
-            mockToolbarView.height.toFloat()
-        } else {
-            0f
-        }
+        binding.previewThumbnail.translationY =
+            if (context.components.settings.toolbarPosition == ToolbarPosition.TOP) {
+                mockToolbarView.height.toFloat()
+            } else {
+                0f
+            }
     }
 
     private fun ToolbarPosition.toGravity(): ToolbarGravity =
@@ -301,33 +320,28 @@ class TabPreview @JvmOverloads constructor(
                 ImageLoadRequest(destination.id, size, destination.content.private),
             )
 
-            updateToolbar(
-                new = {
-                    toScope().launch {
-                        val prefs = settings()
-                        val url = destination.content.url
-                        val isHome = url == ABOUT_HOME_URL
-                        val topToolbar = prefs.toolbarPosition == ToolbarPosition.TOP
-                        val homeSearchEnabled = prefs.enableHomepageSearchBar
+            toScope().launch {
+                val prefs = context.components.settings
+                val url = destination.content.url
+                val isHome = url == ABOUT_HOME_URL
+                val topToolbar = prefs.toolbarPosition == ToolbarPosition.TOP
+                val homeSearchEnabled = prefs.enableHomepageSearchBar
 
-                        browserToolbarStore.dispatch(
-                            BrowserToolbarAction.ToolbarGravityUpdated(prefs.toolbarPosition.toGravity()),
-                        )
+                browserToolbarStore.dispatch(
+                    BrowserToolbarAction.ToolbarGravityUpdated(prefs.toolbarPosition.toGravity()),
+                )
 
-                        when {
-                            isHome && topToolbar && homeSearchEnabled ->
-                                dispatchHomeSearchBarActions(destination)
-                            isHome ->
-                                dispatchHomeActions(destination)
-                            else ->
-                                dispatchWebPageActions(destination)
-                        }
+                when {
+                    isHome && topToolbar && homeSearchEnabled ->
+                        dispatchHomeSearchBarActions(destination)
+                    isHome ->
+                        dispatchHomeActions(destination)
+                    else ->
+                        dispatchWebPageActions(destination)
+                }
 
-                        bindToolbar()
-                    }
-                },
-                old = {},
-            )
+                bindToolbar()
+            }
         }
     }
 
@@ -390,27 +404,8 @@ class TabPreview @JvmOverloads constructor(
         }
 
     private fun bindToolbar() {
-        mockToolbarView = updateToolbar(
-            new = {
-                buildBottomComposableToolbar()
-                buildTopComposableToolbar()
-            },
-            old = { buildToolbarView() },
-        )
-    }
-
-    private fun buildToolbarView(): View {
-        // Change view properties to avoid confusing the UI tests
-        binding.tabButton.findViewById<View>(tabcounterR.id.counter_box)?.id = NO_ID
-        binding.tabButton.findViewById<View>(tabcounterR.id.counter_text)?.id = NO_ID
-
-        binding.fakeToolbar.isVisible = true
-        binding.fakeToolbar.background = AppCompatResources.getDrawable(
-            context,
-            ThemeManager.resolveAttribute(R.attr.bottomBarBackgroundTop, context),
-        )
-
-        return binding.fakeToolbar
+        buildBottomComposableToolbar()
+        mockToolbarView = buildTopComposableToolbar()
     }
 
      private fun buildTopComposableToolbar(): ComposeView {
@@ -420,14 +415,14 @@ class TabPreview @JvmOverloads constructor(
              setContent {
                      FirefoxTheme {
                          Column {
-                             if (settings().enableHomepageSearchBar &&
-                                 context.settings().toolbarPosition == ToolbarPosition.TOP
+                             if (context.components.settings.enableHomepageSearchBar &&
+                                 context.components.settings.toolbarPosition == ToolbarPosition.TOP
                              ) {
                                  BrowserSimpleToolbar(
                                      store = browserToolbarStore,
                                      appStore = context.components.appStore,
                                  )
-                             } else if (context.settings().toolbarPosition == ToolbarPosition.TOP) {
+                             } else if (context.components.settings.toolbarPosition == ToolbarPosition.TOP) {
                                  BrowserToolbar(
                                      store = browserToolbarStore,
                                  )
@@ -448,7 +443,7 @@ class TabPreview @JvmOverloads constructor(
              setContent {
                  FirefoxTheme {
                      Column {
-                         if (context.settings().toolbarPosition == ToolbarPosition.BOTTOM) {
+                         if (context.components.settings.toolbarPosition == ToolbarPosition.BOTTOM) {
                              BrowserToolbar(
                                  store = browserToolbarStore,
                              )
@@ -458,7 +453,7 @@ class TabPreview @JvmOverloads constructor(
                              NavigationBar(
                                  actions = browserToolbarStore.state.displayState.navigationActions,
                                  toolbarGravity =
-                                     when (context.settings().shouldUseBottomToolbar) {
+                                     when (context.components.settings.shouldUseBottomToolbar) {
                                          true -> ToolbarGravity.Bottom
                                          false -> ToolbarGravity.Top
                                      },
@@ -484,10 +479,10 @@ class TabPreview @JvmOverloads constructor(
     }
 
     private fun buildComposableToolbarPageEndActions(tab: TabSessionState?): List<Action> {
-        val settings = context.settings()
+        val settings = context.components.settings
         val isWideScreen = context.isWideWindow()
         val tabStripEnabled = settings.isTabStripEnabled
-        val shareShortcutEnabled = ShortcutType.fromValue(settings.toolbarSimpleShortcut) == ShortcutType.SHARE
+        val shareShortcutEnabled = ShortcutType.fromValue(settings.toolbarSimpleShortcutKey) == ShortcutType.SHARE
 
         return listOf(
             ToolbarActionConfig(ToolbarAction.Share) {
@@ -515,18 +510,19 @@ class TabPreview @JvmOverloads constructor(
     }
 
     private suspend fun buildComposableToolbarBrowserEndActions(tab: TabSessionState?): List<Action> {
-        val settings = context.settings()
+        val settings = context.components.settings
         val isWideWindow = context.isWideWindow()
         val isTallWindow = context.isTallWindow()
         val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
 
-        val primarySlotAction = ShortcutType.fromValue(settings.toolbarSimpleShortcut)
-            ?.toToolbarAction(tab) ?: ToolbarAction.NewTab
+        val primarySlotAction = ShortcutType.fromValue(settings.activeSimpleToolbarShortcutKey)?.toToolbarAction(tab)
 
-        return listOf(
-            ToolbarActionConfig(primarySlotAction) {
-                (!shouldUseExpandedToolbar || !isTallWindow || isWideWindow) &&
+        return listOfNotNull(
+            primarySlotAction?.let {
+                ToolbarActionConfig(primarySlotAction) {
+                    (!shouldUseExpandedToolbar || !isTallWindow || isWideWindow) &&
                         tab?.content?.url != ABOUT_HOME_URL
+                }
             },
             ToolbarActionConfig(ToolbarAction.TabCounter) {
                 !shouldUseExpandedToolbar || !isTallWindow || isWideWindow
@@ -542,12 +538,12 @@ class TabPreview @JvmOverloads constructor(
     }
 
     private suspend fun buildNavigationActions(tab: TabSessionState): List<Action> {
-        val settings = context.settings()
+        val settings = context.components.settings
         val isWideWindow = context.isWideWindow()
         val isTallWindow = context.isTallWindow()
         val shouldUseExpandedToolbar = settings.shouldUseExpandedToolbar
 
-        val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcut)
+        val primarySlotAction = ShortcutType.fromValue(settings.toolbarExpandedShortcutKey)
             ?.toToolbarAction(tab) ?: getBookmarkAction(tab)
 
         return listOf(
@@ -581,18 +577,6 @@ class TabPreview @JvmOverloads constructor(
         )
     }
 
-    /**
-     * Pass in the desired configuration for both the `new` composable toolbar and the `old` toolbar View
-     * with this method then deciding what to use depending on the actual toolbar currently is use.
-     */
-    private inline fun <T> updateToolbar(
-        new: () -> T,
-        old: () -> T,
-    ): T = when (context.settings().shouldUseComposableToolbar) {
-        true -> new()
-        false -> old()
-    }
-
     private suspend fun getBookmarkAction(tab: TabSessionState?): ToolbarAction {
         val isBookmarked = tab?.content?.url?.let { url ->
             context.components.core.bookmarksStorage
@@ -608,8 +592,25 @@ class TabPreview @JvmOverloads constructor(
         ShortcutType.NEW_TAB -> ToolbarAction.NewTab
         ShortcutType.SHARE -> ToolbarAction.Share
         ShortcutType.BOOKMARK -> getBookmarkAction(tab)
-        ShortcutType.TRANSLATE -> ToolbarAction.Translate
+        ShortcutType.TRANSLATE -> when (isTranslationsFeatureAvailable()) {
+            true -> ToolbarAction.Translate
+            else -> ToolbarAction.NewTab
+        }
         ShortcutType.HOMEPAGE -> ToolbarAction.Homepage
         ShortcutType.BACK -> ToolbarAction.Back
+        ShortcutType.SUMMARIZE -> when {
+            summarizationFeatureSettings.canShowFeature -> ToolbarAction.Summarize
+            // The tab strip already provides a new tab button, so fall back to the default tab strip shortcut.
+            context.components.settings.isTabStripEnabled -> ToolbarAction.Share
+            else -> ToolbarAction.NewTab
+        }
+        ShortcutType.NONE -> null
+    }
+
+    private suspend fun isTranslationsFeatureAvailable(): Boolean {
+        val isTranslationEngineSupported = browserStore.state.translationEngine.isEngineSupported ?: false
+        return isTranslationEngineSupported &&
+            FxNimbus.features.translations.value().mainFlowToolbarEnabled &&
+            translationsFeatureSettings.isEnabled.first()
     }
 }

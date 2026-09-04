@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,6 +64,7 @@ DocumentL10n::DocumentL10n(Document* aDocument, bool aSync)
       mDocument(aDocument),
       mState(DocumentL10nState::Constructed) {
   mContentSink = do_QueryInterface(aDocument->GetCurrentContentSink());
+  mIsDocumentL10n = true;
 }
 
 DocumentL10n::DocumentL10n(Document* aDocument, bool aSync,
@@ -83,7 +82,7 @@ JSObject* DocumentL10n::WrapObject(JSContext* aCx,
 
 class L10nReadyHandler final : public PromiseNativeHandler {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(L10nReadyHandler)
 
   explicit L10nReadyHandler(Promise* aPromise, DocumentL10n* aDocumentL10n)

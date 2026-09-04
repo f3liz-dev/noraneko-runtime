@@ -14,6 +14,10 @@ const GL_UNMASKED_VENDOR_WEBGL: u32 = 0x9245;
 const GL_UNMASKED_RENDERER_WEBGL: u32 = 0x9246;
 
 impl super::Adapter {
+    pub fn get_glsl_version(&self) -> naga::back::glsl::Version {
+        self.shared.shading_language_version
+    }
+
     /// Note that this function is intentionally lenient in regards to parsing,
     /// and will try to recover at least the first two version numbers without
     /// resulting in an `Err`.
@@ -184,15 +188,8 @@ impl super::Adapter {
         wgt::AdapterInfo {
             name: renderer_orig,
             vendor: vendor_id,
-            device: 0,
-            device_type: inferred_device_type,
-            driver: "".to_owned(),
-            device_pci_bus_id: String::new(),
             driver_info: version,
-            backend: wgt::Backend::Gl,
-            subgroup_min_size: wgt::MINIMUM_SUBGROUP_MIN_SIZE,
-            subgroup_max_size: wgt::MAXIMUM_SUBGROUP_MAX_SIZE,
-            transient_saves_memory: false,
+            ..wgt::AdapterInfo::new(inferred_device_type, wgt::Backend::Gl)
         }
     }
 
@@ -311,11 +308,10 @@ impl super::Adapter {
             es_supported || full_supported
         };
 
-        // Naga won't let you emit storage buffers at versions below this, so
-        // we currently can't support GL_ARB_shader_storage_buffer_object.
-        let supports_storage = supported((3, 1), (4, 3));
-        // Same with compute shaders and GL_ARB_compute_shader
-        let supports_compute = supported((3, 1), (4, 3));
+        let supports_storage =
+            supported((3, 1), (4, 3)) || extensions.contains("GL_ARB_shader_storage_buffer_object");
+        let supports_compute =
+            supported((3, 1), (4, 3)) || extensions.contains("GL_ARB_compute_shader");
         let supports_work_group_params = supports_compute;
 
         // ANGLE provides renderer strings like: "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"
@@ -385,12 +381,18 @@ impl super::Adapter {
         // NOTE: GL_ARB_compute_shader adds support for indirect dispatch
         let indirect_execution = supported((3, 1), (4, 3))
             || (extensions.contains("GL_ARB_draw_indirect") && supports_compute);
+        let supports_cube_array = supported((3, 2), (4, 0))
+            || (supported((3, 1), (4, 0)) && extensions.contains("GL_EXT_texture_cube_map_array"));
 
         let mut downlevel_flags = wgt::DownlevelFlags::empty()
             | wgt::DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES
-            | wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES
             | wgt::DownlevelFlags::COMPARISON_SAMPLERS
-            | wgt::DownlevelFlags::SHADER_F16_IN_F32;
+            | wgt::DownlevelFlags::SHADER_F16_IN_F32
+            | wgt::DownlevelFlags::MSL2_1;
+        downlevel_flags.set(
+            wgt::DownlevelFlags::CUBE_ARRAY_TEXTURES,
+            supports_cube_array,
+        );
         downlevel_flags.set(wgt::DownlevelFlags::COMPUTE_SHADERS, supports_compute);
         downlevel_flags.set(
             wgt::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE,
@@ -443,11 +445,51 @@ impl super::Adapter {
             downlevel_flags.set(wgt::DownlevelFlags::NONBLOCKING_QUERY_RESOLVE, true);
         }
 
+        // Desktop GL: norm16 is core since GL 3.0/3.1; we minimum-version
+        // to GL 3.3, so always on. GLES/WebGL2: needs `EXT_texture_norm16`.
+        let supports_16bit_norm = if es_ver.is_some() {
+            extensions.contains("GL_EXT_texture_norm16")
+                || extensions.contains("EXT_texture_norm16")
+        } else {
+            true
+        };
+        // SNORM color-rendering is not spec-guaranteed on either path
+        // (GLES Table 8.13 marks it not-renderable; desktop GL exposes
+        // it as only "optionally renderable"), so gate it on
+        // `EXT_render_snorm` for both - matching how `COLOR_BUFFER_FLOAT`
+        // is probed above.
+        let supports_16bit_snorm_renderable = supports_16bit_norm
+            && (extensions.contains("GL_EXT_render_snorm")
+                || extensions.contains("EXT_render_snorm"));
+        // Storage on norm16. ARB_shader_image_load_store / GL 4.2 Table X.2 and
+        // NV_image_formats Table 8.27 both list `r16/rg16/rgba16` and the SNORM
+        // variants as image-unit formats, so one gate covers UNORM and SNORM.
+        // Paths:
+        //   * Desktop:  core in GL 4.2+; on 3.3..=4.1 via `GL_ARB_shader_image_load_store`.
+        //   * GLES/WebGL2: only via `GL_NV_image_formats` - the ES 3.1/3.2 core
+        //     Table 8.27 omits these formats, and `GL_EXT_texture_norm16` does not
+        //     extend Table 8.27 (NV_image_formats itself depends on EXT_texture_norm16
+        //     for the norm16 entries, so an ES driver exposing NV_image_formats
+        //     without EXT_texture_norm16 still wouldn't accept them - the
+        //     `supports_16bit_norm` prerequisite below catches that).
+        let supports_16bit_norm_storage = supports_16bit_norm
+            && if es_ver.is_some() {
+                extensions.contains("GL_NV_image_formats")
+            } else {
+                full_ver.is_some_and(|v| v >= (4, 2))
+                    || extensions.contains("GL_ARB_shader_image_load_store")
+            };
+
         let mut features = wgt::Features::empty()
             | wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgt::Features::CLEAR_TEXTURE
             | wgt::Features::IMMEDIATES
-            | wgt::Features::DEPTH32FLOAT_STENCIL8;
+            | wgt::Features::DEPTH32FLOAT_STENCIL8
+            | wgt::Features::PASSTHROUGH_SHADERS;
+        features.set(
+            wgt::Features::TEXTURE_FORMAT_16BIT_NORM,
+            supports_16bit_norm,
+        );
         features.set(
             wgt::Features::ADDRESS_MODE_CLAMP_TO_BORDER | wgt::Features::ADDRESS_MODE_CLAMP_TO_ZERO,
             extensions.contains("GL_EXT_texture_border_clamp")
@@ -476,7 +518,7 @@ impl super::Adapter {
             full_ver.is_some() || extensions.contains("GL_EXT_clip_cull_distance"),
         );
         features.set(
-            wgt::Features::SHADER_PRIMITIVE_INDEX,
+            wgt::Features::PRIMITIVE_INDEX,
             supported((3, 2), (3, 2))
                 || extensions.contains("OES_geometry_shader")
                 || extensions.contains("GL_ARB_geometry_shader4"),
@@ -571,6 +613,15 @@ impl super::Adapter {
             );
         }
 
+        downlevel_flags.set(
+            wgt::DownlevelFlags::TEXTURE_COMPRESSION,
+            features.contains(wgt::Features::TEXTURE_COMPRESSION_BC)
+                || features.contains(
+                    wgt::Features::TEXTURE_COMPRESSION_ETC2
+                        | wgt::Features::TEXTURE_COMPRESSION_ASTC,
+                ),
+        );
+
         features.set(
             wgt::Features::FLOAT32_FILTERABLE,
             extensions.contains("GL_ARB_color_buffer_float")
@@ -633,7 +684,13 @@ impl super::Adapter {
             super::PrivateCapabilities::TEXTURE_STORAGE,
             supported((3, 0), (4, 2)),
         );
-        private_caps.set(super::PrivateCapabilities::DEBUG_FNS, gl.supports_debug());
+        let is_mali = renderer.to_lowercase().contains("mali");
+        let debug_fns_enabled = match backend_options.debug_fns {
+            wgt::GlDebugFns::Auto => gl.supports_debug() && !is_mali,
+            wgt::GlDebugFns::ForceEnabled => gl.supports_debug(),
+            wgt::GlDebugFns::Disabled => false,
+        };
+        private_caps.set(super::PrivateCapabilities::DEBUG_FNS, debug_fns_enabled);
         private_caps.set(
             super::PrivateCapabilities::INVALIDATE_FRAMEBUFFER,
             supported((3, 0), (4, 3)),
@@ -652,6 +709,29 @@ impl super::Adapter {
             // We only support indirect first instance when we also have ARB_shader_draw_parameters as
             // that's the only way to get gl_InstanceID to work correctly.
             features.set(wgt::Features::INDIRECT_FIRST_INSTANCE, supported);
+        }
+        private_caps.set(
+            super::PrivateCapabilities::MULTISAMPLED_RENDER_TO_TEXTURE,
+            extensions.contains("GL_EXT_multisampled_render_to_texture"),
+        );
+        private_caps.set(
+            super::PrivateCapabilities::TEXTURE_FORMAT_NORM16,
+            supports_16bit_norm,
+        );
+        private_caps.set(
+            super::PrivateCapabilities::TEXTURE_FORMAT_SNORM16_RENDERABLE,
+            supports_16bit_snorm_renderable,
+        );
+        private_caps.set(
+            super::PrivateCapabilities::TEXTURE_FORMAT_NORM16_STORAGE,
+            supports_16bit_norm_storage,
+        );
+
+        // GLSL ES 3.10+ / GLSL 4.30+ natively support coherent/volatile qualifiers
+        // on storage buffers. These were introduced alongside storage buffer support.
+        if supports_storage {
+            features |= wgt::Features::MEMORY_DECORATION_COHERENT
+                | wgt::Features::MEMORY_DECORATION_VOLATILE;
         }
 
         let max_texture_size = unsafe { gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE) } as u32;
@@ -687,15 +767,18 @@ impl super::Adapter {
         let max_color_attachment_bytes_per_sample =
             max_color_attachments * wgt::TextureFormat::MAX_TARGET_PIXEL_BYTE_COST;
 
-        let limits = crate::auxil::apply_hal_limits(wgt::Limits {
+        let limits = crate::auxil::adjust_raw_limits(wgt::Limits {
             max_texture_dimension_1d: max_texture_size,
             max_texture_dimension_2d: max_texture_size,
             max_texture_dimension_3d: max_texture_3d_size,
             max_texture_array_layers: unsafe {
                 gl.get_parameter_i32(glow::MAX_ARRAY_TEXTURE_LAYERS)
             } as u32,
-            max_bind_groups: crate::MAX_BIND_GROUPS as u32,
-            max_bindings_per_bind_group: 65535,
+            max_bind_groups: u32::MAX,
+            // No limit.
+            max_bind_groups_plus_vertex_buffers: u32::MAX,
+            // No limit.
+            max_bindings_per_bind_group: u32::MAX,
             max_dynamic_uniform_buffers_per_pipeline_layout: max_uniform_buffers_per_shader_stage,
             max_dynamic_storage_buffers_per_pipeline_layout: max_storage_buffers_per_shader_stage,
             max_sampled_textures_per_shader_stage: super::MAX_TEXTURE_SLOTS as u32,
@@ -705,14 +788,15 @@ impl super::Adapter {
             max_uniform_buffers_per_shader_stage,
             max_binding_array_elements_per_shader_stage: 0,
             max_binding_array_sampler_elements_per_shader_stage: 0,
+            max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
             max_uniform_buffer_binding_size: unsafe {
                 gl.get_parameter_i32(glow::MAX_UNIFORM_BLOCK_SIZE)
-            } as u32,
+            } as u64,
             max_storage_buffer_binding_size: if supports_storage {
                 unsafe { gl.get_parameter_i32(glow::MAX_SHADER_STORAGE_BLOCK_SIZE) }
             } else {
                 0
-            } as u32,
+            } as u64,
             max_vertex_buffers: if private_caps
                 .contains(super::PrivateCapabilities::VERTEX_BUFFER_LAYOUT)
             {
@@ -802,8 +886,10 @@ impl super::Adapter {
             max_buffer_size: i32::MAX as u64,
             max_non_sampler_bindings: u32::MAX,
 
-            max_task_mesh_workgroup_total_count: 0,
-            max_task_mesh_workgroups_per_dimension: 0,
+            max_task_workgroup_total_count: 0,
+            max_task_workgroups_per_dimension: 0,
+            max_mesh_workgroup_total_count: 0,
+            max_mesh_workgroups_per_dimension: 0,
             max_task_invocations_per_workgroup: 0,
             max_task_invocations_per_dimension: 0,
             max_mesh_invocations_per_workgroup: 0,
@@ -818,8 +904,12 @@ impl super::Adapter {
             max_blas_geometry_count: 0,
             max_tlas_instance_count: 0,
             max_acceleration_structures_per_shader_stage: 0,
+            max_buffers_and_acceleration_structures_per_shader_stage: u32::MAX,
 
             max_multiview_view_count: 0,
+
+            max_ray_dispatch_count: 0,
+            max_ray_recursion_depth: 0,
         });
 
         let mut workarounds = super::Workarounds::empty();
@@ -851,7 +941,7 @@ impl super::Adapter {
         // Drop the GL guard so we can move the context into AdapterShared
         // ( on Wasm the gl handle is just a ref so we tell clippy to allow
         // dropping the ref )
-        #[cfg_attr(target_arch = "wasm32", allow(dropping_references))]
+        #[cfg_attr(target_family = "wasm", allow(dropping_references))]
         drop(gl);
 
         Some(crate::ExposedAdapter {
@@ -894,6 +984,9 @@ impl super::Adapter {
                     uniform_bounds_check_alignment: wgt::BufferSize::new(1).unwrap(),
                     raw_tlas_instance_size: 0,
                     ray_tracing_scratch_buffer_alignment: 0,
+                    ray_tracing_pipeline_group_data_size: 0,
+                    ray_tracing_pipeline_group_data_alignment: 0,
+                    ray_tracing_pipeline_data_offset_alignment: 0,
                 },
                 cooperative_matrix_properties: Vec::new(),
             },
@@ -1125,6 +1218,31 @@ impl crate::Adapter for super::Adapter {
         let image_atomic = feature_fn(wgt::Features::TEXTURE_ATOMIC, Tfc::STORAGE_ATOMIC);
         let image_64_atomic = feature_fn(wgt::Features::TEXTURE_INT64_ATOMIC, Tfc::STORAGE_ATOMIC);
 
+        // UNORM gets full filterable+renderable; SNORM splits because
+        // `EXT_texture_norm16` marks only UNORM as color-renderable.
+        // Storage rides on a separate cap (desktop GL >= 4.2 core / pre-4.2
+        // `GL_ARB_shader_image_load_store`, GLES `GL_NV_image_formats`).
+        let norm16_unorm = private_caps_fn(
+            super::PrivateCapabilities::TEXTURE_FORMAT_NORM16,
+            filterable_renderable,
+        );
+        let norm16_snorm = if self
+            .shared
+            .private_caps
+            .contains(super::PrivateCapabilities::TEXTURE_FORMAT_SNORM16_RENDERABLE)
+        {
+            norm16_unorm
+        } else {
+            private_caps_fn(
+                super::PrivateCapabilities::TEXTURE_FORMAT_NORM16,
+                filterable,
+            )
+        };
+        let norm16_storage = private_caps_fn(
+            super::PrivateCapabilities::TEXTURE_FORMAT_NORM16_STORAGE,
+            storage,
+        );
+
         match format {
             Tf::R8Unorm => filterable_renderable,
             Tf::R8Snorm => filterable,
@@ -1132,8 +1250,8 @@ impl crate::Adapter for super::Adapter {
             Tf::R8Sint => renderable,
             Tf::R16Uint => renderable,
             Tf::R16Sint => renderable,
-            Tf::R16Unorm => empty,
-            Tf::R16Snorm => empty,
+            Tf::R16Unorm => norm16_unorm | norm16_storage,
+            Tf::R16Snorm => norm16_snorm | norm16_storage,
             Tf::R16Float => filterable | half_float_renderable,
             Tf::Rg8Unorm => filterable_renderable,
             Tf::Rg8Snorm => filterable,
@@ -1144,8 +1262,8 @@ impl crate::Adapter for super::Adapter {
             Tf::R32Float => unfilterable | storage | float_renderable | texture_float_linear,
             Tf::Rg16Uint => renderable,
             Tf::Rg16Sint => renderable,
-            Tf::Rg16Unorm => empty,
-            Tf::Rg16Snorm => empty,
+            Tf::Rg16Unorm => norm16_unorm | norm16_storage,
+            Tf::Rg16Snorm => norm16_snorm | norm16_storage,
             Tf::Rg16Float => filterable | half_float_renderable,
             Tf::Rgba8Unorm => filterable_renderable | storage,
             Tf::Rgba8UnormSrgb => filterable_renderable,
@@ -1162,8 +1280,8 @@ impl crate::Adapter for super::Adapter {
             Tf::Rg32Float => unfilterable | float_renderable | texture_float_linear,
             Tf::Rgba16Uint => renderable | storage,
             Tf::Rgba16Sint => renderable | storage,
-            Tf::Rgba16Unorm => empty,
-            Tf::Rgba16Snorm => empty,
+            Tf::Rgba16Unorm => norm16_unorm | norm16_storage,
+            Tf::Rgba16Snorm => norm16_snorm | norm16_storage,
             Tf::Rgba16Float => filterable | storage | half_float_renderable,
             Tf::Rgba32Uint => renderable | storage,
             Tf::Rgba32Sint => renderable | storage,
@@ -1222,16 +1340,22 @@ impl crate::Adapter for super::Adapter {
         }
 
         if surface.presentable {
+            // There is no extended-range or wide-gamut path in the GLES
+            // backend; everything is presented as sRGB.
+            let format_caps = |format: wgt::TextureFormat| wgt::SurfaceFormatCapabilities {
+                format,
+                color_spaces: wgt::SurfaceColorSpaces::SRGB,
+            };
             let mut formats = vec![
-                wgt::TextureFormat::Rgba8Unorm,
+                format_caps(wgt::TextureFormat::Rgba8Unorm),
                 #[cfg(native)]
-                wgt::TextureFormat::Bgra8Unorm,
+                format_caps(wgt::TextureFormat::Bgra8Unorm),
             ];
             if surface.supports_srgb() {
                 formats.extend([
-                    wgt::TextureFormat::Rgba8UnormSrgb,
+                    format_caps(wgt::TextureFormat::Rgba8UnormSrgb),
                     #[cfg(native)]
-                    wgt::TextureFormat::Bgra8UnormSrgb,
+                    format_caps(wgt::TextureFormat::Bgra8UnormSrgb),
                 ])
             }
             if self
@@ -1239,7 +1363,7 @@ impl crate::Adapter for super::Adapter {
                 .private_caps
                 .contains(super::PrivateCapabilities::COLOR_BUFFER_HALF_FLOAT)
             {
-                formats.push(wgt::TextureFormat::Rgba16Float)
+                formats.push(format_caps(wgt::TextureFormat::Rgba16Float))
             }
 
             Some(crate::SurfaceCapabilities {
@@ -1262,6 +1386,17 @@ impl crate::Adapter for super::Adapter {
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
         wgt::PresentationTimestamp::INVALID_TIMESTAMP
     }
+
+    fn get_ordered_buffer_usages(&self) -> wgt::BufferUses {
+        wgt::BufferUses::INCLUSIVE | wgt::BufferUses::MAP_WRITE
+    }
+
+    // Don't put barriers between inclusive uses
+    fn get_ordered_texture_usages(&self) -> wgt::TextureUses {
+        wgt::TextureUses::INCLUSIVE
+            | wgt::TextureUses::COLOR_TARGET
+            | wgt::TextureUses::DEPTH_STENCIL_WRITE
+    }
 }
 
 impl super::AdapterShared {
@@ -1280,14 +1415,17 @@ impl super::AdapterShared {
         } else {
             log::error!("Fake map");
             let length = dst_data.len();
-            let buffer_mapping =
-                unsafe { gl.map_buffer_range(target, offset, length as _, glow::MAP_READ_BIT) };
+            // glMapBufferRange throws an error if length is 0.
+            if length != 0 {
+                let buffer_mapping =
+                    unsafe { gl.map_buffer_range(target, offset, length as _, glow::MAP_READ_BIT) };
 
-            unsafe {
-                core::ptr::copy_nonoverlapping(buffer_mapping, dst_data.as_mut_ptr(), length)
-            };
+                unsafe {
+                    core::ptr::copy_nonoverlapping(buffer_mapping, dst_data.as_mut_ptr(), length)
+                };
 
-            unsafe { gl.unmap_buffer(target) };
+                unsafe { gl.unmap_buffer(target) };
+            }
         }
     }
 }

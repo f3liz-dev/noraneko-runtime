@@ -287,4 +287,22 @@ function run_test() {
   Assert.ok(
     /^moz-nullprincipal:\{([0-9]|[a-z]|\-){36}\}$/.test(aboutBlankPrin.origin)
   );
+
+  var aboutSrcdocURI = makeURI("about:srcdoc");
+  var aboutSrcdocPrin = ssm.createContentPrincipal(aboutSrcdocURI, {});
+  Assert.ok(
+    /^moz-nullprincipal:\{([0-9]|[a-z]|\-){36}\}$/.test(aboutSrcdocPrin.origin)
+  );
+
+  var blobURI = makeURI("blob:https://example.com/uuid");
+  Assert.equal(
+    ssm.createContentPrincipal(blobURI, {}).origin,
+    "https://example.com"
+  );
+
+  var blobViewSourceURI = makeURI("view-source:blob:https://example.com/uuid");
+  Assert.equal(
+    ssm.createContentPrincipal(blobViewSourceURI, {}).origin,
+    "https://example.com"
+  );
 }

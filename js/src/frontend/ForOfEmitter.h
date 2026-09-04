@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -91,7 +89,6 @@ class MOZ_STACK_CLASS ForOfEmitter {
 #endif
 
  public:
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   enum class HeadUsingDeclarationKind { None, Sync, Async };
 
  private:
@@ -99,16 +96,10 @@ class MOZ_STACK_CLASS ForOfEmitter {
       HeadUsingDeclarationKind::None;
 
  public:
-#endif
-
   ForOfEmitter(BytecodeEmitter* bce,
                const EmitterScope* headLexicalEmitterScope,
-               SelfHostedIter selfHostedIter, IteratorKind iterKind
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-               ,
-               HeadUsingDeclarationKind usingDeclarationInHead
-#endif
-  );
+               SelfHostedIter selfHostedIter, IteratorKind iterKind,
+               HeadUsingDeclarationKind usingDeclarationInHead);
 
   // The offset in the source code for each character below:
   //

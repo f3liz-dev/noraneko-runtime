@@ -1,12 +1,9 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import errno
 import os
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -16,7 +13,7 @@ from mozfile import which
 
 
 def preprocess(out, asm_file):
-    cxx = shlex.split(buildconfig.substs["CXX"])
+    cxx = buildconfig.substs["CXX"]
     if not os.path.exists(cxx[0]):
         tool = cxx[0]
         cxx[0] = which(tool)

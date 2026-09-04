@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,6 +5,7 @@
 #ifndef mozilla_image_ImageRegion_h
 #define mozilla_image_ImageRegion_h
 
+#include "PLDHashTable.h"  // for PLDHashNumber
 #include "gfxMatrix.h"
 #include "gfxPoint.h"
 #include "gfxRect.h"
@@ -13,7 +13,6 @@
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/Types.h"
 #include "nsSize.h"
-#include "PLDHashTable.h"  // for PLDHashNumber
 
 namespace mozilla {
 namespace image {

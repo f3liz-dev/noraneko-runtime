@@ -193,6 +193,8 @@ class CompileDBBackend(CommonBackend):
     ):
         for f in unified_source_mapping:
             self._build_db_line(bindings_dir, None, self.environment, f[0], ".cpp")
+        for f in global_define_files:
+            self._build_db_line(bindings_dir, None, self.environment, f, ".cpp")
 
     COMPILERS = {
         ".c": "CC",
@@ -211,7 +213,7 @@ class CompileDBBackend(CommonBackend):
     def _get_compiler_args(self, cenv, canonical_suffix):
         if canonical_suffix not in self.COMPILERS:
             return None
-        return cenv.substs[self.COMPILERS[canonical_suffix]].split()
+        return cenv.substs[self.COMPILERS[canonical_suffix]]
 
     def _build_db_line(
         self, objdir, reldir, cenv, filename, canonical_suffix, unified=None

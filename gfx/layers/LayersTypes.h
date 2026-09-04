@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,18 @@
 #ifndef GFX_LAYERSTYPES_H
 #define GFX_LAYERSTYPES_H
 
-#include <iosfwd>    // for ostream
 #include <stdint.h>  // for uint32_t
 #include <stdio.h>   // FILE
+
+#include <iosfwd>  // for ostream
 #include <tuple>
 
 #include "Units.h"
 #include "mozilla/DefineEnum.h"  // for MOZ_DEFINE_ENUM_CLASS_WITH_BASE
+#include "mozilla/EnumSet.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "nsRegion.h"
-#include "mozilla/EnumSet.h"
 
 #ifndef MOZ_LAYERS_HAVE_LOG
 #  define MOZ_LAYERS_HAVE_LOG
@@ -488,6 +487,65 @@ struct CompositeProcessFencesHolderId {
   //   GpuProcessQueryId::HashFn> myMap;
   struct HashFn {
     std::size_t operator()(const CompositeProcessFencesHolderId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
+};
+
+// AndroidImageReaderId allocated in GPU process
+struct GpuProcessAndroidImageReaderId {
+  uint64_t mId = 0;
+
+  static GpuProcessAndroidImageReaderId GetNext();
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  bool operator==(const GpuProcessAndroidImageReaderId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const GpuProcessAndroidImageReaderId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<GpuProcessAndroidImageReaderId, ValueType,
+  //   GpuProcessAndroidImageReaderId::HashFn> myMap;
+  struct HashFn {
+    std::size_t operator()(const GpuProcessAndroidImageReaderId aKey) const {
+      return std::hash<uint64_t>{}(aKey.mId);
+    }
+  };
+};
+
+struct AndroidMediaCodecFrameId {
+  uint64_t mId = 0;
+
+  static AndroidMediaCodecFrameId GetNext();
+
+  bool IsValid() const { return mId != 0; }
+
+  // Allow explicit cast to a uint64_t for now
+  explicit operator uint64_t() const { return mId; }
+
+  bool operator==(const AndroidMediaCodecFrameId& aOther) const {
+    return mId == aOther.mId;
+  }
+
+  bool operator!=(const AndroidMediaCodecFrameId& aOther) const {
+    return !(*this == aOther);
+  }
+
+  // Helper struct that allow this class to be used as a key in
+  // std::unordered_map like so:
+  //   std::unordered_map<AndroidMediaCodecFrameId, ValueType,
+  //   AndroidMediaCodecFrameId::HashFn> myMap;
+  struct HashFn {
+    std::size_t operator()(const AndroidMediaCodecFrameId aKey) const {
       return std::hash<uint64_t>{}(aKey.mId);
     }
   };

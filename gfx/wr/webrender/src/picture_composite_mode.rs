@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, ColorU, PremultipliedColorF, PropertyBinding, PropertyBindingId, SnapshotInfo};
+use api::{ColorF, ColorU, PropertyBinding, PropertyBindingId, SnapshotInfo};
 use api::units::*;
 use crate::prim_store::image::AdjustedImageSource;
 use crate::{render_task_graph::RenderTaskGraphBuilder, renderer::GpuBufferBuilderF};
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState};
-use crate::gpu_types::{BlurEdgeMode, BrushSegmentGpuData, ImageBrushPrimitiveData, UvRectKind};
+use crate::gpu_types::{BlurEdgeMode, UvRectKind};
 use crate::intern::ItemUid;
 use crate::render_backend::DataStores;
 use crate::render_task_graph::RenderTaskId;
@@ -169,9 +169,8 @@ impl PictureCompositeMode {
 
     pub fn write_gpu_blocks(
         &self,
-        surface: &SurfaceInfo,
         gpu_buffers: &mut GpuBufferBuilder,
-        data_stores: &mut DataStores,
+        data_stores: &DataStores,
         extra_gpu_data: &mut SmallVec<[GpuBufferAddress; 1]>,
     ) {
         // TODO(gw): Almost all of the composite modes below use extra_gpu_data
@@ -184,40 +183,7 @@ impl PictureCompositeMode {
         match *self {
             PictureCompositeMode::TileCache { .. } => {}
             PictureCompositeMode::Filter(Filter::Blur { .. }) => {}
-            PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                extra_gpu_data.resize(shadows.len(), GpuBufferAddress::INVALID);
-                for (shadow, extra_handle) in shadows.iter().zip(extra_gpu_data.iter_mut()) {
-                    let mut writer = gpu_buffers.f32.write_blocks(5);
-                    let prim_rect = surface.clipped_local_rect.cast_unit();
-
-                    // Basic brush primitive header is (see end of prepare_prim_for_render_inner in prim_store.rs)
-                    //  [brush specific data]
-                    //  [segment_rect, segment data]
-                    let (blur_inflation_x, blur_inflation_y) = surface.clamp_blur_radius(
-                        shadow.blur_radius,
-                        shadow.blur_radius,
-                    );
-
-                    let shadow_rect = prim_rect.inflate(
-                        blur_inflation_x * BLUR_SAMPLE_SCALE,
-                        blur_inflation_y * BLUR_SAMPLE_SCALE,
-                    ).translate(shadow.offset);
-
-                    // ImageBrush colors
-                    writer.push(&ImageBrushPrimitiveData {
-                        color: shadow.color.premultiplied(),
-                        background_color: PremultipliedColorF::WHITE,
-                        stretch_size: shadow_rect.size(),
-                    });
-
-                    writer.push(&BrushSegmentGpuData {
-                        local_rect: shadow_rect,
-                        extra_data: [0.0; 4],
-                    });
-
-                    *extra_handle = writer.finish();
-                }
-            }
+            PictureCompositeMode::Filter(Filter::DropShadows(..)) => {}
             PictureCompositeMode::Filter(ref filter) => {
                 match *filter {
                     Filter::ColorMatrix(ref m) => {
@@ -242,23 +208,19 @@ impl PictureCompositeMode {
                 }
             }
             PictureCompositeMode::ComponentTransferFilter(handle) => {
-                let filter_data = &mut data_stores.filter_data[handle];
-                filter_data.write_gpu_blocks(&mut gpu_buffers.f32);
+                if extra_gpu_data.is_empty() {
+                    extra_gpu_data.push(GpuBufferAddress::INVALID);
+                }
+                let filter_data = &data_stores.filter_data[handle];
+                extra_gpu_data[0] = filter_data.data.write_gpu_blocks(&mut gpu_buffers.f32);
             }
             PictureCompositeMode::MixBlend(..) |
             PictureCompositeMode::Blit(_) |
             PictureCompositeMode::IntermediateSurface => {}
-            PictureCompositeMode::SVGFEGraph(ref filters) => {
-                // Update interned filter data
-                for (_node, op) in filters {
-                    match op {
-                        FilterGraphOp::SVGFEComponentTransferInterned { handle, creates_pixels: _ } => {
-                            let filter_data = &mut data_stores.filter_data[*handle];
-                            filter_data.write_gpu_blocks(&mut gpu_buffers.f32);
-                        }
-                        _ => {}
-                    }
-                }
+            PictureCompositeMode::SVGFEGraph(..) => {
+                // SVGFE component-transfer filter data GPU blocks are written
+                // per-node in RenderTask::new_svg_filter_graph, which is the
+                // authoritative consumer of the resulting addresses.
             }
         }
     }
@@ -303,7 +265,7 @@ pub fn prepare_composite_mode(
     can_use_shared_surface: bool,
     frame_context: &FrameBuildingContext,
     frame_state: &mut FrameBuildingState,
-    data_stores: &mut DataStores,
+    data_stores: &DataStores,
     extra_gpu_data: &mut SmallVec<[GpuBufferAddress; 1]>,
 ) -> (SurfaceDescriptor, [Option<RenderTaskId>; 2]) {
     let surface = &frame_state.surfaces[surface_index.0];
@@ -462,7 +424,6 @@ pub fn prepare_composite_mode(
             mode,
             frame_context.fb_config.gpu_supports_advanced_blend,
             frame_context.fb_config.advanced_blend_is_coherent,
-            frame_context.fb_config.dual_source_blending_is_supported,
         ).is_none() => {
             let parent_surface = &frame_state.surfaces[parent_surface_index.0];
 
@@ -809,8 +770,35 @@ fn request_render_task(
 
     let task_id = match snapshot {
         Some(info) => {
+            // `info.area` is the snapshot's (un-snapped) reference area, but the
+            // image primitive this adjustment is later applied to has already
+            // been snapped to the device pixel grid. Snap the reference to that
+            // same grid first, so the adjustment maps snapped-reference ->
+            // rasterized-area; otherwise it re-applies the (already-performed)
+            // snap delta to the snapped prim, pushing the 1:1 snapshot paint off
+            // the texture grid and blurring it. The surface's `clipped_local ->
+            // clipped_notsnapped` rects give the local->device mapping.
+            let cl = surface_rects.clipped_local;
+            let cd = surface_rects.clipped_notsnapped;
+            let reference = if cl.width() > 0.0 && cl.height() > 0.0 {
+                let sx = cd.width() / cl.width();
+                let sy = cd.height() / cl.height();
+                let ox = cd.min.x - cl.min.x * sx;
+                let oy = cd.min.y - cl.min.y * sy;
+                let snap = |x: f32, y: f32| {
+                    let dx = (x * sx + ox).round();
+                    let dy = (y * sy + oy).round();
+                    LayoutPoint::new((dx - ox) / sx, (dy - oy) / sy)
+                };
+                LayoutRect::new(
+                    snap(info.area.min.x, info.area.min.y),
+                    snap(info.area.max.x, info.area.max.y),
+                )
+            } else {
+                info.area
+            };
             let adjustment = AdjustedImageSource::from_rects(
-                &info.area,
+                &reference,
                 &surface_rects.clipped_local.cast_unit()
             );
             let task_id = frame_state.resource_cache.render_as_image(
@@ -917,8 +905,25 @@ pub fn get_surface_rects(
         PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
             let local_prim_rect = surface.clipped_local_rect;
 
+            // Track max blur inflation across all shadows so the content-side
+            // source region is inflated by blur margin (matching the default
+            // branch's `get_rect(Some(sub_rect))` step for Blur). Without this,
+            // the picture_task texture's edges land on image content and the
+            // content quad's blur margin samples UVs > 1 → image edge bleed.
+            let mut max_blur_inflation_x: f32 = 0.0;
+            let mut max_blur_inflation_y: f32 = 0.0;
+            for shadow in shadows {
+                let (blur_radius_x, blur_radius_y) = surface.clamp_blur_radius(
+                    shadow.blur_radius,
+                    shadow.blur_radius,
+                );
+                max_blur_inflation_x = max_blur_inflation_x.max(blur_radius_x * BLUR_SAMPLE_SCALE);
+                max_blur_inflation_y = max_blur_inflation_y.max(blur_radius_y * BLUR_SAMPLE_SCALE);
+            }
+
             let mut required_local_rect = local_prim_rect
                 .intersection(&local_clip_rect)
+                .map(|r| r.inflate(max_blur_inflation_x, max_blur_inflation_y))
                 .unwrap_or(PictureRect::zero());
 
             for shadow in shadows {

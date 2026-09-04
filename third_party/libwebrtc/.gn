@@ -12,7 +12,7 @@ import("//chromium/build/dotfile_settings.gni")
 buildconfig = "//chromium/build/config/BUILDCONFIG.gn"
 
 # The python interpreter to use by default. On Windows, this will look
-# for vpython3.exe and vpython3.bat.
+# for python3.exe and python3.bat.
 script_executable = "python3"
 
 # The secondary source root is a parallel directory tree where
@@ -40,6 +40,8 @@ exec_script_allowlist = build_dotfile_settings.exec_script_allowlist +
 
 # Normally, we'd use 'if (!build_with_mozilla)', but that flag isn't
 # available yet.
+#expand_directory_allowlist = build_dotfile_settings.expand_directory_allowlist
+#
 #export_compile_commands = [ "*" ]
 
 default_args = {
@@ -92,10 +94,16 @@ default_args = {
   enable_rust = false # Mozilla
   enable_rust_cxx = true
   enable_chromium_prelude = true
+  rtc_rust = false
 
   # See context on https://issues.chromium.org/issues/415076048.
   enable_js_protobuf = false
 
   # Use Siso instead of Ninja.
   use_siso = true
+
+  clang_unsafe_buffers_paths = "//unsafe_buffers_paths.txt"
+
+  # WebRTC must stay in C++20 for longer compared to Chromium.
+  use_cxx23 = false
 }

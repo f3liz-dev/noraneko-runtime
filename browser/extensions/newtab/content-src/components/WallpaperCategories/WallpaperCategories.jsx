@@ -7,6 +7,8 @@ import { connect } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 // eslint-disable-next-line no-shadow
 import { CSSTransition } from "react-transition-group";
+import { calculateTheme } from "lib/Wallpapers/WallpaperThemeUtils.mjs";
+import { WALLPAPER_CATEGORIES } from "content-src/lib/constants.mjs";
 
 const PREF_WALLPAPER_UPLOADED_PREVIOUSLY =
   "newtabWallpapers.customWallpaper.uploadedPreviously";
@@ -56,6 +58,7 @@ export class _WallpaperCategories extends React.PureComponent {
     this.arrowButtonRef = React.createRef(); // Used to focus arrow button when category opens
     this.customColorPickerRef = React.createRef(); // Used to determine contrast icon color for custom color picker
     this.customColorInput = React.createRef(); // Used to determine contrast icon color for custom color picker
+    this.wallpaperListRef = React.createRef(); // Used for CSSTransition nodeRef
     this.state = {
       activeCategory: null,
       activeCategoryFluentID: null,
@@ -80,6 +83,27 @@ export class _WallpaperCategories extends React.PureComponent {
     ) {
       this.handleBack();
     }
+
+    // A CTA can deep-link into a specific wallpaper category by dispatching
+    // SHOW_PERSONALIZE with a wallpaperCategory. Open it once when it appears.
+    const requestedCategory = this.props.customizePanelWallpaperCategory;
+    if (
+      requestedCategory &&
+      requestedCategory !== prevProps.customizePanelWallpaperCategory
+    ) {
+      this.openRequestedCategory(requestedCategory);
+    }
+  }
+
+  openRequestedCategory(categoryId) {
+    const { categories } = this.props.Wallpapers;
+    const index = categories?.indexOf(categoryId) ?? -1;
+    // Category may not be available in every build/region; bail if missing.
+    if (index === -1) {
+      return;
+    }
+    this.setState({ focusedCategoryIndex: index });
+    this.openCategory(categoryId, { fromUser: false });
   }
 
   handleColorInput(event) {
@@ -117,6 +141,8 @@ export class _WallpaperCategories extends React.PureComponent {
 
     // Setting this now so when we remove v1 we don't have to migrate v1 values.
     this.props.setPref("newtabWallpapers.wallpaper", id);
+    this.props.setPref("newtabWallpapers.initialWallpaper", "");
+    this.props.setPref("newtabWallpapers.user.enabled", true);
   }
 
   // Note: There's a separate event (debouncedHandleChange) that fires the handleChange
@@ -131,6 +157,8 @@ export class _WallpaperCategories extends React.PureComponent {
     }
 
     this.props.setPref("newtabWallpapers.wallpaper", id);
+    this.props.setPref("newtabWallpapers.initialWallpaper", "");
+    this.props.setPref("newtabWallpapers.user.enabled", true);
 
     const uploadedPreviously =
       this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
@@ -255,6 +283,7 @@ export class _WallpaperCategories extends React.PureComponent {
 
     // Reset active wallpaper
     this.props.setPref("newtabWallpapers.wallpaper", "");
+    this.props.setPref("newtabWallpapers.initialWallpaper", "");
 
     // Fire WALLPAPER_CLICK telemetry event
     this.handleUserEvent(at.WALLPAPER_CLICK, {
@@ -264,36 +293,46 @@ export class _WallpaperCategories extends React.PureComponent {
     });
   }
 
-  handleCategory = event => {
-    this.setState({ activeCategory: event.target.id });
+  categoryFluentID(categoryId) {
+    switch (categoryId) {
+      case WALLPAPER_CATEGORIES.Abstracts:
+        return "newtab-wallpaper-category-title-abstract";
+      case WALLPAPER_CATEGORIES.Celestial:
+        return "newtab-wallpaper-category-title-celestial";
+      case WALLPAPER_CATEGORIES.Photographs:
+        return "newtab-wallpaper-category-title-photographs";
+      case WALLPAPER_CATEGORIES.SolidColors:
+        // @nova-cleanup(remove-conditional): Remove novaEnabled conditional and always use newtab-wallpaper-colors
+        return this.props.Prefs.values["nova.enabled"]
+          ? "newtab-wallpaper-colors"
+          : "newtab-wallpaper-category-title-colors";
+      case WALLPAPER_CATEGORIES.Firefox:
+        return "newtab-wallpaper-category-title-firefox";
+      default:
+        return undefined;
+    }
+  }
 
-    this.handleUserEvent(at.WALLPAPER_CATEGORY_CLICK, event.target.id);
+  // Open a wallpaper category subpanel. `fromUser` distinguishes a real category
+  // click (records telemetry) from a programmatic deep-link via a CTA.
+  openCategory(categoryId, { fromUser = true } = {}) {
+    this.setState({
+      activeCategory: categoryId,
+      activeCategoryFluentID: this.categoryFluentID(categoryId),
+    });
+
+    if (fromUser) {
+      this.handleUserEvent(at.WALLPAPER_CATEGORY_CLICK, categoryId);
+    }
 
     // Notify parent menu when subpanel opens
     if (this.props.onSubpanelToggle) {
       this.props.onSubpanelToggle(true);
     }
+  }
 
-    let fluent_id;
-    switch (event.target.id) {
-      case "abstracts":
-        fluent_id = "newtab-wallpaper-category-title-abstract";
-        break;
-      case "celestial":
-        fluent_id = "newtab-wallpaper-category-title-celestial";
-        break;
-      case "photographs":
-        fluent_id = "newtab-wallpaper-category-title-photographs";
-        break;
-      case "solid-colors":
-        fluent_id = "newtab-wallpaper-category-title-colors";
-        break;
-      case "firefox":
-        fluent_id = "newtab-wallpaper-category-title-firefox";
-        break;
-    }
-
-    this.setState({ activeCategoryFluentID: fluent_id });
+  handleCategory = event => {
+    this.openCategory(event.target.id);
   };
 
   // Custom wallpaper image upload
@@ -343,15 +382,26 @@ export class _WallpaperCategories extends React.PureComponent {
           return;
         }
 
+        let theme;
+        try {
+          theme = await calculateTheme(globalThis, file);
+        } catch (e) {
+          console.error("Failed to decode wallpaper image", e);
+          this.setState({ customWallpaperErrorType: "fileType" });
+          return;
+        }
+
         this.props.dispatch(
           ac.OnlyToMain({
             type: at.WALLPAPER_UPLOAD,
-            data: { file },
+            data: { file, theme },
           })
         );
 
         // Set active wallpaper ID to "custom"
         this.props.setPref("newtabWallpapers.wallpaper", "custom");
+        this.props.setPref("newtabWallpapers.initialWallpaper", "");
+        this.props.setPref("newtabWallpapers.user.enabled", true);
 
         // Update the uploadedPreviously pref to TRUE
         // Note: this pref used for telemetry. Do not reset to false.
@@ -430,10 +480,18 @@ export class _WallpaperCategories extends React.PureComponent {
 
   render() {
     const prefs = this.props.Prefs.values;
+    // @nova-cleanup(remove-conditional): Remove novaEnabled once Nova ships
+    const novaEnabled = prefs["nova.enabled"];
     const { wallpaperList, categories } = this.props.Wallpapers;
     const { activeWallpaper } = this.props;
     const { activeCategory } = this.state;
     const { activeCategoryFluentID } = this.state;
+    // @nova-cleanup(remove-conditional): Remove novaEnabled check, keep arrowIconSrc computation
+    let arrowIconSrc;
+    if (novaEnabled) {
+      const isRTL = typeof document !== "undefined" && document.dir === "rtl";
+      arrowIconSrc = `chrome://global/skin/icons/shaft-arrow-${isRTL ? "right" : "left"}.svg`;
+    }
     // Enable custom color select if pref'ed on
     let showColorPicker = prefs["newtabWallpapers.customColor.enabled"];
     let filteredWallpapers = wallpaperList.filter(
@@ -452,6 +510,7 @@ export class _WallpaperCategories extends React.PureComponent {
 
     let wallpaperCustomSolidColorHex = null;
 
+    const wallpapersUserEnabled = prefs["newtabWallpapers.user.enabled"];
     const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
 
     // User has previous selected a custom color
@@ -521,14 +580,23 @@ export class _WallpaperCategories extends React.PureComponent {
       );
 
     return (
-      <div>
+      // @nova-cleanup(remove-conditional): Remove nova-enabled class from root div
+      <div className={novaEnabled ? "nova-enabled" : undefined}>
         <div className="category-header">
-          <h2 data-l10n-id="newtab-wallpaper-title"></h2>
-          <button
-            className="wallpapers-reset"
-            onClick={this.handleReset}
-            data-l10n-id="newtab-wallpaper-reset"
-          />
+          {
+            // @nova-cleanup(remove-conditional): Remove h2 once Nova ships — title moves to the wallpaper toggle
+            !novaEnabled && <h2 data-l10n-id="newtab-wallpaper-title"></h2>
+          }
+          {
+            // @nova-cleanup(remove-conditional): Remove reset button once Nova ships — toggle handles reset
+            !novaEnabled && (
+              <button
+                className="wallpapers-reset"
+                onClick={this.handleReset}
+                data-l10n-id="newtab-wallpaper-reset"
+              />
+            )
+          }
         </div>
         <div
           role="grid"
@@ -549,25 +617,13 @@ export class _WallpaperCategories extends React.PureComponent {
                 activeWallpaper.startsWith("solid-color-picker");
               const thumbnail = activeWallpaperObj || sortedList[0];
               let fluent_id;
-              switch (category) {
-                case "abstracts":
-                  fluent_id = "newtab-wallpaper-category-title-abstract";
-                  break;
-                case "celestial":
-                  fluent_id = "newtab-wallpaper-category-title-celestial";
-                  break;
-                case "custom-wallpaper":
-                  fluent_id = "newtab-wallpaper-upload-image";
-                  break;
-                case "photographs":
-                  fluent_id = "newtab-wallpaper-category-title-photographs";
-                  break;
-                case "solid-colors":
-                  fluent_id = "newtab-wallpaper-category-title-colors";
-                  break;
-                case "firefox":
-                  fluent_id = "newtab-wallpaper-category-title-firefox";
-                  break;
+              if (category === WALLPAPER_CATEGORIES.CustomWallpaper) {
+                // @nova-cleanup(remove-conditional): Remove novaEnabled conditional and always use newtab-wallpaper-add-an-image
+                fluent_id = novaEnabled
+                  ? "newtab-wallpaper-add-an-image"
+                  : "newtab-wallpaper-upload-image";
+              } else {
+                fluent_id = this.categoryFluentID(category);
               }
               let style = {};
               if (thumbnail?.wallpaperUrl) {
@@ -584,7 +640,8 @@ export class _WallpaperCategories extends React.PureComponent {
                 style.backgroundColor = hex;
               }
               const isCategorySelected =
-                activeWallpaperObj || isCustomSolidColor;
+                wallpapersUserEnabled &&
+                (activeWallpaperObj || isCustomSolidColor);
               return (
                 <div key={category}>
                   <button
@@ -647,19 +704,37 @@ export class _WallpaperCategories extends React.PureComponent {
         </div>
 
         <CSSTransition
+          nodeRef={this.wallpaperListRef}
           in={!!activeCategory}
           timeout={300}
           classNames="wallpaper-list"
           unmountOnExit={true}
           onEntered={this.handleWallpaperListEntered}
         >
-          <section className="category wallpaper-list ignore-color-mode">
-            <button
-              ref={this.arrowButtonRef}
-              className="arrow-button"
-              data-l10n-id={activeCategoryFluentID}
-              onClick={this.handleBack}
-            />
+          <section
+            ref={this.wallpaperListRef}
+            className="category wallpaper-list ignore-color-mode"
+          >
+            {
+              // @nova-cleanup(remove-conditional): Remove novaEnabled check and the else branch, keep the nova branch
+              novaEnabled ? (
+                <moz-button
+                  ref={this.arrowButtonRef}
+                  type="ghost"
+                  className="wallpapers-arrow-button"
+                  iconSrc={arrowIconSrc}
+                  data-l10n-id={activeCategoryFluentID}
+                  onClick={this.handleBack}
+                />
+              ) : (
+                <button
+                  ref={this.arrowButtonRef}
+                  className="arrow-button"
+                  data-l10n-id={activeCategoryFluentID}
+                  onClick={this.handleBack}
+                />
+              )
+            }
             <div
               role="grid"
               aria-label="Wallpaper selection. Use arrow keys to navigate."
@@ -687,7 +762,7 @@ export class _WallpaperCategories extends React.PureComponent {
                       style.backgroundColor = solid_color || "";
                     }
                     return (
-                      <>
+                      <React.Fragment key={title}>
                         <input
                           ref={el => {
                             if (el) {
@@ -701,8 +776,12 @@ export class _WallpaperCategories extends React.PureComponent {
                           name={`wallpaper-${title}`}
                           id={title}
                           value={title}
-                          checked={title === activeWallpaper}
-                          aria-checked={title === activeWallpaper}
+                          checked={
+                            wallpapersUserEnabled && title === activeWallpaper
+                          }
+                          aria-checked={
+                            wallpapersUserEnabled && title === activeWallpaper
+                          }
                           className={`wallpaper-input theme-${theme} ${this.state.activeId === title ? "active" : ""}`}
                           onClick={() => this.setActiveId(title)} //
                           tabIndex={index === 0 ? 0 : -1} //the first wallpaper in the array will have a tabindex of 0 so we can tab into it. The rest will have a tabindex of -1
@@ -714,7 +793,7 @@ export class _WallpaperCategories extends React.PureComponent {
                         >
                           {fluent_id}
                         </label>
-                      </>
+                      </React.Fragment>
                     );
                   }
                 )}
@@ -732,5 +811,6 @@ export const WallpaperCategories = connect(state => {
   return {
     Wallpapers: state.Wallpapers,
     Prefs: state.Prefs,
+    customizePanelWallpaperCategory: state.App.customizePanelWallpaperCategory,
   };
 })(_WallpaperCategories);

@@ -1,5 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -85,6 +84,7 @@ XPC_MSG_DEF(NS_ERROR_FACTORY_REGISTER_AGAIN        , "Factory not registered (ma
 XPC_MSG_DEF(NS_ERROR_FACTORY_NOT_LOADED            , "Factory not loaded")
 XPC_MSG_DEF(NS_ERROR_FACTORY_NO_SIGNATURE_SUPPORT  , "Factory does not support signatures")
 XPC_MSG_DEF(NS_ERROR_FACTORY_EXISTS                , "Factory already exists")
+XPC_MSG_DEF(NS_ERROR_INVALID_SIGNATURE             , "Invalid signature")
 
 /* added from nsError.h on Feb 28 2001... */
 
@@ -245,6 +245,7 @@ XPC_MSG_DEF(NS_ERROR_DOM_PUSH_INVALID_KEY_ERR         , "Invalid raw ECDSA P-256
 XPC_MSG_DEF(NS_ERROR_DOM_PUSH_MISMATCHED_KEY_ERR      , "A subscription with a different application server key already exists.")
 
 /* Codes defined in WebIDL https://heycam.github.io/webidl/#idl-DOMException-error-names */
+XPC_MSG_DEF(NS_ERROR_DOM_NETWORK_ERR                  , "A network error occurred.")
 XPC_MSG_DEF(NS_ERROR_DOM_NOT_FOUND_ERR                , "The object can not be found here.")
 XPC_MSG_DEF(NS_ERROR_DOM_NOT_ALLOWED_ERR              , "The request is not allowed.")
 
@@ -260,6 +261,7 @@ XPC_MSG_DEF(NS_ERROR_CRYPTOMINING_URI                 , "The URI is cryptomining
 XPC_MSG_DEF(NS_ERROR_SOCIALTRACKING_URI               , "The URI is social tracking")
 XPC_MSG_DEF(NS_ERROR_EMAILTRACKING_URI                , "The URI is email tracking")
 XPC_MSG_DEF(NS_ERROR_HARMFULADDON_URI                 , "The URI is not available for add-ons")
+XPC_MSG_DEF(NS_ERROR_SAVE_LINK_AS_TIMEOUT             , "Save Link As failed to see the headers early enough to choose a filename")
 
 /* Profile manager error codes */
 XPC_MSG_DEF(NS_ERROR_DATABASE_CHANGED                 , "Flushing the profiles to disk would have overwritten changes made elsewhere.")
@@ -275,3 +277,6 @@ XPC_MSG_DEF(NS_ERROR_WDBA_BUILD                       , "The existing UserChoice
 
 /* Codes related to QuotaManager */
 XPC_MSG_DEF(NS_ERROR_DOM_QM_CLIENT_INIT_ORIGIN_UNINITIALIZED, "Client initialization attempted before origin has been initialized.")
+
+/* Codes related to IndexedDB */
+XPC_MSG_DEF(NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR    , "A mutation operation was attempted on a database that did not allow mutations.")

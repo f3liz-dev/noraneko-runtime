@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,23 +6,23 @@
 
 #include <algorithm>  // for std::min, std::max
 
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/EffectsInfo.h"
+#include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/EffectsInfo.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/layers/APZUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIContent.h"
-#include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
-#include "nsTableCellFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleConsts.h"
-#include "mozilla/ViewportUtils.h"
-#include "mozilla/EventListenerManager.h"
-#include "mozilla/layers/APZUtils.h"
+#include "nsTableCellFrame.h"
 
 namespace mozilla {
 namespace layers {

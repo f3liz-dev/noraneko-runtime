@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -767,7 +765,10 @@ already_AddRefed<AudioWorkletNode> AudioWorkletNode::Constructor(
   // can share memory.
   JS::CloneDataPolicy cloneDataPolicy;
   cloneDataPolicy.allowIntraClusterClonableSharedObjects();
-  cloneDataPolicy.allowSharedMemoryObjects();
+  nsIGlobalObject* currentGlobal = xpc::CurrentNativeGlobal(cx);
+  if (currentGlobal->IsSharedMemoryAllowed()) {
+    cloneDataPolicy.allowSharedMemoryObjects();
+  }
 
   // StructuredCloneHolder does not have a move constructor.  Instead allocate
   // memory so that the pointer can be passed to the rendering thread.

@@ -1,4 +1,4 @@
-requestLongerTimeout(4);
+requestLongerTimeout(5);
 
 AntiTracking.runTestInNormalAndPrivateMode(
   "SharedWorkers",
@@ -15,13 +15,8 @@ AntiTracking.runTestInNormalAndPrivateMode(
     new SharedWorker("a.js", "foo");
     ok(true, "SharedWorker is allowed");
   },
-  async _ => {
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
-  }
+  // Cleanup callback
+  clearSiteTestData
 );
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -81,13 +76,8 @@ AntiTracking.runTestInNormalAndPrivateMode(
     new SharedWorker("a.js", "bar");
     ok(true, "SharedWorker is allowed");
   },
-  async _ => {
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
-  },
+  // Cleanup callback
+  clearSiteTestData,
   null,
   false,
   false

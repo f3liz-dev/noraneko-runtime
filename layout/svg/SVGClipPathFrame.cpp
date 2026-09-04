@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -98,17 +96,19 @@ static void ComposeExtraMask(DrawTarget* aTarget, SourceSurface* aExtraMask) {
 void SVGClipPathFrame::PaintChildren(gfxContext& aMaskContext,
                                      nsIFrame* aClippedFrame,
                                      const gfxMatrix& aMatrix) {
-  // Check if this clipPath is itself clipped by another clipPath:
-  SVGClipPathFrame* clipPathThatClipsClipPath;
-  // XXX check return value?
-  SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
   SVGUtils::MaskUsage maskUsage = SVGUtils::DetermineMaskUsage(this, true);
-
   gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aMaskContext);
+
   if (maskUsage.ShouldApplyClipPath()) {
+    SVGClipPathFrame* clipPathThatClipsClipPath;
+    // Check if this clipPath is itself clipped by another clipPath:
+    SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
     clipPathThatClipsClipPath->ApplyClipPath(aMaskContext, aClippedFrame,
                                              aMatrix);
   } else if (maskUsage.ShouldGenerateClipMaskLayer()) {
+    SVGClipPathFrame* clipPathThatClipsClipPath;
+    // Check if this clipPath is itself clipped by another clipPath:
+    SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
     RefPtr<SourceSurface> maskSurface = clipPathThatClipsClipPath->GetClipMask(
         aMaskContext, aClippedFrame, aMatrix);
     // We want the mask to be untransformed so use the inverse of the current
@@ -394,11 +394,12 @@ gfxMatrix SVGClipPathFrame::GetClipPathTransform(nsIFrame* aClippedFrame) {
   SVGAnimatedEnumeration* clipPathUnits =
       &content->mEnumAttributes[SVGClipPathElement::CLIPPATHUNITS];
 
-  uint32_t flags = SVGUtils::eBBoxIncludeFillGeometry |
-                   (aClippedFrame->StyleBorder()->mBoxDecorationBreak ==
-                            StyleBoxDecorationBreak::Clone
-                        ? SVGUtils::eIncludeOnlyCurrentFrameForNonSVGElement
-                        : 0);
+  SVGBBoxFlags flags = SVGBBoxFlag::IncludeFillGeometry;
+
+  if (aClippedFrame->StyleBorder()->mBoxDecorationBreak ==
+      StyleBoxDecorationBreak::Clone) {
+    flags += SVGBBoxFlag::IncludeOnlyCurrentFrameForNonSVGElement;
+  }
 
   return SVGUtils::AdjustMatrixForUnits(tm, clipPathUnits, aClippedFrame,
                                         flags);
@@ -406,7 +407,7 @@ gfxMatrix SVGClipPathFrame::GetClipPathTransform(nsIFrame* aClippedFrame) {
 
 SVGBBox SVGClipPathFrame::GetBBoxForClipPathFrame(const SVGBBox& aBBox,
                                                   const gfxMatrix& aMatrix,
-                                                  uint32_t aFlags) {
+                                                  SVGBBoxFlags aFlags) {
   SVGClipPathFrame* clipPathThatClipsClipPath;
   if (SVGObserverUtils::GetAndObserveClipPath(this,
                                               &clipPathThatClipsClipPath) ==
@@ -423,7 +424,7 @@ SVGBBox SVGClipPathFrame::GetBBoxForClipPathFrame(const SVGBBox& aBBox,
         gfxMatrix matrix =
             SVGUtils::GetTransformMatrixInUserSpace(frame) * aMatrix;
         SVGBBox tmpBBox = svg->GetBBoxContribution(
-            gfx::ToMatrix(matrix), SVGUtils::eBBoxIncludeFillGeometry);
+            gfx::ToMatrix(matrix), SVGBBoxFlag::IncludeFillGeometry);
         SVGClipPathFrame* clipPathFrame;
         if (SVGObserverUtils::GetAndObserveClipPath(frame, &clipPathFrame) !=
                 SVGObserverUtils::ReferenceState::HasRefsSomeInvalid &&
@@ -431,7 +432,8 @@ SVGBBox SVGClipPathFrame::GetBBoxForClipPathFrame(const SVGBBox& aBBox,
           tmpBBox =
               clipPathFrame->GetBBoxForClipPathFrame(tmpBBox, aMatrix, aFlags);
         }
-        if (!(aFlags & SVGUtils::eDoNotClipToBBoxOfContentInsideClipPath)) {
+        if (!aFlags.contains(
+                SVGBBoxFlag::DoNotClipToBBoxOfContentInsideClipPath)) {
           tmpBBox.Intersect(aBBox);
         }
         unionBBox.UnionEdges(tmpBBox);

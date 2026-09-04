@@ -15,7 +15,6 @@ export function registerWebDriverDocumentInsertedActor() {
   }
 
   ChromeUtils.registerProcessActor("WebDriverDocumentInserted", {
-    kind: "JSProcessActor",
     parent: {
       esModuleURI:
         "chrome://remote/content/shared/js-process-actors/WebDriverDocumentInsertedParent.sys.mjs",
@@ -26,6 +25,7 @@ export function registerWebDriverDocumentInsertedActor() {
       observers: ["initial-document-element-inserted"],
     },
     includeParent: true,
+    safeForUntrustedWebProcess: true,
   });
   registered = true;
 }

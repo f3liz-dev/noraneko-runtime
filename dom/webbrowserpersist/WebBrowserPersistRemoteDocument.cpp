@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,16 +19,12 @@ namespace mozilla {
 NS_IMPL_ISUPPORTS(WebBrowserPersistRemoteDocument, nsIWebBrowserPersistDocument)
 
 WebBrowserPersistRemoteDocument ::WebBrowserPersistRemoteDocument(
-    WebBrowserPersistDocumentParent* aActor, const Attrs& aAttrs,
-    nsIInputStream* aPostData)
-    : mActor(aActor), mAttrs(aAttrs), mPostData(aPostData) {
-  auto principalOrErr = ipc::PrincipalInfoToPrincipal(mAttrs.principal());
-  if (principalOrErr.isOk()) {
-    mPrincipal = principalOrErr.unwrap();
-  } else {
-    NS_WARNING("Failed to obtain principal!");
-  }
-
+    WebBrowserPersistDocumentParent* aActor, Attrs&& aAttrs,
+    nsIPrincipal* aPrincipal, nsIInputStream* aPostData)
+    : mActor(aActor),
+      mAttrs(std::move(aAttrs)),
+      mPrincipal(aPrincipal),
+      mPostData(aPostData) {
   net::CookieJarSettings::Deserialize(mAttrs.cookieJarSettings(),
                                       getter_AddRefs(mCookieJarSettings));
 }
@@ -48,6 +43,15 @@ void WebBrowserPersistRemoteDocument::ActorDestroy(void) { mActor = nullptr; }
 NS_IMETHODIMP
 WebBrowserPersistRemoteDocument::GetIsClosed(bool* aIsClosed) {
   *aIsClosed = !mActor;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebBrowserPersistRemoteDocument::Close() {
+  if (mActor) {
+    (void)WebBrowserPersistDocumentParent::Send__delete__(mActor);
+    // ActorDestroy sets mActor = nullptr.
+  }
   return NS_OK;
 }
 
@@ -193,14 +197,6 @@ WebBrowserPersistRemoteDocument::WriteContent(
              subActor, map, requestedContentType, aEncoderFlags, aWrapColumn)
              ? NS_OK
              : NS_ERROR_FAILURE;
-}
-
-// Forcing WebBrowserPersistRemoteDocument to implement GetHistory is the
-// easiest way to ensure that we can call GetHistory in
-// WebBrowserPersistDocumentChild::Start
-already_AddRefed<nsISHEntry> WebBrowserPersistRemoteDocument::GetHistory() {
-  MOZ_CRASH("We should not call GetHistory on WebBrowserPersistRemoteDocument");
-  return nullptr;
 }
 
 }  // namespace mozilla

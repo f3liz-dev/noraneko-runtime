@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,6 @@
 #include "mozilla/WeakPtr.h"
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "nsAtomHashKeys.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIChannel.h"
@@ -30,8 +27,8 @@
 #include "nsIStreamListener.h"
 #include "nsIRemoteTab.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "nsInterfaceHashtable.h"
 #include "nsIWeakReferenceUtils.h"
+#include "nsTArray.h"
 #include "nsWrapperCache.h"
 
 #define NS_CHANNELWRAPPER_IID \
@@ -147,8 +144,7 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   void GetContentType(nsCString& aContentType) const;
   void SetContentType(const nsACString& aContentType);
 
-  void RegisterTraceableChannel(const WebExtensionPolicy& aAddon,
-                                nsIRemoteTab* aBrowserParent);
+  void RegisterTraceableChannel(const WebExtensionPolicy& aAddon);
 
   already_AddRefed<nsITraceableChannel> GetTraceableChannel(
       const WebExtensionPolicy& aAddon,
@@ -193,6 +189,10 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   int64_t FrameId() const;
 
   int64_t ParentFrameId() const;
+
+  uint64_t DocumentInnerWindowId() const;
+
+  uint64_t ParentDocumentInnerWindowId() const;
 
   void GetFrameAncestors(
       dom::Nullable<nsTArray<dom::MozFrameAncestorInfo>>& aFrameAncestors,
@@ -285,6 +285,9 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   void CheckEventListeners();
 
+  void ActivityErrorFallbackCheck();
+  void FireErrorEvent();
+
   class ChannelWrapperStub final : public nsISupports {
    public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -320,7 +323,12 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   bool mSuspended = false;
   bool mResponseStarted = false;
 
-  nsInterfaceHashtable<nsAtomHashKey, nsIRemoteTab> mAddonEntries;
+  nsString mActivityError;
+
+  // 10 is chosen based on a telemetry query that found the number of
+  // concurrently installed webRequestBlocking extensions:
+  // https://phabricator.services.mozilla.com/D304595#inline-1659237
+  AutoTArray<RefPtr<nsAtom>, 10> mAddonEntries;
 
   // The text for the "Extension Suspend" marker, set from the Suspend method
   // when called for the first time and then cleared on the Resume method.

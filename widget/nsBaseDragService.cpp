@@ -1,31 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsBaseDragService.h"
-#include "nsITransferable.h"
 
-#include "nsArrayUtils.h"
-#include "nsITransferable.h"
-#include "nsSize.h"
-#include "nsXPCOM.h"
-#include "nsCOMPtr.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIFrame.h"
-#include "nsFrameLoaderOwner.h"
-#include "nsIContent.h"
-#include "nsINode.h"
-#include "nsPresContext.h"
-#include "nsIImageLoadingContent.h"
+#include <algorithm>
+
+#include "ImageRegion.h"
+#include "MockDragServiceController.h"
+#include "gfxContext.h"
+#include "gfxPlatform.h"
 #include "imgIContainer.h"
 #include "imgIRequest.h"
-#include "ImageRegion.h"
-#include "nsQueryObject.h"
-#include "nsRegion.h"
-#include "nsXULPopupManager.h"
-#include "nsMenuPopupFrame.h"
-#include "nsTreeBodyFrame.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
@@ -37,21 +23,35 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DragEvent.h"
+#include "mozilla/dom/NodeList.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/gfx/2D.h"
+#include "nsArrayUtils.h"
+#include "nsCOMPtr.h"
 #include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIFrame.h"
+#include "nsIImageLoadingContent.h"
+#include "nsIInterfaceRequestorUtils.h"
 #include "nsIMutableArray.h"
-#include "gfxContext.h"
-#include "gfxPlatform.h"
+#include "nsINode.h"
+#include "nsITransferable.h"
+#include "nsMenuPopupFrame.h"
+#include "nsPresContext.h"
+#include "nsQueryObject.h"
+#include "nsRegion.h"
+#include "nsSize.h"
+#include "nsTreeBodyFrame.h"
+#include "nsXPCOM.h"
+#include "nsXULPopupManager.h"
 #include "nscore.h"
-#include "MockDragServiceController.h"
-
-#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -199,31 +199,6 @@ nsBaseDragSession::GetSourceNode(nsINode** aSourceNode) {
   return NS_OK;
 }
 
-void nsBaseDragSession::UpdateSource(nsINode* aNewSourceNode,
-                                     Selection* aNewSelection) {
-  MOZ_ASSERT(mSourceNode);
-  MOZ_ASSERT(aNewSourceNode);
-  MOZ_ASSERT(mSourceNode->IsInNativeAnonymousSubtree() ||
-             aNewSourceNode->IsInNativeAnonymousSubtree());
-  MOZ_ASSERT(mSourceDocument == aNewSourceNode->OwnerDoc());
-  LOGD(
-      "[%p] %s | mSourceNode: %p | aNewSourceNode: %p | mSelection: %p | "
-      "aNewSelection: %p",
-      this, __FUNCTION__, mSourceNode.get(), aNewSourceNode, mSelection.get(),
-      aNewSelection);
-  mSourceNode = aNewSourceNode;
-  // Don't set mSelection if the session was invoked without selection or
-  // making it becomes nullptr.  The latter occurs when the old frame is
-  // being destroyed.
-  if (mSelection && aNewSelection) {
-    // XXX If the dragging image is created once (e.g., at drag start), the
-    //     image won't be updated unless we notify `DrawDrag` callers.
-    //     However, it must be okay for now to keep using older image of
-    //     Selection.
-    mSelection = aNewSelection;
-  }
-}
-
 NS_IMETHODIMP
 nsBaseDragSession::GetTriggeringPrincipal(nsIPrincipal** aPrincipal) {
   NS_IF_ADDREF(*aPrincipal = mTriggeringPrincipal);
@@ -287,10 +262,6 @@ bool nsBaseDragSession::IsSynthesizedForTests() {
   return mSessionIsSynthesizedForTests;
 }
 
-bool nsBaseDragSession::IsDraggingTextInTextControl() {
-  return mIsDraggingTextInTextControl;
-}
-
 uint32_t nsBaseDragSession::GetEffectAllowedForTests() {
   MOZ_ASSERT(mSessionIsSynthesizedForTests);
   return mEffectAllowedForTests;
@@ -342,10 +313,6 @@ nsresult nsBaseDragSession::InvokeDragSession(
   mTriggeringPrincipal = aPrincipal;
   mPolicyContainer = aPolicyContainer;
   mSourceNode = aDOMNode;
-  mIsDraggingTextInTextControl =
-      mSourceNode->IsInNativeAnonymousSubtree() &&
-      TextControlElement::FromNodeOrNull(
-          mSourceNode->GetClosestNativeAnonymousSubtreeRootParentOrHost());
   mContentPolicyType = aContentPolicyType;
   mEndDragPoint = LayoutDeviceIntPoint(0, 0);
 
@@ -355,7 +322,14 @@ nsresult nsBaseDragSession::InvokeDragSession(
   // are in the wrong coord system, so turn off mouse capture.
   PresShell::ClearMouseCapture();
 
-  if (mSessionIsSynthesizedForTests) {
+  // An async-synthesized drag is dispatched through WebDriver from the parent
+  // process, so unlike a plain synthesized drag it must go through the normal
+  // cross-process path: the content process still needs to send
+  // PBrowser::InvokeDragSession (via InvokeDragSessionImpl below) so that the
+  // parent process owns the session and can end it.  In the parent process the
+  // session is backed by the mock drag service, so it is not synthesized and
+  // does not reach here.
+  if (mSessionIsSynthesizedForTests && !mSessionIsAsyncSynthesizedForTests) {
     mDoingDrag = true;
     mDragAction = aActionType;
     mEffectAllowedForTests = aActionType;
@@ -375,7 +349,7 @@ nsresult nsBaseDragSession::InvokeDragSession(
         do_GetService("@mozilla.org/widget/dragservice;1");
     MOZ_ASSERT(dragService);
     MOZ_ASSERT(
-        !xpc::IsInAutomation() || dragService->IsMockService(),
+        !xpc::IsInAutomation() || dragService->GetIsMockService(),
         "About to start drag-drop native loop on which will prevent later "
         "tests from running properly.");
   }
@@ -391,7 +365,7 @@ nsresult nsBaseDragSession::InvokeDragSession(
       nsCOMPtr<nsITransferable> trans =
           do_CreateInstance("@mozilla.org/widget/transferable;1");
       trans->Init(nullptr);
-      trans->SetDataPrincipal(mSourceNode->NodePrincipal());
+      trans->SetDataPrincipal(mTriggeringPrincipal);
       trans->SetContentPolicyType(mContentPolicyType);
       trans->SetCookieJarSettings(aCookieJarSettings);
       mutableArray->AppendElement(trans);
@@ -402,7 +376,7 @@ nsresult nsBaseDragSession::InvokeDragSession(
           do_QueryElementAt(aTransferableArray, i);
       if (trans) {
         // Set the dataPrincipal on the transferable.
-        trans->SetDataPrincipal(mSourceNode->NodePrincipal());
+        trans->SetDataPrincipal(mTriggeringPrincipal);
         trans->SetContentPolicyType(mContentPolicyType);
         trans->SetCookieJarSettings(aCookieJarSettings);
       }
@@ -484,6 +458,9 @@ nsresult nsBaseDragSession::InitWithImage(
     DragEvent* aDragEvent, DataTransfer* aDataTransfer,
     bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
+  mSessionIsAsyncSynthesizedForTests =
+      aDragEvent &&
+      aDragEvent->WidgetEventPtr()->mFlags.mIsAsyncSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = nullptr;
   mHasImage = true;
@@ -562,6 +539,9 @@ nsresult nsBaseDragSession::InitWithRemoteImage(
     DragEvent* aDragEvent, DataTransfer* aDataTransfer,
     bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
+  mSessionIsAsyncSynthesizedForTests =
+      aDragEvent &&
+      aDragEvent->WidgetEventPtr()->mFlags.mIsAsyncSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = nullptr;
   mHasImage = true;
@@ -624,6 +604,9 @@ nsresult nsBaseDragSession::InitWithSelection(
     uint32_t aActionType, DragEvent* aDragEvent, DataTransfer* aDataTransfer,
     nsINode* aTargetContent, bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
+  mSessionIsAsyncSynthesizedForTests =
+      aDragEvent &&
+      aDragEvent->WidgetEventPtr()->mFlags.mIsAsyncSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = aSelection;
   mHasImage = true;
@@ -813,7 +796,7 @@ nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
 
   mDoingDrag = false;
   mSessionIsSynthesizedForTests = false;
-  mIsDraggingTextInTextControl = false;
+  mSessionIsAsyncSynthesizedForTests = false;
   mEffectAllowedForTests = nsIDragService::DRAGDROP_ACTION_UNINITIALIZED;
   mEndingSession = false;
   mCanDrop = false;
@@ -1069,7 +1052,7 @@ nsresult nsBaseDragSession::DrawDrag(nsINode* aDOMNode,
       if (dragNode->NodeName().LowerCaseEqualsLiteral("img")) {
         renderFlags = renderFlags | RenderImageFlags::IsImage;
       } else {
-        nsINodeList* childList = dragNode->ChildNodes();
+        dom::NodeList* childList = dragNode->ChildNodes();
         uint32_t length = childList->Length();
         // check every childnode for being an img element
         // XXXbz why don't we need to check descendants recursively?

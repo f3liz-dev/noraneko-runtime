@@ -1,15 +1,14 @@
 import os
 
 import pytest
+from support.context import using_context
 from tests.support.sync import AsyncPoll
 from webdriver.error import TimeoutException
-
-from .. import using_context
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.allow_system_access
+@pytest.mark.geckodriver(allow_system_access=True)
 @pytest.mark.parametrize(
     "event_name",
     [
@@ -22,8 +21,9 @@ pytestmark = pytest.mark.asyncio
 async def test_webextension_popup_context(
     bidi_session,
     current_session,
-    top_context,
+    install_webextension,
     subscribe_events,
+    top_context,
     event_name,
 ):
     # Install a webextension with a toolbar button showing a popup.
@@ -33,11 +33,8 @@ async def test_webextension_popup_context(
         "support",
         "popup_webextension",
     )
-    extension_data = {"type": "path", "path": path}
 
-    web_extension = await bidi_session.web_extension.install(
-        extension_data=extension_data
-    )
+    await install_webextension(extension_data={"type": "path", "path": path})
 
     # Subscribe to events and collect them all in an array.
     await subscribe_events(events=[event_name])
@@ -68,6 +65,4 @@ async def test_webextension_popup_context(
     with pytest.raises(TimeoutException):
         await wait.until(lambda _: len(events) > 0)
 
-    # Clean up the extension.
-    await bidi_session.web_extension.uninstall(extension=web_extension)
     remove_listener()

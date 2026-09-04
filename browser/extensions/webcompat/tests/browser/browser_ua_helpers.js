@@ -4,7 +4,7 @@
 
 const ORIG_UA = navigator.userAgent;
 const ORIG_UA_VER = ORIG_UA.match("Firefox/((\d|\.)+)")[1];
-const CURRENT_CHROME_VER = "Chrome/143.0.0.0";
+const CURRENT_CHROME_VER = "Chrome/148.0.0.0";
 
 let UA = ORIG_UA;
 
@@ -18,13 +18,13 @@ function shimUA() {
 const WEBKIT = "AppleWebKit/537.36 (KHTML, like Gecko)";
 const SAFARI = " Safari/537.36";
 
-const PREFIX_WIN = "Mozilla/5.0 (Windows NT 11.0; Win64; x64)";
-const PREFIX_LIN = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64)";
+const PREFIX_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
+const PREFIX_LIN = "Mozilla/5.0 (X11; Linux x86_64)";
 const PREFIX_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)";
-const PREFIX_AND = "Mozilla/5.0 (Linux; Android 6.0; Nexus 7 Build/JSS15Q)";
+const PREFIX_AND = "Mozilla/5.0 (Linux; Android 10; K)";
 
-const PHONE = "Nexus 5 Build/MRA58N";
-const TABLET = "Nexus 7 Build/JSS15Q";
+const PHONE = "K";
+const TABLET = "K";
 
 const DEVICE_APPROPRIATE_TESTS = [
   // test that the OS is carried over if none is specified in the config
@@ -158,41 +158,41 @@ const DEVICE_APPROPRIATE_TESTS = [
   {
     ua: "Windows",
     config: { OS: "android", phone: "PHONE", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 6.0; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
     ua: "Windows",
     config: { OS: "android", tablet: "TABLET", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 6.0; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 
   // test an android phone spoofing a tablet and vice versa
   {
     ua: "Android 8.8.8 Mobile",
     config: { noFxQuantum: true, tablet: "TABLET" },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; TABLET) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
   {
     ua: "Android 8.8.8 Mobile",
     config: { noFxQuantum: true, tablet: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: "PHONE" },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; PHONE) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
 
   // test that accidentally spoofing both phone and tablet just picks a phone
   {
     ua: "Android 8.8.8",
     config: { noFxQuantum: true, phone: true, tablet: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    expected: `Mozilla/5.0 (Linux; Android 10; ${PHONE}) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
 
   // test android version number option
@@ -207,16 +207,26 @@ const DEVICE_APPROPRIATE_TESTS = [
     expected: `Mozilla/5.0 (Linux; Android VER; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 
-  // test android version numbers are detected if not given
+  // test phone and tablet device-string overrides
   {
-    ua: "Android 8.8.8",
-    config: { OS: "android", phone: "DEV", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; DEV) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+    ua: "Android 8.8.8 (Tablet)",
+    config: { OS: "android", phone: true, noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; K) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
   },
   {
-    ua: "Android 8.8.8 (tablet)",
-    config: { OS: "android", noFxQuantum: true },
-    expected: `Mozilla/5.0 (Linux; Android 8.8.8; ${TABLET}) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+    ua: "Android 8.8.8 (Tablet)",
+    config: { OS: "android", phone: "DEV", noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; DEV) ${WEBKIT} ${CURRENT_CHROME_VER} Mobile${SAFARI}`,
+  },
+  {
+    ua: "Android 8.8.8",
+    config: { OS: "android", tablet: true, noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; K) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
+  },
+  {
+    ua: "Android 8.8.8",
+    config: { OS: "android", tablet: "DEV", noFxQuantum: true },
+    expected: `Mozilla/5.0 (Linux; Android 10; DEV) ${WEBKIT} ${CURRENT_CHROME_VER}${SAFARI}`,
   },
 ];
 
@@ -420,6 +430,80 @@ const TESTS = {
     UA = "X rv:1.1 Y";
     is(helper("X () Y"), "X () Y");
     is(helper("X (x) Y"), "X (Windows NT 10.0; Win64; x64; rv:1.1) Y");
+  },
+  changeBrowserVersion(helper) {
+    UA = ORIG_UA.replaceAll(ORIG_UA_VER, "995.5");
+
+    is(helper(), undefined, "No-op");
+    is(helper(UA), UA, "No-op 2");
+    is(helper(UA, {}), UA, "No-op 3");
+    is(
+      helper(UA, { browser: "", version: "1" }),
+      UA,
+      "No-op 4 (Missing browser/ver)"
+    );
+    is(
+      helper(UA, { browser: "FireFox", version: "140" }),
+      UA,
+      "No-op 5 Missing browser/ver)"
+    );
+
+    is(helper(UA, { browser: "Firefox", version: null }), UA, "Invalid 1");
+    is(helper(UA, { browser: "Firefox", version: undefined }), UA, "Invalid 2");
+    is(helper(UA, { browser: undefined, version: "1" }), UA, "Invalid 4");
+    is(helper(UA, { browser: null, version: "1" }), UA, "Invalid 5");
+    is(helper(UA, { browser: "Chrome", version: "140" }), UA, "Invalid 6");
+
+    is(
+      helper(UA, { browser: "Firefox", version: "" }),
+      UA.replaceAll("995.5", ""),
+      "Firefox/(empty string)"
+    );
+    is(
+      helper(UA, { browser: "Firefox", version: "XXX" }),
+      UA.replaceAll("995.5", "XXX"),
+      "Firefox/XXX"
+    );
+    is(
+      helper(UA, { browser: "Firefox", version: "140" }),
+      UA.replaceAll("995.5", "140"),
+      "Firefox/140"
+    );
+    is(
+      helper(UA, { browser: "Firefox", version: "+2.2" }),
+      UA.replaceAll("995.5", "997.7"),
+      "Firefox/+2.2"
+    );
+    is(
+      helper(UA, { browser: "Firefox", version: "-2.2" }),
+      UA.replaceAll("995.5", "993.3"),
+      "Firefox/+2.2"
+    );
+
+    is(
+      helper("rv:123.0.0.0 Chrome/123.0.0.0", {
+        browser: "Chrome",
+        version: "140.2",
+      }),
+      "rv:140.2 Chrome/140.2",
+      "Chrome/140.2"
+    );
+    is(
+      helper("rv:3.2.1.0 Chrome/3.2.1.0", {
+        browser: "Chrome",
+        version: "+1.2.3.4",
+      }),
+      "rv:4.4.4.4 Chrome/4.4.4.4",
+      "Chrome/+1.2.3.4"
+    );
+    is(
+      helper("rv:3.2.1.0 Chrome/3.2.1.0", {
+        browser: "Chrome",
+        version: "-3.2.1.0",
+      }),
+      "rv:0.0.0.0 Chrome/0.0.0.0",
+      "Chrome/-3.2.1.0"
+    );
   },
 };
 

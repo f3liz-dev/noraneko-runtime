@@ -18,7 +18,7 @@
 // Header-only. Without compiling the actual Abseil binary. As Abseil moves on to new
 // toolchains, it may drop support for Visual Studio 2015 in future versions.
 
-#  if defined(__EXCEPTIONS)
+#  if OPENTELEMETRY_HAVE_EXCEPTIONS
 #    include <exception>
 OPENTELEMETRY_BEGIN_NAMESPACE
 namespace nostd
@@ -27,7 +27,7 @@ namespace nostd
 class bad_variant_access : public std::exception
 {
 public:
-  virtual const char *what() const noexcept override { return "bad_variant_access"; }
+  const char *what() const noexcept override { return "bad_variant_access"; }
 };
 
 [[noreturn]] inline void throw_bad_variant_access()
@@ -50,17 +50,6 @@ OPENTELEMETRY_END_NAMESPACE
 #  endif
 
 #  include "opentelemetry/nostd/internal/absl/base/options.h"
-
-namespace absl
-{
-namespace OTABSL_OPTION_NAMESPACE_NAME
-{
-template <class T>
-struct variant_size;
-template <typename... Ts>
-class variant;
-}  // namespace OTABSL_OPTION_NAMESPACE_NAME
-}  // namespace absl
 
 #  include "opentelemetry/nostd/internal/absl/types/variant.h"
 

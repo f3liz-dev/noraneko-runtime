@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,7 +28,7 @@ class DeviceInfoFake : public DeviceInfoImpl {
                         char* aProductUniqueIdUTF8 = nullptr,
                         uint32_t aProductUniqueIdUTF8Length = 0,
                         pid_t* aPid = nullptr,
-                        bool* deviceIsPlaceholder = 0) override;
+                        bool* deviceIsPlaceholder = nullptr) override;
   int32_t NumberOfCapabilities(const char* aDeviceUniqueIdUTF8) override;
   int32_t GetCapability(const char* aDeviceUniqueIdUTF8,
                         const uint32_t aDeviceCapabilityNumber,

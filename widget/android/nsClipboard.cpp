@@ -2,15 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsClipboard.h"
+
 #include "mozilla/java/ClipboardWrappers.h"
 #include "mozilla/java/GeckoAppShellWrappers.h"
-#include "nsClipboard.h"
-#include "nsISupportsPrimitives.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsISupportsPrimitives.h"
 #include "nsMemory.h"
-#include "nsStringStream.h"
 #include "nsPrimitiveHelpers.h"
+#include "nsStringStream.h"
 
 using namespace mozilla;
 
@@ -110,7 +111,8 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
 
 mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
 nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
-                                    ClipboardType aWhichClipboard) {
+                                    ClipboardType aWhichClipboard,
+                                    uint64_t aThreshold) {
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
@@ -129,6 +131,12 @@ nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
     if (buffer.IsEmpty()) {
       return nsCOMPtr<nsISupports>{};
     }
+
+    if (aThreshold && aFlavor.EqualsLiteral(kTextMime) &&
+        buffer.Length() * 2 > aThreshold) {
+      return mozilla::Err(NS_ERROR_CLIPBOARD_TOO_BIG);
+    }
+
     nsCOMPtr<nsISupports> wrapper;
     nsPrimitiveHelpers::CreatePrimitiveForData(
         aFlavor, buffer.get(), buffer.Length() * 2, getter_AddRefs(wrapper));

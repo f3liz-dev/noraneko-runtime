@@ -1,35 +1,36 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SpecialSystemDirectory.h"
+
 #include "mozilla/Try.h"
 #include "nsComponentManagerUtils.h"
-#include "nsString.h"
 #include "nsDependentString.h"
 #include "nsIXULAppInfo.h"
+#include "nsString.h"
 
 #if defined(XP_WIN)
 
-#  include <windows.h>
-#  include <stdlib.h>
-#  include <stdio.h>
-#  include <string.h>
 #  include <direct.h>
-#  include <shlobj.h>
-#  include <knownfolders.h>
 #  include <guiddef.h>
+#  include <knownfolders.h>
+#  include <shlobj.h>
+#  include <stdio.h>
+#  include <stdlib.h>
+#  include <string.h>
+#  include <windows.h>
+
 #  include "mozilla/WinHeaderOnlyUtils.h"
 #  include "nsIWindowsRegKey.h"
 
 #elif defined(XP_UNIX)
 
 #  include <limits.h>
-#  include <unistd.h>
 #  include <stdlib.h>
 #  include <sys/param.h>
+#  include <unistd.h>
+
 #  include "prenv.h"
 #  if defined(XP_DARWIN)
 #    include "DarwinFileUtils.h"
@@ -418,7 +419,7 @@ static nsresult GetUnixXDGUserDirectory(SystemDirectories aSystemDirectory,
 
     // fallback to HOME only if HOME/Desktop doesn't exist
     if (!exists) {
-      file = home;
+      file = std::move(home);
     }
   } else {
     // no fallback for the other XDG dirs

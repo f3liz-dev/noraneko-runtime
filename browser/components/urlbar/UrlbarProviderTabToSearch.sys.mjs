@@ -17,13 +17,13 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionsProviderContextualSearch:
     "moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderAutofill:
     "moz-src:///browser/components/urlbar/UrlbarProviderAutofill.sys.mjs",
   UrlbarProviderGlobalActions:
     "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
@@ -91,15 +91,6 @@ const VIEW_TEMPLATE = {
 };
 
 /**
- * Initializes this provider's dynamic result. To be called after the creation
- *  of the provider singleton.
- */
-function initializeDynamicResult() {
-  lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-  lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
-}
-
-/**
  * Class used to create the provider.
  */
 export class UrlbarProviderTabToSearch extends UrlbarProvider {
@@ -110,10 +101,10 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -127,7 +118,7 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
     return (
       queryContext.searchString &&
       queryContext.tokens.length == 1 &&
-      !queryContext.searchMode &&
+      !queryContext.restrictInSearchMode() &&
       lazy.UrlbarPrefs.get("suggest.engines") &&
       !(
         (await this.queryInstance
@@ -145,6 +136,10 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
    */
   getPriority() {
     return 0;
+  }
+
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
   }
 
   /**
@@ -225,19 +220,6 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
     }
   }
 
-  onEngagement(queryContext, controller, details) {
-    let { result, element } = details;
-    if (result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) {
-      // Confirm search mode, but only for the onboarding (dynamic) result. The
-      // input will handle confirming search mode for the non-onboarding
-      // `RESULT_TYPE.SEARCH` result since it sets `providesSearchMode`.
-      element.ownerGlobal.gURLBar.maybeConfirmSearchModeFromResult({
-        result,
-        checkValue: false,
-      });
-    }
-  }
-
   /**
    * Defines whether the view should defer user selection events while waiting
    * for the first result from this provider.
@@ -260,7 +242,7 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
     // enginesForDomainPrefix only matches against engine domains.
     // Remove trailing slashes and www. from the search string and check if the
     // resulting string is worth matching.
-    let [searchStr] = UrlbarUtils.stripPrefixAndTrim(
+    let [searchStr] = lazy.UrlbarShared.stripPrefixAndTrim(
       queryContext.searchString,
       {
         stripWww: true,
@@ -311,9 +293,12 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
     for (let engine of engines) {
       // Trim the engine host. This will also be set as the result url, so the
       // Muxer can use it to filter.
-      let [host] = UrlbarUtils.stripPrefixAndTrim(engine.searchUrlDomain, {
-        stripWww: true,
-      });
+      let [host] = lazy.UrlbarShared.stripPrefixAndTrim(
+        engine.searchUrlDomain,
+        {
+          stripWww: true,
+        }
+      );
       // Check if the host may be autofilled.
       if (host.startsWith(searchStr.toLocaleLowerCase())) {
         if (onboardingInteractionsLeft > 0) {
@@ -359,15 +344,15 @@ export class UrlbarProviderTabToSearch extends UrlbarProvider {
 
 function makeOnboardingResult(engine, satisfiesAutofillThreshold = false) {
   return new lazy.UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
-    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    type: lazy.UrlbarShared.RESULT_TYPE.DYNAMIC,
+    source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
     resultSpan: 2,
     suggestedIndex: 1,
     payload: {
       engine: engine.name,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
       providesSearchMode: true,
-      icon: UrlbarUtils.ICON.SEARCH_GLASS,
+      icon: lazy.UrlbarShared.ICON.SEARCH_GLASS,
       dynamicType: DYNAMIC_RESULT_TYPE,
       satisfiesAutofillThreshold,
     },
@@ -376,15 +361,15 @@ function makeOnboardingResult(engine, satisfiesAutofillThreshold = false) {
 
 function makeResult(context, engine, satisfiesAutofillThreshold = false) {
   return new lazy.UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.SEARCH,
-    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+    source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
     suggestedIndex: 1,
     payload: {
       engine: engine.name,
       isGeneralPurposeEngine: engine.isGeneralPurposeEngine,
       searchUrlDomainWithoutSuffix: searchUrlDomainWithoutSuffix(engine),
       providesSearchMode: true,
-      icon: UrlbarUtils.ICON.SEARCH_GLASS,
+      icon: lazy.UrlbarShared.ICON.SEARCH_GLASS,
       query: "",
       satisfiesAutofillThreshold,
     },
@@ -392,10 +377,8 @@ function makeResult(context, engine, satisfiesAutofillThreshold = false) {
 }
 
 function searchUrlDomainWithoutSuffix(engine) {
-  let [value] = UrlbarUtils.stripPrefixAndTrim(engine.searchUrlDomain, {
+  let [value] = lazy.UrlbarShared.stripPrefixAndTrim(engine.searchUrlDomain, {
     stripWww: true,
   });
   return value.substr(0, value.length - engine.searchUrlPublicSuffix.length);
 }
-
-initializeDynamicResult();

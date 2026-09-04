@@ -3,11 +3,13 @@
 # Mandatory fields for each entry are:
 # - description: A string describing the annotation
 # - type: the annotation type, currently `string`, `boolean`, `u32`, `u64`,
-#   `usize`, or `object`. `boolean` values are stringified to `1` for true and
-#   `0` for false. `object` types are a JSON object (not serialized), and may
-#   only be used for client-scoped annotations. They are only used internally
-#   by the crash reporting machinery; these values can't be accessed by the
-#   C++/JS APIs.
+#   `usize`, or `object`. `string` values that contain the empty string will
+#   not be stored in the crash report, no matter if the annotation was
+#   registered, only non-empty value will result in an entry. `boolean` values
+#   are stringified to `1` for true and `0` for false. `object` types are a
+#   JSON object (not serialized), and may only be used for client-scoped
+#   annotations. They are only used internally by the crash reporting
+#   machinery; these values can't be accessed by the C++/JS APIs.
 #
 # Additionally an entry can have the following optional fields:
 # - altname: A string that will be used when writing out the annotation to the
@@ -366,10 +368,29 @@ BuildID:
   glean:
     metric: crash.app_build
 
+CrashEventID:
+  description: A UUID for the crash event.
+  type: string
+  scope: ping
+  bugs:
+    - 1993525
+    - 2037943
+  glean:
+    metric: crash.event_id
+
 CrashType:
   description: The type of crash that occurred (Android-only).
   type: string
   scope: ping
+
+CrashSignatureOverrideForTesting:
+  description: >
+    Holds a fixed crash signature that overrides the one test automation would
+    otherwise derive from the crashing stack. When present, test automation
+    reports the crash under this signature. This only affects test automation;
+    production crash reporting (e.g. Socorro) ignores it.
+  type: string
+  scope: report
 
 ContentSandboxCapabilities:
   description: >
@@ -636,7 +657,23 @@ HasDeviceTouchScreen:
 InstallTime:
   description: >
     The time when Firefox was installed expressed as seconds since the Epoch
-  type: string # This should be u64 but we currently handle it as a string
+  type: u64
+  scope: ping
+  glean:
+    type: timespan
+    time_unit: second
+    custom_convert: duration_seconds
+  bugs:
+    - 2049748
+
+IntentionalCrashForTesting:
+  description: >
+    Set by test automation when it deliberately crashes a process and expects
+    that crash to happen. When present, mozcrash does not treat the crash as a
+    test failure. This must only ever be set under test-specific configuration;
+    production crashes must never carry it, otherwise real failures would be
+    silently ignored.
+  type: boolean
   scope: report
 
 ipc_channel_error:
@@ -1155,6 +1192,12 @@ RemoteType:
   type: string
   scope: ping
 
+RosettaStatus:
+  description: >
+    True if Rosetta translation is being used.
+  type: boolean
+  scope: report
+
 SafeMode:
   description: >
     Set to 1 if the browser was started in safe mode.
@@ -1192,13 +1235,20 @@ ShutdownReason:
   type: string
   scope: ping
 
+SignalOrigin:
+  description: >
+    Process name of the source of the signal that caused the crash, if applicable.
+    - On Linux, populated with the name of the process that sent a fatal signal
+    to the crashing process, if it can be determined.
+  type: string
+  scope: report
+
 StackTraces:
   description: >
-    Stack traces extracted from the crash minidump, if available. These are
-    sent in pings, however they are extracted and transformed into a different
-    format. The field in the extra file is meant only for client use.
-  type: object
-  scope: ping-only
+    Stack traces extracted from the crash minidump, if available. A serialized
+    JSON object (with a structure matching the associated Glean object description).
+  type: string
+  scope: ping
   glean:
     type: object
     # All addresses are hex strings rather than numbers.
@@ -1367,6 +1417,14 @@ TestInteger:
   type: u32
   scope: report
 
+ThreadLastCreateError:
+  description: >
+    Diagnostic info recorded when PR_CreateThread fails. Contains the thread
+    name, NSPR error code, and OS error code. Never cleared, so it reflects
+    the last failure if there were multiple.
+  type: string
+  scope: report
+
 TextureUsage:
   description: >
     Amount of memory in bytes consumed by textures.
@@ -1434,6 +1492,12 @@ UnknownNetAddrSocketFamily:
   description: >
     An unknown network address family was requested to Necko. The value is the
     requested family number.
+  type: u32
+  scope: report
+
+UniFFILeakedCallbackId:
+  description: >
+    ID of the leaked callbacks when we force crash in `UniFFI.sys.mjs`
   type: u32
   scope: report
 

@@ -5,26 +5,26 @@
 #ifndef CacheStorageService_h_
 #define CacheStorageService_h_
 
+#include "mozilla/AtomicBitfields.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/LinkedList.h"
-#include "nsICacheStorageService.h"
-#include "nsIMemoryReporter.h"
-#include "nsINamed.h"
-#include "nsITimer.h"
-#include "nsICacheTesting.h"
-
-#include "nsClassHashtable.h"
-#include "nsTHashMap.h"
-#include "nsString.h"
-#include "nsThreadUtils.h"
-#include "nsProxyRelease.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/AtomicBitfields.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
+#include "nsClassHashtable.h"
+#include "nsICacheStorageService.h"
+#include "nsICacheTesting.h"
+#include "nsIMemoryReporter.h"
+#include "nsINamed.h"
+#include "nsITimer.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
+#include "nsThreadUtils.h"
 
+class nsICacheEntry;
 class nsIURI;
 class nsICacheEntryDoomCallback;
 class nsICacheStorageVisitor;
@@ -45,6 +45,9 @@ class CacheEntryHandle;
 class CacheEntryTable;
 
 class CacheMemoryConsumer {
+ public:
+  CacheMemoryConsumer() = delete;
+
  private:
   friend class CacheStorageService;
   // clang-format off
@@ -53,9 +56,6 @@ class CacheMemoryConsumer {
     (uint32_t, Flags, 2)
   ))
   // clang-format on
-
- private:
-  CacheMemoryConsumer() = delete;
 
  protected:
   enum {
@@ -153,6 +153,11 @@ class CacheStorageService final : public nsICacheStorageService,
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
+
+  void NoteNoVarySearchEntry(const nsACString& aContextKey,
+                             const nsACString& aBasePath,
+                             const nsACString& aFullKey);
+  void NoteNoVarySearchEntry(nsICacheEntry* aEntry, nsIURI* aURI);
 
  private:
   virtual ~CacheStorageService();
@@ -364,6 +369,8 @@ class CacheStorageService final : public nsICacheStorageService,
     explicit MemoryPool(EType aType);
     ~MemoryPool();
 
+    MemoryPool() = delete;
+
     // We want to have constant O(1) for removal from this list.
     LinkedList<RefPtr<CacheEntry>> mManagedEntries;
     Atomic<uint32_t, Relaxed> mMemorySize{0};
@@ -380,7 +387,6 @@ class CacheStorageService final : public nsICacheStorageService,
 
    private:
     uint32_t Limit() const;
-    MemoryPool() = delete;
   };
 
   MemoryPool mDiskPool{MemoryPool::DISK};
@@ -436,8 +442,8 @@ class CacheStorageService final : public nsICacheStorageService,
     virtual ~IOThreadSuspender() = default;
     NS_IMETHOD Run() override;
 
-    Monitor mMon MOZ_UNANNOTATED;
-    bool mSignaled{false};
+    Monitor mMon;
+    bool mSignaled MOZ_GUARDED_BY(mMon){false};
   };
 
   RefPtr<IOThreadSuspender> mActiveIOSuspender;

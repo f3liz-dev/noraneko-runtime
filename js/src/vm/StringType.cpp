@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "vm/StringType-inl.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/HashFunctions.h"
@@ -43,6 +39,7 @@
 
 #include "gc/Marking-inl.h"
 #include "vm/GeckoProfiler-inl.h"
+#include "vm/StringType-inl.h"
 
 using namespace js;
 
@@ -66,9 +63,10 @@ void JSString::assertTypeUnchanged(uint32_t newFlags) const {
   // Don't allow accidentally changing the string type when updating flags. Call
   // changeStringType instead.
   uint32_t oldFlags = flags();
-  uint32_t typeMask = TYPE_FLAGS_MASK;
+  uint32_t typeMask = StringFlags::TYPE_FLAGS_MASK;
   if (isAtom()) {
-    typeMask &= ~(ATOM_IS_PERMANENT_BIT | ATOM_IS_INDEX_BIT);
+    typeMask &=
+        ~(StringFlags::ATOM_IS_PERMANENT_BIT | StringFlags::ATOM_IS_INDEX_BIT);
   }
   MOZ_ASSERT((newFlags & typeMask) == (oldFlags & typeMask));
 }
@@ -366,21 +364,21 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
       continue;
     }
     switch (i) {
-      case JSString::ATOM_BIT:
+      case StringFlags::ATOM_BIT:
         known("ATOM_BIT");
         break;
-      case JSString::LINEAR_BIT:
+      case StringFlags::LINEAR_BIT:
         known("LINEAR_BIT");
         break;
-      case JSString::DEPENDENT_BIT:
+      case StringFlags::DEPENDENT_BIT:
         known("DEPENDENT_BIT");
         break;
-      case JSString::INLINE_CHARS_BIT:
+      case StringFlags::INLINE_CHARS_BIT:
         known("INLINE_BIT");
         break;
-      case JSString::LINEAR_IS_EXTENSIBLE_BIT:
-        static_assert(JSString::LINEAR_IS_EXTENSIBLE_BIT ==
-                      JSString::INLINE_IS_FAT_BIT);
+      case StringFlags::LINEAR_IS_EXTENSIBLE_BIT:
+        static_assert(StringFlags::LINEAR_IS_EXTENSIBLE_BIT ==
+                      StringFlags::INLINE_IS_FAT_BIT);
         if (str->isLinear()) {
           if (str->isInline()) {
             known("FAT");
@@ -393,9 +391,9 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
           unknown(i);
         }
         break;
-      case JSString::LINEAR_IS_EXTERNAL_BIT:
-        static_assert(JSString::LINEAR_IS_EXTERNAL_BIT ==
-                      JSString::ATOM_IS_PERMANENT_BIT);
+      case StringFlags::LINEAR_IS_EXTERNAL_BIT:
+        static_assert(StringFlags::LINEAR_IS_EXTERNAL_BIT ==
+                      StringFlags::ATOM_IS_PERMANENT_BIT);
         if (str->isAtom()) {
           known("PERMANENT");
         } else if (str->isLinear()) {
@@ -404,35 +402,35 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
           unknown(i);
         }
         break;
-      case JSString::LATIN1_CHARS_BIT:
+      case StringFlags::LATIN1_CHARS_BIT:
         known("LATIN1_CHARS_BIT");
         break;
-      case JSString::HAS_STRING_BUFFER_BIT:
+      case StringFlags::HAS_STRING_BUFFER_BIT:
         known("HAS_STRING_BUFFER_BIT");
         break;
-      case JSString::ATOM_IS_INDEX_BIT:
+      case StringFlags::ATOM_IS_INDEX_BIT:
         if (str->isAtom()) {
           known("ATOM_IS_INDEX_BIT");
         } else {
           known("ATOM_REF_BIT");
         }
         break;
-      case JSString::INDEX_VALUE_BIT:
+      case StringFlags::INDEX_VALUE_BIT:
         known("INDEX_VALUE_BIT");
         break;
-      case JSString::IN_STRING_TO_ATOM_CACHE:
+      case StringFlags::IN_STRING_TO_ATOM_CACHE:
         known("IN_STRING_TO_ATOM_CACHE");
         break;
-      case JSString::FLATTEN_VISIT_RIGHT:
+      case StringFlags::FLATTEN_VISIT_RIGHT:
         if (str->isRope()) {
           known("FLATTEN_VISIT_RIGHT");
         } else {
           known("DEPENDED_ON_BIT");
         }
         break;
-      case JSString::FLATTEN_FINISH_NODE:
-        static_assert(JSString::FLATTEN_FINISH_NODE ==
-                      JSString::PINNED_ATOM_BIT);
+      case StringFlags::FLATTEN_FINISH_NODE:
+        static_assert(StringFlags::FLATTEN_FINISH_NODE ==
+                      StringFlags::PINNED_ATOM_BIT);
         if (str->isRope()) {
           known("FLATTEN_FINISH_NODE");
         } else if (str->isAtom()) {
@@ -603,7 +601,7 @@ JSExtensibleString& JSLinearString::makeExtensible(size_t capacity) {
   MOZ_ASSERT(capacity >= length());
   size_t oldSize = allocSize();
   js::RemoveCellMemory(this, oldSize, js::MemoryUse::StringContents);
-  changeStringType(length(), flags() | EXTENSIBLE_FLAGS);
+  changeStringType(length(), flags() | StringFlags::EXTENSIBLE_FLAGS);
   d.s.u3.capacity = capacity;
   size_t newSize = allocSize();
   js::AddCellMemory(this, newSize, js::MemoryUse::StringContents);
@@ -832,41 +830,39 @@ UniquePtr<CharT[], JS::FreePolicy> JSRope::copyCharsInternal(
 }
 
 template <typename CharT>
-void AddStringToHash(uint32_t* hash, const CharT* chars, size_t len) {
-  // It's tempting to use |HashString| instead of this loop, but that's
-  // slightly different than our existing implementation for non-ropes. We
-  // want to pretend we have a contiguous set of chars so we need to
-  // accumulate char by char rather than generate a new hash for substring
-  // and then accumulate that.
+static void AddStringToHash(mozilla::detail::UTF16Hasher& aHasher,
+                            const CharT* chars, size_t len) {
+  // It's tempting to use |HashString| / |HashLatin1AsUTF16| instead of this
+  // loop, but that's slightly different than our existing implementation for
+  // non-ropes. We want to pretend we have a contiguous set of chars so we need
+  // to accumulate char by char using UTF16Hasher rather than generate a new
+  // hash for substring and then accumulate that.
   for (size_t i = 0; i < len; i++) {
-    *hash = mozilla::AddToHash(*hash, chars[i]);
+    aHasher.Add(char16_t(chars[i]));
   }
 }
 
-void AddStringToHash(uint32_t* hash, const JSString* str) {
-  AutoCheckCannotGC nogc;
-  const auto& s = str->asLinear();
-  if (s.hasLatin1Chars()) {
-    AddStringToHash(hash, s.latin1Chars(nogc), s.length());
-  } else {
-    AddStringToHash(hash, s.twoByteChars(nogc), s.length());
-  }
-}
-
-bool JSRope::hash(uint32_t* outHash) const {
+bool JSRope::hashPrefix(size_t budget, uint32_t* outHash) const {
   Vector<const JSString*, 8, SystemAllocPolicy> nodeStack;
   const JSString* str = this;
 
-  *outHash = 0;
-
-  while (true) {
+  mozilla::detail::UTF16Hasher hasher;
+  while (budget > 0) {
     if (str->isRope()) {
       if (!nodeStack.append(str->asRope().rightChild())) {
         return false;
       }
       str = str->asRope().leftChild();
     } else {
-      AddStringToHash(outHash, str);
+      AutoCheckCannotGC nogc;
+      const auto& s = str->asLinear();
+      size_t toHash = std::min(s.length(), budget);
+      if (s.hasLatin1Chars()) {
+        AddStringToHash(hasher, s.latin1Chars(nogc), toHash);
+      } else {
+        AddStringToHash(hasher, s.twoByteChars(nogc), toHash);
+      }
+      budget -= toHash;
       if (nodeStack.empty()) {
         break;
       }
@@ -874,6 +870,7 @@ bool JSRope::hash(uint32_t* outHash) const {
     }
   }
 
+  *outHash = hasher.Finish();
   return true;
 }
 
@@ -931,7 +928,7 @@ static constexpr uint32_t StringFlagsForCharType(uint32_t baseFlags) {
     return baseFlags;
   }
 
-  return baseFlags | JSString::LATIN1_CHARS_BIT;
+  return baseFlags | StringFlags::LATIN1_CHARS_BIT;
 }
 
 static bool UpdateNurseryBuffersOnTransfer(js::Nursery& nursery,
@@ -1145,7 +1142,7 @@ JSLinearString* JSRope::flattenInternal(JSRope* root) {
   CharT* pos = wholeChars;
 
   JSRope* parent = nullptr;
-  uint32_t parentFlag = 0;
+  uint32_t parentFlag = StringFlags::FLATTEN_FINISH_NODE;
 
 first_visit_node: {
   MOZ_ASSERT_IF(str != root, parent && parentFlag);
@@ -1154,15 +1151,18 @@ first_visit_node: {
   ropeBarrierDuringFlattening<usingBarrier>(str);
 
   JSString& left = *str->d.s.u2.left;
-  str->d.s.u2.parent = parent;
   str->setFlagBit(parentFlag);
+#ifdef JS_GC_CONCURRENT_MARKING
+  js::gc::MemoryReleaseFence(str);
+#endif
+  setField(&str->d.s.u2.parent, parent);
   parent = nullptr;
   parentFlag = 0;
 
   if (left.isRope()) {
     /* Return to this node when 'left' done, then goto visit_right_child. */
     parent = str;
-    parentFlag = FLATTEN_VISIT_RIGHT;
+    parentFlag = StringFlags::FLATTEN_VISIT_RIGHT;
     str = &left.asRope();
     goto first_visit_node;
   }
@@ -1177,7 +1177,7 @@ visit_right_child: {
   if (right.isRope()) {
     /* Return to this node when 'right' done, then goto finish_node. */
     parent = str;
-    parentFlag = FLATTEN_FINISH_NODE;
+    parentFlag = StringFlags::FLATTEN_FINISH_NODE;
     str = &right.asRope();
     goto first_visit_node;
   }
@@ -1196,18 +1196,23 @@ finish_node: {
   str->setNonInlineChars(chars, /* usesStringBuffer = */ false);
 
   MOZ_ASSERT(str->asRope().isBeingFlattened());
-  mozilla::DebugOnly<bool> visitRight = str->flags() & FLATTEN_VISIT_RIGHT;
-  bool finishNode = str->flags() & FLATTEN_FINISH_NODE;
+  mozilla::DebugOnly<bool> visitRight =
+      str->flags() & StringFlags::FLATTEN_VISIT_RIGHT;
+  bool finishNode = str->flags() & StringFlags::FLATTEN_FINISH_NODE;
   MOZ_ASSERT(visitRight != finishNode);
 
   // Change rope into a dependent string. This also clears the flags related to
   // flattening.
-  uint32_t flags = INIT_DEPENDENT_FLAGS;
-  flags |= str->flags() & PRESERVE_ROPE_BITS_ON_REPLACE;
-  str->changeStringType(str->length(), StringFlagsForCharType<CharT>(flags));
-  str->d.s.u3.base =
-      reinterpret_cast<JSLinearString*>(root); /* will be true on exit */
-  newRootFlags |= DEPENDED_ON_BIT;
+  CharEncoding encoding = CharEncodingFromType<CharT>();
+  uint32_t flags = StringFlags::dependentStringFlags(encoding);
+  flags |= str->flags() & StringFlags::PRESERVE_ROPE_BITS_ON_REPLACE;
+  str->changeStringType(str->length(), flags);
+  {
+    // Will be true on exit.
+    auto* newBase = reinterpret_cast<JSLinearString*>(root);
+    setField(&str->d.s.u3.base, newBase);
+  }
+  newRootFlags |= StringFlags::DEPENDED_ON_BIT;
 
   // Every interior (rope) node in the rope's tree will be visited during
   // the traversal and post-barriered here, so earlier additions of
@@ -1235,15 +1240,16 @@ finish_root:
   MOZ_ASSERT(pos == wholeChars + wholeLength);
 
   // Change root into an extensible string.
-  uint32_t flags = StringFlagsForCharType<CharT>(EXTENSIBLE_FLAGS);
-  flags |= root->flags() & PRESERVE_ROPE_BITS_ON_REPLACE;
+  CharEncoding encoding = CharEncodingFromType<CharT>();
+  uint32_t flags =
+      StringFlags::extensibleStringFlags(encoding, hasStringBuffer);
+  flags |= root->flags() & StringFlags::PRESERVE_ROPE_BITS_ON_REPLACE;
   if (hasStringBuffer) {
-    flags |= HAS_STRING_BUFFER_BIT;
     wholeChars[wholeLength] = '\0';
   }
   root->changeStringType(wholeLength, flags);
   root->setNonInlineChars(wholeChars, hasStringBuffer);
-  root->d.s.u3.capacity = wholeCapacity;
+  setField(&root->d.s.u3.capacity, wholeCapacity);
   AddCellMemory(root, wholeCapacity * sizeof(CharT), MemoryUse::StringContents);
 
   if (reuseLeftmostBuffer) {
@@ -1253,16 +1259,17 @@ finish_root:
     RemoveCellMemory(&left, left.allocSize(), MemoryUse::StringContents);
 
     // Inherit NON_DEDUP_BIT from the leftmost string.
-    newRootFlags |= left.flags() & NON_DEDUP_BIT;
+    newRootFlags |= left.flags() & StringFlags::NON_DEDUP_BIT;
 
     // Set root's DEPENDED_ON_BIT because the leftmost string is now a
     // dependent.
-    newRootFlags |= DEPENDED_ON_BIT;
+    newRootFlags |= StringFlags::DEPENDED_ON_BIT;
 
     // Change leftmost string into a dependent string.
-    uint32_t flags = INIT_DEPENDENT_FLAGS;
-    flags |= left.flags() & PRESERVE_LINEAR_NONATOM_BITS_ON_REPLACE;
-    left.changeStringType(left.length(), StringFlagsForCharType<CharT>(flags));
+    uint32_t flags = StringFlags::dependentStringFlags(encoding);
+    flags |=
+        left.flags() & StringFlags::PRESERVE_LINEAR_NONATOM_BITS_ON_REPLACE;
+    left.changeStringType(left.length(), flags);
     left.d.s.u3.base = &root->asLinear();
     if (left.isTenured() && !root->isTenured()) {
       // leftmost child -> root is a tenured -> nursery edge. Put the leftmost
@@ -1270,7 +1277,7 @@ finish_root:
       // being freed (because the leftmost child may have a tenured dependent
       // string that cannot be updated.)
       root->storeBuffer()->putWholeCell(&left);
-      newRootFlags |= NON_DEDUP_BIT;
+      newRootFlags |= StringFlags::NON_DEDUP_BIT;
     }
   }
 
@@ -2546,7 +2553,7 @@ static JSString* NewStringFromBuffer(JSContext* cx, BufferT&& buffer,
   } else {
     // Note: |buffer| is either a StringBuffer* or a RefPtr<StringBuffer>, so
     // ensure we have a RefPtr.
-    RefPtr<mozilla::StringBuffer> bufferRef(std::move(buffer));
+    RefPtr<mozilla::StringBuffer> bufferRef(std::forward<BufferT>(buffer));
     Rooted<JSString::OwnedChars<CharT>> owned(cx, std::move(bufferRef), length);
     str = JSLinearString::new_<CanGC, CharT>(cx, &owned, gc::Heap::Default);
   }
@@ -2588,7 +2595,8 @@ static JSString* NewStringFromUTF8Buffer(JSContext* cx, BufferT&& buffer,
   JS::SmallestEncoding encoding = JS::FindSmallestEncoding(utf8);
   if (encoding == JS::SmallestEncoding::ASCII) {
     // ASCII case can use the string buffer as Latin1 buffer.
-    return NewStringFromBuffer<Latin1Char>(cx, std::move(buffer), length);
+    return NewStringFromBuffer<Latin1Char>(cx, std::forward<BufferT>(buffer),
+                                           length);
   }
 
   // Non-ASCII case cannot use the string buffer.
@@ -2918,21 +2926,23 @@ bool JSString::tryReplaceWithAtomRef(JSAtom* atom) {
   }
 
   // Change string into an atom ref.
-  uint32_t flags = INIT_ATOM_REF_FLAGS;
-  flags |= this->flags() & (isRope() ? PRESERVE_ROPE_BITS_ON_REPLACE
-                                     : PRESERVE_LINEAR_NONATOM_BITS_ON_REPLACE);
-  d.s.u3.atom = atom;
+  CharEncoding encoding = CharEncodingFromIsLatin1(atom->hasLatin1Chars());
+  uint32_t flags = StringFlags::atomRefFlags(encoding);
+  flags |= this->flags() &
+           (isRope() ? StringFlags::PRESERVE_ROPE_BITS_ON_REPLACE
+                     : StringFlags::PRESERVE_LINEAR_NONATOM_BITS_ON_REPLACE);
+  changeStringType(length(), flags);
+  d.s.u3.base = atom;
   if (atom->hasLatin1Chars()) {
-    flags |= LATIN1_CHARS_BIT;
-    changeStringType(length(), flags);
     setNonInlineChars(atom->chars<Latin1Char>(nogc), atom->hasStringBuffer());
   } else {
-    changeStringType(length(), flags);
     setNonInlineChars(atom->chars<char16_t>(nogc), atom->hasStringBuffer());
   }
+
   // Redundant, but just a reminder that this needs to be true or else we need
   // to check and conditionally put ourselves in the store buffer
   MOZ_ASSERT(atom->isTenured());
+
   return true;
 }
 
@@ -3065,7 +3075,7 @@ JSLinearString* js::StringChars<CharT>::toStringDontDeflate(JSContext* cx,
     if (auto* str = TryEmptyOrStaticString(cx, inlineChars_, length)) {
       return str;
     }
-    return NewInlineString<CanGC>(cx, inlineChars_, length, heap);
+    return NewInlineString<allowGC>(cx, inlineChars_, length, heap);
   }
 
   MOZ_ASSERT(ownedChars_,

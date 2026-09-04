@@ -18,8 +18,10 @@ class nsHtml5TreeOpExecutor;
 class nsHtml5DocumentBuilder;
 namespace mozilla {
 class Encoding;
-
+template <typename T>
+class Maybe;
 namespace dom {
+class CustomElementRegistry;
 class Text;
 }  // namespace dom
 }  // namespace mozilla
@@ -285,18 +287,20 @@ struct opGetShadowRootFromHost {
   nsIContent** mTemplateNode;
   nsString mShadowRootReferenceTarget;
   mozilla::dom::ShadowRootMode mShadowRootMode;
+  mozilla::dom::SlotAssignmentMode mShadowRootSlotAssignment;
   bool mShadowRootIsClonable;
   bool mShadowRootIsSerializable;
   bool mShadowRootDelegatesFocus;
+  bool mShadowRootCustomElementRegistry;
 
-  explicit opGetShadowRootFromHost(nsIContentHandle* aHost,
-                                   nsIContentHandle* aFragHandle,
-                                   nsIContentHandle* aTemplateNode,
-                                   mozilla::dom::ShadowRootMode aShadowRootMode,
-                                   bool aShadowRootIsClonable,
-                                   bool aShadowRootIsSerializable,
-                                   bool aShadowRootDelegatesFocus,
-                                   nsAString& aShadowRootReferenceTarget) {
+  explicit opGetShadowRootFromHost(
+      nsIContentHandle* aHost, nsIContentHandle* aFragHandle,
+      nsIContentHandle* aTemplateNode,
+      mozilla::dom::ShadowRootMode aShadowRootMode, bool aShadowRootIsClonable,
+      bool aShadowRootIsSerializable, bool aShadowRootDelegatesFocus,
+      bool aShadowRootCustomElementRegistry,
+      mozilla::dom::SlotAssignmentMode aShadowRootSlotAssignment,
+      nsAString& aShadowRootReferenceTarget) {
     mHost = static_cast<nsIContent**>(aHost);
     mFragHandle = static_cast<nsIContent**>(aFragHandle);
     mTemplateNode = static_cast<nsIContent**>(aTemplateNode);
@@ -304,6 +308,8 @@ struct opGetShadowRootFromHost {
     mShadowRootIsClonable = aShadowRootIsClonable;
     mShadowRootIsSerializable = aShadowRootIsSerializable;
     mShadowRootDelegatesFocus = aShadowRootDelegatesFocus;
+    mShadowRootCustomElementRegistry = aShadowRootCustomElementRegistry;
+    mShadowRootSlotAssignment = aShadowRootSlotAssignment;
     mShadowRootReferenceTarget = aShadowRootReferenceTarget;
   }
 };
@@ -609,14 +615,19 @@ class nsHtml5TreeOperation final {
                                 nsHtml5DocumentBuilder* aBuilder);
 
   static void SetHTMLElementAttributes(mozilla::dom::Element* aElement,
-                                       nsAtom* aName,
                                        nsHtml5HtmlAttributes* aAttributes);
+
+  static void SetHTMLElementAttributesFast(mozilla::dom::Element* aElement,
+                                           nsHtml5HtmlAttributes* aAttributes);
 
   static nsIContent* CreateHTMLElement(
       nsAtom* aName, nsHtml5HtmlAttributes* aAttributes,
       mozilla::dom::FromParser aFromParser, nsNodeInfoManager* aNodeInfoManager,
       nsHtml5DocumentBuilder* aBuilder,
-      mozilla::dom::HTMLContentCreatorFunction aCreator);
+      mozilla::dom::HTMLContentCreatorFunction aCreator,
+      nsINode* aIntendedParent,
+      mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+          aContextRegistry);
 
   static nsIContent* CreateSVGElement(
       nsAtom* aName, nsHtml5HtmlAttributes* aAttributes,
@@ -672,6 +683,9 @@ class nsHtml5TreeOperation final {
 
   ~nsHtml5TreeOperation();
 
+  nsHtml5TreeOperation(const nsHtml5TreeOperation&) = delete;
+  nsHtml5TreeOperation& operator=(const nsHtml5TreeOperation&) = delete;
+
   inline void Init(const treeOperation& aOperation) {
     NS_ASSERTION(mOperation.is<uninitialized>(),
                  "Op code must be uninitialized when initializing.");
@@ -700,9 +714,6 @@ class nsHtml5TreeOperation final {
                    bool* aInterrupted, bool* aStreamEnded);
 
  private:
-  nsHtml5TreeOperation(const nsHtml5TreeOperation&) = delete;
-  nsHtml5TreeOperation& operator=(const nsHtml5TreeOperation&) = delete;
-
   treeOperation mOperation;
 };
 

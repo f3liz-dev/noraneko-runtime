@@ -1,32 +1,63 @@
-From: Dan Baker <dbaker@mozilla.com>
-Date: Wed, 3 Dec 2025 09:44:00 -0700
-Subject: Bug 2000941 - (fix-412ea40eeb) ifdef out IID_IGraphicsCaptureSession6
- as current windows build SDK does not include it
+From: Michael Froman <mfroman@mozilla.com>
+Date: Tue, 7 Apr 2026 19:06:00 -0500
+Subject: Bug 2030139 - (fix-15fd636394) disable perfetto usage to avoid new
+ third_party library.
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/cb3700134901dea40f70b2da11e35b3e861d0c3c
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f1981bae2720ec8087be98eb7f5f323c1d233640
 ---
- modules/desktop_capture/win/wgc_capture_session.cc | 4 ++++
- 1 file changed, 4 insertions(+)
+ video/video_stream_encoder.cc | 20 ++++++++------------
+ 1 file changed, 8 insertions(+), 12 deletions(-)
 
-diff --git a/modules/desktop_capture/win/wgc_capture_session.cc b/modules/desktop_capture/win/wgc_capture_session.cc
-index 3037d471cc..763ae9c22d 100644
---- a/modules/desktop_capture/win/wgc_capture_session.cc
-+++ b/modules/desktop_capture/win/wgc_capture_session.cc
-@@ -276,6 +276,9 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
+diff --git a/video/video_stream_encoder.cc b/video/video_stream_encoder.cc
+index 7500792968..f83d3be3eb 100644
+--- a/video/video_stream_encoder.cc
++++ b/video/video_stream_encoder.cc
+@@ -862,13 +862,11 @@ void VideoStreamEncoder::AddAdaptationResource(
+   // Map any externally added resources as kCpu for the sake of stats reporting.
+   // TODO(hbos): Make the manager map any unknown resources to kCpu and get rid
+   // of this MapResourceToReason() call.
+-  TRACE_EVENT_BEGIN("webrtc",
+-                    "VideoStreamEncoder::AddAdaptationResource(latency)",
+-                    perfetto::Track::FromPointer(this));
++  TRACE_EVENT_ASYNC_BEGIN0(
++      "webrtc", "VideoStreamEncoder::AddAdaptationResource(latency)", this);
+   encoder_queue_->PostTask([this, resource = std::move(resource)] {
+-    TRACE_EVENT_END("webrtc",
+-                    /* VideoStreamEncoder::AddAdaptationResource(latency) */
+-                    perfetto::Track::FromPointer(this));
++    TRACE_EVENT_ASYNC_END0(
++        "webrtc", "VideoStreamEncoder::AddAdaptationResource(latency)", this);
+     RTC_DCHECK_RUN_ON(encoder_queue_.get());
+     additional_resources_.push_back(resource);
+     stream_resource_manager_.AddResource(resource, VideoAdaptationReason::kCpu);
+@@ -1719,8 +1717,7 @@ void VideoStreamEncoder::TraceFrameDropStart() {
+   RTC_DCHECK_RUN_ON(encoder_queue_.get());
+   // Start trace event only on the first frame after encoder is paused.
+   if (!encoder_paused_and_dropped_frame_) {
+-    TRACE_EVENT_BEGIN("webrtc", "EncoderPaused",
+-                      perfetto::Track::FromPointer(this));
++    TRACE_EVENT_ASYNC_BEGIN0("webrtc", "EncoderPaused", this);
    }
- #endif
- 
-+// Until Mozilla builds with SDK v10.0.26100.0 or newer, this
-+// code will not build.
-+#if !defined(WEBRTC_MOZILLA_BUILD)
-   // Windows 11 24H2 (10.0.26100.0) added
-   // `IGraphicsCaptureSession6::put_IncludeSecondaryWindows()`. See
-   // `wgc_include_secondary_windows()` in
-@@ -287,6 +290,7 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
-     session6->put_IncludeSecondaryWindows(
-         options.wgc_include_secondary_windows());
+   encoder_paused_and_dropped_frame_ = true;
+ }
+@@ -1729,8 +1726,7 @@ void VideoStreamEncoder::TraceFrameDropEnd() {
+   RTC_DCHECK_RUN_ON(encoder_queue_.get());
+   // End trace event on first frame after encoder resumes, if frame was dropped.
+   if (encoder_paused_and_dropped_frame_) {
+-    TRACE_EVENT_END("webrtc", /* EncoderPaused */
+-                    perfetto::Track::FromPointer(this));
++    TRACE_EVENT_ASYNC_END0("webrtc", "EncoderPaused", this);
    }
-+#endif
+   encoder_paused_and_dropped_frame_ = false;
+ }
+@@ -2189,8 +2185,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
+   }
+   accumulated_update_rect_is_valid_ = true;
  
-   allow_zero_hertz_ = options.allow_wgc_zero_hertz();
+-  TRACE_EVENT_INSTANT("webrtc", "Encode", perfetto::Track::FromPointer(this),
+-                      "render_time", video_frame.render_time_ms());
++  TRACE_EVENT_ASYNC_STEP_INTO0("webrtc", "Video", video_frame.render_time_ms(),
++                               "Encode");
+ 
+   stream_resource_manager_.OnEncodeStarted(out_frame, time_when_posted_us);
  

@@ -10,18 +10,112 @@ use api::units::*;
 use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::command_buffer::{CommandBufferBuilderKind, CommandBufferList, CommandBufferBuilder, CommandBufferIndex};
 use crate::internal_types::{FastHashMap, Filter};
-use crate::picture::PictureCompositeMode;
+use crate::picture_composite_mode::PictureCompositeMode;
 use crate::tile_cache::{TileKey, SubSliceIndex, MAX_COMPOSITOR_SURFACES};
 use crate::prim_store::PictureIndex;
 use crate::render_task_graph::{RenderTaskId, RenderTaskGraphBuilder};
 use crate::render_target::ResolveOp;
 use crate::render_task::{RenderTask, RenderTaskKind, RenderTaskLocation};
 use crate::space::SpaceMapper;
-use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
-use crate::util::MaxRect;
-use crate::visibility::{VisibilityState, PrimitiveVisibility, FrameVisibilityContext};
-pub use crate::picture_composite_mode::{get_surface_rects, calculate_uv_rect_kind};
+use crate::spatial_tree::{CoordinateSpaceMapping, SpatialTree, SpatialNodeIndex};
+use crate::util::{MaxRect, ScaleOffset};
+use crate::visibility::{DrawState, PrimitiveDrawHeader, FrameVisibilityContext};
+pub use crate::picture_composite_mode::get_surface_rects;
 
+/// Walk the filter chain rooted at `task_id` and make every task in it that
+/// samples `src_task_id` depend on `dep_task_id` as well.
+///
+/// The tasks that sample the chain's source sit at the *start* of the chain, not
+/// at the root (which is its output), so making the root alone depend on
+/// `dep_task_id` is not enough. How many there are depends on the chain:
+///  - Blur: one, the vertical blur - or the first downscale, for a blur large
+///    enough that `new_blur` scales it down first.
+///  - Drop-shadow: one. Every shadow blurs from the same source task, but only
+///    the last chain is reachable from the root, and all of the shadow quads
+///    sample that one task.
+///  - SVG filter graph: potentially several, since any node in the graph may
+///    take SourceGraphic as an input.
+///
+/// Filter chains are small and acyclic, so a plain recursive walk is enough.
+fn order_readers_after(
+    rg_builder: &mut RenderTaskGraphBuilder,
+    task_id: RenderTaskId,
+    src_task_id: RenderTaskId,
+    dep_task_id: RenderTaskId,
+) {
+    let children = rg_builder.get_task(task_id).children.clone();
+
+    if children.contains(&src_task_id) {
+        rg_builder.add_dependency(task_id, dep_task_id);
+    }
+
+    for child_id in children {
+        if child_id != src_task_id {
+            order_readers_after(rg_builder, child_id, src_task_id, dep_task_id);
+        }
+    }
+}
+
+/// Fetch the raster spatial node of a picture render task (used to relate the
+/// raster spaces of a resolve target and the surface(s) it reads back from).
+fn raster_spatial_node(
+    rg_builder: &RenderTaskGraphBuilder,
+    task_id: RenderTaskId,
+) -> SpatialNodeIndex {
+    match rg_builder.get_task(task_id).kind {
+        RenderTaskKind::Picture(ref info) => info.raster_spatial_node_index,
+        _ => unreachable!("bug: resolve src/dest task is not a picture"),
+    }
+}
+
+/// Compute the mapping from a resolve target's raster space into the raster
+/// space of the surface(s) it reads back from, for use by `handle_resolve`.
+///
+/// A resolve target (backdrop-filter sub-graph) and the surface it captures
+/// always share a surface spatial node: `finalize_picture` resolves the filter
+/// picture's spatial node to its backdrop root. They differ only in their raster
+/// root, and only when the resolve target promotes to a root-snapping raster
+/// root (the root reference frame) while the parent rasterizes against its own
+/// node (e.g. a scrolling tile cache). Both nodes are then in the root
+/// coordinate system, so the relationship is always a `ScaleOffset` (the
+/// identity when the raster roots coincide); it can never be a non-axis-aligned
+/// `Transform`, because a resolve target under a non-root coordinate system does
+/// not promote and shares its parent's raster node.
+fn resolve_dest_to_src_raster(
+    rg_builder: &RenderTaskGraphBuilder,
+    spatial_tree: &SpatialTree,
+    dest_task_id: RenderTaskId,
+    src_task_ids: &[RenderTaskId],
+) -> ScaleOffset {
+    // All src tasks are tiles of the same parent surface, so they share a raster
+    // node; the first is representative.
+    let Some(&first_src) = src_task_ids.first() else {
+        return ScaleOffset::identity();
+    };
+
+    let dest_raster = raster_spatial_node(rg_builder, dest_task_id);
+    let src_raster = raster_spatial_node(rg_builder, first_src);
+
+    if src_raster == dest_raster {
+        return ScaleOffset::identity();
+    }
+
+    match spatial_tree.get_relative_transform(dest_raster, src_raster) {
+        CoordinateSpaceMapping::ScaleOffset(scale_offset) => scale_offset,
+        // Distinct nodes with an identity relationship: no correction needed.
+        CoordinateSpaceMapping::Local => ScaleOffset::identity(),
+        CoordinateSpaceMapping::Transform(..) => {
+            // Unreachable given the shared-coordinate-system invariant above; a
+            // rect-to-rect copy can't express a rotation, so degrade to the old
+            // (uncorrected) behaviour rather than crash a release build.
+            debug_assert!(
+                false,
+                "resolve target and its backdrop source must share the root coordinate system",
+            );
+            ScaleOffset::identity()
+        }
+    }
+}
 
 /// Maximum blur radius for blur filter
 const MAX_BLUR_RADIUS: f32 = 100.;
@@ -57,6 +151,21 @@ pub struct SurfaceInfo {
     /// A local rect defining the size of this surface, in the
     /// coordinate system of the parent surface. This contains
     /// the unclipped bounding rect of child primitives.
+    ///
+    /// SNAPTODO: This rect is built by mapping per-cluster bounding
+    /// rects (and child-surface coverage rects) into this surface's
+    /// picture space via `map_local_to_picture`. Even once the source
+    /// cluster bound is a true union of per-prim *snapped* local
+    /// rects, the resulting `unclipped_local_rect` is not guaranteed
+    /// to be snapped: any 2D transform that isn't an axis-aligned,
+    /// integer-pixel translation between the cluster/child-surface
+    /// spatial node and this surface's spatial node will produce
+    /// sub-pixel edges in picture space. Float blur-margin inflation
+    /// inside `composite_mode.get_coverage` can also break the snap.
+    /// Consumers that need a snapped value will either need to
+    /// re-snap in surface space or restrict the snap path to surfaces
+    /// where the cross-space mapping preserves grid alignment (see
+    /// `SurfaceInfo.allow_snapping`).
     pub unclipped_local_rect: PictureRect,
     /// The local space coverage of child primitives after they are
     /// are clipped to their owning clip-chain.
@@ -84,7 +193,13 @@ pub struct SurfaceInfo {
     pub local_scale: (f32, f32),
     /// If true, we know this surface is completely opaque.
     pub is_opaque: bool,
-    /// If true, allow snapping on this and child surfaces
+    /// Whether content rasterized into this surface is snapped to the device
+    /// pixel grid at frame time. True for tile caches (snapped against the
+    /// scroll-stable cache node) and root-snapping surfaces (raster node is
+    /// root). False for a non-snapping raster root (preserve-3d / perspective /
+    /// huge-scale, `enable_snapping == false`): snapping against its own scaled
+    /// node would use only the tiny local scale and collapse content to zero,
+    /// so content is left unsnapped there instead.
     pub allow_snapping: bool,
     /// If true, the scissor rect must be set when drawing this surface
     pub force_scissor_rect: bool,
@@ -94,7 +209,7 @@ impl SurfaceInfo {
     pub fn new(
         surface_spatial_node_index: SpatialNodeIndex,
         raster_spatial_node_index: SpatialNodeIndex,
-        world_rect: WorldRect,
+        global_culling_rect: DeviceRect,
         spatial_tree: &SpatialTree,
         device_pixel_scale: DevicePixelScale,
         world_scale_factors: (f32, f32),
@@ -102,15 +217,15 @@ impl SurfaceInfo {
         allow_snapping: bool,
         force_scissor_rect: bool,
     ) -> Self {
-        let map_surface_to_world = SpaceMapper::new_with_target(
+        let map_surface_to_root = SpaceMapper::new_with_target(
             spatial_tree.root_reference_frame_index(),
             surface_spatial_node_index,
-            world_rect,
+            global_culling_rect,
             spatial_tree,
         );
 
-        let pic_bounds = map_surface_to_world
-            .unmap(&map_surface_to_world.bounds)
+        let pic_bounds = map_surface_to_root
+            .unmap(&map_surface_to_root.bounds)
             .unwrap_or_else(PictureRect::max_rect);
 
         let map_local_to_picture = SpaceMapper::new(
@@ -135,9 +250,9 @@ impl SurfaceInfo {
             local_scale,
             allow_snapping,
             force_scissor_rect,
-            // TODO: At the moment all culling is done in world space but
+            // TODO: At the moment all culling is done in the root device space but
             // but the plan is to move it to raster space.
-            culling_rect: world_rect.cast_unit(),
+            culling_rect: global_culling_rect.cast_unit(),
         }
     }
 
@@ -217,7 +332,7 @@ impl SurfaceInfo {
         let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
             // Currently, the surface's spatial node can be different from its raster node only
             // for surfaces in the root coordinate system for snapping reasons.
-            // See `PicturePrimitive::assign_surface`.
+            // See `PictureInstance::assign_surface`.
             assert_eq!(self.device_pixel_scale.0, 1.0);
             assert_eq!(self.raster_spatial_node_index, spatial_tree.root_reference_frame_index());
 
@@ -560,26 +675,26 @@ impl SurfaceBuilder {
     // to for a given current visbility / dirty state
     pub fn get_cmd_buffer_targets_for_prim(
         &mut self,
-        vis: &PrimitiveVisibility,
+        vis: &PrimitiveDrawHeader,
         targets: &mut Vec<CommandBufferIndex>,
     ) -> bool {
         targets.clear();
 
         match vis.state {
-            VisibilityState::Unset => {
+            DrawState::Unset => {
                 panic!("bug: invalid vis state");
             }
-            VisibilityState::Culled => {
+            DrawState::Culled => {
                 false
             }
-            VisibilityState::Visible { sub_slice_index, .. } => {
+            DrawState::Visible { sub_slice_index, .. } => {
                 self.current_cmd_buffers.get_cmd_buffer_targets_for_rect(
                     &vis.clip_chain.pic_coverage_rect,
                     sub_slice_index,
                     targets,
                 )
             }
-            VisibilityState::PassThrough => {
+            DrawState::PassThrough => {
                 true
             }
         }
@@ -596,6 +711,7 @@ impl SurfaceBuilder {
         pic_index: PictureIndex,
         rg_builder: &mut RenderTaskGraphBuilder,
         cmd_buffers: &mut CommandBufferList,
+        spatial_tree: &SpatialTree,
     ) {
         let builder = self.builder_stack.pop().unwrap();
 
@@ -699,7 +815,7 @@ impl SurfaceBuilder {
                                     }
                                 }
                             }
-                            CommandBufferBuilderKind::Simple { render_task_id: ref mut parent_task_id, .. } => {
+                            CommandBufferBuilderKind::Simple { render_task_id: ref mut parent_task_id, root_task_id: ref parent_root_task_id, .. } => {
                                 let parent_task = rg_builder.get_task_mut(*parent_task_id);
 
                                 // Get info about the parent tile task location and params
@@ -743,6 +859,20 @@ impl SurfaceBuilder {
                                     *parent_task_id,
                                 );
 
+                                // If the parent is a chained surface (e.g. a CSS blur or drop-shadow
+                                // filter), the tasks in that chain sample the same texture that
+                                // new_task_id draws the post-backdrop-capture content into. They must
+                                // run after new_task_id, otherwise those primitives are missing from
+                                // the filter output.
+                                if let Some(root_task_id) = *parent_root_task_id {
+                                    order_readers_after(
+                                        rg_builder,
+                                        root_task_id,
+                                        *parent_task_id,
+                                        new_task_id,
+                                    );
+                                }
+
                                 // Update the surface builder with the now current target for future primitives
                                 *parent_task_id = new_task_id;
                             }
@@ -750,6 +880,20 @@ impl SurfaceBuilder {
                                 unreachable!();
                             }
                         }
+
+                        // The resolve target may establish a different raster
+                        // root than the parent surface(s) it reads back from (for
+                        // example a backdrop-filter that promoted to a
+                        // root-snapping raster root inside a scrolled subtree). The
+                        // copy rects computed in `handle_resolve` then live in two
+                        // different raster spaces, so pre-compute the mapping
+                        // between them here (identity in the common case).
+                        let dest_to_src_raster = resolve_dest_to_src_raster(
+                            rg_builder,
+                            spatial_tree,
+                            resolve_task_id,
+                            &src_task_ids,
+                        );
 
                         let dest_task = rg_builder.get_task_mut(resolve_task_id);
 
@@ -759,6 +903,7 @@ impl SurfaceBuilder {
                                 dest_task_info.resolve_op = Some(ResolveOp {
                                     src_task_ids,
                                     dest_task_id: resolve_task_id,
+                                    dest_to_src_raster,
                                 })
                             }
                             _ => {

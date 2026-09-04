@@ -9,7 +9,7 @@ add_setup(async () => {
     set: [[VERTICAL_TABS_PREF, true]],
   });
   DOMFullscreenTestUtils.init(this, window);
-  await waitForTabstripOrientation("vertical");
+  await SidebarTestUtils.waitForTabstripOrientation(window, "vertical");
 });
 
 add_task(async function test_dom_fullscreen() {
@@ -32,6 +32,12 @@ add_task(async function test_dom_fullscreen() {
   );
   ok(sidebarMain.expanded, "Sidebar main is expanded");
 
+  const tabbox = window.document.getElementById("tabbrowser-tabbox");
+  ok(
+    tabbox.hasAttribute("sidebar-shown"),
+    "tabbrowser-tabbox has sidebar-shown attribute"
+  );
+
   await BrowserTestUtils.withNewTab({ gBrowser, url }, async browser => {
     // the newly opened tab should have focus
     await DOMFullscreenTestUtils.changeFullscreen(browser, true);
@@ -41,6 +47,10 @@ add_task(async function test_dom_fullscreen() {
       BrowserTestUtils.isHidden(sidebarMain),
       "Sidebar main is hidden in DOMFullscreen"
     );
+    ok(
+      !tabbox.hasAttribute("sidebar-shown"),
+      "tabbrowser-tabbox does not have sidebar-shown attribute in DOMFullscreen"
+    );
 
     await DOMFullscreenTestUtils.changeFullscreen(browser, false);
     ok(
@@ -48,5 +58,41 @@ add_task(async function test_dom_fullscreen() {
       "Sidebar main becomes visible when we exit DOMFullscreen"
     );
     ok(sidebarMain.expanded, "Sidebar main is still expanded");
+    ok(
+      tabbox.hasAttribute("sidebar-shown"),
+      "tabbrowser-tabbox has sidebar-shown attribute after exiting DOMFullscreen"
+    );
   });
+});
+
+add_task(async function dom_fullscreen_has_no_extra_margins() {
+  // Ensure that DOM fullscreen takes up the entire window with no unnecessary
+  // gaps. (Bug 2057087)
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.nova.enabled", true],
+      ["sidebar.visibility", "expand-on-hover"],
+    ],
+  });
+  const tabbox = document.getElementById("tabbrowser-tabbox");
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "https://example.com/" },
+    async browser => {
+      await DOMFullscreenTestUtils.changeFullscreen(browser, true);
+      const { marginInlineStart, marginInlineEnd } = getComputedStyle(tabbox);
+      Assert.equal(
+        parseInt(marginInlineStart),
+        0,
+        "Tabbox has no start margins while in DOM fullscreen."
+      );
+      Assert.equal(
+        parseInt(marginInlineEnd),
+        0,
+        "Tabbox has no end margins while in DOM fullscreen."
+      );
+    }
+  );
+
+  await SpecialPowers.popPrefEnv();
 });

@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "api/environment/environment.h"
-#include "api/environment/environment_factory.h"
 #include "modules/include/module_fec_types.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/fec_test_helper.h"
@@ -24,6 +23,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "system_wrappers/include/clock.h"
+#include "test/create_test_environment.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -55,10 +55,12 @@ void VerifyHeader(uint16_t seq_num,
 class UlpfecGeneratorTest : public ::testing::Test {
  protected:
   UlpfecGeneratorTest()
-      : env_(CreateEnvironment(std::make_unique<SimulatedClock>(1))),
+      : clock_(1),
+        env_(CreateTestEnvironment({.time = &clock_})),
         ulpfec_generator_(env_, kRedPayloadType, kFecPayloadType),
         packet_generator_(kMediaSsrc) {}
 
+  SimulatedClock clock_;
   const Environment env_;
   UlpfecGenerator ulpfec_generator_;
   AugmentedPacketGenerator packet_generator_;
@@ -76,16 +78,26 @@ TEST_F(UlpfecGeneratorTest, NoEmptyFecWithSeqNumGaps) {
     bool marker_bit;
   };
   std::vector<Packet> protected_packets;
-  protected_packets.push_back({15, 3, 41, 0});
-  protected_packets.push_back({14, 1, 43, 0});
-  protected_packets.push_back({19, 0, 48, 0});
-  protected_packets.push_back({19, 0, 50, 0});
-  protected_packets.push_back({14, 3, 51, 0});
-  protected_packets.push_back({13, 8, 52, 0});
-  protected_packets.push_back({19, 2, 53, 0});
-  protected_packets.push_back({12, 3, 54, 0});
-  protected_packets.push_back({21, 0, 55, 0});
-  protected_packets.push_back({13, 3, 57, 1});
+  protected_packets.push_back(
+      {.header_size = 15, .payload_size = 3, .seq_num = 41, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 14, .payload_size = 1, .seq_num = 43, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 19, .payload_size = 0, .seq_num = 48, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 19, .payload_size = 0, .seq_num = 50, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 14, .payload_size = 3, .seq_num = 51, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 13, .payload_size = 8, .seq_num = 52, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 19, .payload_size = 2, .seq_num = 53, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 12, .payload_size = 3, .seq_num = 54, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 21, .payload_size = 0, .seq_num = 55, .marker_bit = 0});
+  protected_packets.push_back(
+      {.header_size = 13, .payload_size = 3, .seq_num = 57, .marker_bit = 1});
   FecProtectionParams params = {
       .fec_rate = 117, .max_fec_frames = 3, .fec_mask_type = kFecMaskBursty};
   ulpfec_generator_.SetProtectionParameters(params, params);

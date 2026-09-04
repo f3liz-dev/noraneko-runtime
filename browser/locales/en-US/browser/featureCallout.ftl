@@ -132,7 +132,7 @@ sidebar-genai-survey-productive-question =
 # Split View Onboarding Strings
 
 splitview-onboarding-callout-title-1 = Split view: a better way to multitask
-splitview-onboarding-callout-subtitle-1 = Right click this tab and choose “Add Split View” to see two tabs at once.
+splitview-onboarding-callout-subtitle-1 = Right-click this tab and choose “Add Split View” to see two tabs at once.
 splitview-onboarding-callout-cta-1 = Try it now
 
 splitview-onboarding-callout-title-2 = See two tabs at once with split view
@@ -156,7 +156,7 @@ actions-callout-title = Complete common tasks or access basic settings
 # These example text inputs correlate to the the following strings
 # (either matching the whole string, or the first word of the string).
 # "print" - quickactions-cmd-print
-# "clear" - quickactions-cmd-clearrecenthistory
+# "clear" - quickactions-cmd-clearrecenthistory2
 # When localizing, ensure the translations match to ensure the action button appears as expected.
 actions-callout-subtitle = Try typing an action like “print” to print a page, or “clear” to clear your history.
 
@@ -216,6 +216,14 @@ perplexity-callout-primary-label = Ask Perplexity
 perplexity-callout-secondary-label-1 = Dismiss
 perplexity-callout-secondary-label-2 = Got it
 
+## Startpage callout strings. Startpage (https://www.startpage.com/) is a
+## brand name and should not be translated or transliterated.
+
+start-page-callout-title = Want to try a new privacy-focused search?
+start-page-callout-subtitle = Try Startpage. It’s designed to keep your searches more private from the start.
+start-page-callout-primary-label = Try Startpage
+start-page-callout-secondary-label = Dismiss
+
 ## Account Adoption Passwords callout strings
 
 # Suggestion to backup passwords by signing up for Mozilla account and using sync
@@ -240,6 +248,31 @@ taskbar-tabs-media-callout-subtitle = Launch your streaming sites like an app in
 
 taskbar-tabs-value-prop-callout-title = Add this site to your taskbar
 taskbar-tabs-value-prop-callout-subtitle = Launch it in its own window and a simplified interface with a single click.
+
+## Taskbar Tabs callout strings (treatment B copy variants)
+##
+## In the subtitles below, a "streamlined window" is a taskbar tab: the site
+## opens in its own dedicated window with a simplified interface, without the
+## usual browser tabs and toolbars.
+
+# Treatment B changes only the title for chat; the subtitle is unchanged from
+# treatment A, so this variant reuses taskbar-tabs-chat-callout-subtitle.
+taskbar-tabs-chat-callout-title-v3 = Stay connected from your taskbar
+
+taskbar-tabs-email-callout-title-v3 = Keep your inbox in your taskbar
+taskbar-tabs-email-callout-subtitle-v3 = Launch your email sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-media-callout-title-v3 = Keep your streaming in your taskbar
+taskbar-tabs-media-callout-subtitle-v3 = Launch your media sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-value-prop-callout-title-v3 = Pin your favorite sites to your taskbar
+taskbar-tabs-value-prop-callout-subtitle-v3 = Launch any site like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-gaming-callout-title-v3 = Get back to gaming from your taskbar
+taskbar-tabs-gaming-callout-subtitle-v3 = Launch your gaming sites like an app in a streamlined window protected by { -brand-short-name }.
+
+# Button that pins the current site to the taskbar as a taskbar tab
+taskbar-tabs-callout-primary-button-v3 = Pin to taskbar
 
 ## Windows 10 EoS Sync messages group 1 callouts
 
@@ -273,3 +306,23 @@ windows-10-eos-sync-callout-primary-advance-button-label = Next
 
 link-preview-onboarding-callout-title = New: Click and hold to preview links
 link-preview-onboarding-callout-description = See a short description, reading time, and more to decide if a link is worth the click. Also available on right-click.
+
+## Tab Groups Onboarding Strings
+## These strings appear in a callout shown to users to introduce tab groups,
+## a feature that lets people organize related tabs into named collections.
+## Translators should feel free to adapt these strings to phrasing that sounds
+## natural in their language rather than translating literally — the goal is
+## an inviting, conversational tone, not a word-for-word match.
+
+# "Cut the clutter" is an English idiom meaning "reduce visual mess." Please
+# adapt to a phrase that conveys the idea of cleaning up or organizing a busy
+# tab strip in a way that sounds natural in your language.
+tab-groups-2026-onboarding-callout-title = Cut the clutter with tab groups
+
+# "Drag more in as you go" means users can add additional tabs to the group
+# over time, while they’re working. Please adapt for natural phrasing.
+tab-groups-2026-onboarding-callout-subtitle = Group your tabs by task or topic. Drag more in as you go.
+
+# Button label — keep short (ideally under ~15 characters) so it fits in the
+# callout UI. "Start a group" means "create a new tab group."
+tab-groups-2026-onboarding-cta-button = Start a group

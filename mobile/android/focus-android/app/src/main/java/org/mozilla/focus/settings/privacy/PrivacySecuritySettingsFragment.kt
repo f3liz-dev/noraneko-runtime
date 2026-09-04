@@ -11,11 +11,9 @@ import androidx.preference.Preference
 import androidx.preference.SwitchPreference
 import mozilla.components.lib.auth.canUseBiometricFeature
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.focus.GleanMetrics.CookieBanner
 import org.mozilla.focus.GleanMetrics.PrivacySettings
 import org.mozilla.focus.GleanMetrics.TrackingProtectionExceptions
 import org.mozilla.focus.R
-import org.mozilla.focus.cookiebanner.CookieBannerOption
 import org.mozilla.focus.engine.EngineSharedPreferencesListener
 import org.mozilla.focus.ext.requireComponents
 import org.mozilla.focus.ext.settings
@@ -26,9 +24,17 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.widget.CookiesPreference
 
+/**
+ * Settings fragment for privacy and security options.
+ */
 class PrivacySecuritySettingsFragment :
     BaseSettingsFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {
+
+    private val engineSharedPreferencesListener by lazy {
+        EngineSharedPreferencesListener(requireContext())
+    }
+
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {
         addPreferencesFromResource(R.xml.privacy_security_settings)
 
@@ -50,8 +56,6 @@ class PrivacySecuritySettingsFragment :
             privacySecuritySettingsToolTip?.let { preferenceScreen.removePreference(it) }
         }
 
-        val preferencesListener = EngineSharedPreferencesListener(requireContext())
-
         val cookiesPreference =
             findPreference(getString(R.string.pref_key_performance_enable_cookies)) as? CookiesPreference
         cookiesPreference?.updateSummary()
@@ -62,21 +66,11 @@ class PrivacySecuritySettingsFragment :
             findPreference(getString(R.string.pref_key_performance_block_javascript)) as? SwitchPreference
         val webFontsPreference =
             findPreference(getString(R.string.pref_key_performance_block_webfonts)) as? SwitchPreference
-        val cookieBannerPreference = findPreference<Preference>(getString(R.string.pref_key_cookie_banner_settings))
 
-        cookiesPreference?.onPreferenceChangeListener = preferencesListener
-        safeBrowsingSwitchPreference?.onPreferenceChangeListener = preferencesListener
-        javaScriptPreference?.onPreferenceChangeListener = preferencesListener
-        webFontsPreference?.onPreferenceChangeListener = preferencesListener
-
-        cookieBannerPreference?.isVisible = requireContext().settings.isCookieBannerEnable
-        if (requireContext().settings.getCurrentCookieBannerOptionFromSharePref() ==
-            CookieBannerOption.CookieBannerDisabled()
-        ) {
-            cookieBannerPreference?.summary = getString(R.string.preferences_cookie_banner_summary_off)
-        } else {
-            cookieBannerPreference?.summary = getString(R.string.preferences_cookie_banner_summary_on)
-        }
+        cookiesPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        safeBrowsingSwitchPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        javaScriptPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
+        webFontsPreference?.onPreferenceChangeListener = engineSharedPreferencesListener
     }
 
     override fun onResume() {
@@ -153,7 +147,6 @@ class PrivacySecuritySettingsFragment :
     }
 
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
-        val engineSharedPreferencesListener = EngineSharedPreferencesListener(requireContext())
         when (preference.key) {
             resources.getString(R.string.pref_key_screen_exceptions) -> {
                 TrackingProtectionExceptions.allowListOpened.record(NoExtras())
@@ -173,33 +166,29 @@ class PrivacySecuritySettingsFragment :
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.SOCIAL.tracker,
+                    requireContext().settings.shouldBlockSocialTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_ads) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.ADVERTISING.tracker,
+                    requireContext().settings.shouldBlockAdTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_analytics) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.ANALYTICS.tracker,
+                    requireContext().settings.shouldBlockAnalyticTrackers(),
                 )
 
             resources.getString(R.string.pref_key_privacy_block_other3) ->
                 engineSharedPreferencesListener.updateTrackingProtectionPolicy(
                     EngineSharedPreferencesListener.ChangeSource.SETTINGS.source,
                     EngineSharedPreferencesListener.TrackerChanged.CONTENT.tracker,
+                    requireContext().settings.shouldBlockOtherTrackers(),
                 )
-            resources.getString(R.string.pref_key_cookie_banner_settings) -> {
-                CookieBanner.visitedSetting.record(NoExtras())
-                requireComponents.appStore.dispatch(
-                    AppAction.OpenSettings(
-                        page = Screen.Settings.Page.CookieBanner,
-                    ),
-                )
-            }
             resources.getString(R.string.pref_key_site_permissions) ->
                 requireComponents.appStore.dispatch(
                     AppAction.OpenSettings(page = Screen.Settings.Page.SitePermissions),

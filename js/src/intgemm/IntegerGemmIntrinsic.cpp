@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -13,8 +11,8 @@
 #include "mozilla/TimeStamp.h"
 
 #include <gemmology_fwd.h>
-#include "fmt/format.h"
 
+#include "fmt/format.h"
 #include "js/ErrorReport.h"
 #include "js/HeapAPI.h"
 #include "vm/ArrayBufferObject.h"
@@ -74,6 +72,12 @@
     return gemmology::Engine<decltype(arch)>::FUNC(args...);     \
   })
 
+#define GEMMOLOGY_DISPATCH_E(FUNC)                               \
+  xsimd::dispatch<SUPPORTED_ARCHS>([](auto arch, auto... args) { \
+    gemmology::SequentialExecutionEngine E;                      \
+    return gemmology::Engine<decltype(arch)>::FUNC(args..., E);  \
+  })
+
 template <size_t TextLength = 512, typename CharT = char>
 struct AutoProfilerMarker {
   AutoProfilerMarker(js::GeckoProfilerRuntime& profiler, const CharT* name)
@@ -93,7 +97,7 @@ struct AutoProfilerMarker {
           text, sizeof(text) - 1, aFormatStr,
           fmt::make_format_args<fmt::buffered_context<CharT>>(aArgs...));
 
-      MOZ_ASSERT(size > sizeof(text) - 1,
+      MOZ_ASSERT(size <= sizeof(text) - 1,
                  "Truncated marker, consider increasing the buffer");
 
       *out = 0;
@@ -410,7 +414,7 @@ int32_t js::intgemm::IntrI8MultiplyAndAddBias(
   AutoProfilerMarker marker(
       cx->runtime()->geckoProfiler(), "intgemm::Shift::Multiply",
       "rowsA: {}, width: {}, colsA: {}", rowsA, width, colsB);
-  GEMMOLOGY_DISPATCH(Shift::Multiply)
+  GEMMOLOGY_DISPATCH_E(Shift::Multiply)
   (inputMatrixAPreparedPtr, inputMatrixBPreparedPtr, rowsA, width, colsB,
    gemmology::callbacks::UnquantizeAndAddBiasAndWrite(
        unquantFactor, inputBiasPreparedPtr, outputPtr));
@@ -453,6 +457,16 @@ int32_t js::intgemm::IntrI8SelectColumnsOfB(wasm::Instance* instance,
   const uint32_t* colIndexListPtr =
       reinterpret_cast<const uint32_t*>(&memBase[colIndexList]);
   int8_t* outputPtr = reinterpret_cast<int8_t*>(&memBase[output]);
+
+  // Every selected column index must reference a valid column of B. Otherwise
+  // SelectColumnsB would read outside the bounds-checked input matrix, since it
+  // uses each index to compute an offset into inputMatrixBPrepared.
+  for (uint32_t i = 0; i < sizeColIndexList; i++) {
+    if (colIndexListPtr[i] >= colsB) {
+      return -1;
+    }
+  }
+
   AutoProfilerMarker marker(cx->runtime()->geckoProfiler(),
                             "integemm::SelectColumnsB",
                             "rowsB: {} colsB: {} sizecolList: {}, sizeB: {}",

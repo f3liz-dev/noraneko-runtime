@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,13 +20,13 @@
 #include "nsPrimitiveHelpers.h"
 
 #include "mozilla/UniquePtr.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
-#include "nsXPCOM.h"
+#include "nsComponentManagerUtils.h"
 #include "nsISupportsPrimitives.h"
 #include "nsITransferable.h"
 #include "nsLinebreakConverter.h"
 #include "nsReadableUtils.h"
+#include "nsXPCOM.h"
 
 //
 // CreatePrimitiveForData
@@ -47,7 +46,8 @@ void nsPrimitiveHelpers ::CreatePrimitiveForData(const nsACString& aFlavor,
 
   if (aFlavor.EqualsLiteral(kNativeHTMLMime) ||
       aFlavor.EqualsLiteral(kRTFMime) ||
-      aFlavor.EqualsLiteral(kCustomTypesMime)) {
+      aFlavor.EqualsLiteral(kCustomTypesMime) ||
+      StringBeginsWith(aFlavor, nsLiteralCString(kWebCustomFormatPrefix))) {
     nsCOMPtr<nsISupportsCString> primitive =
         do_CreateInstance(NS_SUPPORTS_CSTRING_CONTRACTID);
     if (primitive) {
@@ -130,7 +130,8 @@ void nsPrimitiveHelpers::CreateDataFromPrimitive(const nsACString& aFlavor,
   *aDataBuff = nullptr;
   *aDataLen = 0;
 
-  if (aFlavor.EqualsLiteral(kCustomTypesMime)) {
+  if (aFlavor.EqualsLiteral(kCustomTypesMime) ||
+      StringBeginsWith(aFlavor, nsLiteralCString(kWebCustomFormatPrefix))) {
     nsCOMPtr<nsISupportsCString> plainText(do_QueryInterface(aPrimitive));
     if (plainText) {
       nsAutoCString data;

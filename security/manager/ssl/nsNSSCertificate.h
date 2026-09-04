@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +24,7 @@ class nsNSSCertificate final : public nsIX509Cert,
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSICLASSINFO
 
-  nsNSSCertificate();
+  nsNSSCertificate() = default;
   explicit nsNSSCertificate(CERTCertificate* cert);
   explicit nsNSSCertificate(nsTArray<uint8_t>&& der);
 
@@ -37,7 +36,8 @@ class nsNSSCertificate final : public nsIX509Cert,
   nsTArray<uint8_t> mDER;
   // There may be multiple threads running when mCert is actually instantiated,
   // so it must be protected by a mutex.
-  mozilla::DataMutex<mozilla::Maybe<mozilla::UniqueCERTCertificate>> mCert;
+  mozilla::DataMutex<mozilla::Maybe<mozilla::UniqueCERTCertificate>> mCert{
+      "nsNSSCertificate::mCert"};
 };
 
 #define NS_X509CERT_CID                       \

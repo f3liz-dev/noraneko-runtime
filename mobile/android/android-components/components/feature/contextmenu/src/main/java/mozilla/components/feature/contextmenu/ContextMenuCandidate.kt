@@ -60,6 +60,7 @@ data class ContextMenuCandidate(
             contextMenuUseCases: ContextMenuUseCases,
             snackBarParentView: View,
             snackbarDelegate: SnackbarDelegate = DefaultSnackbarDelegate(),
+            downloadsLocation: () -> String,
         ): List<ContextMenuCandidate> = listOf(
             createOpenInNewTabCandidate(
                 context,
@@ -75,7 +76,7 @@ data class ContextMenuCandidate(
             ),
             createCopyLinkCandidate(context, snackBarParentView, snackbarDelegate),
             createCopyLinkTextCandidate(context, snackBarParentView, snackbarDelegate),
-            createDownloadLinkCandidate(context, contextMenuUseCases),
+            createDownloadLinkCandidate(context, contextMenuUseCases, downloadsLocation),
             createShareLinkCandidate(context),
             createShareImageCandidate(context, contextMenuUseCases),
             createOpenImageInNewTabCandidate(
@@ -88,8 +89,8 @@ data class ContextMenuCandidate(
                 context,
                 contextMenuUseCases,
             ),
-            createSaveImageCandidate(context, contextMenuUseCases),
-            createSaveVideoAudioCandidate(context, contextMenuUseCases),
+            createSaveImageCandidate(context, contextMenuUseCases, downloadsLocation),
+            createSaveVideoAudioCandidate(context, contextMenuUseCases, downloadsLocation),
             createCopyImageLocationCandidate(context, snackBarParentView, snackbarDelegate),
             createAddContactCandidate(context),
             createShareEmailAddressCandidate(context),
@@ -352,6 +353,7 @@ data class ContextMenuCandidate(
         fun createSaveImageCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.save_image",
@@ -368,6 +370,7 @@ data class ContextMenuCandidate(
                         hitResult.src,
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )
@@ -411,12 +414,14 @@ data class ContextMenuCandidate(
          *
          * @param context [Context] used for various system interactions.
          * @param contextMenuUseCases [ContextMenuUseCases] used to integrate other features.
+         * @param downloadsLocation Callback providing the directory path where the file should be saved.
          * @param additionalValidation Callback for the final validation in deciding whether this menu option
          * will be shown. Will only be called if all the intrinsic validations passed.
          */
         fun createSaveVideoAudioCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.save_video",
@@ -433,6 +438,7 @@ data class ContextMenuCandidate(
                         hitResult.src,
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )
@@ -444,12 +450,14 @@ data class ContextMenuCandidate(
          *
          * @param context [Context] used for various system interactions.
          * @param contextMenuUseCases [ContextMenuUseCases] used to integrate other features.
+         * @param downloadsLocation Callback providing the directory path where the file should be saved.
          * @param additionalValidation Callback for the final validation in deciding whether this menu option
          * will be shown. Will only be called if all the intrinsic validations passed.
          */
         fun createDownloadLinkCandidate(
             context: Context,
             contextMenuUseCases: ContextMenuUseCases,
+            downloadsLocation: () -> String,
             additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
         ) = ContextMenuCandidate(
             id = "mozac.feature.contextmenu.download_link",
@@ -466,6 +474,7 @@ data class ContextMenuCandidate(
                         hitResult.getLink(),
                         skipConfirmation = true,
                         private = tab.content.private,
+                        directoryPath = downloadsLocation(),
                         referrerUrl = tab.content.url,
                     ),
                 )
@@ -513,6 +522,29 @@ data class ContextMenuCandidate(
                     )
                 }
             },
+        )
+
+        /**
+         * Context Menu item: "Share Link".
+         *
+         * @param context [Context] used for various system interactions.
+         * @param additionalValidation Callback for the final validation in deciding whether this menu option
+         * will be shown. Will only be called if all the intrinsic validations passed.
+         * @param action The action to be invoked once the user selects the item.
+         */
+        fun createShareLinkCandidate(
+            context: Context,
+            additionalValidation: (SessionState, HitResult) -> Boolean = { _, _ -> true },
+            action: (SessionState, HitResult) -> Unit,
+        ) = ContextMenuCandidate(
+            id = "mozac.feature.contextmenu.share_link",
+            label = context.getString(R.string.mozac_feature_contextmenu_share_link),
+            showFor = { tab, hitResult ->
+                tab.isUrlSchemeAllowed(hitResult.getLink()) &&
+                    (hitResult.isUri() || hitResult.isImage() || hitResult.isVideoAudio()) &&
+                    additionalValidation(tab, hitResult)
+            },
+            action = action,
         )
 
         /**
@@ -727,15 +759,6 @@ internal fun HitResult.getLink(): String = when (this) {
         if (title.isNullOrBlank()) src else title.toString()
     is HitResult.AUDIO ->
         if (title.isNullOrBlank()) src else title.toString()
-    else -> "about:blank"
-}
-
-internal fun HitResult.getUrl(): String = when (this) {
-    is HitResult.UNKNOWN -> src
-    is HitResult.IMAGE_SRC -> uri
-    is HitResult.IMAGE -> src
-    is HitResult.VIDEO -> src
-    is HitResult.AUDIO -> src
     else -> "about:blank"
 }
 

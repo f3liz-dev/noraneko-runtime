@@ -1,23 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ParentProcessDocumentChannel.h"
 
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/net/ParentChannelWrapper.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs_extensions.h"
 #include "nsCRT.h"
 #include "nsDocShell.h"
-#include "nsIObserverService.h"
-#include "nsIClassifiedChannel.h"
-#include "nsIXULRuntime.h"
-#include "nsHttpHandler.h"
 #include "nsDocShellLoadState.h"
+#include "nsHttpHandler.h"
+#include "nsIClassifiedChannel.h"
+#include "nsIObserverService.h"
+#include "nsIXULRuntime.h"
 
 extern mozilla::LazyLogModule gDocumentChannelLog;
 #define LOG(fmt) MOZ_LOG(gDocumentChannelLog, mozilla::LogLevel::Verbose, fmt)
@@ -74,8 +71,7 @@ ParentProcessDocumentChannel::RedirectToRealChannel(
   }
   mStreamFilterEndpoints = std::move(aStreamFilterEndpoints);
 
-  if (mDocumentLoadListener->IsDocumentLoad() &&
-      mozilla::SessionHistoryInParent() && GetDocShell() &&
+  if (mDocumentLoadListener->IsDocumentLoad() && GetDocShell() &&
       mDocumentLoadListener->GetLoadingSessionHistoryInfo()) {
     GetDocShell()->SetLoadingSessionHistoryInfo(
         *mDocumentLoadListener->GetLoadingSessionHistoryInfo());
@@ -130,7 +126,9 @@ ParentProcessDocumentChannel::OnRedirectVerifyCallback(nsresult aResult) {
       RefPtr<ParentChannelWrapper> wrapper =
           new ParentChannelWrapper(channel, mListener);
 
-      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId());
+      // This is a parent-process document load, so the redirect is owned by
+      // the parent process (ContentParentId 0).
+      wrapper->Register(mDocumentLoadListener->GetRedirectChannelId(), 0);
     }
   }
 

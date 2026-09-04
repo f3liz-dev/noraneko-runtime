@@ -1,4 +1,3 @@
-/* vim:set tw=80 expandtab softtabstop=4 ts=4 sw=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,14 @@
 #ifndef mozilla_image_decoders_nsICODecoder_h
 #define mozilla_image_decoders_nsICODecoder_h
 
-#include "StreamingLexer.h"
 #include "Decoder.h"
 #include "Downscaler.h"
+#include "ICOFileHeaders.h"
+#include "StreamingLexer.h"
 #include "imgFrame.h"
 #include "mozilla/gfx/2D.h"
 #include "nsBMPDecoder.h"
 #include "nsPNGDecoder.h"
-#include "ICOFileHeaders.h"
 
 namespace mozilla {
 namespace image {
@@ -38,7 +37,7 @@ enum class ICOState {
 
 class nsICODecoder : public Decoder {
  public:
-  virtual ~nsICODecoder() {}
+  virtual ~nsICODecoder() = default;
 
   /// @return The offset from the beginning of the ICO to the first resource.
   size_t FirstResourceOffset() const;
@@ -76,6 +75,12 @@ class nsICODecoder : public Decoder {
   LexerTransition<ICOState> ReadMaskRow(const char* aData);
   LexerTransition<ICOState> FinishMask();
   LexerTransition<ICOState> FinishResource();
+
+  // True while we are iterating dir entries to discover or verify each
+  // resource's actual size. Each error site that can be reached during this
+  // phase should drop the current entry and continue with the next one rather
+  // than terminating the whole ICO decode.
+  bool IsVerifyingResourceSizes() const { return mReturnIterator.isSome(); }
 
   struct IconDirEntryEx : public IconDirEntry {
     OrientedIntSize mSize;

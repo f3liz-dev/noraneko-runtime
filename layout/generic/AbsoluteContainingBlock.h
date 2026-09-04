@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -212,6 +210,18 @@ class AbsoluteContainingBlock {
    * @param aDelegatingFrame the frame that owns us.
    */
   void DrainPushedChildList(const nsIFrame* aDelegatingFrame);
+
+  /**
+   * Move abspos children from aContinuation's absolute containing block into
+   * our absolute child list, reparenting them to aDelegatingFrame.
+   *
+   * @param aDelegatingFrame the frame that owns us.
+   * @param aOnlyFirstInFlows if Yes, only first-in-flow children are moved.
+   */
+  enum class OnlyFirstInFlows : bool { No, Yes };
+  void PullAbsoluteFramesFrom(nsContainerFrame* aDelegatingFrame,
+                              nsIFrame* aContinuation,
+                              OnlyFirstInFlows aOnlyFirstInFlows);
 
   // Stores the abspos frames that have been placed in this containing block.
   nsFrameList mAbsoluteFrames;

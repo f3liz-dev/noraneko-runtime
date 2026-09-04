@@ -13,6 +13,7 @@ internal object Keys {
     const val SELECTED_SESSION_INDEX_KEY = "selectedSessionIndex"
     const val SELECTED_TAB_ID_KEY = "selectedTabId"
     const val SESSION_STATE_TUPLES_KEY = "sessionStateTuples"
+    const val TRANSLATIONS_ENGINE_IS_SUPPORTED_KEY = "translationsEngineIsSupported"
 
     const val SESSION_URL_KEY = "url"
     const val SESSION_UUID_KEY = "uuid"
@@ -25,6 +26,7 @@ internal object Keys {
     const val SESSION_SEARCH_TERM = "searchTerm"
     const val SESSION_LAST_ACCESS = "lastAccess"
     const val SESSION_CREATED_AT = "createdAt"
+    const val SESSION_LAST_VISIBLE_AT = "lastVisibleAt"
     const val SESSION_LAST_MEDIA_URL = "lastMediaUrl"
     const val SESSION_LAST_MEDIA_ACCESS = "lastMediaAccess"
     const val SESSION_LAST_MEDIA_SESSION_ACTIVE = "mediaSessionActive"

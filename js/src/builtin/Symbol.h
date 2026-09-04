@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,7 +15,7 @@ namespace js {
 
 class SymbolObject : public NativeObject {
   /* Stores this Symbol object's [[PrimitiveValue]]. */
-  static const unsigned PRIMITIVE_VALUE_SLOT = 0;
+  JS_DEFINE_TYPED_SLOT(0, PRIMITIVE_VALUE_SLOT, Symbol);
 
  public:
   static const unsigned RESERVED_SLOTS = 1;
@@ -32,12 +30,12 @@ class SymbolObject : public NativeObject {
   static SymbolObject* create(JSContext* cx, JS::HandleSymbol symbol);
 
   JS::Symbol* unbox() const {
-    return getFixedSlot(PRIMITIVE_VALUE_SLOT).toSymbol();
+    return getFixedSlotTyped(PRIMITIVE_VALUE_SLOT).toSymbol();
   }
 
  private:
-  inline void setPrimitiveValue(JS::Symbol* symbol) {
-    setFixedSlot(PRIMITIVE_VALUE_SLOT, SymbolValue(symbol));
+  inline void initPrimitiveValue(JS::Symbol* symbol) {
+    initFixedSlotTyped(PRIMITIVE_VALUE_SLOT, SymbolValue(symbol));
   }
 
   [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);

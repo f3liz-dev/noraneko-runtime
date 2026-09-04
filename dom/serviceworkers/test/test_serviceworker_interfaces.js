@@ -42,12 +42,15 @@ let wasmGlobalInterfaces = [
   { name: "Memory", insecureContext: true },
   { name: "Module", insecureContext: true },
   { name: "RuntimeError", insecureContext: true },
+  { name: "SuspendError", insecureContext: true },
+  { name: "Suspending", insecureContext: true },
   { name: "Table", insecureContext: true },
   { name: "Tag", insecureContext: true },
   { name: "compile", insecureContext: true },
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
   { name: "instantiateStreaming", insecureContext: true },
+  { name: "promising", insecureContext: true },
   { name: "validate", insecureContext: true },
 ];
 // IMPORTANT: Do not change this list without review from
@@ -137,6 +140,58 @@ let interfaceNamesInGlobalScope = [
   "BroadcastChannel",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ByteLengthQueuingStrategy",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSImageValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSKeywordValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathClamp", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathInvert", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathMax", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathMin", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathNegate", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathProduct", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathSum", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMathValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSMatrixComponent", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSNumericArray", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSNumericValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSPerspective", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSRotate", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSScale", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSSkew", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSSkewX", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSSkewY", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSStyleValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSTransformComponent", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSTransformValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSTranslate", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSUnitValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSUnparsedValue", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSVariableReferenceValue", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Cache",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -404,6 +459,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "IDBOpenDBRequest",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "IDBRecord",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "IDBRequest",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "IDBTransaction",
@@ -510,6 +567,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "StorageManager", fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "StylePropertyMapReadOnly", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "SubtleCrypto",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "TaskController",
@@ -594,9 +653,13 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebTransportDatagramDuplexStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportDatagramsWritable",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebTransportError",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebTransportReceiveStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "WebTransportSendGroup",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebTransportSendStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!

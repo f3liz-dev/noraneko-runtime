@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -32,6 +31,7 @@
  *   <li>{@link android.Manifest.permission#WRITE_EXTERNAL_STORAGE}
  *   <li>{@link android.Manifest.permission#CAMERA}
  *   <li>{@link android.Manifest.permission#RECORD_AUDIO}
+ *   <li>{@link android.Manifest.permission#ACCESS_LOCAL_NETWORK}
  * </ul>
  *
  * For a detailed change log of the API see: <a href="./doc-files/CHANGELOG"

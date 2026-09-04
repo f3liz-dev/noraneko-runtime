@@ -8,7 +8,7 @@
     See https://developer.android.com/training/package-visibility/declaring for more details.-->
 
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="PackageVisibilityPolicy,QueryAllPackagesPermission" />
+        tools:ignore="QueryAllPackagesPermission" />
 
     <queries>
         <intent>
@@ -16,4 +16,16 @@
             <data android:mimeType="text/plain" />
         </intent>
     </queries>
+
+    <application>
+        <provider
+            android:name="mozilla.components.support.utils.provider.FileProvider"
+            android:authorities="${applicationId}.feature.downloads.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/feature_downloads_file_paths" />
+        </provider>
+    </application>
 </manifest>

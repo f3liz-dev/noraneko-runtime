@@ -12,7 +12,7 @@ task-defaults:
         by-platform:
             linux2404-64.*: t-linux-docker-amd
             macosx1470-64.*: t-osx-1400-r8
-            windows11-64.*: win11-64-24h2-source
+            windows11-64.*: win11-64-25h2-source
     worker:
         by-platform:
             linux2404-64.*:
@@ -36,8 +36,8 @@ task-defaults:
     treeherder:
         kind: test
         tier: 1
-    run-on-repo-type: [hg]
     run:
+        clone-with: hg
         using: mach
         use-caches: [checkout, pip, uv]
     when:
@@ -51,6 +51,7 @@ firefox-ci:
     treeherder:
         symbol: ci
     run:
+        clone-with: hg
         using: python-test
         subsuite: ci
     when:
@@ -70,6 +71,7 @@ fog:
     treeherder:
         symbol: fp
     run:
+        clone-with: hg
         using: python-test
         subsuite: fog
     when:
@@ -86,6 +88,7 @@ mach:
     treeherder:
         symbol: mach
     run:
+        clone-with: hg
         using: python-test
         subsuite: mach
     when:
@@ -101,10 +104,12 @@ marionette-harness:
     treeherder:
         symbol: mnh
     run:
+        clone-with: hg
         using: python-test
         subsuite: marionette-harness
     when:
         files-changed:
+            - 'testing/marionette/client/**'
             - 'testing/marionette/harness/**'
             - 'testing/mozbase/mozlog/mozlog/**'
             - 'testing/mozbase/mozlog/setup.py'
@@ -134,6 +139,7 @@ mochitest-harness:
                 docker-image: {in-tree: "ubuntu2404-test"}
                 max-run-time: 3600
     run:
+        clone-with: hg
         using: run-task
         cwd: '{checkout}'
         command: >
@@ -171,6 +177,7 @@ mozbase:
     treeherder:
         symbol: mb
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozbase
     when:
@@ -182,6 +189,7 @@ mozharness:
     treeherder:
         symbol: mh
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozharness
     when:
@@ -198,6 +206,7 @@ mozlint:
         symbol: mozlint
         tier: 2
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozlint
         prepend-env:
@@ -214,12 +223,15 @@ mozlint:
                 linux2404-64/opt:
                     - linux64-node
                     - linux64-rust
+                    - linux64-mozcheck
                 macosx1470-64/opt:
                     - macosx64-node
                     - macosx64-rust
+                    - macosx64-mozcheck
                 windows11-64/opt:
                     - win64-node
                     - win64-rust
+                    - win64-mozcheck
         clang-tidy:
             - artifact: clang-tidy.tar.zst
               dest: clang-tools
@@ -233,6 +245,7 @@ mozrelease:
     treeherder:
         symbol: release
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozrelease
     when:
@@ -247,6 +260,7 @@ mozterm:
     treeherder:
         symbol: term
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozterm
     when:
@@ -262,6 +276,7 @@ mozversioncontrol:
     treeherder:
         symbol: vcs
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozversioncontrol
     fetches:
@@ -286,6 +301,7 @@ raptor:
     treeherder:
         symbol: rap
     run:
+        clone-with: hg
         using: python-test
         subsuite: raptor
     when:
@@ -317,6 +333,7 @@ reftest-harness:
                 docker-image: {in-tree: "ubuntu2404-test"}
                 max-run-time: 3600
     run:
+        clone-with: hg
         using: run-task
         cwd: '{checkout}'
         command: >
@@ -348,6 +365,7 @@ taskgraph-tests:
     treeherder:
         symbol: tg
     run:
+        clone-with: hg
         using: python-test
         subsuite: taskgraph
     when:
@@ -364,6 +382,7 @@ tryselect:
     treeherder:
         symbol: try
     run:
+        clone-with: hg
         using: python-test
         subsuite: try
     when:
@@ -373,6 +392,20 @@ tryselect:
             - 'taskcluster/gecko_taskgraph/transforms/**'
             - 'taskcluster/requirements.txt'
             - 'tools/tryselect/**'
+
+update-packaging:
+    description: tools/update-packaging unit tests
+    platform:
+        - linux2404-64/opt
+    treeherder:
+        symbol: update-packaging
+    run:
+        clone-with: hg
+        using: python-test
+        subsuite: update-packaging
+    when:
+        files-changed:
+            - 'tools/update-packaging/**'
 
 mozbuild:
     matrix:
@@ -386,6 +419,7 @@ mozbuild:
         symbol: mbu{matrix[python]}
     use-python: "{matrix[python]}"
     run:
+        clone-with: hg
         using: python-test
         subsuite: mozbuild
     fetches:
@@ -417,6 +451,23 @@ mozbuild:
             - 'testing/mozbase/**'
             - 'testing/xpcshell/xpcshellcommandline.py'
 
+coverage:
+    description: code coverage unit tests
+    treeherder:
+        symbol: cov
+        tier: 2
+    run:
+        clone-with: hg
+        using: python-test
+        subsuite: coverage
+    fetches:
+        toolchain:
+            - linux64-grcov
+    when:
+        files-changed:
+            - 'python/mach/mach/command_util.py'
+            - 'tools/code-coverage/**'
+
 mozperftest:
     description: mozperftest unit tests
     platform:
@@ -426,6 +477,7 @@ mozperftest:
     treeherder:
         symbol: mpu
     run:
+        clone-with: hg
         mach: perftest-test
     fetches:
         toolchain:
@@ -471,6 +523,7 @@ nimbus:
                 docker-image: {in-tree: "ubuntu2404-test"}
                 max-run-time: 3600
     run:
+        clone-with: hg
         using: run-task
         cwd: '{checkout}'
         command: >
@@ -512,6 +565,7 @@ fxms-schemas:
                 docker-image: {in-tree: "ubuntu2404-test"}
                 max-run-time: 3600
     run:
+        clone-with: hg
         using: run-task
         cwd: '{checkout}'
         command: >
@@ -540,6 +594,7 @@ condprof:
     treeherder:
         symbol: condprof
     run:
+        clone-with: hg
         using: python-test
         subsuite: condprof
     when:
@@ -554,6 +609,7 @@ manifest:
     treeherder:
         symbol: mf
     run:
+        clone-with: hg
         using: python-test
         subsuite: manifest
     when:
@@ -566,6 +622,7 @@ talos:
     treeherder:
         symbol: tal
     run:
+        clone-with: hg
         using: python-test
         subsuite: talos
     when:
@@ -581,6 +638,7 @@ telemetry-python:
     treeherder:
         symbol: tp
     run:
+        clone-with: hg
         using: python-test
         subsuite: telemetry-python
     fetches:
@@ -595,6 +653,8 @@ telemetry-python:
     when:
         files-changed:
             - 'toolkit/components/telemetry/**'
+            - '**/*metrics.yaml'
+            - '**/pings.yaml'
 
 verify-decision:
     description: verifications on Decision task output
@@ -603,6 +663,7 @@ verify-decision:
         platform: gecko-decision/opt
         symbol: verify
     run:
+        clone-with: hg
         using: python-test
         subsuite: decision
     when:
@@ -619,6 +680,7 @@ webext:
         symbol: webext-py
         tier: 2
     run:
+        clone-with: hg
         using: python-test
         subsuite: webext-python
     when:
@@ -635,6 +697,7 @@ xpcom:
     treeherder:
         symbol: xpcom
     run:
+        clone-with: hg
         using: python-test
         subsuite: xpcom
     when:

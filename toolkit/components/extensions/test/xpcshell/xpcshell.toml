@@ -100,6 +100,8 @@ run-if = [
 
 ["test_ext_runtime_sendMessage_args.js"]
 
+["test_ext_sandbox_csp.js"]
+
 ["test_ext_schemas.js"]
 head = "head.js head_schemas.js"
 
@@ -138,6 +140,8 @@ skip-if = [
   "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1996467
   "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1996467
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1996467
+  "os == 'win' && os_version == '11.26200' && arch == 'x86'", # Bug 1996467
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64'", # Bug 1996467
 ]
 
 ["test_ext_test_mock.js"]
@@ -147,9 +151,6 @@ skip-if = [
 ["test_ext_unknown_permissions.js"]
 
 ["test_ext_urlclassifier.js"]
-skip-if = [
-  "artifact", # Bug 2012613 - known limitation of FOG ping testing APIs
-]
 
 ["test_ext_webRequest_handlerBehaviorChanged.js"]
 

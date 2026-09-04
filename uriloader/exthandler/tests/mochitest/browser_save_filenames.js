@@ -11,6 +11,10 @@
 
 requestLongerTimeout(8);
 
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("browser.download.save_converter_index");
+});
+
 let types = {
   text: "text/plain",
   html: "text/html",
@@ -59,7 +63,7 @@ const DEFAULT_FILENAME =
 const PROMISE_FILENAME_TYPE = "application/x-moz-file-promise-dest-filename";
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 let expectedItems;
 let sendAsAttachment = false;
@@ -134,6 +138,21 @@ function checkShortenedFilename(actual, expected) {
       expected.startsWith(actual.substring(0, actualDot))
     ) {
       return true;
+    }
+
+    // validateFileNameForSaving may preserve a dangerous extension (e.g.
+    // ".lnk") when truncating a long filename. This places the extension at a
+    // position in the root where the expected name has different characters.
+    // Strip that inner extension from the actual root and re-check.
+    if (actualExtension == expectedExtension) {
+      let actualRoot = actual.substring(0, actualDot);
+      let innerDot = actualRoot.lastIndexOf(".");
+      if (
+        innerDot > 0 &&
+        expected.startsWith(actualRoot.substring(0, innerDot))
+      ) {
+        return true;
+      }
     }
   }
 
@@ -232,6 +251,12 @@ function getDirectoryEntries(dir) {
   return files;
 }
 
+// Strips the random seed (_XXXX, 4 base64url chars) that nsWebBrowserPersist
+// inserts before the file extension of saved subresources.
+function stripSeedFromFilename(filename) {
+  return filename.replace(/_[A-Za-z0-9_-]{4}(?=\.[^.]+$|$)/, "");
+}
+
 // This test saves the document as a complete web page and verifies
 // that the resources are saved with the correct filename.
 add_task(async function save_document() {
@@ -256,20 +281,19 @@ add_task(async function save_document() {
   saveBrowser(browser);
   await savePromise;
 
-  let filesSaved = getDirectoryEntries(tmpDir);
+  let filesSaved = getDirectoryEntries(tmpDir).map(stripSeedFromFilename);
 
   for (let idx = 0; idx < expectedItems.length; idx++) {
     let filename = expectedItems[idx].filename;
-
-    let file = tmpDir.clone();
-    file.append(filename);
 
     let fileIdx = -1;
     // Use checkShortenedFilename to check long filenames.
     if (filename.length > 240) {
       for (let t = 0; t < filesSaved.length; t++) {
+        // After seed stripping a 64-char truncated filename is 59 chars;
+        // use 55 as the lower bound to also tolerate CreateUnique shortening.
         if (
-          filesSaved[t].length > 60 &&
+          filesSaved[t].length > 55 &&
           checkShortenedFilename(filesSaved[t], filename)
         ) {
           fileIdx = t;
@@ -606,7 +630,10 @@ add_task(async function save_links() {
       attachmentlink.href = elem.localName == "object" ? elem.data : elem.src;
       attachmentlink.textContent = elem.dataset.filename;
       insertPos.appendChild(attachmentlink);
-      insertPos.appendChild(doc.createTextNode("  "));
+      // Each link gets its own line so a very long, unbreakable filename
+      // (e.g. the long .lnk test case) can't push later links off-screen
+      // and cause synthesizeMouse to click the wrong element.
+      insertPos.appendChild(doc.createElement("br"));
 
       elem = elem.nextElementSibling;
       idx++;
@@ -623,7 +650,12 @@ add_task(async function save_links() {
 
     let downloadFinishedPromise = promiseDownloadFinished(list);
 
-    BrowserTestUtils.synthesizeMouse(
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [idx], async elIdx => {
+      content.document
+        .getElementById("attachmentlink" + elIdx)
+        .scrollIntoView();
+    });
+    await BrowserTestUtils.synthesizeMouse(
       "#attachmentlink" + idx,
       5,
       5,
@@ -663,6 +695,10 @@ add_task(async function save_links() {
     } catch (ex) {}
   }
 
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.document.scrollTop = 0;
+  });
+
   sendAsAttachment = false;
 });
 
@@ -678,6 +714,13 @@ add_task(async function saveas_image_links() {
     for (let idx = 0; idx < links.length; idx++) {
       let menu = document.getElementById("contentAreaContextMenu");
       let popupShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
+      await SpecialPowers.spawn(
+        gBrowser.selectedBrowser,
+        [idx],
+        async elIdx => {
+          content.document.getElementById("link" + elIdx).scrollIntoView();
+        }
+      );
       BrowserTestUtils.synthesizeMouse(
         "#link" + idx,
         5,
@@ -747,6 +790,9 @@ add_task(async function save_download_links() {
   for (let idx = 0; idx < downloads.length; idx++) {
     let downloadFinishedPromise = promiseDownloadFinished(list);
 
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [idx], async elIdx => {
+      content.document.getElementById("download" + elIdx).scrollIntoView();
+    });
     BrowserTestUtils.synthesizeMouse(
       "#download" + idx,
       2,

@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_ENV_H
 #define GFX_ENV_H
 
+#include <sstream>
+#include <string_view>
+
 #include "mozilla/Attributes.h"
 #include "nsDebug.h"
 #include "prenv.h"
-
-#include <sstream>
-#include <string_view>
 
 // To register the check for an environment variable existence (and not empty),
 // add a line in this file using the DECL_GFX_ENV macro.

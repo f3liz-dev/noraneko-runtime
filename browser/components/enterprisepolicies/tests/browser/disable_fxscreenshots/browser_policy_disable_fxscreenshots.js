@@ -4,7 +4,8 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  ScreenshotsUtils:
+    "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
 });
 
 const PREF_DISABLE_FX_SCREENSHOTS = "screenshots.browser.component.enabled";
@@ -48,7 +49,7 @@ add_task(async function test_disable_firefox_screenshots() {
     "Screenshots pref is disabled"
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !ScreenshotsUtils.initialized,
     "Wait for the screenshot component to be uninitialized"
   );

@@ -1,5 +1,3 @@
-/* -*- js-indent-level: 2; tab-width: 2; indent-tabs-mode: nil -*- */
-
 /* import-globals-from chrome-harness.js */
 /* import-globals-from mochitest-e10s-utils.js */
 
@@ -11,6 +9,14 @@ var gConfig;
 
 var { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+var {
+  uploadProfileArtifact,
+  installProfilerDumpAndQuit,
+  shouldSaveFailureProfile,
+} = ChromeUtils.importESModule(
+  "resource://testing-common/TestProfilerArtifact.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -91,6 +97,68 @@ var TabDestroyObserver = {
   },
 };
 
+var DOMWindowTracker = {
+  // Map<serial, {serial, address, type, test, time}>
+  liveWindows: new Map(),
+  initialWindows: new Set(),
+  currentTest: null,
+
+  init() {
+    Services.obs.addObserver(this, "debug-domwindow-created");
+    Services.obs.addObserver(this, "debug-domwindow-destroyed");
+  },
+  destroy() {
+    Services.obs.removeObserver(this, "debug-domwindow-created");
+    Services.obs.removeObserver(this, "debug-domwindow-destroyed");
+  },
+  snapshotInitialWindows() {
+    for (let key of this.liveWindows.keys()) {
+      this.initialWindows.add(key);
+    }
+  },
+  observe(subject, topic, data) {
+    let info = this._parseData(data);
+    if (topic === "debug-domwindow-created") {
+      info.test = this.currentTest;
+      info.time = Date.now();
+      this.liveWindows.set(info.serial, info);
+    } else {
+      this.liveWindows.delete(info.serial);
+    }
+  },
+  _parseData(data) {
+    let info = {};
+    for (let part of data.split(" ")) {
+      let idx = part.indexOf("=");
+      if (idx !== -1) {
+        info[part.substring(0, idx)] = part.substring(idx + 1);
+      }
+    }
+    return info;
+  },
+  getLeakedWindows(excludeCurrentTest = false) {
+    let leaked = [];
+    let innerOuterAddrs = new Set();
+    for (let [key, info] of this.liveWindows) {
+      if (
+        !this.initialWindows.has(key) &&
+        info.test &&
+        (!excludeCurrentTest || info.test !== this.currentTest)
+      ) {
+        leaked.push(info);
+        if (info.type === "inner" && info.outer) {
+          innerOuterAddrs.add(info.outer);
+        }
+      }
+    }
+    // Filter out outer windows whose inner is also leaked, to avoid
+    // reporting the same leak twice.
+    return leaked.filter(
+      info => info.type !== "outer" || !innerOuterAddrs.has(info.address)
+    );
+  },
+};
+
 function testInit() {
   gConfig = readConfig();
 
@@ -168,6 +236,46 @@ function Tester(aTests, structuredLogger, aCallback) {
   this.structuredLogger = structuredLogger;
   this.tests = aTests;
   this.callback = aCallback;
+
+  // When Gecko hits a fatal test-only condition during a profiled run, report
+  // it as a failure of the current test and save a profile before exiting,
+  // instead of crashing and losing the profile.
+  installProfilerDumpAndQuit(reason => {
+    // this.tests is nulled once the run finishes, so reading this.currentTest
+    // (which indexes into it) would throw during shutdown; index defensively.
+    let test = this.tests?.[this.currentTestIndex];
+    if (test) {
+      this.structuredLogger.testStatus(
+        test.path,
+        "fatal condition",
+        "FAIL",
+        "PASS",
+        reason
+      );
+      return {
+        testName: test.path,
+        logger: this.structuredLogger,
+        // Deferred until after the profile is saved and its location logged, so
+        // the upload message precedes test_end and dashboards find the profile.
+        endTest: () =>
+          this.structuredLogger.testEnd(test.path, "FAIL", "PASS", reason),
+      };
+    }
+
+    // No test is running: the run finished and we are shutting down. Report a
+    // top-level error (there is no test to tie a status to), and name the
+    // profile after the last manifest run rather than browser-test.js.
+    this.structuredLogger.error(`browser-test.js | ${reason}`);
+    let profileName = this._lastTestManifest
+      ? `${this._lastTestManifest.replace(/\.\w+$/, "").replace(/[:/]/g, "_")}_shutdown`
+      : "shutdown";
+    return {
+      testName: "browser-test.js",
+      profileName,
+      logger: this.structuredLogger,
+      testRunning: false,
+    };
+  });
 
   this._scriptLoader = Services.scriptloader;
   this.EventUtils = {};
@@ -254,8 +362,6 @@ function Tester(aTests, structuredLogger, aCallback) {
     this.SimpleTestOriginal[m] = this.SimpleTest[m];
   });
 
-  this._coverageCollector = null;
-
   const { XPCOMUtils } = ChromeUtils.importESModule(
     "resource://gre/modules/XPCOMUtils.sys.mjs"
   );
@@ -321,6 +427,7 @@ Tester.prototype = {
 
   start: function Tester_start() {
     TabDestroyObserver.init();
+    DOMWindowTracker.init();
 
     // if testOnLoad was not called, then gConfig is not defined
     if (!gConfig) {
@@ -337,14 +444,6 @@ Tester.prototype = {
 
     if (gConfig.repeat) {
       this.repeat = gConfig.repeat;
-    }
-
-    if (gConfig.jscovDirPrefix) {
-      let coveragePath = gConfig.jscovDirPrefix;
-      let { CoverageCollector } = ChromeUtils.importESModule(
-        "resource://testing-common/CoverageUtils.sys.mjs"
-      );
-      this._coverageCollector = new CoverageCollector(coveragePath);
     }
 
     if (gConfig.debugger || gConfig.debuggerInteractive || gConfig.jsdebugger) {
@@ -377,6 +476,7 @@ Tester.prototype = {
 
     if (this.tests.length) {
       this.waitForWindowsReady().then(() => {
+        DOMWindowTracker.snapshotInitialWindows();
         this.nextTest();
       });
     } else {
@@ -549,6 +649,44 @@ Tester.prototype = {
     }
   },
 
+  _shutdownCleanup(aCallback) {
+    let start = ChromeUtils.now();
+    Cu.schedulePreciseShrinkingGC(() => {
+      let numCycles = 3;
+      for (let i = 0; i < numCycles; i++) {
+        Cu.forceGC();
+        Cu.forceCC();
+      }
+      ChromeUtils.addProfilerMarker("ShutdownLeaks:cleanup", {
+        category: "Test",
+        startTime: start,
+      });
+      aCallback();
+    });
+  },
+
+  async _checkForLeakedWindows(excludeCurrentTest = false) {
+    // C++ window destructors fire debug-domwindow-destroyed
+    // via runnables dispatched to the main thread. Let those
+    // runnables run before checking for leaks.
+    await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
+
+    let leaked = DOMWindowTracker.getLeakedWindows(excludeCurrentTest);
+    if (leaked.length) {
+      try {
+        let { ShutdownLeakPathFinder } = ChromeUtils.importESModule(
+          "chrome://mochikit/content/ShutdownLeakPathFinder.sys.mjs"
+        );
+        await new ShutdownLeakPathFinder().findAndPrintPaths(
+          leaked,
+          this.structuredLogger
+        );
+      } catch (ex) {
+        dump("ShutdownLeakPathFinder failed: " + ex + "\n");
+      }
+    }
+  },
+
   finish: function Tester_finish() {
     var passCount = this.tests.reduce((a, f) => a + f.passCount, 0);
     var failCount = this.tests.reduce((a, f) => a + f.failCount, 0);
@@ -558,6 +696,7 @@ Tester.prototype = {
     failCount += this.failuresFromInitialWindowState;
 
     TabDestroyObserver.destroy();
+    DOMWindowTracker.destroy();
     Services.console.unregisterListener(this);
 
     this.AccessibilityUtils.uninit();
@@ -588,6 +727,9 @@ Tester.prototype = {
     // Tests complete, notify the callback and return
     this.callback(this.tests);
     this.callback = null;
+    // Remember the last manifest before dropping the test list, so a fatal
+    // condition hit while shutting down can name its profile after it.
+    this._lastTestManifest = this.tests.at(-1)?.manifest;
     this.tests = null;
   },
 
@@ -625,12 +767,6 @@ Tester.prototype = {
   },
 
   async ensureVsyncDisabled() {
-    // The WebExtension process keeps vsync enabled forever in headless mode.
-    // See bug 1782541.
-    if (Services.env.get("MOZ_HEADLESS")) {
-      return;
-    }
-
     try {
       await this.TestUtils.waitForCondition(
         () => !ChromeUtils.vsyncEnabled(),
@@ -759,9 +895,13 @@ Tester.prototype = {
     }
     let changedPrefs = [];
     for (let p of failures) {
-      this.structuredLogger.error(
-        // We only report unexpected failures when --compare-preferences is set.
-        `TEST-${gConfig.comparePrefs ? "UN" : ""}EXPECTED-FAIL | ${testPath} | changed preference: ${p}`
+      this.currentTest.addResult(
+        new testResult({
+          name: `changed preference: ${p}`,
+          pass: !gConfig.comparePrefs,
+          todo: !gConfig.comparePrefs,
+          allowFailure: this.currentTest.allowFailure,
+        })
       );
       changedPrefs.push(p);
     }
@@ -823,42 +963,11 @@ Tester.prototype = {
   },
 
   async notifyProfilerOfTestEnd() {
-    // See if we should upload a profile of a failing test.
-    if (this.currentTest.failCount) {
-      // If MOZ_PROFILER_SHUTDOWN is set, the profiler got started from --profiler
-      // and a profile will be shown even if there's no test failure.
-      if (
-        Services.env.exists("MOZ_UPLOAD_DIR") &&
-        !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
-        Services.profiler.IsActive()
-      ) {
-        let name = this.currentTest.path;
-        name = name.slice(name.lastIndexOf("/") + 1);
-        let filename = `profile_${name}.json`;
-        let path = Services.env.get("MOZ_UPLOAD_DIR");
-        let profilePath = PathUtils.join(path, filename);
-        try {
-          const { profile } =
-            await Services.profiler.getProfileDataAsGzippedArrayBuffer();
-          await IOUtils.write(profilePath, new Uint8Array(profile));
-          this.currentTest.addResult(
-            new testResult({
-              name:
-                "Found unexpected failures during the test; profile uploaded in " +
-                filename,
-            })
-          );
-        } catch (e) {
-          // If the profile is large, we may encounter out of memory errors.
-          this.currentTest.addResult(
-            new testResult({
-              name:
-                "Found unexpected failures during the test; failed to upload profile: " +
-                e,
-            })
-          );
-        }
-      }
+    // Upload a profile of a failing test, when one should be saved (e.g. not
+    // when --profiler already saves a shutdown profile; see
+    // shouldSaveFailureProfile).
+    if (this.currentTest.failCount && shouldSaveFailureProfile()) {
+      await uploadProfileArtifact(this.currentTest.path, this.structuredLogger);
     }
   },
 
@@ -867,10 +976,6 @@ Tester.prototype = {
     if (!this.currentTest) {
       this.checkWindowsState();
     } else {
-      if (this._coverageCollector) {
-        this._coverageCollector.recordTestCoverage(this.currentTest.path);
-      }
-
       this.PerTestCoverageUtils.afterTestSync();
 
       // Run cleanup functions for the current test before moving on to the
@@ -1119,13 +1224,19 @@ Tester.prototype = {
         );
       }
 
+      // Last check for uncaught rejections followed by the cleanup of allowed
+      // rejections.
       this.PromiseTestUtils.assertNoUncaughtRejections();
-
-      await this.notifyProfilerOfTestEnd();
+      this.PromiseTestUtils.clearAllowedUncaughtRejections();
 
       // Check the window state before logging testEnd so that any cleanup
       // assertions are included in the test result, not logged after test_end.
+      // This has to happen before notifyProfilerOfTestEnd, which only saves a
+      // profile for a failing test: a test whose only failure is a stale tab or
+      // a leaked window would otherwise not have failed yet.
       this.checkWindowsState();
+
+      await this.notifyProfilerOfTestEnd();
 
       let time = Date.now() - this.lastStartTime;
 
@@ -1136,6 +1247,7 @@ Tester.prototype = {
         "finished in " + time + "ms"
       );
       this.currentTest.setDuration(time);
+      DOMWindowTracker.currentTest = null;
 
       if (this.runUntilFailure && this.currentTest.failCount > 0) {
         this.haltTests();
@@ -1168,9 +1280,7 @@ Tester.prototype = {
     // Make sure the window is raised before starting the next test.
     this.SimpleTest.waitForFocus(() => {
       if (this.done) {
-        if (this._coverageCollector) {
-          this._coverageCollector.finalize();
-        } else if (
+        if (
           !AppConstants.RELEASE_OR_BETA &&
           !AppConstants.DEBUG &&
           !AppConstants.MOZ_CODE_COVERAGE &&
@@ -1193,9 +1303,8 @@ Tester.prototype = {
             // a document.
             let sidebar = document.getElementById("sidebar");
             if (sidebar) {
-              sidebar.setAttribute("src", "data:text/html;charset=utf-8,");
-              sidebar.docShell.createAboutBlankDocumentViewer(null, null);
               sidebar.setAttribute("src", "about:blank");
+              sidebar.docShell?.createAboutBlankDocumentViewer(null, null);
             }
           }
 
@@ -1215,19 +1324,6 @@ Tester.prototype = {
         // use a shrinking GC so that the JS engine will discard JIT code and
         // JIT caches more aggressively.
 
-        let shutdownCleanup = aCallback => {
-          Cu.schedulePreciseShrinkingGC(() => {
-            // Run the GC and CC a few times to make sure that as much
-            // as possible is freed.
-            let numCycles = 3;
-            for (let i = 0; i < numCycles; i++) {
-              Cu.forceGC();
-              Cu.forceCC();
-            }
-            aCallback();
-          });
-        };
-
         let { AsyncShutdown } = ChromeUtils.importESModule(
           "resource://gre/modules/AsyncShutdown.sys.mjs"
         );
@@ -1246,19 +1342,12 @@ Tester.prototype = {
         );
 
         barrier.wait().then(() => {
-          // Simulate memory pressure so that we're forced to free more resources
-          // and thus get rid of more false leaks like already terminated workers.
-          Services.obs.notifyObservers(
-            null,
-            "memory-pressure",
-            "heap-minimize"
-          );
-
           Services.ppmm.broadcastAsyncMessage("browser-test:collect-request");
 
-          shutdownCleanup(() => {
+          this._shutdownCleanup(() => {
             setTimeout(() => {
-              shutdownCleanup(() => {
+              this._shutdownCleanup(async () => {
+                await this._checkForLeakedWindows();
                 this.finish();
               });
             }, 1000);
@@ -1267,6 +1356,17 @@ Tester.prototype = {
 
         return;
       }
+
+      // In normal Firefox use, a shrinking GC is scheduled automatically
+      // after the user has been inactive for some time. This never happens
+      // when running tests sequentially quickly, so force one here. Without
+      // it, JIT/IC stubs installed on hot shared chrome scripts keep shapes
+      // from already-destroyed realms alive, pinning closed chrome windows
+      // until shutdown. Force a CC afterward so the chrome-window cycles
+      // that the shrinking GC just unanchored actually get collected
+      // before the next test starts. See bug 2041420.
+      Cu.forceShrinkingGC();
+      Cu.forceCC();
 
       if (this.repeat > 0) {
         --this.repeat;
@@ -1395,6 +1495,10 @@ Tester.prototype = {
   },
 
   execTest: function Tester_execTest() {
+    DOMWindowTracker.currentTest = this.currentTest.path.replace(
+      "chrome://mochitests/content/browser/",
+      ""
+    );
     this.structuredLogger.testStart(this.currentTest.path);
 
     this.SimpleTest.reset();
@@ -1443,6 +1547,7 @@ Tester.prototype = {
             ? {
                 name: err.message,
                 stack: err.stack,
+                time: err.time,
                 allowFailure: currentTest.allowFailure,
               }
             : {
@@ -1632,13 +1737,18 @@ Tester.prototype = {
               self.nextTest();
             } else {
               await self.notifyProfilerOfTestEnd();
+              // failCount > 1 (not > 0) because the "Test timed out"
+              // result above already incremented failCount by one.
               self.structuredLogger.testEnd(
                 self.currentTest.path,
-                "TIMEOUT",
+                self.currentTest.failCount > 1 ? "FAIL" : "TIMEOUT",
                 "PASS",
                 "Test timed out"
               );
-              self.finish();
+              self._shutdownCleanup(async () => {
+                await self._checkForLeakedWindows(true);
+                self.finish();
+              });
             }
           },
           gTimeoutSeconds * 1000,
@@ -1690,10 +1800,13 @@ function isErrorOrException(err) {
  *     false    false    todoCount    TEST-KNOWN-FAIL         FAIL     FAIL
  *     false    true     todoCount    TEST-KNOWN-FAIL         FAIL     FAIL
  */
-function testResult({ name, pass, todo, ex, stack, allowFailure }) {
+function testResult({ name, pass, todo, ex, stack, allowFailure, time }) {
   this.info = false;
   this.name = name;
   this.msg = "";
+  if (time) {
+    this.time = time;
+  }
 
   if (allowFailure && !pass) {
     this.allowedFailure = true;

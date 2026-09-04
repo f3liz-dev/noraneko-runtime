@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +6,8 @@
 #define mozilla_net_Http3StreamTunnel_h
 
 #include "Http3Stream.h"
-#include "nsHttpConnection.h"
 #include "SimpleBuffer.h"
+#include "nsHttpConnection.h"
 
 namespace mozilla::net {
 
@@ -116,6 +115,8 @@ class Http3StreamTunnel final : public Http3Stream {
 
   [[nodiscard]] nsresult OnWriteSegment(char* buf, uint32_t count,
                                         uint32_t* countWritten) override;
+
+  bool Closed() const { return mClosed; }
 
  private:
   virtual ~Http3StreamTunnel();

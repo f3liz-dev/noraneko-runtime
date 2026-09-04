@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef mozilla_net_Http3WebTransportSession_h
 #define mozilla_net_Http3WebTransportSession_h
 
-#include "WebTransportSessionBase.h"
 #include "Http3StreamBase.h"
-#include "nsIWebTransport.h"
+#include "WebTransportSessionBase.h"
 #include "mozilla/net/NeqoHttp3Conn.h"
+#include "nsIWebTransport.h"
 
 namespace mozilla::net {
 
@@ -95,6 +94,7 @@ class Http3WebTransportSession final : public WebTransportSessionBase,
   void CloseSession(uint32_t aStatus, const nsACString& aReason) override;
   void OnSessionClosed(bool aCleanly, uint32_t aStatus,
                        const nsACString& aReason);
+  void OnSessionDraining();
 
   uint64_t GetStreamId() const override;
 
@@ -109,12 +109,20 @@ class Http3WebTransportSession final : public WebTransportSessionBase,
   already_AddRefed<Http3WebTransportStream> OnIncomingWebTransportStream(
       WebTransportStreamType aType, uint64_t aId);
 
-  void SendDatagram(nsTArray<uint8_t>&& aData, uint64_t aTrackingId) override;
+  void SendDatagram(nsTArray<uint8_t>&& aData, uint64_t aTrackingId,
+                    uint64_t aSendGroupId, int64_t aSendOrder) override;
 
   void OnDatagramReceived(nsTArray<uint8_t>&& aData) override;
 
   void GetMaxDatagramSize() override;
 
+  nsresult ExportKeyingMaterial(const nsTArray<uint8_t>& aLabel,
+                                const nsTArray<uint8_t>& aContext,
+                                nsTArray<uint8_t>& aKeyingMaterial) override;
+
+  nsresult RegisterSendGroup(uint64_t aGroupId) override;
+
+  void GetNegotiatedProtocol(nsACString& aProtocol) override;
   void OnOutgoingDatagramOutCome(
       uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome);
 

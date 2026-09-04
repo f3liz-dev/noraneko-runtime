@@ -8,7 +8,7 @@ var idnDomain =
 var tests = [
   {
     name: "normal domain",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     location: "http://test1.example.org/",
     hostForDisplay: "test1.example.org",
     hasSubview: true,
@@ -16,7 +16,7 @@ var tests = [
   {
     name: "view-source",
     location: "view-source:http://example.com/",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     newURI: "http://example.com/",
     hostForDisplay: "example.com",
     hasSubview: true,
@@ -29,14 +29,14 @@ var tests = [
   },
   {
     name: "IDN subdomain",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     location: "http://sub1.xn--hxajbheg2az3al.xn--jxalpdlp/",
     hostForDisplay: "sub1." + idnDomain,
     hasSubview: true,
   },
   {
     name: "subdomain with port",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     location: "http://sub1.test1.example.org:8000/",
     hostForDisplay: "sub1.test1.example.org",
     hasSubview: true,
@@ -80,10 +80,11 @@ var tests = [
     hasSubview: false,
   },
   {
-    name: "about:logo with nested moz-safe-about:logo",
-    location: "about:logo",
-    hostForDisplay: "about:logo",
-    hasSubview: false,
+    name: "about:blank?foo with nested moz-safe-about:",
+    location: "about:blank?foo",
+    hostForDisplay: "about:blank",
+    hasSubview: true,
+    nestedInnerURI: "moz-safe-about:blank?foo",
   },
 ];
 
@@ -152,6 +153,18 @@ async function runTest(i, forward) {
       gIdentityHandler.getHostForDisplay(),
       currentTest.hostForDisplay,
       "hostForDisplay matches for test " + testDesc
+    );
+  }
+  if (currentTest.nestedInnerURI) {
+    ok(
+      gIdentityHandler._uri instanceof Ci.nsINestedURI,
+      "Is nested URI for test " + testDesc
+    );
+    const nestedURI = gIdentityHandler._uri.QueryInterface(Ci.nsINestedURI);
+    is(
+      nestedURI.innerURI.spec,
+      currentTest.nestedInnerURI,
+      "nested inner URI matches for test " + testDesc
     );
   }
 

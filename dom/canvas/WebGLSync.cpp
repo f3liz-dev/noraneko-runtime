@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +20,7 @@ WebGLSync::WebGLSync(WebGLContext* webgl, GLenum condition, GLbitfield flags)
 WebGLSync::~WebGLSync() {
   if (!mContext) return;
   mContext->gl->fDeleteSync(mGLName);
-  mGLName = 0;
+  mGLName = nullptr;
 }
 
 ClientWaitSyncResult WebGLSync::ClientWaitSync(const GLbitfield flags,

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,16 @@
 #ifndef MOZILLA_LAYERS_COMPOSITORTYPES_H
 #define MOZILLA_LAYERS_COMPOSITORTYPES_H
 
+#include <stdint.h>     // for uint32_t
+#include <sys/types.h>  // for int32_t
+
 #include <iosfwd>
-#include <stdint.h>       // for uint32_t
-#include <sys/types.h>    // for int32_t
+
 #include "LayersTypes.h"  // for LayersBackend, etc
-#include "nsXULAppAPI.h"  // for GeckoProcessType, etc
+#include "mozilla/TypedEnumBits.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/layers/SyncObject.h"
-
-#include "mozilla/TypedEnumBits.h"
+#include "nsXULAppAPI.h"  // for GeckoProcessType, etc
 
 namespace mozilla {
 namespace layers {

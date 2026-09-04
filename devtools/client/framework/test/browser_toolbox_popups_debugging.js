@@ -3,8 +3,10 @@
 
 // Test opening toolboxes against a tab and its popup
 
-const TEST_URL = "data:text/html,test for debugging popups";
-const POPUP_URL = "data:text/html,popup";
+const TEST_URL =
+  "https://example.com/browser/devtools/client/framework/test/doc_popups_debugging.html";
+const POPUP_URL =
+  "https://example.com/browser/devtools/client/framework/test/doc_popups_debugging_popup.html";
 
 const POPUP_DEBUG_PREF = "devtools.popups.debug";
 
@@ -38,7 +40,7 @@ add_task(async function () {
       popupTab.linkedBrowser
     );
     const iframe = browserContainer.querySelector(
-      ".devtools-toolbox-bottom-iframe"
+      ".devtools-toolbox-iframe.bottom-host"
     );
     ok(iframe, "The original tab's toolbox moved to the popup tab");
   } else {

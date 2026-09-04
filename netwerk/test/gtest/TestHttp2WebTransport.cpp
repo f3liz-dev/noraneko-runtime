@@ -1,24 +1,23 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <utility>
 
-#include "TestCommon.h"
-#include "gtest/gtest.h"
-#include "Http2WebTransportSession.h"
-#include "Http2WebTransportStream.h"
-#include "nsString.h"
-#include "nsTArray.h"
-#include "mozilla/gtest/MozAssertions.h"
-#include "mozilla/Queue.h"
-#include "mozilla/net/NeqoHttp3Conn.h"
 #include "Capsule.h"
 #include "CapsuleEncoder.h"
 #include "CapsuleParser.h"
+#include "Http2WebTransportSession.h"
+#include "Http2WebTransportStream.h"
+#include "TestCommon.h"
+#include "gtest/gtest.h"
+#include "mozilla/Queue.h"
+#include "mozilla/gtest/MozAssertions.h"
+#include "mozilla/net/NeqoHttp3Conn.h"
 #include "nsIWebTransport.h"
 #include "nsStreamUtils.h"
+#include "nsString.h"
+#include "nsTArray.h"
 #include "nsThreadUtils.h"
 
 using namespace mozilla;
@@ -254,6 +253,9 @@ MockWebTransportSessionEventListener::OnSessionClosed(
     bool aCleanly, uint32_t aStatus, const nsACString& aReason) {
   return NS_OK;
 }
+
+NS_IMETHODIMP
+MockWebTransportSessionEventListener::OnDraining() { return NS_OK; }
 
 NS_IMETHODIMP MockWebTransportSessionEventListener::OnDatagramReceivedInternal(
     nsTArray<uint8_t>&& aData) {
@@ -1070,7 +1072,7 @@ TEST(TestHttp2WebTransport, SendAndReceiveDatagram)
   expectedData.AppendElements(mockData);
 
   // Send datagram from client to server
-  client->Session()->SendDatagram(std::move(mockData), 1);
+  client->Session()->SendDatagram(std::move(mockData), 1, 0, 0);
   ServerProcessCapsules(server, client);
 
   // Verify the server received the correct datagram capsule

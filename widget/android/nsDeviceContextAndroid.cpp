@@ -4,16 +4,15 @@
 
 #include "nsDeviceContextAndroid.h"
 
-#include "mozilla/gfx/PrintTargetPDF.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/PrintTargetPDF.h"
+#include "nsAnonymousTemporaryFile.h"
 #include "nsComponentManagerUtils.h"
-#include "nsString.h"
+#include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsIFileStreams.h"
 #include "nsIPrintSettings.h"
-#include "nsIFileStreams.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsAnonymousTemporaryFile.h"
+#include "nsString.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -66,6 +65,7 @@ nsDeviceContextSpecAndroid::Init(nsIPrintSettings* aPS, bool aIsPrintPreview) {
 NS_IMETHODIMP
 nsDeviceContextSpecAndroid::BeginDocument(const nsAString& aTitle,
                                           const nsAString& aPrintToFileName,
+                                          mozilla::dom::WindowContext*,
                                           int32_t aStartPage,
                                           int32_t aEndPage) {
   return NS_OK;

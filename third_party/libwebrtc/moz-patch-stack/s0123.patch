@@ -1,39 +1,37 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 18 Sep 2025 22:33:00 -0500
-Subject: Bug 1985396 - (fix-38c5a66082) fix windows build failure caused by a
- macro expansion
+Date: Fri, 16 Jan 2026 16:48:00 -0600
+Subject: Bug 2010312 - (fix-dc65955c6d) fix base-toolchains build
 
-Commit 38c5a66082 adds the include rtc_base/strings/string_builder.h to
-third_party/libwebrtc/modules/desktop_capture/desktop_geometry.h, but we
-pick this up through a chain of includes in CamerasParent.cpp.  On Windows
-builds we then get a failure because Shlwapi.h has a macro that expands
-StrCat to StrCatW, which means we're changing absl::StrCat to
-absl::StrCatW which doesn't exist.
-
-We can avoid the desktop_geometry.h include and forward declare
-"class DesktopVector" to work around this issue.
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/9541460d001e1a62ae567a18d810e35e50ac791c
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6c3f917f52d45566db7b5916b74f792928456dff
 ---
- modules/desktop_capture/desktop_capturer.h | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ call/rtp_transport_controller_send.cc | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
 
-diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
-index c85d0eba7a..8219358e1e 100644
---- a/modules/desktop_capture/desktop_capturer.h
-+++ b/modules/desktop_capture/desktop_capturer.h
-@@ -23,7 +23,6 @@
- #include "modules/desktop_capture/delegated_source_list_controller.h"
- #include "modules/desktop_capture/desktop_capture_metadata.h"
- #include "modules/desktop_capture/desktop_capture_types.h"
--#include "modules/desktop_capture/desktop_frame.h"
- #include "modules/desktop_capture/desktop_geometry.h"
- #include "modules/desktop_capture/shared_memory.h"
- #include "rtc_base/system/rtc_export.h"
-@@ -34,6 +33,7 @@ void RTC_EXPORT LogDesktopCapturerFullscreenDetectorUsage();
+diff --git a/call/rtp_transport_controller_send.cc b/call/rtp_transport_controller_send.cc
+index 470cf40029..025781f488 100644
+--- a/call/rtp_transport_controller_send.cc
++++ b/call/rtp_transport_controller_send.cc
+@@ -738,19 +738,18 @@ void RtpTransportControllerSend::ComputeStatsFromCongestionControlFeedback(
  
- class DesktopCaptureOptions;
- class DesktopFrame;
-+class DesktopVector;
- 
- // Abstract interface for screen and window capturers.
- class RTC_EXPORT DesktopCapturer {
+     if (packet_info.IsReceived()) {
+       switch (packet_info.ecn) {
+-        using enum EcnMarking;
+-        case kEct1:
++        case EcnMarking::kEct1:
+           ++stats->num_packets_received_with_ect1;
+           break;
+-        case kCe:
++        case EcnMarking::kCe:
+           ++stats->num_packets_received_with_ce;
+           break;
+-        case kNotEct:
++        case EcnMarking::kNotEct:
+           if (packet_info.sent_with_ect1) {
+             ++stats->num_packets_with_bleached_ect1_marking;
+           }
+           break;
+-        case kEct0:
++        case EcnMarking::kEct0:
+           break;
+       }
+     }

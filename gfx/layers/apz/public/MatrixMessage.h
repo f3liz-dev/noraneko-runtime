@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef mozilla_layers_MatrixMessage_h
 #define mozilla_layers_MatrixMessage_h
 
+#include "UnitTransforms.h"
+#include "Units.h"  // for ScreenRect
 #include "mozilla/Maybe.h"
 #include "mozilla/gfx/Matrix.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "Units.h"  // for ScreenRect
-#include "UnitTransforms.h"
 
 namespace mozilla {
 namespace layers {

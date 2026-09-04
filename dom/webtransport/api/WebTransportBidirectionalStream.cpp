@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -37,8 +35,8 @@ JSObject* WebTransportBidirectionalStream::WrapObject(
 already_AddRefed<WebTransportBidirectionalStream>
 WebTransportBidirectionalStream::Create(
     WebTransport* aWebTransport, nsIGlobalObject* aGlobal, uint64_t aStreamId,
-    DataPipeReceiver* receiver, DataPipeSender* aSender,
-    Maybe<int64_t> aSendOrder, ErrorResult& aRv) {
+    DataPipeReceiver* receiver, DataPipeSender* aSender, int64_t aSendOrder,
+    WebTransportSendGroup* aSendGroup, ErrorResult& aRv) {
   // https://w3c.github.io/webtransport/#pullbidirectionalstream (and
   // createBidirectionalStream)
 
@@ -52,7 +50,7 @@ WebTransportBidirectionalStream::Create(
   }
   RefPtr<WebTransportSendStream> writableStream =
       WebTransportSendStream::Create(aWebTransport, aGlobal, aStreamId, aSender,
-                                     aSendOrder, aRv);
+                                     aSendOrder, aSendGroup, aRv);
   if (!writableStream) {
     return nullptr;
     ;

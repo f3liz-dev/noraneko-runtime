@@ -1,0 +1,164 @@
+{
+  "background": {
+    "color": {
+      "comment": "TODO Bug 2030793 - Move card tokens to be used by moz-card rather than globally",
+      "value": "{background.color.box.@base}"
+    }
+  },
+  "border": {
+    "@base": {
+      "value": "{card.border.width} solid {card.border.color}"
+    },
+    "width": {
+      "value": "{border.width}"
+    },
+    "color": {
+      "value": {
+        "light": "color-mix(in srgb, currentColor 10%, transparent)",
+        "dark": "color-mix(in srgb, currentColor 6%, transparent)",
+        "prefersContrast": "color-mix(in srgb, currentColor 41%, transparent)",
+        "forcedColors": "CanvasText"
+      }
+    },
+    "radius": {
+      "@base": {
+        "value": "{border.radius.large}"
+      },
+      "compact": {
+        "value": "{border.radius.medium}"
+      }
+    }
+  },
+  "box": {
+    "shadow": {
+      "@base": {
+        "value": "{box-shadow.level-2}"
+      },
+      "hover": {
+        "value": "{box-shadow.level-4}"
+      }
+    }
+  },
+  "cover": {
+    "image": {
+      "border": {
+        "radius": {
+          "value": "{border.radius.medium}"
+        }
+      },
+      "height": {
+        "default": {
+          "value": "160px"
+        }
+      },
+      "padding": {
+        "@base": {
+          "value": "{space.small}"
+        },
+        "compact": {
+          "value": "{space.xsmall}"
+        }
+      },
+      "object": {
+        "fit": {
+          "default": {
+            "value": "cover"
+          }
+        },
+        "position": {
+          "default": {
+            "value": "center"
+          }
+        }
+      }
+    }
+  },
+  "focus": {
+    "outline": {
+      "value": "{focus.outline.@base}"
+    }
+  },
+  "font": {
+    "size": {
+      "@base": {
+        "value": "{font.size.root}"
+      },
+      "compact": {
+        "value": "{font.size.small}"
+      }
+    }
+  },
+  "padding": {
+    "@base": {
+      "value": "{space.large}"
+    },
+    "compact": {
+      "value": "{space.small}"
+    }
+  },
+  "gap": {
+    "@base": {
+      "value": "{card.padding.@base}"
+    },
+    "compact": {
+      "value": "{space.small}"
+    },
+    "article": {
+      "value": "{space.small}"
+    }
+  },
+  "header": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": {
+            "default": "initial",
+            "forcedColors": "{button.background.color.@base}"
+          }
+        },
+        "hover": {
+          "value": "{button.background.color.hover}"
+        },
+        "active": {
+          "value": "{button.background.color.active}"
+        }
+      }
+    },
+    "border": {
+      "color": {
+        "@base": {
+          "value": {
+            "default": "transparent",
+            "forcedColors": "{button.border.color.@base}",
+            "prefersContrast": "{button.border.color.@base}"
+          }
+        },
+        "hover": {
+          "value": {
+            "default": "transparent",
+            "forcedColors": "{button.border.color.hover}"
+          }
+        },
+        "active": {
+          "value": {
+            "default": "transparent",
+            "forcedColors": "{button.border.color.active}"
+          }
+        }
+      }
+    },
+    "text": {
+      "color": {
+        "@base": {
+          "value": "{button.text.color.@base}"
+        },
+        "hover": {
+          "value": "{button.text.color.hover}"
+        },
+        "active": {
+          "value": "{button.text.color.active}"
+        }
+      }
+    }
+  }
+}

@@ -233,20 +233,13 @@ add_task(async function tabNoSearchStringSearchMode() {
     value: "",
   });
 
-  let unifiedSearchButtonPopup =
-    await UrlbarTestUtils.openSearchModeSwitcher(window);
-  let unifiedSearchButtonPopupHidden =
-    UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-
-  let historyItem =
-    unifiedSearchButtonPopup.querySelector("menuitem[label=history]") ??
-    unifiedSearchButtonPopup.querySelector("menuitem[label=History]");
-
-  historyItem.click();
-  await unifiedSearchButtonPopupHidden;
+  await UrlbarTestUtils.activateSearchModeSwitcherItem(
+    window,
+    'panel-item[data-restrict="^"]'
+  );
 
   await UrlbarTestUtils.assertSearchMode(window, {
-    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    source: UrlbarShared.RESULT_SOURCE.HISTORY,
     entry: "searchbutton",
   });
 
@@ -300,7 +293,7 @@ add_task(async function tabActionsSearchMode() {
   EventUtils.synthesizeKey("KEY_Enter");
 
   await UrlbarTestUtils.assertSearchMode(window, {
-    source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+    source: UrlbarShared.RESULT_SOURCE.ACTIONS,
     isPreview: false,
     entry: "keywordoffer",
     restrictType: "keyword",
@@ -332,8 +325,7 @@ async function expectTabThroughResults(options = { reverse: false }) {
   for (let i = initiallySelectedIndex + 1; i < resultCount; i++) {
     EventUtils.synthesizeKey("KEY_Tab", { shiftKey: options.reverse });
     if (
-      document.activeElement ==
-      document.querySelector("toolbarbutton#urlbar-searchmode-switcher")
+      document.activeElement == document.querySelector(".searchmode-switcher")
     ) {
       EventUtils.synthesizeKey("KEY_Tab", { shiftKey: options.reverse });
     }
@@ -381,8 +373,7 @@ async function expectTabThroughToolbar(options = { reverse: false }) {
 
     // Skip over unified search button.
     if (
-      document.activeElement ==
-      document.querySelector("toolbarbutton#urlbar-searchmode-switcher")
+      document.activeElement == document.querySelector(".searchmode-switcher")
     ) {
       EventUtils.synthesizeKey("KEY_Tab", { shiftKey: options.reverse });
     }
@@ -404,7 +395,7 @@ async function waitForFocusOnNextFocusableElement(reverse = false) {
     !Services.prefs.getBoolPref("browser.toolbars.keyboard_navigation", true)
   ) {
     let sidebar = document.querySelector("sidebar-main");
-    return BrowserTestUtils.waitForCondition(
+    return TestUtils.waitForCondition(
       () =>
         document.activeElement ==
         (!sidebarLauncherVisible ? gBrowser.selectedBrowser : sidebar)
@@ -434,9 +425,7 @@ async function waitForFocusOnNextFocusableElement(reverse = false) {
     "We should have a reference to the next focusable element after the Urlbar."
   );
 
-  return BrowserTestUtils.waitForCondition(
-    () => nextFocusableElement.tabIndex == -1
-  );
+  return TestUtils.waitForCondition(() => nextFocusableElement.tabIndex == -1);
 }
 
 async function exitSearchMode() {

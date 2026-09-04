@@ -4,12 +4,12 @@ fn main() {
         send_sync: { all(
             feature = "std",
             any(
-                not(target_arch = "wasm32"),
+                not(target_family = "wasm"),
                 all(feature = "fragile-send-sync-non-atomic-wasm", not(target_feature = "atomics"))
             )
         ) },
         dx12: { all(target_os = "windows", feature = "dx12") },
-        webgl: { all(target_arch = "wasm32", not(target_os = "emscripten"), feature = "webgl") },
+        webgl: { all(target_family = "wasm", not(target_os = "emscripten"), feature = "webgl") },
         gles: { any(
             all(windows_linux_android, feature = "gles"), // Regular GLES
             all(webgl), // WebGL
@@ -19,6 +19,10 @@ fn main() {
         vulkan: { any(
             all(windows_linux_android, feature = "vulkan"), // Regular Vulkan
             all(target_vendor = "apple", feature = "vulkan-portability") // Vulkan Portability on Apple
+        ) },
+        drm: { all(
+            feature = "drm",
+            any(target_os = "linux", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd")
         ) },
         metal: { all(target_vendor = "apple", feature = "metal") },
 

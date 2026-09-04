@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -150,7 +148,6 @@
 #endif
 
 #include "base/process_util.h"
-
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
@@ -166,6 +163,7 @@
 #include <utility>
 
 #include "js/SliceBudget.h"
+#include "js/friend/CycleCollector.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LinkedList.h"
@@ -175,9 +173,9 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SegmentedVector.h"
-#include "mozilla/glean/XpcomMetrics.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/glean/XpcomMetrics.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -1261,6 +1259,12 @@ class nsCycleCollector : public nsIMemoryReporter {
   // returns whether anything was collected
   bool CollectWhite();
 
+  void ClearWhiteJSWeakRefTargets();
+
+ public:
+  bool IsGCThingWhiteInCCGraph(JS::GCCellPtr aPtr);
+
+ private:
   void CleanupAfterCollection();
 };
 
@@ -1491,6 +1495,7 @@ struct CCGraphDescriber : public LinkedListElement<CCGraphDescriber> {
     eGCedObject,
     eGCMarkedObject,
     eEdge,
+    eWeakMapEntry,
     eRoot,
     eGarbage,
     eUnknown
@@ -1499,6 +1504,8 @@ struct CCGraphDescriber : public LinkedListElement<CCGraphDescriber> {
   nsCString mAddress;
   nsCString mName;
   nsCString mCompartmentOrToAddress;
+  nsCString mKeyDelegateAddress;
+  nsCString mValueAddress;
   uint32_t mCnt;
   Type mType;
 };
@@ -1714,7 +1721,7 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
     if (NS_SUCCEEDED(aLog->mFile->MoveTo(/* directory */ nullptr,
                                          logFileFinalDestinationName))) {
       // Save the file path.
-      aLog->mFile = logFileFinalDestination;
+      aLog->mFile = std::move(logFileFinalDestination);
     }
 
     // Log to the error console.
@@ -1726,7 +1733,7 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
     // We don't want any JS to run between ScanRoots and CollectWhite calls,
     // and since ScanRoots calls this method, better to log the message
     // asynchronously.
-    RefPtr<LogStringMessageAsync> log = new LogStringMessageAsync(msg);
+    RefPtr log = MakeRefPtr<LogStringMessageAsync>(msg);
     NS_DispatchToCurrentThread(log);
     return NS_OK;
   }
@@ -1885,7 +1892,19 @@ class nsCycleCollectorLogger final : public nsICycleCollectorListener {
       fprintf(mCCLog, "WeakMapEntry map=%p key=%p keyDelegate=%p value=%p\n",
               (void*)aMap, (void*)aKey, (void*)aKeyDelegate, (void*)aValue);
     }
-    // We don't support after-processing for weak map entries.
+    if (mWantAfterProcessing) {
+      CCGraphDescriber* d = new CCGraphDescriber();
+      mDescribers.insertBack(d);
+      d->mType = CCGraphDescriber::eWeakMapEntry;
+      d->mAddress.AssignLiteral("0x");
+      d->mAddress.AppendInt(aMap, 16);
+      d->mCompartmentOrToAddress.AssignLiteral("0x");
+      d->mCompartmentOrToAddress.AppendInt(aKey, 16);
+      d->mKeyDelegateAddress.AssignLiteral("0x");
+      d->mKeyDelegateAddress.AppendInt(aKeyDelegate, 16);
+      d->mValueAddress.AssignLiteral("0x");
+      d->mValueAddress.AppendInt(aValue, 16);
+    }
   }
   void NoteIncrementalRoot(uint64_t aAddress) {
     if (!mDisableLog) {
@@ -1946,6 +1965,10 @@ class nsCycleCollectorLogger final : public nsICycleCollectorListener {
           break;
         case CCGraphDescriber::eEdge:
           aHandler->NoteEdge(d->mAddress, d->mCompartmentOrToAddress, d->mName);
+          break;
+        case CCGraphDescriber::eWeakMapEntry:
+          aHandler->NoteWeakMapEntry(d->mAddress, d->mCompartmentOrToAddress,
+                                     d->mKeyDelegateAddress, d->mValueAddress);
           break;
         case CCGraphDescriber::eRoot:
           aHandler->DescribeRoot(d->mAddress, d->mCnt);
@@ -2024,7 +2047,7 @@ class CCGraphBuilder final : public nsCycleCollectionTraversalCallback,
   UniquePtr<NodePool::Enumerator> mCurrNode;
   uint32_t mNoteChildCount;
 
-  struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 491> {
+  struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 256> {
     static HashNumber Hash(const void* aKey) { return HashGeneric(aKey); }
     static bool Match(const void* aKey, const PtrInfo* aVal) {
       return aVal->mPointer == aKey;
@@ -3231,6 +3254,8 @@ bool nsCycleCollector::CollectWhite() {
   //   - Unlink(whites), which drops outgoing links on each white.
   //   - Unroot(whites), which returns the whites to normal GC.
 
+  ClearWhiteJSWeakRefTargets();
+
   // Segments are 4 KiB on 32-bit and 8 KiB on 64-bit.
   static const size_t kSegmentSize = sizeof(void*) * 1024;
   SegmentedVector<PtrInfo*, kSegmentSize, InfallibleAllocPolicy> whiteNodes(
@@ -3320,6 +3345,31 @@ bool nsCycleCollector::CollectWhite() {
   mKnownSnowWhiteCount = 0;
 
   return numWhiteNodes > 0 || numWhiteGCed > 0 || numWhiteJSZones > 0;
+}
+
+static bool IsGCThingWhiteInCCGraph(JS::GCCellPtr aPtr, void* aData) {
+  auto* cc = static_cast<nsCycleCollector*>(aData);
+  return cc->IsGCThingWhiteInCCGraph(aPtr);
+}
+
+bool nsCycleCollector::IsGCThingWhiteInCCGraph(JS::GCCellPtr aPtr) {
+  PtrInfo* pinfo = mGraph.FindNode(aPtr.asCell());
+  if (!pinfo) {
+    return false;
+  }
+
+  MOZ_ASSERT(pinfo->mParticipant);
+  bool isWhite = pinfo->mColor == white;
+
+  MOZ_ASSERT_IF(isWhite, pinfo->IsGrayJS());
+  return isWhite;
+}
+
+void nsCycleCollector::ClearWhiteJSWeakRefTargets() {
+  // Clear the targets of JS WeakRef objects whose target is part of a cycle
+  // that we're about to unlink.
+  JSRuntime* runtime = Runtime()->Runtime();
+  JS::MaybeClearWeakRefTargets(runtime, &::IsGCThingWhiteInCCGraph, this);
 }
 
 ////////////////////////
@@ -3569,14 +3619,15 @@ void nsCycleCollector::CleanupAfterCollection() {
 #endif
 
   if (NS_IsMainThread()) {
-    glean::cycle_collector::time.AccumulateRawDuration(interval);
+    glean::cycle_collector::time.ProcessGet().AccumulateRawDuration(interval);
     glean::cycle_collector::visited_ref_counted.AccumulateSingleSample(
         mResults.mVisitedRefCounted);
     glean::cycle_collector::visited_gced.AccumulateSingleSample(
         mResults.mVisitedGCed);
     glean::cycle_collector::collected.AccumulateSingleSample(mWhiteNodeCount);
   } else {
-    glean::cycle_collector::worker_time.AccumulateRawDuration(interval);
+    glean::cycle_collector::worker_time.ProcessGet().AccumulateRawDuration(
+        interval);
     glean::cycle_collector::worker_visited_ref_counted.AccumulateSingleSample(
         mResults.mVisitedRefCounted);
     glean::cycle_collector::worker_visited_gced.AccumulateSingleSample(

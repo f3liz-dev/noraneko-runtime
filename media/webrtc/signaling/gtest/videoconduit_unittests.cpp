@@ -4,22 +4,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #define GTEST_HAS_RTTI 0
-#include "gtest/gtest.h"
-
-#include "nss.h"
-
 #include "Canonicals.h"
 #include "ImageContainer.h"
-#include "VideoConduit.h"
-#include "VideoFrameConverter.h"
-#include "RtpRtcpConfig.h"
-
-#include "api/video/i420_buffer.h"
-#include "api/video/video_sink_interface.h"
-#include "media/base/media_constants.h"
-
 #include "MockCall.h"
 #include "MockConduit.h"
+#include "RtpRtcpConfig.h"
+#include "VideoConduit.h"
+#include "VideoFrameConverter.h"
+#include "api/video/i420_buffer.h"
+#include "api/video/video_sink_interface.h"
+#include "gtest/gtest.h"
+#include "media/base/media_constants.h"
+#include "nss.h"
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -46,8 +42,8 @@ class MockVideoSink : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
 struct TestRTCStatsTimestampState : public dom::RTCStatsTimestampState {
   TestRTCStatsTimestampState()
       : dom::RTCStatsTimestampState(
-            TimeStamp::Now() + TimeDuration::FromMilliseconds(10),
-            webrtc::Timestamp::Micros(0)) {}
+            0, TimeStamp::Now() + TimeDuration::FromMilliseconds(10),
+            webrtc::Timestamp::Micros(0), RTPCallerType::Normal, 0) {}
 };
 
 class TestRTCStatsTimestampMaker : public dom::RTCStatsTimestampMaker {
@@ -2402,7 +2398,7 @@ TEST_F(VideoConduitTest, TestVideoConfigurationH264) {
     auto& params = Call()->mVideoSendEncoderConfig->video_format.parameters;
     EXPECT_EQ(params[webrtc::kH264FmtpPacketizationMode], "0");
     EXPECT_EQ(params[webrtc::kH264FmtpProfileLevelId], "42e01f");
-    EXPECT_EQ(params[webrtc::kH264FmtpSpropParameterSets], sprop1);
+    EXPECT_EQ(params[std::string(webrtc::kH264FmtpSpropParameterSets)], sprop1);
   }
 
   {
@@ -2422,7 +2418,7 @@ TEST_F(VideoConduitTest, TestVideoConfigurationH264) {
     auto& params = Call()->mVideoSendEncoderConfig->video_format.parameters;
     EXPECT_EQ(params[webrtc::kH264FmtpPacketizationMode], "1");
     EXPECT_EQ(params[webrtc::kH264FmtpProfileLevelId], "64000c");
-    EXPECT_EQ(params[webrtc::kH264FmtpSpropParameterSets], sprop2);
+    EXPECT_EQ(params[std::string(webrtc::kH264FmtpSpropParameterSets)], sprop2);
   }
 }
 
@@ -2446,9 +2442,9 @@ TEST_F(VideoConduitTest, TestVideoConfigurationAV1) {
 
     ASSERT_TRUE(Call()->mVideoSendEncoderConfig);
     auto& params = Call()->mVideoSendEncoderConfig->video_format.parameters;
-    EXPECT_EQ(params[webrtc::kAv1FmtpProfile], "2");
-    EXPECT_EQ(params[webrtc::kAv1FmtpLevelIdx], "4");
-    EXPECT_EQ(params[webrtc::kAv1FmtpTier], "1");
+    EXPECT_EQ(params[std::string(webrtc::kAv1FmtpProfile)], "2");
+    EXPECT_EQ(params[std::string(webrtc::kAv1FmtpLevelIdx)], "4");
+    EXPECT_EQ(params[std::string(webrtc::kAv1FmtpTier)], "1");
   }
 }
 

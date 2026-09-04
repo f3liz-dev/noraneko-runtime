@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,16 @@ enum class SurfaceFormat : int8_t;
 namespace layers {
 class Image;
 }  // namespace layers
+
+// The conversion routines below scale with libyuv's box filter, which is
+// defined for image dimensions below this value.
+static constexpr int32_t kMaxConvertImageDimension = 32768;
+
+// Whether an image of aSize can be passed to the conversion routines below.
+inline bool IsImageDimensionSupportedForConversion(const gfx::IntSize& aSize) {
+  return aSize.width < kMaxConvertImageDimension &&
+         aSize.height < kMaxConvertImageDimension;
+}
 
 /**
  * Gets a SourceSurface from given image.

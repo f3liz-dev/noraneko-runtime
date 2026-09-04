@@ -19,7 +19,7 @@ const kBaseURILocalhost = getRootDirectory(gTestPath).replace(
 const TEST_CASES = [
   {
     type: "http",
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     testURL: "http://example.com",
     img_url: `url("chrome://global/skin/icons/security-broken.svg")`,
   },
@@ -133,7 +133,7 @@ add_task(async function test() {
     let identityIcon = document.getElementById("identity-icon");
 
     // Get the image url from the identity icon.
-    let identityIconImageURL = gBrowser.ownerGlobal
+    let identityIconImageURL = gBrowser.documentGlobal
       .getComputedStyle(identityIcon)
       .getPropertyValue("list-style-image");
 

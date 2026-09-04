@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 #define _include_mozilla_gfx_ipc_CompositorSession_h_
 
 #include "base/basictypes.h"
-#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/CompositorTypes.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsISupportsImpl.h"
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/layers/UiCompositorControllerChild.h"

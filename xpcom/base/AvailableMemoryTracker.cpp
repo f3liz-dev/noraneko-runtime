@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,18 @@
 
 #if defined(XP_WIN)
 #  include <windows.h>
+
 #  include "nsIMemoryReporter.h"
 #endif
 
+#include "mozilla/Mutex.h"
+#include "mozilla/Services.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsIRunnable.h"
 #include "nsISupports.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
-
-#include "mozilla/Mutex.h"
-#include "mozilla/Services.h"
 
 #if defined(MOZ_MEMORY)
 #  include "mozmemory.h"
@@ -37,7 +35,7 @@ static int64_t LowMemoryEventsPhysicalDistinguishedAmount() {
 }
 
 class LowEventsReporter final : public nsIMemoryReporter {
-  ~LowEventsReporter() {}
+  ~LowEventsReporter() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -160,7 +158,7 @@ namespace AvailableMemoryTracker {
 
 void Init() {
   // The watchers are held alive by the observer service.
-  RefPtr<nsMemoryPressureWatcher> watcher = new nsMemoryPressureWatcher();
+  RefPtr watcher = MakeRefPtr<nsMemoryPressureWatcher>();
   watcher->Init();
 
 #if defined(XP_WIN)

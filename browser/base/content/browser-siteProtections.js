@@ -750,7 +750,7 @@ let ThirdPartyCookies =
         // of the Preferences UI.
         Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN, // Block all third-party cookies
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER, // Block third-party cookies from trackers
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, // Block trackers and patition third-party trackers
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN, // Partition all third-party cookies
         Ci.nsICookieService.BEHAVIOR_REJECT, // Block all cookies
       ];
 
@@ -788,7 +788,7 @@ let ThirdPartyCookies =
 
       if (
         [
-          Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+          Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
           Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
           Ci.nsICookieService.BEHAVIOR_ACCEPT,
         ].includes(this.behaviorPref)
@@ -828,8 +828,7 @@ let ThirdPartyCookies =
             l10nId = "content-blocking-cookies-blocking-unvisited-label";
             break;
           case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-          case Ci.nsICookieService
-            .BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+          case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
             l10nId = "content-blocking-cookies-blocking-trackers-label";
             break;
           default:
@@ -966,7 +965,7 @@ let ThirdPartyCookies =
           }
           break;
         case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-        case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN:
+        case Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN:
           l10nId = siteException
             ? "protections-not-blocking-cross-site-tracking-cookies"
             : "protections-blocking-cookies-trackers";
@@ -1209,7 +1208,7 @@ let SocialTracking =
         val =>
           [
             Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+            Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
           ].includes(val)
       );
     }
@@ -1263,227 +1262,6 @@ let SocialTracking =
   })();
 
 /**
- * Singleton to manage the cookie banner feature section in the protections
- * panel and the cookie banner handling subview.
- */
-let cookieBannerHandling = new (class {
-  // Check if this is a private window. We don't expect PBM state to change
-  // during the lifetime of this window.
-  #isPrivateBrowsing = PrivateBrowsingUtils.isWindowPrivate(window);
-
-  constructor() {
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_serviceModePref",
-      "cookiebanners.service.mode",
-      Ci.nsICookieBannerService.MODE_DISABLED
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_serviceModePrefPrivateBrowsing",
-      "cookiebanners.service.mode.privateBrowsing",
-      Ci.nsICookieBannerService.MODE_DISABLED
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_serviceDetectOnly",
-      "cookiebanners.service.detectOnly",
-      false
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_uiEnabled",
-      "cookiebanners.ui.desktop.enabled",
-      false
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerSection", () =>
-      document.getElementById("protections-popup-cookie-banner-section")
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerSectionSeparator", () =>
-      document.getElementById(
-        "protections-popup-cookie-banner-section-separator"
-      )
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerSwitch", () =>
-      document.getElementById("protections-popup-cookie-banner-switch")
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerSubview", () =>
-      document.getElementById("protections-popup-cookieBannerView")
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerEnableSite", () =>
-      document.getElementById("cookieBannerView-enable-site")
-    );
-    ChromeUtils.defineLazyGetter(this, "_cookieBannerDisableSite", () =>
-      document.getElementById("cookieBannerView-disable-site")
-    );
-  }
-
-  /**
-   * Tests if the current site has a user-created exception from the default
-   * cookie banner handling mode. Currently that means the feature is disabled
-   * for the current site.
-   *
-   * Note: bug 1790688 will move this mode handling logic into the
-   * nsCookieBannerService.
-   *
-   * @returns {boolean} - true if the user has manually created an exception.
-   */
-  get #hasException() {
-    // If the CBH feature is preffed off, we can't have an exception.
-    if (!Services.cookieBanners.isEnabled) {
-      return false;
-    }
-
-    // URLs containing IP addresses are not supported by the CBH service, and
-    // will throw. In this case, users can't create an exception, so initialize
-    // `pref` to the default value returned by `getDomainPref`.
-    let pref = Ci.nsICookieBannerService.MODE_UNSET;
-    try {
-      pref = Services.cookieBanners.getDomainPref(
-        gBrowser.currentURI,
-        this.#isPrivateBrowsing
-      );
-    } catch (ex) {
-      console.error(
-        "Cookie Banner Handling error checking for per-site exceptions: ",
-        ex
-      );
-    }
-    return pref == Ci.nsICookieBannerService.MODE_DISABLED;
-  }
-
-  /**
-   * Tests if the cookie banner handling code supports the current site.
-   *
-   * See nsICookieBannerService.hasRuleForBrowsingContextTree for details.
-   *
-   * @returns {boolean} - true if the base domain is in the list of rules.
-   */
-  get isSiteSupported() {
-    return (
-      Services.cookieBanners.isEnabled &&
-      Services.cookieBanners.hasRuleForBrowsingContextTree(
-        gBrowser.selectedBrowser.browsingContext
-      )
-    );
-  }
-
-  /**
-   * @returns {string} - Base domain (eTLD + 1) used for clearing site data.
-   */
-  get #currentBaseDomain() {
-    return gBrowser.contentPrincipal.baseDomain;
-  }
-
-  /**
-   * Helper method used by both updateSection and updateSubView to map internal
-   * state to UI attribute state. We have to separately set the subview's state
-   * because the subview is not a descendant of the menu item in the DOM, and
-   * we rely on CSS to toggle UI visibility based on attribute state.
-   *
-   * @returns A string value to be set as a UI attribute value.
-   */
-  get #uiState() {
-    if (this.#hasException) {
-      return "site-disabled";
-    } else if (this.isSiteSupported) {
-      return "detected";
-    }
-    return "undetected";
-  }
-
-  updateSection() {
-    let showSection = this.#shouldShowSection();
-    let state = this.#uiState;
-
-    for (let el of [
-      this._cookieBannerSection,
-      this._cookieBannerSectionSeparator,
-    ]) {
-      el.hidden = !showSection;
-    }
-
-    this._cookieBannerSection.dataset.state = state;
-
-    // On unsupported sites, disable button styling and click behavior.
-    // Note: to be replaced with a "please support site" subview in bug 1801971.
-    if (state == "undetected") {
-      this._cookieBannerSection.setAttribute("disabled", true);
-      this._cookieBannerSwitch.classList.remove("subviewbutton-nav");
-      this._cookieBannerSwitch.setAttribute("disabled", true);
-    } else {
-      this._cookieBannerSection.removeAttribute("disabled");
-      this._cookieBannerSwitch.classList.add("subviewbutton-nav");
-      this._cookieBannerSwitch.removeAttribute("disabled");
-    }
-  }
-
-  #shouldShowSection() {
-    // Don't show UI if globally disabled by pref, or if the cookie service
-    // is in detect-only mode.
-    if (!this._uiEnabled || this._serviceDetectOnly) {
-      return false;
-    }
-
-    // Show the section if the feature is not in disabled mode, being sure to
-    // check the different prefs for regular and private windows.
-    if (this.#isPrivateBrowsing) {
-      return (
-        this._serviceModePrefPrivateBrowsing !=
-        Ci.nsICookieBannerService.MODE_DISABLED
-      );
-    }
-    return this._serviceModePref != Ci.nsICookieBannerService.MODE_DISABLED;
-  }
-
-  /*
-   * Updates the cookie banner handling subview just before it's shown.
-   */
-  updateSubView() {
-    this._cookieBannerSubview.dataset.state = this.#uiState;
-
-    let baseDomain = JSON.stringify({ host: this.#currentBaseDomain });
-    this._cookieBannerEnableSite.setAttribute("data-l10n-args", baseDomain);
-    this._cookieBannerDisableSite.setAttribute("data-l10n-args", baseDomain);
-  }
-
-  async #disableCookieBannerHandling() {
-    // We can't clear data during a private browsing session until bug 1818783
-    // is fixed. In the meantime, don't allow the cookie banner controls in a
-    // private window to clear data for regular browsing mode.
-    if (!this.#isPrivateBrowsing) {
-      await SiteDataManager.remove(this.#currentBaseDomain);
-    }
-    Services.cookieBanners.setDomainPref(
-      gBrowser.currentURI,
-      Ci.nsICookieBannerService.MODE_DISABLED,
-      this.#isPrivateBrowsing
-    );
-  }
-
-  #enableCookieBannerHandling() {
-    Services.cookieBanners.removeDomainPref(
-      gBrowser.currentURI,
-      this.#isPrivateBrowsing
-    );
-  }
-
-  async onCookieBannerToggleCommand() {
-    let hasException =
-      this._cookieBannerSection.toggleAttribute("hasException");
-    if (hasException) {
-      await this.#disableCookieBannerHandling();
-      Glean.securityUiProtectionspopup.clickCookiebToggleOff.record();
-    } else {
-      this.#enableCookieBannerHandling();
-      Glean.securityUiProtectionspopup.clickCookiebToggleOn.record();
-    }
-    gProtectionsHandler._hidePopup();
-    gBrowser.reloadTab(gBrowser.selectedTab);
-  }
-})();
-
-/**
  * Utility object to handle manipulations of the protections indicators in the UI
  */
 var gProtectionsHandler = {
@@ -1511,8 +1289,8 @@ var gProtectionsHandler = {
     },
     {
       matchPatterns: ["https://www.tiktok.com/*"],
-      shimId: "TiktokEmbed",
-      displayName: "Tiktok",
+      shimId: "TikTokEmbed",
+      displayName: "TikTok",
     },
     {
       matchPatterns: ["https://platform.twitter.com/*"],
@@ -1577,11 +1355,6 @@ var gProtectionsHandler = {
         )
         .addEventListener("click", () =>
           gProtectionsHandler.openProtections(true)
-        );
-      document
-        .getElementById("protections-popup-cookie-banner-switch")
-        .addEventListener("click", () =>
-          gProtectionsHandler.onCookieBannerClick()
         );
     }
   },
@@ -1910,16 +1683,6 @@ var gProtectionsHandler = {
     await Cryptomining.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-cryptominersView"
-    );
-  },
-
-  async onCookieBannerClick() {
-    if (!cookieBannerHandling.isSiteSupported) {
-      return;
-    }
-    await cookieBannerHandling.updateSubView();
-    this._protectionsPopupMultiView.showSubView(
-      "protections-popup-cookieBannerView"
     );
   },
 
@@ -2339,13 +2102,6 @@ var gProtectionsHandler = {
           value: "cryptominers",
         });
         break;
-      case "protections-popup-cookieBannerView-cancel":
-        gProtectionsHandler._protectionsPopupMultiView.goBack();
-        break;
-      case "protections-popup-cookieBannerView-enable-button":
-      case "protections-popup-cookieBannerView-disable-button":
-        gProtectionsHandler.onCookieBannerToggleCommand();
-        break;
       case "protections-popup-toast-panel-tp-on-desc":
       case "protections-popup-toast-panel-tp-off-desc":
         // Hide the toast first.
@@ -2462,8 +2218,6 @@ var gProtectionsHandler = {
     } else {
       this._protectionsPopup.removeAttribute("milestone");
     }
-
-    cookieBannerHandling.updateSection();
 
     this._protectionsPopup.toggleAttribute("detected", this.anyDetected);
     this._protectionsPopup.toggleAttribute("blocking", this.anyBlocking);
@@ -2762,10 +2516,6 @@ var gProtectionsHandler = {
     delete this._TPSwitchCommanding;
   },
 
-  onCookieBannerToggleCommand() {
-    cookieBannerHandling.onCookieBannerToggleCommand();
-  },
-
   setTrackersBlockedCounter(trackerCount) {
     if (this._earliestRecordedDate) {
       document.l10n.setAttributes(
@@ -2999,7 +2749,7 @@ var gProtectionsHandler = {
           where: message.content.cta_where || "tabshifted",
         },
       },
-      window.browser
+      window.gBrowser.selectedBrowser
     );
 
     // Only send telemetry for non private browsing windows

@@ -48,9 +48,6 @@ function withTestPage(aTaskFn) {
 }
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.trustPanel.featureGate", false]],
-  });
   await SimpleTest.promiseFocus(window);
 });
 
@@ -122,7 +119,7 @@ add_task(async function test_backButton_forwardButton() {
     await fillTestPage(aBrowser, "my_username", "password_3");
 
     let forwardButton = document.getElementById("forward-button");
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return !forwardButton.disabled;
     });
     let forwardPromise = BrowserTestUtils.browserStopped(aBrowser);
@@ -142,7 +139,7 @@ add_task(async function test_reloadButton() {
       "https://example.com" + DIRECTORY_PATH + "formless_basic.html"
     );
 
-    await BrowserTestUtils.waitForCondition(() => {
+    await TestUtils.waitForCondition(() => {
       return !reloadButton.disabled;
     });
     EventUtils.synthesizeMouseAtCenter(reloadButton, {});

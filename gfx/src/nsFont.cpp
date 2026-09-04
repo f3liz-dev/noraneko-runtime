@@ -1,20 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFont.h"
+
 #include "gfxFont.h"          // for gfxFontStyle
 #include "gfxFontFeatures.h"  // for gfxFontFeature, etc
 #include "gfxFontUtils.h"     // for TRUETYPE_TAG
 #include "mozilla/ServoStyleConstsInlines.h"
+#include "mozilla/gfx/2D.h"
 #include "nsCRT.h"    // for nsCRT
 #include "nsDebug.h"  // for NS_ASSERTION
 #include "nsISupports.h"
 #include "nsUnicharUtils.h"
 #include "nscore.h"  // for char16_t
-#include "mozilla/gfx/2D.h"
 
 using namespace mozilla;
 
@@ -36,7 +35,7 @@ bool nsFont::Equals(const nsFont& aOther) const {
 
 nsFont::MaxDifference nsFont::CalcDifference(const nsFont& aOther) const {
   if ((style != aOther.style) || (weight != aOther.weight) ||
-      (stretch != aOther.stretch) || (size != aOther.size) ||
+      (width != aOther.width) || (size != aOther.size) ||
       (sizeAdjust != aOther.sizeAdjust) || (family != aOther.family) ||
       (kerning != aOther.kerning) || (opticalSizing != aOther.opticalSizing) ||
       (synthesisWeight != aOther.synthesisWeight) ||

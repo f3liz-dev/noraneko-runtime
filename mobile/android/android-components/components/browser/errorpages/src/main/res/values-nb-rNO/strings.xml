@@ -9,6 +9,18 @@
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Prøv igjen</string>
+  <!-- The button on an error page that checks whether an archived copy of the unreachable page exists. -->
+  <string name="mozac_browser_errorpages_archive_check_button">Sjekk arkivert versjon</string>
+  <!-- The label shown on the archive button while the archived copy is being looked up. -->
+  <string name="mozac_browser_errorpages_archive_checking">Sjekker arkivet</string>
+  <!-- The message shown when no archived copy of the unreachable page could be found. -->
+  <string name="mozac_browser_errorpages_archive_not_found">Ingen arkivert versjon funnet.</string>
+  <!-- A link, shown after no archived copy was found, that searches the web for the page instead. -->
+  <string name="mozac_browser_errorpages_archive_search_web">Søk på nettet.</string>
+  <!-- The message shown when the archive service could not be reached to look up an archived copy. -->
+  <string name="mozac_browser_errorpages_archive_unreachable">Kunne ikke nå arkivtjenesten.</string>
+  <!-- A link, shown after the archive service could not be reached, that retries the lookup. -->
+  <string name="mozac_browser_errorpages_archive_retry">Prøv på nytt.</string>
   <!-- The document title and heading of an error page shown when a website cannot be loaded for an unknown reason. -->
   <string name="mozac_browser_errorpages_generic_title">Klarte ikke fullføre forspørselen</string>
   <!-- The error message shown when a website cannot be loaded for an unknown reason. -->
@@ -88,7 +100,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">Adressen ikke funnet</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Nettleseren kunne ikke finne serveren for den oppgitte adressen.</p>\n<ul>\n<li>Kontroller adressen for skrivefeil som f.eks <strong>ww</strong>.example.com i stedet for <strong>www</strong>.example.com.</li>\n<li>Hvis du ikke kan laste noen sider, kan du sjekke enhetens data- eller Wi-Fi-tilkobling.</li>\n</ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Nettleseren fant ikke serveren for den oppgitte adressen.</p>\n<ul>\n<li>Kontroller adressen for skrivefeil som f.eks <strong>ww</strong>.example.com i stedet for <strong>www</strong>.example.com.</li>\n<li>Hvis du ikke kan laste noen sider, kan du sjekke enhetens data- eller Wi-Fi-tilkobling.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">Det ser ut til at det er et problem med Internett-tilkoblingen din</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -142,6 +140,12 @@ class SparseBitmap {
   ~SparseBitmap();
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
+
+  [[nodiscard]] MOZ_ALWAYS_INLINE bool ensureBitExists(size_t bit) {
+    size_t word = bit / JS_BITS_PER_WORD;
+    size_t blockWord = blockStartWord(word);
+    return getOrCreateBlock(blockWord / WordsInBlock);
+  }
 
   [[nodiscard]] MOZ_ALWAYS_INLINE bool setBit(size_t bit) {
     size_t word = bit / JS_BITS_PER_WORD;

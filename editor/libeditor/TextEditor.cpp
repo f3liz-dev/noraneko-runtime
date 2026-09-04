@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -42,7 +41,8 @@
 #include "nsCaret.h"
 #include "nsCharTraits.h"
 #include "nsComponentManagerUtils.h"
-#include "nsContentList.h"
+#include "mozilla/dom/ContentList.h"
+#include "mozilla/Utf16.h"
 #include "nsDebug.h"
 #include "nsDependentSubstring.h"
 #include "nsError.h"
@@ -409,7 +409,7 @@ nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
   if (!StaticPrefs::dom_event_keypress_dispatch_once_per_surrogate_pair() &&
       !StaticPrefs::dom_event_keypress_key_allow_lone_surrogate() &&
       aKeyboardEvent->mKeyValue.IsEmpty() &&
-      IS_SURROGATE(aKeyboardEvent->mCharCode)) {
+      mozilla::IsSurrogate(aKeyboardEvent->mCharCode)) {
     return NS_OK;
   }
   // Our widget shouldn't set `\r` to `mKeyValue`, but it may be synthesized
@@ -707,7 +707,8 @@ nsresult TextEditor::HandlePasteAsQuotation(
   }
 
   if (!flavor.EqualsLiteral(kTextMime) &&
-      !flavor.EqualsLiteral(kMozTextInternal)) {
+      !flavor.EqualsLiteral(kMozTextInternal) &&
+      !flavor.EqualsLiteral(kURLDataMime)) {
     return NS_OK;
   }
 
@@ -838,46 +839,47 @@ nsresult TextEditor::OnFocus(const nsINode& aOriginalEventTargetNode) {
           ("%p: OnFocus(aOriginalEventTargetNode=%s)", this,
            ToString(RefPtr{&aOriginalEventTargetNode}).c_str()));
 
-  RefPtr<PresShell> presShell = GetPresShell();
-  if (MOZ_UNLIKELY(!presShell)) {
-    LogOrWarn(this, gTextEditorLog, LogLevel::Error, "!presShell");
-    return NS_ERROR_FAILURE;
-  }
-  // Let's update the layout information right now because there are some
-  // pending notifications and flushing them may cause destroying the editor.
-  presShell->FlushPendingNotifications(FlushType::Layout);
-  if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
-    MOZ_LOG(gTextEditorLog, LogLevel::Debug,
-            ("%p: CanKeepHandlingFocusEvent() returned false", this));
-    return NS_OK;
-  }
-
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
     LogOrWarn(this, gTextEditorLog, LogLevel::Error,
               "AutoEditActionDataSetter::CanHandle() failed");
     return NS_ERROR_FAILURE;
   }
+  return EditorBase::OnFocus(aOriginalEventTargetNode);
+}
+
+void TextEditor::PostHandleFocusEvent(const nsINode& aFocusEventTargetNode) {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: PostHandleFocusEvent(aFocusEvent={ "
+           "GetOriginalEventTarget()=%s }), %s",
+           this, ToString(RefPtr{&aFocusEventTargetNode}).c_str(),
+           GetFocusedElement() ? "but already lost focus" : "still has focus"));
+
+  AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
+  if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "AutoEditActionDataSetter::CanHandle() failed");
+    return;
+  }
 
   // Spell check a textarea the first time that it is focused.
   nsresult rv = FlushPendingSpellCheck();
-  if (MOZ_UNLIKELY(rv == NS_ERROR_EDITOR_DESTROYED)) {
+  if (rv == NS_ERROR_EDITOR_DESTROYED) [[unlikely]] {
     LogOrWarn(this, gTextEditorLog, LogLevel::Error,
               "EditorBase::FlushPendingSpellCheck() failed");
-    return NS_ERROR_EDITOR_DESTROYED;
+    return;
   }
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
       "EditorBase::FlushPendingSpellCheck() failed, but ignored");
-  if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
+  if (!CanKeepHandlingFocusEvent(aFocusEventTargetNode)) [[unlikely]] {
     MOZ_LOG(gTextEditorLog, LogLevel::Debug,
             ("%p: CanKeepHandlingFocusEvent() returned false after "
              "FlushPendingSpellCheck()",
              this));
-    return NS_OK;
+    return;
   }
-
-  return EditorBase::OnFocus(aOriginalEventTargetNode);
+  EditorBase::PostHandleFocusEvent(aFocusEventTargetNode);
 }
 
 nsresult TextEditor::OnBlur(const EventTarget* aEventTarget) {
@@ -1042,9 +1044,9 @@ void TextEditor::MaskString(nsString& aString, const Text& aTextNode,
 
   const char16_t kPasswordMask = TextEditor::PasswordMask();
   for (uint32_t i = aStartOffsetInString; i < aString.Length(); ++i) {
-    bool isSurrogatePair = NS_IS_HIGH_SURROGATE(aString.CharAt(i)) &&
+    bool isSurrogatePair = mozilla::IsHighSurrogate(aString.CharAt(i)) &&
                            i < aString.Length() - 1 &&
-                           NS_IS_LOW_SURROGATE(aString.CharAt(i + 1));
+                           mozilla::IsLowSurrogate(aString.CharAt(i + 1));
     if (i < unmaskStart || i >= unmaskStart + unmaskLength) {
       if (isSurrogatePair) {
         aString.SetCharAt(kPasswordMask, i);

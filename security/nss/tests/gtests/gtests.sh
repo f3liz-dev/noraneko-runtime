@@ -56,11 +56,15 @@ gtest_start()
     DIR="${GTESTDIR}/$i"
     html_head "$i"
     if [ ! -d "$DIR" ]; then
-      mkdir -p "$DIR"
-      echo "${BINDIR}/certutil" -N -d "$DIR" --empty-password 2>&1
-      "${BINDIR}/certutil" -N -d "$DIR" --empty-password 2>&1
-
-      PROFILEDIR="$DIR" make_cert dummy p256 sign
+      "${QADIR}/gtests/gtest_db.sh" "$DIR" "${BINDIR}/certutil" "${R_NOISE_FILE}"
+      html_msg $? 0 "create gtest certificates for $i"
+      # smime_gtest decodes an AuthEnvelopedData blob (RFC 5083) encrypted to
+      # Fran; import that identity into this suite's DB only, so sibling suites'
+      # cert-count expectations are unaffected.
+      if [ "$i" = "smime_gtest" ]; then
+        "${BINDIR}/pk12util" -d "$DIR" -i "${QADIR}/smime/interop-openssl/Fran.p12" -W nss -K "" >/dev/null
+        html_msg $? 0 "import Fran's identity for $i"
+      fi
     fi
     pushd "$DIR"
     GTESTREPORT="$DIR/report.xml"
@@ -95,7 +99,7 @@ gtest_cleanup()
 }
 
 ################## main #################################################
-GTESTS="${GTESTS:-base_gtest certhigh_gtest certdb_gtest der_gtest pk11_gtest util_gtest freebl_gtest softoken_gtest sysinit_gtest smime_gtest mozpkix_gtest}"
+GTESTS="${GTESTS:-base_gtest certhigh_gtest certdb_gtest der_gtest pk11_gtest util_gtest freebl_gtest softoken_gtest sysinit_gtest smime_gtest mozpkix_gtest cryptohi_gtest}"
 gtest_init "$0"
 gtest_start
 gtest_cleanup

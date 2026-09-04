@@ -20,19 +20,24 @@ class MediaTransportChild : public dom::PMediaTransportChild {
 
   mozilla::ipc::IPCResult RecvOnCandidate(const string& transportId,
                                           CandidateInfo&& candidateInfo);
+  mozilla::ipc::IPCResult RecvOnCandidateError(
+      IceCandidateErrorInfo&& errorInfo);
   mozilla::ipc::IPCResult RecvOnAlpnNegotiated(const string& alpn);
-  mozilla::ipc::IPCResult RecvOnGatheringStateChange(const string& transportId,
-                                                     const int& state);
-  mozilla::ipc::IPCResult RecvOnConnectionStateChange(const string& transportId,
-                                                      const int& state);
+  mozilla::ipc::IPCResult RecvOnGatheringStateChange(
+      const string& transportId, const RTCIceGathererState& state);
+  mozilla::ipc::IPCResult RecvOnConnectionStateChange(
+      const string& transportId, const RTCIceTransportState& state,
+      const Maybe<IceCandidateAttributePair>& selectedPair);
   mozilla::ipc::IPCResult RecvOnPacketReceived(string&& transportId,
                                                MediaPacket&& packet);
   mozilla::ipc::IPCResult RecvOnEncryptedSending(const string& transportId,
                                                  MediaPacket&& packet);
-  mozilla::ipc::IPCResult RecvOnStateChange(const string& transportId,
-                                            const int& state);
-  mozilla::ipc::IPCResult RecvOnRtcpStateChange(const string& transportId,
-                                                const int& state);
+  mozilla::ipc::IPCResult RecvOnStateChange(
+      const string& transportId, const TransportLayerState& state,
+      nsTArray<nsTArray<uint8_t>>&& remoteCerts, Maybe<RTCErrorParams> error);
+  mozilla::ipc::IPCResult RecvOnRtcpStateChange(
+      const string& transportId, const TransportLayerState& state,
+      Maybe<RTCErrorParams> error);
 
  private:
   virtual ~MediaTransportChild();

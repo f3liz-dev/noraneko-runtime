@@ -1,64 +1,62 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIThreadRetargetableStreamListener.h"
-#include "nsString.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Components.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/StaticPrefs_content.h"
-#include "mozilla/StoragePrincipalHelper.h"
-
 #include "nsCORSListenerProxy.h"
-#include "nsIChannel.h"
-#include "nsIHttpChannel.h"
+
+#include <algorithm>
+
 #include "HttpChannelChild.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsError.h"
-#include "nsContentUtils.h"
-#include "nsNetUtil.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsServiceManagerUtils.h"
-#include "nsMimeTypes.h"
-#include "nsStringStream.h"
-#include "nsGkAtoms.h"
-#include "nsWhitespaceTokenizer.h"
-#include "nsIChannelEventSink.h"
-#include "nsIDNSRecord.h"
-#include "nsIDNSService.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsAsyncRedirectVerifyHelper.h"
-#include "nsClassHashtable.h"
-#include "nsHashKeys.h"
-#include "nsStreamUtils.h"
-#include "mozilla/Preferences.h"
-#include "nsIScriptError.h"
-#include "nsILoadGroup.h"
-#include "nsILoadContext.h"
-#include "nsIConsoleService.h"
-#include "nsICORSPreflightCache.h"
-#include "nsINetworkInterceptController.h"
-#include "nsICorsPreflightCallback.h"
-#include "nsISupportsImpl.h"
-#include "nsHttpChannel.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
 #include "mozilla/ExpandedPrincipal.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
-#include "nsIHttpHeaderVisitor.h"
-#include "nsQueryObject.h"
-#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_content.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-#include <algorithm>
+#include "nsAsyncRedirectVerifyHelper.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsClassHashtable.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsHashKeys.h"
+#include "nsHttpChannel.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsICORSPreflightCache.h"
+#include "nsIChannel.h"
+#include "nsIChannelEventSink.h"
+#include "nsIConsoleService.h"
+#include "nsICorsPreflightCallback.h"
+#include "nsIDNSRecord.h"
+#include "nsIDNSService.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIHttpHeaderVisitor.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsILoadContext.h"
+#include "nsILoadGroup.h"
+#include "nsINetworkInterceptController.h"
+#include "nsIScriptError.h"
+#include "nsISupportsImpl.h"
+#include "nsIThreadRetargetableStreamListener.h"
+#include "nsMimeTypes.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStreamUtils.h"
+#include "nsString.h"
+#include "nsStringStream.h"
+#include "nsWhitespaceTokenizer.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -106,7 +104,7 @@ static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
   }
   NS_ConvertUTF8toUTF16 specUTF16(spec);
   rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, aProperty, params, blockedMessage);
+      PropertiesFile::SECURITY_PROPERTIES, aProperty, params, blockedMessage);
 
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to log blocked cross-site request (no formalizedStr");
@@ -356,26 +354,38 @@ bool CORSCacheEntry::CheckDNSCache() {
     return false;
   }
 
-  nsCOMPtr<nsIDNSRecord> record;
-  nsresult rv = dns->ResolveNative(host, nsIDNSService::RESOLVE_OFFLINE, mOA,
-                                   getter_AddRefs(record));
-  if (NS_FAILED(rv) || !record) {
-    return false;
+  // Happy Eyeballs resolves each address family separately, so the host may be
+  // cached only as per-family (AF_INET/AF_INET6) records with no AF_UNSPEC
+  // entry. Check each family: the cached preflight is still valid as long as a
+  // matching DNS entry exists and none was updated after the preflight was
+  // created.
+  const nsIDNSService::DNSFlags familyFlags[] = {
+      nsIDNSService::RESOLVE_DEFAULT_FLAGS,  // AF_UNSPEC
+      nsIDNSService::RESOLVE_DISABLE_IPV6,   // AF_INET
+      nsIDNSService::RESOLVE_DISABLE_IPV4,   // AF_INET6
+  };
+
+  bool foundRecord = false;
+  for (const auto& flags : familyFlags) {
+    nsCOMPtr<nsIDNSRecord> record;
+    nsresult rv =
+        dns->ResolveNative(host, nsIDNSService::RESOLVE_OFFLINE | flags, mOA,
+                           getter_AddRefs(record));
+    nsCOMPtr<nsIDNSAddrRecord> addrRec = do_QueryInterface(record);
+    if (NS_FAILED(rv) || !addrRec) {
+      continue;
+    }
+
+    foundRecord = true;
+    TimeStamp lastUpdate;
+    (void)addrRec->GetLastUpdate(&lastUpdate);
+    if (lastUpdate > mCreationTime) {
+      // The DNS result was re-resolved after the preflight was cached.
+      return false;
+    }
   }
 
-  nsCOMPtr<nsIDNSAddrRecord> addrRec = do_QueryInterface(record);
-  if (!addrRec) {
-    return false;
-  }
-
-  TimeStamp lastUpdate;
-  (void)addrRec->GetLastUpdate(&lastUpdate);
-
-  if (lastUpdate > mCreationTime) {
-    return false;
-  }
-
-  return true;
+  return foundRecord;
 }
 
 bool CORSCacheEntry::CheckRequest(const nsCString& aMethod,

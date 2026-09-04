@@ -6,9 +6,15 @@
 
 package mozilla.components.browser.storage.sync
 
-import mozilla.appservices.places.SyncAuthInfo
 import mozilla.appservices.places.uniffi.BookmarkItem
+import mozilla.appservices.places.uniffi.BookmarkPosition
 import mozilla.appservices.places.uniffi.HistoryMetadataPageMissingBehavior
+import mozilla.appservices.places.uniffi.HistoryVisitInfo
+import mozilla.appservices.places.uniffi.InsertableBookmark
+import mozilla.appservices.places.uniffi.InsertableBookmarkFolder
+import mozilla.appservices.places.uniffi.InsertableBookmarkItem
+import mozilla.appservices.places.uniffi.InsertableBookmarkSeparator
+import mozilla.appservices.places.uniffi.NoteHistoryMetadataObservationOptions
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.concept.storage.DocumentType
@@ -21,21 +27,11 @@ import mozilla.components.concept.storage.HistoryMetadataObservation
 import mozilla.components.concept.storage.TopFrecentSiteInfo
 import mozilla.components.concept.storage.VisitInfo
 import mozilla.components.concept.storage.VisitType
+import mozilla.components.concept.storage.bookmarks.InsertableBookmarkTreeNode
+import mozilla.components.concept.storage.bookmarks.InsertableBookmarkTreeRoot
 
 // We have type definitions at the concept level, and "external" types defined within Places.
 // In practice these two types are largely the same, and this file is the conversion point.
-
-/**
- * Conversion from our SyncAuthInfo into its "native" version used at the interface boundary.
- */
-internal fun mozilla.components.concept.sync.SyncAuthInfo.into(): SyncAuthInfo {
-    return SyncAuthInfo(
-        kid = this.kid,
-        fxaAccessToken = this.fxaAccessToken,
-        syncKey = this.syncKey,
-        tokenserverURL = this.tokenServerUrl,
-    )
-}
 
 /**
  * Conversion from a generic [FrecencyThresholdOption] into its richer comrade within the 'places' lib.
@@ -74,7 +70,7 @@ internal fun mozilla.appservices.places.uniffi.VisitType.into() = when (this) {
     mozilla.appservices.places.uniffi.VisitType.FRAMED_LINK -> VisitType.FRAMED_LINK
 }
 
-internal fun mozilla.appservices.places.uniffi.HistoryVisitInfo.into(): VisitInfo {
+internal fun HistoryVisitInfo.into(): VisitInfo {
     return VisitInfo(
         url = this.url,
         title = this.title,
@@ -248,7 +244,7 @@ internal fun HistoryMetadataObservation.options() = when (this) {
     is HistoryMetadataObservation.ViewTimeObservation -> {
         // Don't record view time observations if the page has been
         // removed from history (bug 1869369).
-        mozilla.appservices.places.uniffi.NoteHistoryMetadataObservationOptions(
+        NoteHistoryMetadataObservationOptions(
             ifPageMissing = HistoryMetadataPageMissingBehavior.IGNORE_OBSERVATION,
         )
     }
@@ -256,8 +252,53 @@ internal fun HistoryMetadataObservation.options() = when (this) {
         // ...But record document type observations, because these might be
         // recorded on first load, before a page has been added to history
         // (bug 1927543, comment 1).
-        mozilla.appservices.places.uniffi.NoteHistoryMetadataObservationOptions(
+        NoteHistoryMetadataObservationOptions(
             ifPageMissing = HistoryMetadataPageMissingBehavior.INSERT_PAGE,
         )
+    }
+}
+
+internal fun InsertableBookmarkTreeRoot.toPlacesItem() = rootFolder.toPlacesItem(parentGuid)
+internal val InsertableBookmarkTreeNode.bookmarkPosition get() = position?.let {
+    BookmarkPosition.Specific(it)
+} ?: BookmarkPosition.Append
+internal fun InsertableBookmarkTreeNode.Folder.toPlacesItem(parentGuid: String = "") = InsertableBookmarkItem.Folder(
+    InsertableBookmarkFolder(
+        parentGuid = parentGuid,
+        position = bookmarkPosition,
+        dateAdded = dateAddedTimestamp,
+        lastModified = lastModifiedTimestamp,
+        title = title,
+        children = children.map { it.toPlacesItem() },
+    ),
+)
+
+internal fun InsertableBookmarkTreeNode.Item.toPlacesItem(parentGuid: String = "") = InsertableBookmarkItem.Bookmark(
+    InsertableBookmark(
+        parentGuid = parentGuid,
+        position = bookmarkPosition,
+        dateAdded = dateAddedTimestamp,
+        lastModified = lastModifiedTimestamp,
+        url = url,
+        title = title,
+    ),
+)
+
+internal fun InsertableBookmarkTreeNode.Separator.toPlacesItem(
+    parentGuid: String = "",
+) = InsertableBookmarkItem.Separator(
+    InsertableBookmarkSeparator(
+        parentGuid = parentGuid,
+        position = bookmarkPosition,
+        dateAdded = 0L,
+        lastModified = 0L,
+    ),
+)
+
+internal fun InsertableBookmarkTreeNode.toPlacesItem(parentGuid: String = ""): InsertableBookmarkItem {
+    return when (this) {
+        is InsertableBookmarkTreeNode.Folder -> this.toPlacesItem(parentGuid)
+        is InsertableBookmarkTreeNode.Item -> this.toPlacesItem(parentGuid)
+        is InsertableBookmarkTreeNode.Separator -> this.toPlacesItem(parentGuid)
     }
 }

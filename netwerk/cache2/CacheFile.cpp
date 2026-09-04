@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "CacheCrypto.h"
 #include "CacheFileChunk.h"
 #include "CacheFileInputStream.h"
 #include "CacheFileOutputStream.h"
@@ -14,8 +15,8 @@
 #include "CacheIndex.h"
 #include "CacheLog.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/glean/NetwerkCache2Metrics.h"
 #include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/glean/NetwerkCache2Metrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsICacheEntry.h"
 #include "nsProxyRelease.h"
@@ -560,6 +561,10 @@ nsresult CacheFile::OnFileOpened(CacheFileHandle* aHandle, nsresult aResult) {
         // The entry was initialized as createNew, don't try to read metadata.
         mMetadata->SetHandle(mHandle);
 
+        // Set up encryption before any cached chunk is flushed below, so the
+        // chunks are written with the entry's salt.
+        SetupEncryption();
+
         // Write all cached chunks, otherwise they may stay unwritten.
         for (auto iter = mCachedChunks.Iter(); !iter.Done(); iter.Next()) {
           uint32_t idx = iter.Key();
@@ -647,6 +652,41 @@ nsresult CacheFile::OnMetadataRead(nsresult aResult) {
           mDataSize = 0;
         } else {
           PreloadChunks(0);
+        }
+      }
+
+      if (isNew) {
+        // A brand-new disk entry: enable encryption (and generate its salt)
+        // when the feature is on, before any data is written.
+        SetupEncryption();
+      } else if (mHandle && !mHandle->IsDoomed()) {
+        // The entry metadata on disk is not rewritten on read hits, so its
+        // lastFetched/fetchCount may be stale after a restart. Restore them
+        // from the index, which is updated on every hit, when the index value
+        // is at least as fresh. This must happen before InitIndexEntry() below,
+        // which pushes the metadata's values back into the index. The index
+        // values are copied out of the (synchronously invoked) callback so that
+        // mMetadata, which is guarded by our lock, is only touched here where
+        // the lock is visibly held.
+        uint32_t indexLastFetched = 0;
+        uint32_t indexFetchCount = 0;
+        bool haveIndexStats = false;
+        // HasEntry() writes *status unconditionally and only invokes the
+        // callback when the entry exists, so whether we have usable stats is
+        // conveyed by haveIndexStats. The required status out-param and the
+        // returned nsresult are intentionally not inspected: on any failure the
+        // callback simply never runs and haveIndexStats stays false.
+        CacheIndex::EntryStatus status;
+        (void)CacheIndex::HasEntry(
+            *mHandle->Hash(), &status, [&](const CacheIndexEntry* aIndexEntry) {
+              if (aIndexEntry->IsInitialized()) {
+                indexLastFetched = aIndexEntry->GetLastFetched();
+                indexFetchCount = aIndexEntry->GetFetchCount();
+                haveIndexStats = true;
+              }
+            });
+        if (haveIndexStats && indexFetchCount >= mMetadata->GetFetchCount()) {
+          mMetadata->RestoreAccessStats(indexLastFetched, indexFetchCount);
         }
       }
 
@@ -1069,7 +1109,7 @@ nsresult CacheFile::DoomLocked(CacheFileListener* aCallback) {
   if (mHandle) {
     rv = CacheFileIOManager::DoomFile(mHandle, listener);
   } else if (mOpeningFile) {
-    mDoomAfterOpenListener = listener;
+    mDoomAfterOpenListener = std::move(listener);
   }
 
   return rv;
@@ -1193,8 +1233,9 @@ nsresult CacheFile::SetFrecency(uint32_t aFrecency) {
   MOZ_ASSERT(mMetadata);
   NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
 
-  PostWriteTimer();
-
+  // No PostWriteTimer() here: frecency is persisted via the index update below,
+  // not by rewriting the entry file on every hit. See CacheFileMetadata::
+  // SetFrecency().
   if (mHandle && !mHandle->IsDoomed()) {
     CacheFileIOManager::UpdateIndexEntry(mHandle, &aFrecency, nullptr, nullptr,
                                          nullptr, nullptr);
@@ -1240,16 +1281,9 @@ nsresult CacheFile::SetNetworkTimes(uint64_t aOnStartTime,
     return rv;
   }
 
-  uint16_t onStartTime16 = aOnStartTime <= kIndexTimeOutOfBound
-                               ? aOnStartTime
-                               : kIndexTimeOutOfBound;
-  uint16_t onStopTime16 =
-      aOnStopTime <= kIndexTimeOutOfBound ? aOnStopTime : kIndexTimeOutOfBound;
-
-  if (mHandle && !mHandle->IsDoomed()) {
-    CacheFileIOManager::UpdateIndexEntry(
-        mHandle, nullptr, nullptr, &onStartTime16, &onStopTime16, nullptr);
-  }
+  // The onStart/onStop times are persisted in the entry metadata only; they are
+  // no longer mirrored into the index (those record bytes now hold
+  // lastFetched/fetchCount).
   return NS_OK;
 }
 
@@ -1383,9 +1417,17 @@ nsresult CacheFile::OnFetched() {
   MOZ_ASSERT(mMetadata);
   NS_ENSURE_TRUE(mMetadata, NS_ERROR_UNEXPECTED);
 
-  PostWriteTimer();
-
+  // No PostWriteTimer(): updating access stats must not rewrite the entry file.
+  // The updated lastFetched/fetchCount are persisted durably through the index
+  // instead.
   mMetadata->OnFetched();
+
+  if (mHandle && !mHandle->IsDoomed()) {
+    uint32_t lastFetched = mMetadata->GetLastFetched();
+    uint32_t fetchCount = mMetadata->GetFetchCount();
+    CacheFileIOManager::UpdateIndexEntry(mHandle, nullptr, nullptr,
+                                         &lastFetched, &fetchCount, nullptr);
+  }
   return NS_OK;
 }
 
@@ -1498,6 +1540,9 @@ nsresult CacheFile::GetChunkLocked(uint32_t aIndex, ECallerType aCaller,
          chunk.get(), this));
 
     // Read the chunk from the disk
+    if (mMetadata->IsEncrypted()) {
+      chunk->SetEncrypted();
+    }
     rv = chunk->Read(mHandle,
                      std::min(static_cast<uint32_t>(mDataSize - off),
                               static_cast<uint32_t>(kChunkSize)),
@@ -1773,6 +1818,9 @@ nsresult CacheFile::DeactivateChunk(CacheFileChunk* aChunk) {
 
       mDataIsDirty = true;
 
+      if (mMetadata->IsEncrypted()) {
+        chunk->SetEncrypted();
+      }
       rv = chunk->Write(mHandle, this);
       if (NS_FAILED(rv)) {
         LOG(
@@ -2510,6 +2558,36 @@ void CacheFile::SetError(nsresult aStatus) {
   }
 }
 
+void CacheFile::SetupEncryption() {
+  AssertOwnsLock();
+
+  // Only brand-new, disk-backed entries with no data yet are marked: this fixes
+  // an entry's encryption state at creation and never flips an existing
+  // plaintext entry. Existing entries read from disk carry their flag in the
+  // metadata header. The cipher uses a per-block random nonce and a per-block
+  // derived key, so no per-entry key material needs to be generated here.
+  if (mMemoryOnly || !mMetadata || mMetadata->IsEncrypted() || mDataSize != 0) {
+    return;
+  }
+
+  if (!CacheCrypto::IsActive()) {
+    if (CacheCrypto::IsEnabled()) {
+      // Fail closed: encryption is enabled but no usable cipher is available
+      // (e.g. NSS or key load failed). Never write the entry as plaintext --
+      // mark it errored so it is doomed instead of persisted or served.
+      LOG(
+          ("CacheFile::SetupEncryption() - encryption enabled but no cipher "
+           "available, failing entry [this=%p]",
+           this));
+      SetError(NS_ERROR_NOT_AVAILABLE);
+    }
+    // Otherwise encryption is off and a plaintext entry is intended.
+    return;
+  }
+
+  mMetadata->SetEncrypted();
+}
+
 nsresult CacheFile::InitIndexEntry() {
   AssertOwnsLock();
   MOZ_ASSERT(mHandle);
@@ -2528,22 +2606,8 @@ nsresult CacheFile::InitIndexEntry() {
   bool hasAltData =
       mMetadata->GetElement(CacheFileUtils::kAltDataKey) != nullptr;
 
-  static auto toUint16 = [](const char* s) -> uint16_t {
-    if (s) {
-      nsresult rv;
-      uint64_t n64 = nsDependentCString(s).ToInteger64(&rv);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
-      return n64 <= kIndexTimeOutOfBound ? n64 : kIndexTimeOutOfBound;
-    }
-    return kIndexTimeNotAvailable;
-  };
-
-  const char* onStartTimeStr =
-      mMetadata->GetElement("net-response-time-onstart");
-  uint16_t onStartTime = toUint16(onStartTimeStr);
-
-  const char* onStopTimeStr = mMetadata->GetElement("net-response-time-onstop");
-  uint16_t onStopTime = toUint16(onStopTimeStr);
+  uint32_t lastFetched = mMetadata->GetLastFetched();
+  uint32_t fetchCount = mMetadata->GetFetchCount();
 
   const char* contentTypeStr = mMetadata->GetElement("ctid");
   uint8_t contentType = nsICacheEntry::CONTENT_TYPE_UNKNOWN;
@@ -2557,7 +2621,7 @@ nsresult CacheFile::InitIndexEntry() {
   }
 
   rv = CacheFileIOManager::UpdateIndexEntry(
-      mHandle, &frecency, &hasAltData, &onStartTime, &onStopTime, &contentType);
+      mHandle, &frecency, &hasAltData, &lastFetched, &fetchCount, &contentType);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

@@ -2,6 +2,7 @@
    unix64.S - Copyright (c) 2013  The Written Word, Inc.
 	    - Copyright (c) 2008  Red Hat, Inc
 	    - Copyright (c) 2002  Bo Thorsen <bo@suse.de>
+	    - Copyright (c) 2026  Anthony Green
 
    x86-64 Foreign Function Interface 
 
@@ -39,7 +40,10 @@
    actual table.  The entry points into the table are all 8 bytes.
    The use of ORG asserts that we're at the correct location.  */
 /* ??? The clang assembler doesn't handle .org with symbolic expressions.  */
-#if defined(__clang__) || defined(__APPLE__) || (defined (__sun__) && defined(__svr4__))
+#ifdef __CET__
+/* Double slot size to 16 byte to add 4 bytes of ENDBR64.  */
+# define E(BASE, X)	.balign 8; .org BASE + X * 16
+#elif defined(__clang__) || defined(__APPLE__) || (defined (__sun__) && defined(__svr4__))
 # define E(BASE, X)	.balign 8
 #else
 # define E(BASE, X)	.balign 8; .org BASE + X * 8
@@ -58,6 +62,7 @@
 
 C(ffi_call_unix64):
 L(UW0):
+	_CET_ENDBR
 	movq	(%rsp), %r10		/* Load return address.  */
 	leaq	(%rdi, %rsi), %rax	/* Find local stack base.  */
 	movq	%rdx, (%rax)		/* Save flags.  */
@@ -79,7 +84,6 @@ L(UW1):
 
 	movq	%rdi, %r10		/* Save a copy of the register area. */
 	movq	%r8, %r11		/* Save a copy of the target fn.  */
-	movl	%r9d, %eax		/* Set number of SSE registers.  */
 
 	/* Load up all argument registers.  */
 	movq	(%r10), %rdi
@@ -88,7 +92,7 @@ L(UW1):
 	movq	0x18(%r10), %rcx
 	movq	0x20(%r10), %r8
 	movq	0x28(%r10), %r9
-	movl	0xb0(%r10), %eax
+	movl	0xb0(%r10), %eax	/* Set number of SSE registers.  */
 	testl	%eax, %eax
 	jnz	L(load_sse)
 L(ret_from_load_sse):
@@ -116,6 +120,11 @@ L(UW2):
 	movzbl	%cl, %r10d
 	leaq	L(store_table)(%rip), %r11
 	ja	L(sa)
+#ifdef __CET__
+	/* NB: Originally, each slot is 8 byte.  4 bytes of ENDBR64 +
+	   4 bytes NOP padding double slot size to 16 bytes.  */
+	addl	%r10d, %r10d
+#endif
 	leaq	(%r11, %r10, 8), %r10
 
 	/* Prep for the structure cases: scratch area in redzone.  */
@@ -125,58 +134,81 @@ L(UW2):
 	.balign	8
 L(store_table):
 E(L(store_table), UNIX64_RET_VOID)
+	_CET_ENDBR
 	ret
 E(L(store_table), UNIX64_RET_UINT8)
+	_CET_ENDBR
 	movzbl	%al, %eax
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_UINT16)
+	_CET_ENDBR
 	movzwl	%ax, %eax
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_UINT32)
+	_CET_ENDBR
 	movl	%eax, %eax
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_SINT8)
+	_CET_ENDBR
 	movsbq	%al, %rax
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_SINT16)
+	_CET_ENDBR
 	movswq	%ax, %rax
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_SINT32)
+	_CET_ENDBR
 	cltq
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_INT64)
+	_CET_ENDBR
 	movq	%rax, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_XMM32)
+	_CET_ENDBR
 	movd	%xmm0, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_XMM64)
+	_CET_ENDBR
 	movq	%xmm0, (%rdi)
 	ret
 E(L(store_table), UNIX64_RET_X87)
+	_CET_ENDBR
 	fstpt	(%rdi)
 	ret
 E(L(store_table), UNIX64_RET_X87_2)
+	_CET_ENDBR
 	fstpt	(%rdi)
 	fstpt	16(%rdi)
 	ret
 E(L(store_table), UNIX64_RET_ST_XMM0_RAX)
+	_CET_ENDBR
 	movq	%rax, 8(%rsi)
 	jmp	L(s3)
 E(L(store_table), UNIX64_RET_ST_RAX_XMM0)
+	_CET_ENDBR
 	movq	%xmm0, 8(%rsi)
 	jmp	L(s2)
 E(L(store_table), UNIX64_RET_ST_XMM0_XMM1)
+	_CET_ENDBR
 	movq	%xmm1, 8(%rsi)
 	jmp	L(s3)
 E(L(store_table), UNIX64_RET_ST_RAX_RDX)
+	_CET_ENDBR
 	movq	%rdx, 8(%rsi)
+	jmp	L(s2)
+E(L(store_table), UNIX64_RET_XMM128)
+	_CET_ENDBR
+	movups	%xmm0, (%rdi)
+	ret
+
+	.balign 8
 L(s2):
 	movq	%rax, (%rsi)
 	shrl	$UNIX64_SIZE_SHIFT, %ecx
@@ -211,6 +243,154 @@ L(load_sse):
 L(UW4):
 ENDF(C(ffi_call_unix64))
 
+/* Lean trampoline for the plan fast path: no stack args, simple return.
+   struct { UINT64 rax; double xmm0; }
+   ffi_plan_fast_call (struct register_args *img /rdi/, void (*fn)(void) /rsi/);
+
+   Loads the argument registers from IMG, calls FN, and lets the callee's
+   rax/xmm0 flow straight out as this function's {UINT64,double} return -- so
+   the C caller recovers both with no return-dispatch table.  Skips the frame
+   relocation that ffi_call_unix64 needs only for stack args and struct/x87
+   returns.  Caller guarantees img has no spilled stack arguments.  */
+	.balign	8
+	.globl	C(ffi_plan_fast_call)
+	FFI_HIDDEN(C(ffi_plan_fast_call))
+C(ffi_plan_fast_call):
+	.cfi_startproc
+	_CET_ENDBR
+	movq	%rsi, %r11		/* fn */
+	movq	%rdi, %rax		/* img */
+	movl	0xb0(%rax), %r10d	/* ssecount */
+	testl	%r10d, %r10d
+	jz	1f
+	movdqa	0x30(%rax), %xmm0
+	movdqa	0x40(%rax), %xmm1
+	movdqa	0x50(%rax), %xmm2
+	movdqa	0x60(%rax), %xmm3
+	movdqa	0x70(%rax), %xmm4
+	movdqa	0x80(%rax), %xmm5
+	movdqa	0x90(%rax), %xmm6
+	movdqa	0xa0(%rax), %xmm7
+1:
+	movq	0x00(%rax), %rdi
+	movq	0x08(%rax), %rsi
+	movq	0x10(%rax), %rdx
+	movq	0x18(%rax), %rcx
+	movq	0x20(%rax), %r8
+	movq	0x28(%rax), %r9
+	movl	%r10d, %eax		/* %al = ssecount */
+	subq	$8, %rsp		/* realign to 16 across the call */
+	.cfi_adjust_cfa_offset 8
+	call	*%r11
+	addq	$8, %rsp
+	.cfi_adjust_cfa_offset -8
+	ret				/* rax + xmm0 carry the callee's return */
+	.cfi_endproc
+	ENDF(C(ffi_plan_fast_call))
+
+/* Count-based direct thunks for the pure-GP64 fast path: load avalue[0..N-1]
+   straight into the argument registers (no register_args image) and call.
+   struct { UINT64 rax; double xmm0; }
+   ffi_plan_gpN (void **avalue /rdi/, void (*fn)(void) /rsi/);
+   Eligible only when every arg is a single 64-bit GP value (no sign-extension,
+   no SSE, no stack spill, no sret) -- so a plain 8-byte load per arg is exact.
+   rax/xmm0 flow out as the {UINT64,double} return; C stores per return code.  */
+
+#define FFI_GP_HEAD				\
+	.cfi_startproc;				\
+	_CET_ENDBR;				\
+	movq	%rsi, %r11;			\
+	movq	%rdi, %rax
+#define FFI_GP_LD(OFS, REG)			\
+	movq	OFS(%rax), %r10;		\
+	movq	(%r10), REG
+#define FFI_GP_TAIL				\
+	xorl	%eax, %eax;			\
+	subq	$8, %rsp;			\
+	.cfi_adjust_cfa_offset 8;		\
+	call	*%r11;				\
+	addq	$8, %rsp;			\
+	.cfi_adjust_cfa_offset -8;		\
+	ret;					\
+	.cfi_endproc
+
+	.balign	8
+	.globl	C(ffi_plan_gp0)
+	FFI_HIDDEN(C(ffi_plan_gp0))
+C(ffi_plan_gp0):
+	FFI_GP_HEAD
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp0))
+
+	.balign	8
+	.globl	C(ffi_plan_gp1)
+	FFI_HIDDEN(C(ffi_plan_gp1))
+C(ffi_plan_gp1):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp1))
+
+	.balign	8
+	.globl	C(ffi_plan_gp2)
+	FFI_HIDDEN(C(ffi_plan_gp2))
+C(ffi_plan_gp2):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x08, %rsi)
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp2))
+
+	.balign	8
+	.globl	C(ffi_plan_gp3)
+	FFI_HIDDEN(C(ffi_plan_gp3))
+C(ffi_plan_gp3):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x08, %rsi)
+	FFI_GP_LD(0x10, %rdx)
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp3))
+
+	.balign	8
+	.globl	C(ffi_plan_gp4)
+	FFI_HIDDEN(C(ffi_plan_gp4))
+C(ffi_plan_gp4):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x08, %rsi)
+	FFI_GP_LD(0x10, %rdx)
+	FFI_GP_LD(0x18, %rcx)
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp4))
+
+	.balign	8
+	.globl	C(ffi_plan_gp5)
+	FFI_HIDDEN(C(ffi_plan_gp5))
+C(ffi_plan_gp5):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x08, %rsi)
+	FFI_GP_LD(0x10, %rdx)
+	FFI_GP_LD(0x18, %rcx)
+	FFI_GP_LD(0x20, %r8)
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp5))
+
+	.balign	8
+	.globl	C(ffi_plan_gp6)
+	FFI_HIDDEN(C(ffi_plan_gp6))
+C(ffi_plan_gp6):
+	FFI_GP_HEAD
+	FFI_GP_LD(0x08, %rsi)
+	FFI_GP_LD(0x10, %rdx)
+	FFI_GP_LD(0x18, %rcx)
+	FFI_GP_LD(0x20, %r8)
+	FFI_GP_LD(0x28, %r9)
+	FFI_GP_LD(0x00, %rdi)
+	FFI_GP_TAIL
+	ENDF(C(ffi_plan_gp6))
+
 /* 6 general registers, 8 vector registers,
    32 bytes of rvalue, 8 bytes of alignment.  */
 #define ffi_closure_OFS_G	0
@@ -227,6 +407,7 @@ ENDF(C(ffi_call_unix64))
 
 C(ffi_closure_unix64_sse):
 L(UW5):
+	_CET_ENDBR
 	subq	$ffi_closure_FS, %rsp
 L(UW6):
 	/* cfi_adjust_cfa_offset(ffi_closure_FS) */
@@ -250,6 +431,7 @@ ENDF(C(ffi_closure_unix64_sse))
 
 C(ffi_closure_unix64):
 L(UW8):
+	_CET_ENDBR
 	subq	$ffi_closure_FS, %rsp
 L(UW9):
 	/* cfi_adjust_cfa_offset(ffi_closure_FS) */
@@ -286,6 +468,11 @@ L(UW10):
 	movzbl	%al, %r10d
 	leaq	L(load_table)(%rip), %r11
 	ja	L(la)
+#ifdef __CET__
+	/* NB: Originally, each slot is 8 byte.  4 bytes of ENDBR64 +
+	   4 bytes NOP padding double slot size to 16 bytes.  */
+	addl	%r10d, %r10d
+#endif
 	leaq	(%r11, %r10, 8), %r10
 	leaq	ffi_closure_RED_RVALUE(%rsp), %rsi
 	jmp	*%r10
@@ -293,52 +480,75 @@ L(UW10):
 	.balign	8
 L(load_table):
 E(L(load_table), UNIX64_RET_VOID)
+	_CET_ENDBR
 	ret
 E(L(load_table), UNIX64_RET_UINT8)
+	_CET_ENDBR
 	movzbl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_UINT16)
+	_CET_ENDBR
 	movzwl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_UINT32)
+	_CET_ENDBR
 	movl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_SINT8)
+	_CET_ENDBR
 	movsbl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_SINT16)
+	_CET_ENDBR
 	movswl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_SINT32)
+	_CET_ENDBR
 	movl	(%rsi), %eax
 	ret
 E(L(load_table), UNIX64_RET_INT64)
+	_CET_ENDBR
 	movq	(%rsi), %rax
 	ret
 E(L(load_table), UNIX64_RET_XMM32)
+	_CET_ENDBR
 	movd	(%rsi), %xmm0
 	ret
 E(L(load_table), UNIX64_RET_XMM64)
+	_CET_ENDBR
 	movq	(%rsi), %xmm0
 	ret
 E(L(load_table), UNIX64_RET_X87)
+	_CET_ENDBR
 	fldt	(%rsi)
 	ret
 E(L(load_table), UNIX64_RET_X87_2)
+	_CET_ENDBR
 	fldt	16(%rsi)
 	fldt	(%rsi)
 	ret
 E(L(load_table), UNIX64_RET_ST_XMM0_RAX)
+	_CET_ENDBR
 	movq	8(%rsi), %rax
 	jmp	L(l3)
 E(L(load_table), UNIX64_RET_ST_RAX_XMM0)
+	_CET_ENDBR
 	movq	8(%rsi), %xmm0
 	jmp	L(l2)
 E(L(load_table), UNIX64_RET_ST_XMM0_XMM1)
+	_CET_ENDBR
 	movq	8(%rsi), %xmm1
 	jmp	L(l3)
 E(L(load_table), UNIX64_RET_ST_RAX_RDX)
+	_CET_ENDBR
 	movq	8(%rsi), %rdx
+	jmp	L(l2)
+E(L(load_table), UNIX64_RET_XMM128)
+	_CET_ENDBR
+	movups	(%rsi), %xmm0
+	ret
+
+	.balign	8
 L(l2):
 	movq	(%rsi), %rax
 	ret
@@ -358,6 +568,7 @@ ENDF(C(ffi_closure_unix64))
 
 C(ffi_go_closure_unix64_sse):
 L(UW12):
+	_CET_ENDBR
 	subq	$ffi_closure_FS, %rsp
 L(UW13):
 	/* cfi_adjust_cfa_offset(ffi_closure_FS) */
@@ -381,6 +592,7 @@ ENDF(C(ffi_go_closure_unix64_sse))
 
 C(ffi_go_closure_unix64):
 L(UW15):
+	_CET_ENDBR
 	subq	$ffi_closure_FS, %rsp
 L(UW16):
 	/* cfi_adjust_cfa_offset(ffi_closure_FS) */
@@ -406,6 +618,97 @@ L(sse_entry2):
 L(UW17):
 ENDF(C(ffi_go_closure_unix64))
 
+#if defined(FFI_EXEC_STATIC_TRAMP)
+	.balign	8
+	.globl	C(ffi_closure_unix64_sse_alt)
+	FFI_HIDDEN(C(ffi_closure_unix64_sse_alt))
+
+C(ffi_closure_unix64_sse_alt):
+	/* See the comments above trampoline_code_table. */
+	_CET_ENDBR
+	movq	8(%rsp), %r10			/* Load closure in r10 */
+	addq	$16, %rsp			/* Restore the stack */
+	jmp	C(ffi_closure_unix64_sse)
+ENDF(C(ffi_closure_unix64_sse_alt))
+
+	.balign	8
+	.globl	C(ffi_closure_unix64_alt)
+	FFI_HIDDEN(C(ffi_closure_unix64_alt))
+
+C(ffi_closure_unix64_alt):
+	/* See the comments above trampoline_code_table. */
+	_CET_ENDBR
+	movq	8(%rsp), %r10			/* Load closure in r10 */
+	addq	$16, %rsp			/* Restore the stack */
+	jmp	C(ffi_closure_unix64)
+	ENDF(C(ffi_closure_unix64_alt))
+
+/*
+ * Below is the definition of the trampoline code table. Each element in
+ * the code table is a trampoline.
+ *
+ * Because we jump to the trampoline, we place a _CET_ENDBR at the
+ * beginning of the trampoline to mark it as a valid branch target. This is
+ * part of the the Intel CET (Control Flow Enforcement Technology).
+ */
+/*
+ * The trampoline uses register r10. It saves the original value of r10 on
+ * the stack.
+ *
+ * The trampoline has two parameters - target code to jump to and data for
+ * the target code. The trampoline extracts the parameters from its parameter
+ * block (see tramp_table_map()). The trampoline saves the data address on
+ * the stack. Finally, it jumps to the target code.
+ *
+ * The target code can choose to:
+ *
+ * - restore the value of r10
+ * - load the data address in a register
+ * - restore the stack pointer to what it was when the trampoline was invoked.
+ */
+#ifdef ENDBR_PRESENT
+# define X86_DATA_OFFSET	4077
+# ifdef __ILP32__
+#  define X86_CODE_OFFSET	4069
+# else
+#  define X86_CODE_OFFSET	4073
+# endif
+#else
+# define X86_DATA_OFFSET	4081
+# ifdef __ILP32__
+#  define X86_CODE_OFFSET	4073
+# else
+#  define X86_CODE_OFFSET	4077
+# endif
+#endif
+
+	.align	UNIX64_TRAMP_MAP_SIZE
+	.globl	trampoline_code_table
+	FFI_HIDDEN(C(trampoline_code_table))
+
+C(trampoline_code_table):
+	.rept	UNIX64_TRAMP_MAP_SIZE / UNIX64_TRAMP_SIZE
+	_CET_ENDBR
+	subq	$16, %rsp			/* Make space on the stack */
+	movq	%r10, (%rsp)			/* Save %r10 on stack */
+#ifdef __ILP32__
+	movl	X86_DATA_OFFSET(%rip), %r10d	/* Copy data into %r10 */
+#else
+	movq	X86_DATA_OFFSET(%rip), %r10	/* Copy data into %r10 */
+#endif
+	movq	%r10, 8(%rsp)			/* Save data on stack */
+#ifdef __ILP32__
+	movl	X86_CODE_OFFSET(%rip), %r10d	/* Copy code into %r10 */
+#else
+	movq	X86_CODE_OFFSET(%rip), %r10	/* Copy code into %r10 */
+#endif
+	jmp	*%r10				/* Jump to code */
+	.align	8
+	.endr
+ENDF(C(trampoline_code_table))
+	.align	UNIX64_TRAMP_MAP_SIZE
+#endif /* FFI_EXEC_STATIC_TRAMP */
+
 /* Sadly, OSX cctools-as doesn't understand .cfi directives at all.  */
 
 #ifdef __APPLE__
@@ -419,12 +722,21 @@ EHFrame0:
 
 #ifdef HAVE_AS_X86_PCREL
 # define PCREL(X)	X - .
+#elif defined(__clang__)
+/* clang's integrated assembler rejects the X@rel variant (#947); the
+   pc-relative label difference works wherever @rel would.  */
+# define PCREL(X)	X - .
 #else
 # define PCREL(X)	X@rel
 #endif
 
 /* Simplify advancing between labels.  Assume DW_CFA_advance_loc1 fits.  */
-#define ADV(N, P)	.byte 2, L(N)-L(P)
+#ifdef __CET__
+/* Use DW_CFA_advance_loc2 when IBT is enabled.  */
+# define ADV(N, P)	.byte 3; .2byte L(N)-L(P)
+#else
+# define ADV(N, P)	.byte 2, L(N)-L(P)
+#endif
 
 	.balign 8
 L(CIE):
@@ -561,6 +873,6 @@ L(EFDE5):
 #endif
 
 #endif /* __x86_64__ */
-#if defined __ELF__ && defined __linux__
+#if defined __ELF__ && (defined __linux__ || defined __FreeBSD__)
 	.section	.note.GNU-stack,"",@progbits
 #endif

@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars, no-undef */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -8,7 +7,7 @@ const saveButton = "button.save";
 const prettifyButton = "button.prettyprint";
 
 const { MockFilePicker } = SpecialPowers;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 MockFilePicker.returnValue = MockFilePicker.returnOK;
 
 Services.scriptloader.loadSubScript(
@@ -44,8 +43,8 @@ function awaitSavedFileContents(name, ext) {
             );
             ok(destFile.exists(), "The downloaded file should exist.");
             const { path } = destFile;
-            await BrowserTestUtils.waitForCondition(() => IOUtils.exists(path));
-            await BrowserTestUtils.waitForCondition(async () => {
+            await TestUtils.waitForCondition(() => IOUtils.exists(path));
+            await TestUtils.waitForCondition(async () => {
               const { size } = await IOUtils.stat(path);
               return size > 0;
             });

@@ -1,4 +1,3 @@
-/* -*- Mode: rust; rust-indent-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -237,19 +236,20 @@ macro_rules! declare_pkcs11_session_functions {
         extern "C" fn C_Login(
             hSession: CK_SESSION_HANDLE,
             _userType: CK_USER_TYPE,
-            _pPin: CK_UTF8CHAR_PTR,
-            _ulPinLen: CK_ULONG,
+            pPin: CK_UTF8CHAR_PTR,
+            ulPinLen: CK_ULONG,
         ) -> CK_RV {
             let mut manager_guard = try_to_get_manager_guard!();
             let manager = manager_guard_to_manager!(manager_guard);
-            match manager.login(hSession) {
+            let pin = unsafe { rsclientcerts::cryptoki::char_ptr_to_slice(pPin, ulPinLen) };
+            match manager.login(hSession, pin) {
                 Ok(()) => {
                     log_with_thread_id!(debug, "C_Login: CKR_OK");
                     CKR_OK
                 }
                 Err(e) => {
                     log_with_thread_id!(error, "C_Login failed: {}", e);
-                    CKR_GENERAL_ERROR
+                    CKR_PIN_INCORRECT
                 }
             }
         }
@@ -581,6 +581,54 @@ macro_rules! declare_pkcs11_sign_functions {
 }
 
 #[macro_export]
+macro_rules! declare_pkcs11_pin_functions {
+    () => {
+        extern "C" fn C_InitPIN(
+            hSession: CK_SESSION_HANDLE,
+            pPin: CK_UTF8CHAR_PTR,
+            ulPinLen: CK_ULONG,
+        ) -> CK_RV {
+            let mut manager_guard = try_to_get_manager_guard!();
+            let manager = manager_guard_to_manager!(manager_guard);
+            let pin = unsafe { rsclientcerts::cryptoki::char_ptr_to_slice(pPin, ulPinLen) };
+            match manager.change_password(hSession, &[], pin) {
+                Ok(()) => {
+                    log_with_thread_id!(debug, "C_InitPIN: CKR_OK");
+                    CKR_OK
+                }
+                Err(e) => {
+                    log_with_thread_id!(error, "C_InitPIN failed: {}", e);
+                    CKR_GENERAL_ERROR
+                }
+            }
+        }
+
+        extern "C" fn C_SetPIN(
+            hSession: CK_SESSION_HANDLE,
+            pOldPin: CK_UTF8CHAR_PTR,
+            ulOldLen: CK_ULONG,
+            pNewPin: CK_UTF8CHAR_PTR,
+            ulNewLen: CK_ULONG,
+        ) -> CK_RV {
+            let mut manager_guard = try_to_get_manager_guard!();
+            let manager = manager_guard_to_manager!(manager_guard);
+            let from_pin = unsafe { rsclientcerts::cryptoki::char_ptr_to_slice(pOldPin, ulOldLen) };
+            let to_pin = unsafe { rsclientcerts::cryptoki::char_ptr_to_slice(pNewPin, ulNewLen) };
+            match manager.change_password(hSession, from_pin, to_pin) {
+                Ok(()) => {
+                    log_with_thread_id!(debug, "C_SetPIN: CKR_OK");
+                    CKR_OK
+                }
+                Err(e) => {
+                    log_with_thread_id!(error, "C_SetPIN failed: {}", e);
+                    CKR_PIN_INCORRECT
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! declare_unsupported_pkcs11_functions {
     () => {
         extern "C" fn C_GetMechanismInfo(
@@ -598,28 +646,8 @@ macro_rules! declare_unsupported_pkcs11_functions {
             _ulPinLen: CK_ULONG,
             _pLabel: CK_UTF8CHAR_PTR,
         ) -> CK_RV {
-            log_with_thread_id!(error, "C_InitToken: CKR_FUNCTION_NOT_SUPPORTED");
-            CKR_FUNCTION_NOT_SUPPORTED
-        }
-
-        extern "C" fn C_InitPIN(
-            _hSession: CK_SESSION_HANDLE,
-            _pPin: CK_UTF8CHAR_PTR,
-            _ulPinLen: CK_ULONG,
-        ) -> CK_RV {
-            log_with_thread_id!(error, "C_InitPIN: CKR_FUNCTION_NOT_SUPPORTED");
-            CKR_FUNCTION_NOT_SUPPORTED
-        }
-
-        extern "C" fn C_SetPIN(
-            _hSession: CK_SESSION_HANDLE,
-            _pOldPin: CK_UTF8CHAR_PTR,
-            _ulOldLen: CK_ULONG,
-            _pNewPin: CK_UTF8CHAR_PTR,
-            _ulNewLen: CK_ULONG,
-        ) -> CK_RV {
-            log_with_thread_id!(error, "C_SetPIN: CKR_FUNCTION_NOT_SUPPORTED");
-            CKR_FUNCTION_NOT_SUPPORTED
+            log_with_thread_id!(debug, "C_InitToken: CKR_OK");
+            CKR_OK
         }
 
         extern "C" fn C_GetOperationState(

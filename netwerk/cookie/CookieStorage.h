@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,14 @@
 #ifndef mozilla_net_CookieStorage_h
 #define mozilla_net_CookieStorage_h
 
-#include "CookieKey.h"
+#include <functional>
 
+#include "CookieCommons.h"
+#include "CookieKey.h"
 #include "nsICookieNotification.h"
 #include "nsIObserver.h"
 #include "nsTHashtable.h"
 #include "nsWeakReference.h"
-#include <functional>
-#include "CookieCommons.h"
 
 class nsIArray;
 class nsICookie;
@@ -74,6 +73,9 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   uint32_t CountCookiesFromHost(const nsACString& aBaseDomain,
                                 uint32_t aPrivateBrowsingId);
+
+  bool HasCookiesForSite(const nsACString& aBaseDomain,
+                         const OriginAttributesPattern& aPattern);
 
   uint32_t CountCookieBytesNotMatchingCookie(const Cookie& cookie,
                                              const nsACString& baseDomain);

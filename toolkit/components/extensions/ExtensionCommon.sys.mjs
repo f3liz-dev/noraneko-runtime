@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1440,7 +1438,7 @@ class SchemaAPIManager extends EventEmitter {
    *     "addon" - An addon process.
    *     "content" - A content process.
    *     "devtools" - A devtools process.
-   * @param {import("Schemas.sys.mjs").SchemaInject} [schema]
+   * @param {import("./Schemas.sys.mjs").SchemaInject} [schema]
    */
   constructor(processType, schema) {
     super();
@@ -1701,7 +1699,11 @@ class SchemaAPIManager extends EventEmitter {
 
     this.initGlobal();
 
-    Services.scriptloader.loadSubScript(module.url, this.global);
+    Services.scriptloader.loadSubScriptWithOptions(module.url, {
+      target: this.global,
+      // Usually chrome: URLs, except with experiment_apis.
+      allowUnsafeURL: true,
+    });
 
     module.loaded = true;
 
@@ -2261,20 +2263,23 @@ class EventManager {
    *        Parameters that control this EventManager.
    * @param {BaseContext} params.context
    *        An object representing the extension instance using this event.
-   * @param {string} params.module
+   * @param {string} [params.module]
    *        The API module name, required for persistent events.
-   * @param {string} params.event
+   * @param {string} [params.event]
    *        The API event name, required for persistent events.
-   * @param {ExtensionAPI} params.extensionApi
+   * @param {ExtensionAPI} [params.extensionApi]
    *        The API intance.  If the API uses the ExtensionAPIPersistent class, some simplification is
    *        possible by passing the api (self or this) and the internal register function will be used.
    * @param {string} [params.name]
    *        A name used only for debugging.  If not provided, name is built from module and event.
-   * @param {functon} params.register
+   * @param {Function} params.register
    *        A function called whenever a new listener is added.
    * @param {boolean} [params.inputHandling=false]
    *        If true, the "handling user input" flag is set while handlers
    *        for this event are executing.
+   * @param {boolean} [params.resetIdleOnEvent=true]
+   *        If false, firing the event won't reset the event page's idle timer.
+   *        Ignored for non background contexts (except bug 1905504).
    */
   constructor(params) {
     let {
@@ -2299,7 +2304,7 @@ class EventManager {
       this.context.envType === "addon_parent" &&
       this.context.isBackgroundContext;
 
-    // TODO(Bug 1844041): ideally we should restrict resetIdleOnEvent to
+    // TODO(Bug 1905504): ideally we should restrict resetIdleOnEvent to
     // EventManager instances that belongs to the event page, but along
     // with that we should consider if calling sendMessage from an event
     // page should also reset idle timer, and so in the shorter term
@@ -2843,6 +2848,7 @@ class EventManager {
     if (this.canPersistEvents) {
       // Once a background is started, listenerPromises is set to null. At
       // that point, we stop recording startup data.
+      // @ts-ignore this.context is a ProxyContextParent when canPersistEvents is true
       recordStartupData = !!this.context.listenerPromises;
 
       let key = uneval(args);
@@ -3074,6 +3080,38 @@ function updateAllowedOrigins(policy, origins, isAdd) {
   policy.allowedOrigins = new MatchPatternSet(Array.from(patternMap.values()));
 }
 
+var GuardSets = {
+  _inits: null,
+  _defaults: [],
+
+  init(inits) {
+    this._inits = inits ?? Services.cpmm.sharedData.get("extensions/guards");
+    let def = this._inits?.get("*");
+    this._defaults = def ? [new ExtensionGuardSet(def)] : [];
+  },
+
+  /**
+   * Update enterprise guards cache and apply to all active extension.
+   */
+  updateAll(inits) {
+    this.init(inits);
+    WebExtensionPolicy.getActiveExtensions().forEach(p => this.updateFor(p));
+  },
+
+  /**
+   * Apply the current enterprise guards to a single policy.
+   *
+   * @param {WebExtensionPolicy} policy
+   */
+  updateFor(policy) {
+    if (this._inits === null) {
+      this.init();
+    }
+    let init = this._inits?.get(policy.id);
+    policy.guardSets = init ? [new ExtensionGuardSet(init)] : this._defaults;
+  },
+};
+
 export var ExtensionCommon = {
   BaseContext,
   CanOfAPIs,
@@ -3081,6 +3119,7 @@ export var ExtensionCommon = {
   ExtensionAPI,
   ExtensionAPIPersistent,
   EventEmitter,
+  GuardSets,
   LocalAPIImplementation,
   LocaleData,
   NoCloneSpreadArgs,

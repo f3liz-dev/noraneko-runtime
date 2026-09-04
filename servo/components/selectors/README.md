@@ -1,13 +1,12 @@
 rust-selectors
 ==============
 
-* [![Build Status](https://travis-ci.com/servo/rust-selectors.svg?branch=master)](
-  https://travis-ci.com/servo/rust-selectors)
-* [Documentation](https://docs.rs/selectors/)
+* [![Build Status](https://github.com/servo/stylo/actions/workflows/main.yml/badge.svg)](https://github.com/servo/stylo/actions)
+* [Documentation](https://docs.rs/selectors)
 * [crates.io](https://crates.io/crates/selectors)
 
 CSS Selectors library for Rust.
-Includes parsing and serilization of selectors,
+Includes parsing and serialization of selectors,
 as well as matching against a generic tree of elements.
 Pseudo-elements and most pseudo-classes are generic as well.
 

@@ -34,13 +34,13 @@ async function LoadModules() {
     .addEventListener("command", async event => {
       switch (event.target.id) {
         case "login_button":
-          doLogin();
+          await doLogin();
           break;
         case "logout_button":
-          doLogout();
+          await doLogout();
           break;
         case "change_pw_button":
-          changePassword();
+          await changePassword();
           break;
         case "load_button":
           await doLoad();
@@ -73,12 +73,43 @@ async function doConfirm(l10n_id) {
 
 async function RefreshDeviceList() {
   for (let module of await secmoddb.listModules()) {
-    let slots = module.listSlots();
-    AddModule(module, slots);
+    AddModule(module, module.slots);
   }
 
   // Set the text on the FIPS button.
   SetFIPSButton();
+}
+
+/* When the state of a token changes (e.g. due to logging in), the state of its
+ * corresponding slot changes as well. This is not a problem for in-process
+ * modules, but for remote modules, any preexisting objects representing that
+ * slot (and even the module the slot is on) become stale. To handle this, this
+ * function refreshes the module that token is on.
+ */
+async function refreshModuleForSelectedSlot() {
+  let tree = document.getElementById("device_tree");
+  if (tree.currentIndex < 0 || !selected_slot) {
+    return;
+  }
+  let item = tree.view.getItemAtIndex(tree.currentIndex);
+  let parent = item.parentElement; // the <treechildren> containing the slots
+  let parentItem = parent.parentElement; // the <treeitem> identifying the module
+  let new_slots;
+  for (let new_module of await secmoddb.listModules()) {
+    // Modules are uniquely identified by name.
+    if (parentItem.module.name == new_module.name) {
+      parentItem.module = new_module;
+      new_slots = new_module.slots;
+    }
+  }
+  if (!new_slots || new_slots.length != parent.childNodes.length) {
+    return;
+  }
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    parent.childNodes[i].slotObject = new_slots[i];
+  }
+  getSelectedItem();
+  enableButtons();
 }
 
 function SetFIPSButton() {
@@ -166,14 +197,15 @@ function enableButtons() {
     unload_toggle = false;
     showModuleInfo();
   } else if (selected_slot) {
-    // here's the workaround - login functions are all with token,
-    // so grab the token type
-    var selected_token = selected_slot.getToken();
-    if (selected_token != null) {
-      if (selected_token.needsLogin() || !selected_token.needsUserInit) {
+    if (
+      selected_slot.status != Ci.nsIPKCS11Slot.SLOT_DISABLED &&
+      selected_slot.status != Ci.nsIPKCS11Slot.SLOT_NOT_PRESENT
+    ) {
+      let selected_token = selected_slot.getToken();
+      if (selected_token.canHavePassword) {
         pw_toggle = false;
-        if (selected_token.needsLogin()) {
-          if (selected_token.isLoggedIn()) {
+        if (selected_token.hasPassword) {
+          if (selected_token.isLoggedIn) {
             logout_toggle = false;
           } else {
             login_toggle = false;
@@ -186,7 +218,7 @@ function enableButtons() {
         selected_token.isInternalKeyToken &&
         !selected_token.hasPassword
       ) {
-        pw_toggle = "true";
+        pw_toggle = true;
       }
     }
     showSlotInfo();
@@ -331,39 +363,29 @@ function AddInfoRow(l10nID, col2, cell_id) {
 }
 
 // log in to a slot
-function doLogin() {
+async function doLogin() {
   getSelectedItem();
   // here's the workaround - login functions are with token
   var selected_token = selected_slot.getToken();
   try {
-    selected_token.login(false);
-    var tok_status = document.getElementById("tok_status");
-    if (selected_token.isLoggedIn()) {
-      document.l10n.setAttributes(tok_status, "devinfo-status-logged-in");
-    } else {
-      document.l10n.setAttributes(tok_status, "devinfo-status-not-logged-in");
-    }
+    await selected_token.login();
   } catch (e) {
     doPrompt("login-failed");
   }
-  enableButtons();
+  await refreshModuleForSelectedSlot();
 }
 
 // log out of a slot
-function doLogout() {
+async function doLogout() {
   getSelectedItem();
-  // here's the workaround - login functions are with token
   var selected_token = selected_slot.getToken();
   try {
-    selected_token.logoutAndDropAuthenticatedResources();
-    var tok_status = document.getElementById("tok_status");
-    if (selected_token.isLoggedIn()) {
-      document.l10n.setAttributes(tok_status, "devinfo-status-logged-in");
-    } else {
-      document.l10n.setAttributes(tok_status, "devinfo-status-not-logged-in");
-    }
+    await selected_token.logout();
+    // clear any TLS state that may have been derived from secrets on the token
+    let nssComponent = Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
+    nssComponent.clearTLSCacheAndCancelAllConnections();
   } catch (e) {}
-  enableButtons();
+  await refreshModuleForSelectedSlot();
 }
 
 // load a new device
@@ -399,7 +421,7 @@ async function doUnload() {
   }
 }
 
-function changePassword() {
+async function changePassword() {
   getSelectedItem();
   let params = Cc["@mozilla.org/embedcomp/dialogparam;1"].createInstance(
     Ci.nsIDialogParamBlock
@@ -408,13 +430,12 @@ function changePassword() {
   objects.appendElement(selected_slot.getToken());
   params.objects = objects;
   window.browsingContext.topChromeWindow.openDialog(
-    "changepassword.xhtml",
+    "chrome://pippki/content/changepassword.xhtml",
     "",
     "chrome,centerscreen,modal",
     params
   );
-  showSlotInfo();
-  enableButtons();
+  await refreshModuleForSelectedSlot();
 }
 
 // -------------------------------------   Old code
@@ -450,10 +471,9 @@ async function toggleFIPS() {
     // In FIPS mode the password must be non-empty.
     // This is different from what we allow in NON-Fips mode.
 
-    var tokendb = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-      Ci.nsIPK11TokenDB
-    );
-    var internal_token = tokendb.getInternalKeyToken(); // nsIPK11Token
+    var internal_token = Cc[
+      "@mozilla.org/security/internalkeytoken;1"
+    ].createInstance(Ci.nsIPKCS11Token);
     if (!internal_token.hasPassword) {
       // Token has either no or an empty password.
       doPrompt("fips-nonempty-primary-password-required");
@@ -471,7 +491,6 @@ async function toggleFIPS() {
   // Remove the existing listed modules so that a refresh doesn't display the
   // module that just changed.
   ClearDeviceList();
-
   await RefreshDeviceList();
 }
 

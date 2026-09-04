@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-plugins {
-    alias(libs.plugins.dependency.analysis)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-}
+import static org.mozilla.conventions.BuildConfigKt.updateExtensionVersion
 
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-parcelize'
+plugins {
+    id 'com.android.application'
+    alias(libs.plugins.dependency.analysis)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.parcelize)
+}
 
 android {
     compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
@@ -29,7 +29,7 @@ android {
     buildTypes {
         release {
             minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -41,11 +41,11 @@ android {
 }
 
 tasks.register("updateBorderifyExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/borderify')
+    updateExtensionVersion(task, 'src/main/assets/extensions/borderify', rootProject.ext.config.componentsVersion)
 }
 
 tasks.register("updateTestExtensionVersion", Copy) { task ->
-    updateExtensionVersion(task, 'src/main/assets/extensions/test')
+    updateExtensionVersion(task, 'src/main/assets/extensions/test', rootProject.ext.config.componentsVersion)
 }
 
 // Make sure DAGP asset-source exploding happens after ExtensionVersion tasks
@@ -79,7 +79,7 @@ dependencies {
 
     implementation libs.androidx.activity
     implementation libs.androidx.appcompat
-    implementation libs.androidx.core.ktx
+    implementation libs.androidx.core
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.material3

@@ -3,9 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#[cfg(test)]
-pub mod test;
-
 mod atomic_refcell;
 mod bits;
 mod cacheline;
@@ -14,6 +11,7 @@ mod fast_math;
 mod float16;
 mod linalg;
 mod log2;
+mod mirror;
 pub mod ndarray;
 mod rational_poly;
 mod shift_right_ceil;
@@ -30,6 +28,7 @@ pub use fast_math::*;
 pub use float16::f16;
 pub use linalg::*;
 pub use log2::*;
+pub use mirror::*;
 pub(crate) use ndarray::*;
 pub use rational_poly::*;
 pub use shift_right_ceil::*;

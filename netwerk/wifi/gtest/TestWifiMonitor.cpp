@@ -1,23 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-#include "gmock/gmock.h"
-#include "nsIWifiListener.h"
-#include "nsWifiMonitor.h"
-#include "nsWifiAccessPoint.h"
 #include "WifiScanner.h"
-#include "nsCOMPtr.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "nsIObserverService.h"
-#include "nsINetworkLinkService.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "nsCOMPtr.h"
+#include "nsINetworkLinkService.h"
+#include "nsIObserverService.h"
+#include "nsIWifiListener.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
+#include "nsWifiAccessPoint.h"
+#include "nsWifiMonitor.h"
 
 #if defined(XP_WIN) && defined(_M_IX86)
 #  include <objbase.h>  // STDMETHODCALLTYPE

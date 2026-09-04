@@ -1,24 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "DriverCrashGuard.h"
-#include "gfxEnv.h"
+
 #include "gfxConfig.h"
+#include "gfxEnv.h"
+#include "mozilla/Components.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/gfx/Logging.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/glean/GfxMetrics.h"
-#include "mozilla/Components.h"
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/dom/ContentChild.h"
 
 namespace mozilla {
 namespace gfx {
@@ -100,7 +99,7 @@ void DriverCrashGuard::Initialize() {
     // Ask the parent whether or not activating the guard is okay. The parent
     // won't bother if it detected a crash.
     dom::ContentChild* cc = dom::ContentChild::GetSingleton();
-    cc->SendBeginDriverCrashGuard(uint32_t(mType), &mCrashDetected);
+    cc->SendBeginDriverCrashGuard(mType, &mCrashDetected);
     if (mCrashDetected) {
       LogFeatureDisabled();
       return;
@@ -153,7 +152,7 @@ DriverCrashGuard::~DriverCrashGuard() {
       SetStatus(DriverInitStatus::Okay);
     }
   } else {
-    dom::ContentChild::GetSingleton()->SendEndDriverCrashGuard(uint32_t(mType));
+    dom::ContentChild::GetSingleton()->SendEndDriverCrashGuard(mType);
   }
 
   CrashReporter::UnrecordAnnotation(

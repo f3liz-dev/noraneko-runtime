@@ -20,6 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
   JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+  Passports: "resource://autofill/PassportStorage.sys.mjs",
+  RustAutofillStore: "resource://autofill/RustAutofillStore.sys.mjs",
 });
 
 const PROFILE_JSON_FILE_NAME = "autofill-profiles.json";
@@ -72,6 +74,14 @@ export class FormAutofillStorage extends FormAutofillStorageBase {
       this._creditCards = new CreditCards(this._store);
     }
     return this._creditCards;
+  }
+
+  getPassports() {
+    if (!this._passports) {
+      const rustStore = new lazy.RustAutofillStore();
+      this._passports = new lazy.Passports(rustStore.ensureOpen());
+    }
+    return this._passports;
   }
 
   /**

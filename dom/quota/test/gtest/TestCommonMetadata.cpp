@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,14 +116,14 @@ TEST(DOM_Quota_CommonMetadata, OriginStateMetadata_Equals)
 
   OriginStateMetadata originStateMetadata1 = OriginStateMetadata(
       /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-      /* aAccessed */ false, /* aPersisted */ false);
+      /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
   {
     // All fields are the same.
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     EXPECT_TRUE(originStateMetadata1.Equals(originStateMetadata2));
   }
@@ -135,7 +133,7 @@ TEST(DOM_Quota_CommonMetadata, OriginStateMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 1, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     EXPECT_FALSE(originStateMetadata1.Equals(originStateMetadata2));
   }
@@ -145,7 +143,7 @@ TEST(DOM_Quota_CommonMetadata, OriginStateMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 1,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     EXPECT_FALSE(originStateMetadata1.Equals(originStateMetadata2));
   }
@@ -155,7 +153,7 @@ TEST(DOM_Quota_CommonMetadata, OriginStateMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ true, /* aPersisted */ false);
+        /* aAccessed */ true, /* aPersisted */ false, /* aDirty */ false);
 
     EXPECT_FALSE(originStateMetadata1.Equals(originStateMetadata2));
   }
@@ -165,7 +163,7 @@ TEST(DOM_Quota_CommonMetadata, OriginStateMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ true);
+        /* aAccessed */ false, /* aPersisted */ true, /* aDirty */ false);
 
     EXPECT_FALSE(originStateMetadata1.Equals(originStateMetadata2));
   }
@@ -193,7 +191,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
   OriginStateMetadata originStateMetadata1 = OriginStateMetadata(
       /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-      /* aAccessed */ false, /* aPersisted */ false);
+      /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
   FullOriginMetadata fullOriginMetadata1(originMetadata1, originStateMetadata1,
                                          ClientUsageArray(), /* aUsage */ 0,
@@ -210,7 +208,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -231,7 +229,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -251,7 +249,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -271,7 +269,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 1, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -291,7 +289,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime*/ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2,
@@ -312,7 +310,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime*/ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -332,7 +330,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_Equals)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime*/ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -352,7 +350,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
 
   OriginStateMetadata originStateMetadata1 = OriginStateMetadata(
       /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-      /* aAccessed */ false, /* aPersisted */ false);
+      /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
   FullOriginMetadata fullOriginMetadata1(originMetadata1, originStateMetadata1,
                                          ClientUsageArray(), /* aUsage */ 0,
@@ -368,7 +366,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
 
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata2, originStateMetadata2, ClientUsageArray(),
@@ -382,7 +380,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
     // Different last access time (ignored).
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 1, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata1, originStateMetadata2, ClientUsageArray(),
@@ -396,7 +394,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
     // Different last maintenance date (ignored).
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 1,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata1, originStateMetadata2, ClientUsageArray(),
@@ -410,7 +408,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
     // Different accessed flag (ignored).
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ true, /* aPersisted */ false);
+        /* aAccessed */ true, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata1, originStateMetadata2, ClientUsageArray(),
@@ -424,7 +422,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
     // Different persisted flag (ignored).
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ true);
+        /* aAccessed */ false, /* aPersisted */ true, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata1, originStateMetadata2, ClientUsageArray(),
@@ -438,7 +436,7 @@ TEST(DOM_Quota_CommonMetadata, FullOriginMetadata_EqualsIgnoringOriginState)
     // Different origin usage (not ignored).
     OriginStateMetadata originStateMetadata2 = OriginStateMetadata(
         /* aLastAccessTime */ 0, /* aLastMaintenanceDate */ 0,
-        /* aAccessed */ false, /* aPersisted */ false);
+        /* aAccessed */ false, /* aPersisted */ false, /* aDirty */ false);
 
     FullOriginMetadata fullOriginMetadata2(
         originMetadata1, originStateMetadata2, ClientUsageArray(),

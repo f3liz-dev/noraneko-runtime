@@ -11,9 +11,9 @@ ChromeUtils.defineESModuleGetters(this, {
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -23,10 +23,6 @@ ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
   module.init(this);
   return module;
 });
-
-// How long to wait for view-update mutations to settle (i.e., to finish
-// happening) before assuming they're done and moving on with the test.
-const MUTATION_SETTLE_TIME_MS = 500;
 
 const MAX_RESULTS = 10;
 
@@ -44,15 +40,11 @@ add_setup(async function headInit() {
 
       // Make sure maxRichResults is 10 for sanity.
       ["browser.urlbar.maxRichResults", MAX_RESULTS],
-    ],
-  });
 
-  // Increase the timeout of the remove-stale-rows timer so that it doesn't
-  // interfere with the tests.
-  let originalRemoveStaleRowsTimeout = UrlbarView.removeStaleRowsTimeout;
-  UrlbarView.removeStaleRowsTimeout = 30000;
-  registerCleanupFunction(() => {
-    UrlbarView.removeStaleRowsTimeout = originalRemoveStaleRowsTimeout;
+      // Increase the timeout of the remove-stale-rows timer so that it doesn't
+      // interfere with the tests.
+      ["browser.urlbar.removeStaleRowsTimeout", 30000],
+    ],
   });
 });
 
@@ -81,8 +73,8 @@ class DelayingTestProvider extends UrlbarTestUtils.TestProvider {
  */
 function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
   return new UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.URL,
-    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    type: UrlbarShared.RESULT_TYPE.URL,
+    source: UrlbarShared.RESULT_SOURCE.HISTORY,
     suggestedIndex,
     resultSpan,
     payload: {
@@ -90,7 +82,7 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
       title: "suggested index",
       helpUrl: "http://example.com/",
       isBlockable: true,
-      blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
     },
   });
 }
@@ -104,7 +96,7 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
  * @param {number} [options.count]
  *   The number of results to return other than the heuristic. This and
  *   `type` must be given together.
- * @param {UrlbarUtils.RESULT_TYPE} [options.type]
+ * @param {UrlbarShared.RESULT_TYPE} [options.type]
  *   The type of results to return other than the heuristic. This and `count`
  *   must be given together.
  * @param {Array} [options.specs]
@@ -113,7 +105,7 @@ function makeSuggestedIndexResult(suggestedIndex, resultSpan = 1) {
  *   object with the following properties:
  *   {number} count
  *     The number of results to return for the given `type`.
- *   {UrlbarUtils.RESULT_TYPE} type
+ *   {UrlbarShared.RESULT_TYPE} type
  *     The type of results.
  * @returns {Array}
  *   An array of results.
@@ -126,8 +118,8 @@ function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
   let query = "test";
   let results = [
     new UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.SEARCH,
-      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: UrlbarShared.RESULT_TYPE.SEARCH,
+      source: UrlbarShared.RESULT_SOURCE.SEARCH,
       heuristic: true,
       payload: {
         query,
@@ -140,11 +132,11 @@ function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
     for (let i = 0; i < specCount; i++) {
       let str = `${query} ${results.length}`;
       switch (specType) {
-        case UrlbarUtils.RESULT_TYPE.SEARCH:
+        case UrlbarShared.RESULT_TYPE.SEARCH:
           results.push(
             new UrlbarResult({
-              type: UrlbarUtils.RESULT_TYPE.SEARCH,
-              source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+              type: UrlbarShared.RESULT_TYPE.SEARCH,
+              source: UrlbarShared.RESULT_SOURCE.SEARCH,
               payload: {
                 query,
                 suggestion: str,
@@ -154,17 +146,17 @@ function makeProviderResults({ count = 0, type = undefined, specs = [] }) {
             })
           );
           break;
-        case UrlbarUtils.RESULT_TYPE.URL:
+        case UrlbarShared.RESULT_TYPE.URL:
           results.push(
             new UrlbarResult({
-              type: UrlbarUtils.RESULT_TYPE.URL,
-              source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+              type: UrlbarShared.RESULT_TYPE.URL,
+              source: UrlbarShared.RESULT_SOURCE.HISTORY,
               payload: {
                 url: "http://example.com/" + i,
                 title: str,
                 helpUrl: "http://example.com/",
                 isBlockable: true,
-                blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+                blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
               },
             })
           );
@@ -222,7 +214,7 @@ function initSuggestedIndexTest() {
  *   The number of results other than the heuristic and suggestedIndex results
  *   that the provider should return for search 1. This and `otherType` must be
  *   given together.
- * @property {UrlbarUtils.RESULT_TYPE} [otherType]
+ * @property {UrlbarShared.RESULT_TYPE} [otherType]
  *   The type of results other than the heuristic and suggestedIndex results
  *   that the provider should return for search 1. This and `otherCount` must be
  *   given together.
@@ -232,7 +224,7 @@ function initSuggestedIndexTest() {
  *   item in this array must be an object with the following properties:
  *   {number} count
  *     The number of results to return for the given `type`.
- *   {UrlbarUtils.RESULT_TYPE} type
+ *   {UrlbarShared.RESULT_TYPE} type
  *     The type of results.
  * @property {number} viewCount
  *   The total number of results expected in the view after search 1 finishes,
@@ -267,12 +259,12 @@ function initSuggestedIndexTest() {
  * @param {SuggestedIndexTestOptions} options.search2
  *   This object has the same properties as the `search1` object but it applies
  *   to the second search.
- * @param {Array<{ count: number, type: UrlbarUtils.RESULT_TYPE, suggestedIndex: ?number, stale: ?boolean, hidden: ?boolean }>} options.duringUpdate
+ * @param {Array<{ count: number, type: UrlbarShared.RESULT_TYPE, suggestedIndex: ?number, stale: ?boolean, hidden: ?boolean }>} options.duringUpdate
  *   An array of expected row states during the view update. Each item in the
  *   array must be an object with the following properties:
  *   {number} count
  *     The number of rows in the view to which this row state object applies.
- *   {UrlbarUtils.RESULT_TYPE} type
+ *   {UrlbarShared.RESULT_TYPE} type
  *     The expected type of the rows.
  *   {number} [suggestedIndex]
  *     The expected suggestedIndex of the row.
@@ -346,7 +338,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
       "suggestedIndex after first search"
     );
     Assert.equal(
-      UrlbarUtils.getSpanForResult(result.element.row.result),
+      UrlbarShared.getSpanForResult(result.element.row.result),
       resultSpan,
       "resultSpan after first search"
     );
@@ -385,41 +377,18 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
     0
   );
 
-  // Don't allow the search to finish until we check the updated rows. We'll
-  // accomplish that by adding a mutation observer to observe completion of the
-  // update and delaying resolving the provider's finishQueryPromise.
-  //
-  // This promise works like this: We add a mutation observer that observes the
-  // view's entire subtree. Every time we observe a mutation, we set
-  // `lastMutationTime` to the current time. Meanwhile, we run an interval that
-  // compares `now` to `lastMutationTime` every time it fires. When the
-  // difference between `now` and `lastMutationTime` is sufficiently large, we
-  // assume the view update is done, and we resolve the promise.
-  let mutationPromise = new Promise(resolve => {
-    let lastMutationTime = ChromeUtils.now();
-    let observer = new MutationObserver(() => {
-      info("Observed mutation");
-      lastMutationTime = ChromeUtils.now();
+  // Hook into onQueryResults to get a reliable signal that #updateResults()
+  // has run for search 2, before the provider finishes.
+  let { promise: viewUpdatePromise, resolve: viewUpdateResolve } =
+    Promise.withResolvers();
+  let stub = sinon
+    .stub(gURLBar.view, "onQueryResults")
+    .callsFake(queryContext => {
+      stub.restore();
+      gURLBar.view.onQueryResults(queryContext);
+      viewUpdateResolve();
     });
-    observer.observe(UrlbarTestUtils.getResultsContainer(window), {
-      attributes: true,
-      characterData: true,
-      childList: true,
-      subtree: true,
-    });
-
-    let interval = setInterval(
-      () => {
-        if (MUTATION_SETTLE_TIME_MS < ChromeUtils.now() - lastMutationTime) {
-          info("No further mutations observed, stopping");
-          clearInterval(interval);
-          observer.disconnect();
-          resolve();
-        }
-      },
-      Math.ceil(MUTATION_SETTLE_TIME_MS / 10)
-    );
-  });
+  registerCleanupFunction(() => stub.restore());
 
   // Now do the second search but don't wait for it to finish.
   let resolveQuery;
@@ -431,9 +400,9 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
     value: "test",
   });
 
-  // Wait for the update to finish.
-  info("Waiting for mutations to settle");
-  await mutationPromise;
+  // Wait for the view update.
+  info("Waiting for view update");
+  await viewUpdatePromise;
 
   // Check the rows. We can't use UrlbarTestUtils.getDetailsOfResultAt() here
   // because it waits for the search to finish.
@@ -477,7 +446,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
 
       // resultSpan
       Assert.equal(
-        UrlbarUtils.getSpanForResult(row.result),
+        UrlbarShared.getSpanForResult(row.result),
         rowState.resultSpan || 1,
         `resultSpan at index ${rowIndex} during update`
       );
@@ -543,7 +512,7 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
         `suggestedIndex at index ${i} after update`
       );
       Assert.equal(
-        UrlbarUtils.getSpanForResult(result),
+        UrlbarShared.getSpanForResult(result),
         resultSpan,
         `resultSpan at index ${i} after update`
       );

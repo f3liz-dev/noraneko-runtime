@@ -76,6 +76,10 @@ impl net::PingUploader for ReportingUploader {
     }
 }
 
+/// This test ensures that coming from an old Glean, which did store a c0ffee client_id and cleared out old data,
+/// the newer Glean correctly resets all client_info (but client_id)
+/// and sends out that data along with a `follows_collection_enabled=false` ping.
+///
 /// Test scenario:
 ///
 /// * Glean has _some_ data already stored.
@@ -108,6 +112,7 @@ fn nofollows_contains_client_info_when_collection_disabled() {
         app_display_version: "1.0.0".to_string(),
         channel: Some("testing".to_string()),
         locale: Some("xx-XX".to_string()),
+        os_version: None,
     };
     glean::test_reset_glean(cfg, client_info, false);
 

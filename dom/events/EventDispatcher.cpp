@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/EventDispatcher.h"
+
+#include <fmt/format.h>
 
 #include <new>
 
@@ -16,6 +16,7 @@
 #include "DeviceMotionEvent.h"
 #include "DragEvent.h"
 #include "KeyboardEvent.h"
+#include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
@@ -64,6 +65,7 @@
 #include "nsINode.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
 
@@ -115,7 +117,7 @@ static bool IsEventTargetChrome(EventTarget* aEventTarget,
       retVal.swap(*aDocument);
     }
   } else if (nsCOMPtr<nsIScriptObjectPrincipal> sop =
-                 do_QueryInterface(aEventTarget->GetOwnerGlobal())) {
+                 do_QueryInterface(aEventTarget->GetRelevantGlobal())) {
     isChrome = sop->GetPrincipal()->IsSystemPrincipal();
   }
   return isChrome;
@@ -303,34 +305,35 @@ class EventTargetChainItem {
 
   /**
    * Resets aVisitor object and calls GetEventTargetParent.
-   * Copies mItemFlags and mItemData to the current EventTargetChainItem.
+   * Copies mItemFlags to the current EventTargetChainItem.
    */
   void GetEventTargetParent(EventChainPreVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags, mItemData to aVisitor,
-   * calls LegacyPreActivationBehavior and copies both members back
-   * to this EventTargetChainitem.
+   * Copies mItemFlags to aVisitor.
+   * Calls LegacyPreActivationBehavior, copies mItemFlags and moves mItemData
+   * to this EventTargetChainItem.
    */
   void LegacyPreActivationBehavior(EventChainVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and calls ActivationBehavior.
+   * Copies mItemFlags and moves mItemData to aVisitor.
+   * Calls ActivationBehavior.
    */
   MOZ_CAN_RUN_SCRIPT
   void ActivationBehavior(EventChainPostVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and
-   * calls LegacyCanceledActivationBehavior.
+   * Copies mItemFlags and moves mItemData to aVisitor.
+   * Calls LegacyCanceledActivationBehavior.
    */
   void LegacyCanceledActivationBehavior(EventChainPostVisitor& aVisitor);
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor.
+   * Copies mItemFlags to aVisitor.
    * Calls PreHandleEvent for those items which called SetWantsPreHandleEvent.
    */
-  void PreHandleEvent(EventChainVisitor& aVisitor);
+  MOZ_CAN_RUN_SCRIPT void PreHandleEvent(EventChainVisitor& aVisitor);
 
   /**
    * If the current item in the event target chain has an event listener
@@ -370,7 +373,7 @@ class EventTargetChainItem {
   }
 
   /**
-   * Copies mItemFlags and mItemData to aVisitor and calls PostHandleEvent.
+   * Copies mItemFlags to aVisitor and calls PostHandleEvent.
    */
   MOZ_CAN_RUN_SCRIPT void PostHandleEvent(EventChainPostVisitor& aVisitor);
 
@@ -440,16 +443,15 @@ void EventTargetChainItem::GetEventTargetParent(
   SetRetargetedRelatedTarget(aVisitor.mRetargetedRelatedTarget);
   SetRetargetedTouchTarget(std::move(aVisitor.mRetargetedTouchTargets));
   mItemFlags = aVisitor.mItemFlags;
-  mItemData = aVisitor.mItemData;
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::LegacyPreActivationBehavior(
     EventChainVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   mTarget->LegacyPreActivationBehavior(aVisitor);
   mItemFlags = aVisitor.mItemFlags;
-  mItemData = aVisitor.mItemData;
+  mItemData = aVisitor.mItemData.forget();
 }
 
 void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
@@ -457,35 +459,33 @@ void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
     return;
   }
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   (void)mTarget->PreHandleEvent(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::ActivationBehavior(EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
+  // We're at the end of dispatch, no need to keep mItemData.
+  aVisitor.mItemData = mItemData.forget();
   mTarget->ActivationBehavior(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::LegacyCanceledActivationBehavior(
     EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
+  // We're at the end of dispatch, no need to keep mItemData.
+  aVisitor.mItemData = mItemData.forget();
   mTarget->LegacyCanceledActivationBehavior(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
-  aVisitor.mItemData = mItemData;
   mTarget->PostHandleEvent(aVisitor);
   MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
-  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+  MOZ_ASSERT(!aVisitor.mItemData, "Should not be set by target at this time");
 }
 
 void EventTargetChainItem::HandleEventTargetChain(
@@ -693,14 +693,15 @@ void EventTargetChainItem::HandleEventTargetChain(
   }
 }
 
-// There are often 2 nested event dispatches ongoing at the same time, so
-// have 2 separate caches.
+// There are often several nested event dispatches ongoing at the same time
+// (for example a click's activation behavior dispatches a change event, whose
+// listener dispatches a further composed event), so keep a small pool of
+// caches rather than reallocating the chain storage for the deeper levels.
 static const uint32_t kCachedMainThreadChainSize = 128;
-struct CachedChains {
-  nsTArray<EventTargetChainItem> mChain1;
-  nsTArray<EventTargetChainItem> mChain2;
-};
-static CachedChains* sCachedMainThreadChains = nullptr;
+static const uint32_t kNumCachedMainThreadChains = 4;
+using CachedMainThreadChains =
+    mozilla::Array<nsTArray<EventTargetChainItem>, kNumCachedMainThreadChains>;
+static CachedMainThreadChains* sCachedMainThreadChains = nullptr;
 
 /* static */
 void EventDispatcher::Shutdown() {
@@ -776,7 +777,8 @@ static void DescribeEventTargetForProfilerMarker(const EventTarget* aTarget,
   if (node) {
     if (node->IsElement()) {
       nsAutoString nodeDescription;
-      node->AsElement()->Describe(nodeDescription, true);
+      node->AsElement()->Describe(nodeDescription,
+                                  Element::DescriptionKind::IdAndClass);
       aDescription = NS_ConvertUTF16toUTF8(nodeDescription);
     } else if (node->IsDocument()) {
       aDescription.AssignLiteral("document");
@@ -820,6 +822,64 @@ static bool IsUncancelableIfOnlyPassiveListeners(const WidgetEvent* aEvent) {
   nsCOMPtr<nsIContent> target =
       nsIContent::FromEventTargetOrNull(aEvent->mOriginalTarget);
   return !(XRE_IsParentProcess() && BrowserParent::GetFrom(target));
+}
+
+static void AssertWindowRootInTheFocusBlurChain(
+    const nsTArray<EventTargetChainItem>& aChain, const WidgetEvent* aEvent,
+    const EventTarget* aTarget) {
+#ifdef DEBUG
+  if (!aEvent->IsTrusted()) [[unlikely]] {
+    return;
+  }
+  if (aEvent->mMessage != eFocus && aEvent->mMessage != eBlur) [[likely]] {
+    return;
+  }
+  const nsINode* const targetNode = nsINode::FromEventTargetOrNull(aTarget);
+  if (!targetNode || !targetNode->IsInComposedDoc() ||
+      // FYI: This may hit in test_bug446483.html
+      (targetNode->IsDocument() && !targetNode->AsDocument()->GetWindow()))
+      [[unlikely]] {
+    return;
+  }
+  // If nsWindowRoot is not in the chain, we cannot maintain the selection
+  // before dispatching eFocus/eBlur.
+  for (const auto& item : Reversed(aChain)) {
+    if (item.WantsPreHandleEvent()) {
+      if (nsCOMPtr<nsPIWindowRoot> windowRoot =
+              do_QueryInterface(item.CurrentTarget())) {
+        return;
+      }
+    }
+  }
+  nsAutoCString chain;
+  for (const auto& item : aChain) {
+    chain.AppendLiteral("\n- ");
+    if (!item.CurrentTarget()) {
+      chain.AppendLiteral("nullptr");
+      continue;
+    }
+    if (nsINode* node = nsINode::FromEventTarget(item.CurrentTarget())) {
+      chain.Append(nsDependentCString(ToString(*node).c_str()));
+      continue;
+    }
+    if (nsCOMPtr<mozIDOMWindowProxy> win =
+            do_QueryInterface(item.CurrentTarget())) {
+      chain.AppendLiteral("window");
+      continue;
+    }
+    if (nsCOMPtr<nsPIWindowRoot> winRoot =
+            do_QueryInterface(item.CurrentTarget())) {
+      chain.AppendLiteral("window root");
+      continue;
+    }
+    chain.AppendLiteral("unknown EventTarget");
+  }
+  NS_ASSERTION(false,
+               fmt::format("{} should be handled by PreHandleEvent() of a "
+                           "nsWindowRoot\nThe chain:{}\n",
+                           ToChar(aEvent->mMessage), chain.get())
+                   .c_str());
+#endif
 }
 
 struct DOMEventMarker : public BaseMarkerType<DOMEventMarker> {
@@ -874,7 +934,15 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
                                    nsTArray<EventTarget*>* aTargets) {
   AUTO_PROFILER_LABEL_HOT("EventDispatcher::Dispatch", OTHER);
 
-  NS_ASSERTION(aEvent, "Trying to dispatch without WidgetEvent!");
+  MOZ_ASSERT(aEvent, "Trying to dispatch without WidgetEvent!");
+  NS_WARNING_ASSERTION(
+      !aEvent->IsTrusted() || aEvent->IsAllowedToDispatchDOMEvent(),
+      fmt::format("aEvent={{ IsTrusted()={}, mMessage={}, mClass={} }}",
+                  TrueOrFalse(aEvent->IsTrusted()), ToChar(aEvent->mMessage),
+                  ToChar(aEvent->mClass))
+          .c_str());
+  MOZ_ASSERT_IF(aEvent->IsTrusted(), aEvent->IsAllowedToDispatchDOMEvent());
+
   NS_ENSURE_TRUE(!aEvent->mFlags.mIsBeingDispatched,
                  NS_ERROR_DOM_INVALID_STATE_ERR);
   NS_ASSERTION(!aTargets || !aEvent->mMessage, "Wrong parameters!");
@@ -908,6 +976,25 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
       }
     }
   }
+
+  // Track the current event timing entry so that modal dialog code can call
+  // RecordModalFallbackTime() to stamp the fallback time on the right entry.
+  // The previous entry is saved and restored via ScopeExit to handle nested
+  // event dispatch and early returns.
+  RefPtr<PerformanceMainThread> perfMainThread;
+  RefPtr<PerformanceEventTiming> prevEventTimingEntry;
+  if (eventTimingEntry) {
+    perfMainThread = aPresContext->GetPerformanceMainThread();
+    if (perfMainThread) {
+      prevEventTimingEntry = perfMainThread->GetCurrentEventTimingEntry();
+      perfMainThread->SetCurrentEventTimingEntry(eventTimingEntry);
+    }
+  }
+  auto restoreEventTimingEntry = MakeScopeExit([&]() {
+    if (perfMainThread) {
+      perfMainThread->SetCurrentEventTimingEntry(prevEventTimingEntry);
+    }
+  });
 
   bool retargeted = false;
 
@@ -968,7 +1055,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
       if (global || hasHadScriptHandlingObject) {
         warn(nsContentUtils::IsChromeDoc(doc));
       }
-    } else if (nsCOMPtr<nsIGlobalObject> global = target->GetOwnerGlobal()) {
+    } else if (nsCOMPtr<nsIGlobalObject> global = target->GetRelevantGlobal()) {
       warn(global->PrincipalOrNull()->IsSystemPrincipal());
     }
   }
@@ -991,16 +1078,21 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
   nsTArray<EventTargetChainItem> chain;
   if (cd.IsMainThread()) {
     if (!sCachedMainThreadChains) {
-      sCachedMainThreadChains = new CachedChains();
+      sCachedMainThreadChains = new CachedMainThreadChains();
     }
 
-    if (sCachedMainThreadChains->mChain1.Capacity() ==
-        kCachedMainThreadChainSize) {
-      chain = std::move(sCachedMainThreadChains->mChain1);
-    } else if (sCachedMainThreadChains->mChain2.Capacity() ==
-               kCachedMainThreadChainSize) {
-      chain = std::move(sCachedMainThreadChains->mChain2);
-    } else {
+    // Reuse the first cached chain whose storage is still allocated. If every
+    // slot is checked out by an outer (nested) dispatch, allocate fresh
+    // storage; it is donated back to the pool on the way out.
+    bool reused = false;
+    for (auto& cached : *sCachedMainThreadChains) {
+      if (cached.Capacity() == kCachedMainThreadChainSize) {
+        chain = std::move(cached);
+        reused = true;
+        break;
+      }
+    }
+    if (!reused) {
       chain.SetCapacity(kCachedMainThreadChainSize);
     }
   }
@@ -1042,7 +1134,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
 
   bool clearTargets = false;
 
-  nsCOMPtr<nsIContent> content =
+  nsIContent* content =
       nsIContent::FromEventTargetOrNull(aEvent->mOriginalTarget);
 
   const bool isInAnon = content && content->ChromeOnlyAccessForEvents();
@@ -1071,9 +1163,14 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
     targetEtci = MayRetargetToChromeIfCanNotHandleEvent(
         chain, preVisitor, targetEtci, nullptr, content);
   }
+
+  // Ensure no one will use the pointer after this point.
+  content = nullptr;
+
   if (!preVisitor.mCanHandle) {
     // The original target and chrome target (mAutomaticChromeDispatch=true)
     // can not handle the event but we still have to call their PreHandleEvent.
+    AssertWindowRootInTheFocusBlurChain(chain, aEvent, target);
     for (uint32_t i = 0; i < chain.Length(); ++i) {
       chain[i].PreHandleEvent(preVisitor);
     }
@@ -1196,6 +1293,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
         }
       } else {
         // Event target chain is created. PreHandle the chain.
+        AssertWindowRootInTheFocusBlurChain(chain, aEvent, target);
         for (uint32_t i = 0; i < chain.Length(); ++i) {
           chain[i].PreHandleEvent(preVisitor);
         }
@@ -1241,7 +1339,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
               "EventDispatcher::Dispatch", OTHER, typeStr);
 
           MarkerInnerWindowId innerWindowId;
-          if (nsIGlobalObject* global = aEvent->mTarget->GetOwnerGlobal()) {
+          if (nsIGlobalObject* global = aEvent->mTarget->GetRelevantGlobal()) {
             if (nsPIDOMWindowInner* inner = global->GetAsInnerWindow()) {
               innerWindowId = MarkerInnerWindowId{inner->WindowID()};
             }
@@ -1362,14 +1460,13 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
 
   if (cd.IsMainThread() && chain.Capacity() == kCachedMainThreadChainSize &&
       sCachedMainThreadChains) {
-    if (sCachedMainThreadChains->mChain1.Capacity() !=
-        kCachedMainThreadChainSize) {
-      chain.ClearAndRetainStorage();
-      chain.SwapElements(sCachedMainThreadChains->mChain1);
-    } else if (sCachedMainThreadChains->mChain2.Capacity() !=
-               kCachedMainThreadChainSize) {
-      chain.ClearAndRetainStorage();
-      chain.SwapElements(sCachedMainThreadChains->mChain2);
+    // Return the storage to the first free slot in the pool.
+    for (auto& cached : *sCachedMainThreadChains) {
+      if (cached.Capacity() != kCachedMainThreadChainSize) {
+        chain.ClearAndRetainStorage();
+        chain.SwapElements(cached);
+        break;
+      }
     }
   }
 

@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS object implementation.
  */
-
-#include "vm/PlainObject-inl.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
@@ -23,6 +19,7 @@
 
 #include "vm/JSFunction-inl.h"
 #include "vm/JSObject-inl.h"  // js::NewObjectWithGroup, js::NewObjectGCKind
+#include "vm/PlainObject-inl.h"
 
 using namespace js;
 
@@ -64,32 +61,6 @@ SharedShape* js::ThisShapeForFunction(JSContext* cx, Handle<JSFunction*> callee,
 
   return res;
 }
-
-#ifdef DEBUG
-void PlainObject::assertHasNoNonWritableOrAccessorPropExclProto() const {
-  // Check the most recent MaxCount properties to not slow down debug builds too
-  // much.
-  static constexpr size_t MaxCount = 8;
-
-  size_t count = 0;
-  PropertyName* protoName = runtimeFromMainThread()->commonNames->proto_;
-
-  for (ShapePropertyIter<NoGC> iter(shape()); !iter.done(); iter++) {
-    // __proto__ is always allowed.
-    if (iter->key().isAtom(protoName)) {
-      continue;
-    }
-
-    MOZ_ASSERT(iter->isDataProperty());
-    MOZ_ASSERT(iter->writable());
-
-    count++;
-    if (count > MaxCount) {
-      return;
-    }
-  }
-}
-#endif
 
 // static
 PlainObject* PlainObject::createWithTemplateFromDifferentRealm(
@@ -136,9 +107,13 @@ SharedShape* GlobalObject::createPlainObjectShapeWithDefaultProto(
   return shape;
 }
 
-PlainObject* js::NewPlainObject(JSContext* cx, NewObjectKind newKind) {
-  constexpr gc::AllocKind allocKind = gc::AllocKind::OBJECT0;
-  MOZ_ASSERT(gc::GetGCObjectKind(&PlainObject::class_) == allocKind);
+PlainObject* js::NewPlainObject(JSContext* cx,
+                                const NewObjectOptions& options) {
+  gc::AllocKind allocKind = options.allocKind;
+  if (allocKind == gc::AllocKind::INVALID) {
+    allocKind = gc::AllocKind::OBJECT0;
+    MOZ_ASSERT(gc::GetGCObjectKind(&PlainObject::class_) == allocKind);
+  }
 
   Rooted<SharedShape*> shape(
       cx, GlobalObject::getPlainObjectShapeWithDefaultProto(cx, allocKind));
@@ -146,47 +121,20 @@ PlainObject* js::NewPlainObject(JSContext* cx, NewObjectKind newKind) {
     return nullptr;
   }
 
-  return PlainObject::createWithShape(cx, shape, allocKind, newKind);
-}
-
-PlainObject* js::NewPlainObjectWithAllocKind(JSContext* cx,
-                                             gc::AllocKind allocKind,
-                                             NewObjectKind newKind) {
-  Rooted<SharedShape*> shape(
-      cx, GlobalObject::getPlainObjectShapeWithDefaultProto(cx, allocKind));
-  if (!shape) {
-    return nullptr;
-  }
-
-  return PlainObject::createWithShape(cx, shape, allocKind, newKind);
+  return PlainObject::createWithShape(cx, shape, allocKind, options.newKind);
 }
 
 PlainObject* js::NewPlainObjectWithProto(JSContext* cx, HandleObject proto,
-                                         NewObjectKind newKind) {
+                                         const NewObjectOptions& options) {
   // Use a faster path if |proto| is %Object.prototype% (the common case).
   if (proto && proto == cx->global()->maybeGetPrototype(JSProto_Object)) {
-    return NewPlainObject(cx, newKind);
+    return NewPlainObject(cx, options);
   }
 
-  constexpr gc::AllocKind allocKind = gc::AllocKind::OBJECT0;
-  MOZ_ASSERT(gc::GetGCObjectKind(&PlainObject::class_) == allocKind);
-
-  Rooted<SharedShape*> shape(
-      cx, GetPlainObjectShapeWithProto(cx, proto, allocKind));
-  if (!shape) {
-    return nullptr;
-  }
-
-  return PlainObject::createWithShape(cx, shape, allocKind, newKind);
-}
-
-PlainObject* js::NewPlainObjectWithProtoAndAllocKind(JSContext* cx,
-                                                     HandleObject proto,
-                                                     gc::AllocKind allocKind,
-                                                     NewObjectKind newKind) {
-  // Use a faster path if |proto| is %Object.prototype% (the common case).
-  if (proto && proto == cx->global()->maybeGetPrototype(JSProto_Object)) {
-    return NewPlainObjectWithAllocKind(cx, allocKind, newKind);
+  gc::AllocKind allocKind = options.allocKind;
+  if (allocKind == gc::AllocKind::INVALID) {
+    allocKind = gc::AllocKind::OBJECT0;
+    MOZ_ASSERT(gc::GetGCObjectKind(&PlainObject::class_) == allocKind);
   }
 
   Rooted<SharedShape*> shape(
@@ -195,7 +143,7 @@ PlainObject* js::NewPlainObjectWithProtoAndAllocKind(JSContext* cx,
     return nullptr;
   }
 
-  return PlainObject::createWithShape(cx, shape, allocKind, newKind);
+  return PlainObject::createWithShape(cx, shape, allocKind, options.newKind);
 }
 
 void js::NewPlainObjectWithPropsCache::add(SharedShape* shape) {
@@ -239,14 +187,16 @@ enum class KeysKind { UniqueNames, Unknown };
 
 template <KeysKind Kind>
 static PlainObject* NewPlainObjectWithProperties(
-    JSContext* cx, Handle<IdValueVector> properties, NewObjectKind newKind) {
+    JSContext* cx, Handle<IdValueVector> properties,
+    const NewObjectOptions& options) {
   auto& cache = cx->realm()->newPlainObjectWithPropsCache;
 
   // If we recently created an object with these properties, we can use that
   // Shape directly.
   if (SharedShape* shape = cache.lookup(properties)) {
     Rooted<SharedShape*> shapeRoot(cx, shape);
-    PlainObject* obj = PlainObject::createWithShape(cx, shapeRoot, newKind);
+    PlainObject* obj =
+        PlainObject::createWithShape(cx, shapeRoot, options.newKind);
     if (!obj) {
       return nullptr;
     }
@@ -258,8 +208,8 @@ static PlainObject* NewPlainObjectWithProperties(
   }
 
   gc::AllocKind allocKind = gc::GetGCObjectKind(properties.length());
-  Rooted<PlainObject*> obj(cx,
-                           NewPlainObjectWithAllocKind(cx, allocKind, newKind));
+  Rooted<PlainObject*> obj(cx, NewPlainObject(cx, {.newKind = options.newKind,
+                                                   .allocKind = allocKind}));
   if (!obj) {
     return nullptr;
   }
@@ -304,7 +254,7 @@ static PlainObject* NewPlainObjectWithProperties(
       }
     }
 
-    if (!AddDataPropertyToPlainObject(cx, obj, key, value)) {
+    if (!AddDataPropertyToNativeObjectNoHooks(cx, obj, key, value)) {
       return nullptr;
     }
   }
@@ -318,15 +268,16 @@ static PlainObject* NewPlainObjectWithProperties(
   return obj;
 }
 
-PlainObject* js::NewPlainObjectWithUniqueNames(JSContext* cx,
-                                               Handle<IdValueVector> properties,
-                                               NewObjectKind newKind) {
+PlainObject* js::NewPlainObjectWithUniqueNames(
+    JSContext* cx, Handle<IdValueVector> properties,
+    const NewObjectOptions& options) {
   return NewPlainObjectWithProperties<KeysKind::UniqueNames>(cx, properties,
-                                                             newKind);
+                                                             options);
 }
 
 PlainObject* js::NewPlainObjectWithMaybeDuplicateKeys(
-    JSContext* cx, Handle<IdValueVector> properties, NewObjectKind newKind) {
+    JSContext* cx, Handle<IdValueVector> properties,
+    const NewObjectOptions& options) {
   return NewPlainObjectWithProperties<KeysKind::Unknown>(cx, properties,
-                                                         newKind);
+                                                         options);
 }

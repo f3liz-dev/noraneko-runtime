@@ -3,6 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
+import { AutofillDataTypes } from "resource://gre/modules/shared/AutofillDataTypes.sys.mjs";
+
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  FormAutofillML: "resource://gre/modules/shared/FormAutofillML.sys.mjs",
+});
 
 const { FIELD_STATES } = FormAutofillUtils;
 
@@ -37,6 +43,8 @@ class AutofillTelemetryBase {
 
       if (detail.reason == "autocomplete") {
         this.#setFormEventExtra(extra, detail.fieldName, "true");
+      } else if (detail.reason == "ml") {
+        this.#setFormEventExtra(extra, detail.fieldName, "ml");
       } else {
         // confidence exists only when a field is identified by fathom.
         let confidence =
@@ -274,6 +282,10 @@ export class AddressTelemetry extends AutofillTelemetryBase {
           delete extra[key];
         }
       }
+
+      if (method == "detected") {
+        extExtra.mlversion = lazy.FormAutofillML.getModelVersion();
+      }
     }
 
     const eventMethod = method.replace(/(_[a-z])/g, c => c[1].toUpperCase());
@@ -352,24 +364,63 @@ class CreditCardTelemetry extends AutofillTelemetryBase {
   }
 }
 
+class PassportTelemetry extends AutofillTelemetryBase {
+  EVENT_CATEGORY = "passport";
+  EVENT_OBJECT_FORM_INTERACTION = "PassportForm";
+
+  // Mapping of field name used in formautofill code to the field name
+  // used in the telemetry.
+  SUPPORTED_FIELDS = {
+    "passport-name": "name",
+    "passport-given-name": "given_name",
+    "passport-additional-name": "additional_name",
+    "passport-family-name": "family_name",
+    "passport-country": "country",
+    "passport-number": "number",
+    "passport-issue-date-day": "issue_date_day",
+    "passport-issue-date-month": "issue_date_month",
+    "passport-issue-date-year": "issue_date_year",
+    "passport-issue-date": "issue_date",
+    "passport-expiry-date-day": "expiry_date_day",
+    "passport-expiry-date-month": "expiry_date_month",
+    "passport-expiry-date-year": "expiry_date_year",
+    "passport-expiry-date": "expiry_date",
+  };
+
+  recordFormEvent(method, flowId, aExtra) {
+    // Don't modify the passed-in aExtra as it's reused.
+    const extra = Object.assign({ value: flowId }, aExtra);
+    const eventMethod = method.replace(/(_[a-z])/g, c => c[1].toUpperCase());
+    Glean.passport[eventMethod + this.EVENT_OBJECT_FORM_INTERACTION]?.record(
+      extra
+    );
+  }
+}
+
 export class AutofillTelemetry {
   static #creditCardTelemetry = new CreditCardTelemetry();
   static #addressTelemetry = new AddressTelemetry();
+  static #passportTelemetry = new PassportTelemetry();
 
-  // const for `type` parameter used in the utility functions
-  static ADDRESS = "address";
-  static CREDIT_CARD = "creditcard";
-
-  static #getTelemetryByFieldDetail(fieldDetail) {
-    return FormAutofillUtils.isAddressField(fieldDetail.fieldName)
-      ? this.#addressTelemetry
-      : this.#creditCardTelemetry;
+  // Maps an AutofillDataType's id to its telemetry instance, or null for a type
+  // with no telemetry schema (callers no-op on null). The Glean metric
+  // category lives on each instance's
+  // EVENT_CATEGORY.
+  static #getTelemetryByType(typeId) {
+    switch (typeId) {
+      case AutofillDataTypes.ADDRESS:
+        return this.#addressTelemetry;
+      case AutofillDataTypes.CREDIT_CARD:
+        return this.#creditCardTelemetry;
+      case AutofillDataTypes.PASSPORT:
+        return this.#passportTelemetry;
+    }
+    return null;
   }
 
-  static #getTelemetryByType(type) {
-    return type == AutofillTelemetry.CREDIT_CARD
-      ? this.#creditCardTelemetry
-      : this.#addressTelemetry;
+  static #getTelemetryByFieldDetail(fieldDetail) {
+    const typeId = AutofillDataTypes.typeIdForFieldName(fieldDetail.fieldName);
+    return this.#getTelemetryByType(typeId);
   }
 
   /**
@@ -380,7 +431,7 @@ export class AutofillTelemetry {
    */
   static recordDoorhangerShown(type, object, flowId) {
     const telemetry = this.#getTelemetryByType(type);
-    telemetry.recordDoorhangerEvent("show", object, flowId);
+    telemetry?.recordDoorhangerEvent("show", object, flowId);
   }
 
   static recordDoorhangerClicked(type, method, object, flowId) {
@@ -399,7 +450,7 @@ export class AutofillTelemetry {
         break;
     }
 
-    telemetry.recordDoorhangerEvent(method, object, flowId);
+    telemetry?.recordDoorhangerEvent(method, object, flowId);
   }
 
   /**
@@ -411,17 +462,17 @@ export class AutofillTelemetry {
 
   static recordFormInteractionEvent(method, flowId, fieldDetails, data) {
     const telemetry = this.#getTelemetryByFieldDetail(fieldDetails[0]);
-    telemetry.recordFormInteractionEvent(method, flowId, fieldDetails, data);
+    telemetry?.recordFormInteractionEvent(method, flowId, fieldDetails, data);
   }
 
   static recordManageEvent(type, method) {
     const telemetry = this.#getTelemetryByType(type);
-    telemetry.recordManageEvent(method);
+    telemetry?.recordManageEvent(method);
   }
 
   static recordAutofillProfileCount(type, count) {
     const telemetry = this.#getTelemetryByType(type);
-    telemetry.recordAutofillProfileCount(count);
+    telemetry?.recordAutofillProfileCount(count);
   }
 
   static recordFormSubmissionHeuristicCount(label) {

@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 
+from check_helpers import CHECK_SYMBOL_LIBS
+
 os.environ["LC_ALL"] = "C"  # otherwise 'nm' prints in wrong order
 
 srcdir = sys.argv[1]
@@ -56,13 +58,7 @@ if not nm:
 tested = False
 stat = 0
 
-for soname in [
-    "harfbuzz",
-    "harfbuzz-subset",
-    "harfbuzz-icu",
-    "harfbuzz-gobject",
-    "harfbuzz-cairo",
-]:
+for soname in CHECK_SYMBOL_LIBS:
     for suffix in ["so", "dylib"]:
         so = os.path.join(builddir, "lib%s.%s" % (soname, suffix))
         if not os.path.exists(so):
@@ -74,7 +70,7 @@ for soname in [
         EXPORTED_SYMBOLS = [
             s.split()[2]
             for s in re.findall(
-                r"^.+ [BCDGIRSTu] .+$",
+                r"^.+ [BCDGIRSTWu] .+$",
                 subprocess.check_output(nm.split() + [so]).decode("utf-8"),
                 re.MULTILINE,
             )
@@ -92,6 +88,9 @@ for soname in [
         suspicious_symbols = [
             x for x in EXPORTED_SYMBOLS if not re.match(r"^%s(_|$)" % prefix, x)
         ]
+        # libharfbuzz-subset also exports hb_subset_depend_* when depend_api is enabled
+        if soname == "harfbuzz-subset":
+            suspicious_symbols = [x for x in suspicious_symbols if not re.match(r"^%shb_subset_depend_" % symprefix, x)]
         if suspicious_symbols:
             print("Ouch, internal symbols exposed:", suspicious_symbols)
             stat = 1

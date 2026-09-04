@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_QUATERNION_H
 #define GFX_QUATERNION_H
 
+#include <algorithm>
+
 #include "gfxTypes.h"
 #include "mozilla/gfx/BasePoint4D.h"
 #include "mozilla/gfx/Matrix.h"
-#include <algorithm>
 
 struct gfxQuaternion
     : public mozilla::gfx::BasePoint4D<gfxFloat, gfxQuaternion> {

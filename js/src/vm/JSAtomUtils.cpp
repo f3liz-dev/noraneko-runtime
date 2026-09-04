@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,9 +6,7 @@
  * JS atom table.
  */
 
-#include "vm/JSAtomUtils-inl.h"
-
-#include "mozilla/HashFunctions.h"  // mozilla::HashStringKnownLength
+#include "mozilla/HashFunctions.h"  // mozilla::HashString
 #include "mozilla/RangedPtr.h"
 
 #include <charconv>
@@ -31,7 +27,9 @@
 #include "vm/StringType.h"
 #include "vm/SymbolType.h"
 #include "vm/WellKnownAtom.h"  // WellKnownAtomInfo, WellKnownAtomId, wellKnownAtomInfos
+
 #include "gc/AtomMarking-inl.h"
+#include "vm/JSAtomUtils-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/Realm-inl.h"
 #include "vm/StringType-inl.h"
@@ -155,12 +153,12 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
   // The bare symbol names are already part of the well-known set, but their
   // descriptions are not, so enumerate them here and add them to the initial
   // permanent atoms set below.
+  // NOTE: This needs to use the utf-16 version of HashString() to match
+  // AtomTableKey.
   static const WellKnownAtomInfo symbolDescInfo[] = {
-#define COMMON_NAME_INFO(NAME)                                  \
-  {uint32_t(sizeof("Symbol." #NAME) - 1),                       \
-   mozilla::HashStringKnownLength("Symbol." #NAME,              \
-                                  sizeof("Symbol." #NAME) - 1), \
-   "Symbol." #NAME},
+#define COMMON_NAME_INFO(NAME)            \
+  {uint32_t(sizeof("Symbol." #NAME) - 1), \
+   mozilla::HashString(u"Symbol." #NAME), "Symbol." #NAME},
       JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
 #undef COMMON_NAME_INFO
   };
@@ -290,13 +288,13 @@ void js::TraceAtoms(JSTracer* trc) {
 }
 
 void AtomsTable::traceWeak(JSTracer* trc) {
-  for (AtomSet::Enum e(atoms); !e.empty(); e.popFront()) {
-    JSAtom* atom = e.front().unbarrieredGet();
+  for (auto iter = atoms.modIter(); !iter.done(); iter.next()) {
+    JSAtom* atom = iter.get().unbarrieredGet();
     MOZ_DIAGNOSTIC_ASSERT(atom);
     if (!TraceManuallyBarrieredWeakEdge(trc, &atom, "AtomsTable::atoms")) {
-      e.removeFront();
+      iter.remove();
     } else {
-      MOZ_ASSERT(atom == e.front().unbarrieredGet());
+      MOZ_ASSERT(atom == iter.get().unbarrieredGet());
     }
   }
 }
@@ -311,7 +309,7 @@ bool AtomsTable::startIncrementalSweep(Maybe<SweepIterator>& atomsToSweepOut) {
     return false;
   }
 
-  atomsToSweepOut.emplace(atoms);
+  atomsToSweepOut.emplace(atoms.modIter());
 
   return true;
 }
@@ -325,9 +323,9 @@ void AtomsTable::mergeAtomsAddedWhileSweeping() {
   auto newAtoms = atomsAddedWhileSweeping;
   atomsAddedWhileSweeping = nullptr;
 
-  for (auto r = newAtoms->all(); !r.empty(); r.popFront()) {
-    if (!atoms.putNew(AtomHasher::Lookup(r.front().unbarrieredGet()),
-                      r.front())) {
+  for (auto iter = newAtoms->iter(); !iter.done(); iter.next()) {
+    if (!atoms.putNew(AtomHasher::Lookup(iter.get().unbarrieredGet()),
+                      iter.get())) {
       oomUnsafe.crash("Adding atom from secondary table after sweep");
     }
   }
@@ -338,21 +336,21 @@ void AtomsTable::mergeAtomsAddedWhileSweeping() {
 bool AtomsTable::sweepIncrementally(SweepIterator& atomsToSweep,
                                     JS::SliceBudget& budget) {
   // Sweep the table incrementally until we run out of work or budget.
-  while (!atomsToSweep.empty()) {
+  while (!atomsToSweep.done()) {
     budget.step();
     if (budget.isOverBudget()) {
       return false;
     }
 
-    JSAtom* atom = atomsToSweep.front().unbarrieredGet();
+    JSAtom* atom = atomsToSweep.get().unbarrieredGet();
     MOZ_DIAGNOSTIC_ASSERT(atom);
     if (IsAboutToBeFinalizedUnbarriered(atom)) {
       MOZ_ASSERT(!atom->isPinned());
-      atomsToSweep.removeFront();
+      atomsToSweep.remove();
     } else {
-      MOZ_ASSERT(atom == atomsToSweep.front().unbarrieredGet());
+      MOZ_ASSERT(atom == atomsToSweep.get().unbarrieredGet());
     }
-    atomsToSweep.popFront();
+    atomsToSweep.next();
   }
 
   mergeAtomsAddedWhileSweeping();
@@ -381,13 +379,13 @@ AtomizeAndCopyCharsNonStaticValidLengthFromLookup(
   AtomCacheHashTable* atomCache = zone->atomCache();
 
   // Try the per-Zone cache first. If we find the atom there we can avoid the
-  // markAtom call, and the multiple HashSet lookups below.
+  // recordRef call, and the multiple HashSet lookups below.
   if (MOZ_LIKELY(atomCache)) {
     JSAtom* const cachedAtom = atomCache->lookupForAdd(lookup);
     if (cachedAtom) {
       // The cache is purged on GC so if we're in the middle of an incremental
       // GC we should have barriered the atom when we put it in the cache.
-      MOZ_ASSERT(AtomIsMarked(zone, cachedAtom));
+      MOZ_ASSERT(ZoneHasRef(zone, cachedAtom));
       return cachedAtom;
     }
   }
@@ -410,7 +408,7 @@ AtomizeAndCopyCharsNonStaticValidLengthFromLookup(
   }
 
   if (MOZ_UNLIKELY(
-          !cx->atomMarking().inlinedMarkAtomFallible(cx->zone(), atom))) {
+          !cx->atomReferences().inlinedRecordRefFallible(cx->zone(), atom))) {
     ReportOutOfMemory(cx);
     return nullptr;
   }
@@ -684,10 +682,10 @@ JSAtom* js::AtomizeStringSlow(JSContext* cx, JSString* str) {
       if (JSAtom* atom = cx->caches().stringToAtomCache.lookupWithRopeChars(
               flattenRope, length, key)) {
         // Since this cache lookup is based on a string comparison, not object
-        // identity, need to mark atom explicitly in this case. And this is
+        // identity, need to record the atom reference explicitly. And this is
         // not done in lookup() itself, because #including JSContext.h there
         // causes some non-trivial #include ordering issues.
-        cx->markAtom(atom);
+        cx->recordRef(atom);
         str->tryReplaceWithAtomRef(atom);
         return atom;
       }

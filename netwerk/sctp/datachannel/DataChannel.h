@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,27 +5,29 @@
 #ifndef NETWERK_SCTP_DATACHANNEL_DATACHANNEL_H_
 #define NETWERK_SCTP_DATACHANNEL_DATACHANNEL_H_
 
+#include <errno.h>
+
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-#include <errno.h>
-#include "nsISupports.h"
-#include "nsCOMPtr.h"
+
+#include "DataChannelProtocol.h"
+#include "MediaEventSource.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/StopGapEventTarget.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
-#include "nsString.h"
-#include "nsThreadUtils.h"
-#include "nsTArray.h"
-#include "nsDeque.h"
 #include "mozilla/dom/Blob.h"
-#include "mozilla/Mutex.h"
-#include "DataChannelProtocol.h"
+#include "mozilla/dom/PMediaTransport.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/net/NeckoTargetHolder.h"
-#include "MediaEventSource.h"
-
+#include "nsCOMPtr.h"
+#include "nsDeque.h"
+#include "nsISupports.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 #include "transport/transportlayer.h"  // For TransportLayer::State
 
 namespace mozilla {
@@ -162,7 +162,7 @@ class DataChannelConnection : public net::NeckoTargetHolder {
     virtual void NotifyDataChannelClosed(DataChannel* aChannel) = 0;
 
     // Called when SCTP connects
-    virtual void NotifySctpConnected() = 0;
+    virtual void NotifySctpConnected(Maybe<uint16_t> aMaxChannels) = 0;
 
     // Called when SCTP closes
     virtual void NotifySctpClosed() = 0;
@@ -191,6 +191,10 @@ class DataChannelConnection : public net::NeckoTargetHolder {
   virtual void OnStreamOpen(uint16_t stream) = 0;
   // Called when the base class wants to raise the stream limit
   virtual bool RaiseStreamLimitTo(uint16_t aNewLimit) = 0;
+  // The exclusive upper bound on stream ids we will allocate. This is a
+  // per-stack constant (usrsctp grows toward it on demand; dcsctp announces the
+  // full range up front), and is safe to read from any thread.
+  virtual uint16_t GetStreamIdCeiling() const = 0;
   // Called when the base class wants to send a message; it is expected that
   // this will eventually result in a call/s to SendSctpPacket once the SCTP
   // packet is ready to be sent to the transport.
@@ -218,7 +222,9 @@ class DataChannelConnection : public net::NeckoTargetHolder {
                           const uint16_t aLocalPort,
                           const uint16_t aRemotePort);
   void TransportStateChange(const std::string& aTransportId,
-                            TransportLayer::State aState);
+                            TransportLayer::State aState,
+                            const nsTArray<nsTArray<uint8_t>>& aRemoteCerts,
+                            Maybe<dom::RTCErrorParams>);
   void SetSignals(const std::string& aTransportId);
 
   [[nodiscard]] already_AddRefed<DataChannel> Open(
@@ -227,9 +233,10 @@ class DataChannelConnection : public net::NeckoTargetHolder {
       bool aExternalNegotiated, uint16_t aStream);
 
   void EndOfStream(const RefPtr<DataChannel>& aChannel);
-  void FinishClose_s(const RefPtr<DataChannel>& aChannel);
+  void FinishClose_s(const RefPtr<DataChannel>& aChannel,
+                     Maybe<dom::RTCErrorParams> aError = Nothing());
   void CloseAll();
-  void CloseAll_s();
+  void CloseAll_s(Maybe<dom::RTCErrorParams> aError = Nothing());
   void MarkStreamAvailable(uint16_t aStream);
 
   nsISerialEventTarget* GetIOThread();
@@ -247,7 +254,7 @@ class DataChannelConnection : public net::NeckoTargetHolder {
    public:
     using ChannelArray = AutoTArray<RefPtr<DataChannel>, 16>;
 
-    Channels() : mMutex("DataChannelConnection::Channels::mMutex") {}
+    Channels() = default;
     Channels(const Channels&) = delete;
     Channels(Channels&&) = delete;
     Channels& operator=(const Channels&) = delete;
@@ -271,7 +278,7 @@ class DataChannelConnection : public net::NeckoTargetHolder {
       bool LessThan(const RefPtr<DataChannel>& a1,
                     const RefPtr<DataChannel>& a2) const;
     };
-    mutable Mutex mMutex;
+    mutable Mutex mMutex{"DataChannelConnection::Channels::mMutex"};
     ChannelArray mChannels MOZ_GUARDED_BY(mMutex);
   };
 
@@ -418,7 +425,7 @@ class DataChannel {
 
   void DecrementBufferedAmount(size_t aSize);
   void AnnounceOpen();
-  void AnnounceClosed();
+  void AnnounceClosed(Maybe<dom::RTCErrorParams> aError);
   void GracefulClose();
 
   Maybe<uint16_t> GetStream() const {
@@ -441,13 +448,7 @@ class DataChannel {
   // Called when there will be no more data sent
   void EndOfStream();
 
-  dom::RTCDataChannel* GetDomDataChannel() const {
-    MOZ_ASSERT(mDomEventTarget->IsOnCurrentThread());
-    if (NS_IsMainThread()) {
-      return mMainthreadDomDataChannel;
-    }
-    return mWorkerDomDataChannel;
-  }
+  RefPtr<dom::RTCDataChannel> GetDomDataChannel() const;
 
  private:
   nsresult AddDataToBinaryMsg(const char* data, uint32_t size);

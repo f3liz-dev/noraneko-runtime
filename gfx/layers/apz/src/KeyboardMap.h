@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,9 +8,9 @@
 #include <stdint.h>  // for uint32_t
 
 #include "InputData.h"             // for KeyboardInput
-#include "nsTArray.h"              // for nsTArray
-#include "mozilla/Maybe.h"         // for mozilla::Maybe
 #include "KeyboardScrollAction.h"  // for KeyboardScrollAction
+#include "mozilla/Maybe.h"         // for mozilla::Maybe
+#include "nsTArray.h"              // for nsTArray
 
 namespace mozilla {
 

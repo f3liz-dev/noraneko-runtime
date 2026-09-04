@@ -152,9 +152,6 @@ function* testSteps() {
 
     {
       oldPath: "storage/persistent/moz-safe-about+home",
-      newPath: "storage/permanent/moz-safe-about+home",
-      url: "moz-safe-about:home",
-      persistence: "persistent",
     },
 
     {
@@ -223,6 +220,17 @@ function* testSteps() {
   ];
 
   let metadataBuffers = [];
+
+  // XXX Set the pref using add_task once the test is converted to use explicit
+  // tasks
+  info("Setting pref");
+
+  Services.prefs.setBoolPref(
+    "dom.quotaManager.temporaryStorage.clearNonPersistedZeroUsageOrigins",
+    false
+  );
+
+  todo(!testGenerator, "Set the pref using add_task");
 
   clear(continueToNextStepSync);
   yield undefined;

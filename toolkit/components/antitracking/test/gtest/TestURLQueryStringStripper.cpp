@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,6 +152,11 @@ TEST(TestURLQueryStringStripper, TestStripping)
                expectStrip ? 2 : 0);
         DoTest("https://example.com/?AfoobazB=123"_ns, isPBM,
                "https://example.com/?AfoobazB=123"_ns, 0);
+
+        // Verify that special characters in the value of a non-stripped param
+        // are not re-encoded.
+        DoTest("https://example.com/?fooBar=123&nostrip=val!ue"_ns, isPBM,
+               "https://example.com/?nostrip=val!ue"_ns, expectStrip ? 1 : 0);
       }
     }
   }

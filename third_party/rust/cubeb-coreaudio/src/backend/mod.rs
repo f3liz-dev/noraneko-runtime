@@ -21,6 +21,7 @@ use self::aggregate_device::*;
 use self::auto_release::*;
 use self::buffer_manager::*;
 use self::coreaudio_sys_utils::aggregate_device::*;
+#[allow(unused_imports)]
 use self::coreaudio_sys_utils::audio_device_extensions::*;
 use self::coreaudio_sys_utils::audio_object::*;
 use self::coreaudio_sys_utils::audio_unit::*;
@@ -267,8 +268,22 @@ fn create_device_info(devid: AudioDeviceID, devtype: DeviceType) -> Option<devic
 }
 
 fn create_stream_description(stream_params: &StreamParams) -> Result<AudioStreamBasicDescription> {
-    assert!(stream_params.rate() > 0);
-    assert!(stream_params.channels() > 0);
+    debug_assert!(stream_params.rate() > 0);
+    debug_assert!(stream_params.channels() > 0);
+    if stream_params.rate() == 0 {
+        cubeb_log!(
+            "create_stream_description: invalid rate 0 (channels={})",
+            stream_params.channels()
+        );
+        return Err(Error::Error);
+    }
+    if stream_params.channels() == 0 {
+        cubeb_log!(
+            "create_stream_description: invalid channel count 0 (rate={})",
+            stream_params.rate()
+        );
+        return Err(Error::Error);
+    }
 
     let mut desc = AudioStreamBasicDescription::default();
 
@@ -309,7 +324,11 @@ fn create_stream_description(stream_params: &StreamParams) -> Result<AudioStream
 }
 
 fn set_volume(unit: AudioUnit, volume: f32) -> Result<()> {
-    assert!(!unit.is_null());
+    debug_assert!(!unit.is_null());
+    if unit.is_null() {
+        cubeb_log!("set_volume: audio unit is null");
+        return Err(Error::Error);
+    }
     let r = audio_unit_set_parameter(
         unit,
         kHALOutputParam_Volume,
@@ -327,7 +346,11 @@ fn set_volume(unit: AudioUnit, volume: f32) -> Result<()> {
 }
 
 fn get_volume(unit: AudioUnit) -> Result<f32> {
-    assert!(!unit.is_null());
+    debug_assert!(!unit.is_null());
+    if unit.is_null() {
+        cubeb_log!("get_volume: audio unit is null");
+        return Err(Error::Error);
+    }
     let mut volume: f32 = 0.0;
     let r = audio_unit_get_parameter(
         unit,
@@ -345,7 +368,11 @@ fn get_volume(unit: AudioUnit) -> Result<f32> {
 }
 
 fn set_input_mute(unit: AudioUnit, mute: bool) -> Result<()> {
-    assert!(!unit.is_null());
+    debug_assert!(!unit.is_null());
+    if unit.is_null() {
+        cubeb_log!("set_input_mute: audio unit is null");
+        return Err(Error::Error);
+    }
     let mute: u32 = mute.into();
     let mut old_mute: u32 = 0;
     let r = audio_unit_get_property(
@@ -386,7 +413,11 @@ fn set_input_mute(unit: AudioUnit, mute: bool) -> Result<()> {
 }
 
 fn set_input_processing_params(unit: AudioUnit, params: InputProcessingParams) -> Result<()> {
-    assert!(!unit.is_null());
+    debug_assert!(!unit.is_null());
+    if unit.is_null() {
+        cubeb_log!("set_input_processing_params: audio unit is null");
+        return Err(Error::Error);
+    }
     let aec = params.contains(InputProcessingParams::ECHO_CANCELLATION);
     let ns = params.contains(InputProcessingParams::NOISE_SUPPRESSION);
     let agc = params.contains(InputProcessingParams::AUTOMATIC_GAIN_CONTROL);
@@ -515,11 +546,18 @@ extern "C" fn audiounit_input_callback(
         Reinit,
     }
 
-    assert!(input_frames > 0);
     assert_eq!(bus, AU_IN_BUS);
 
     assert!(!user_ptr.is_null());
     let stm = unsafe { &mut *(user_ptr as *mut AudioUnitStream) };
+
+    if input_frames == 0 {
+        cubeb_alog!(
+            "({:p}) input callback empty.",
+            stm as *const AudioUnitStream
+        );
+        return NO_ERR;
+    }
 
     if unsafe { *flags | kAudioTimeStampHostTimeValid } != 0 {
         let now = unsafe { mach_absolute_time() };
@@ -684,6 +722,19 @@ extern "C" fn audiounit_input_callback(
             let stm = unsafe { &mut *(stm_ptr as *mut AudioUnitStream) };
             stm.core_stream_data.stop_audiounits();
         });
+    }
+
+    // AudioOutputUnitStop waits for in-flight callbacks, but TSan cannot see
+    // CoreAudio's internal synchronization. Release on the AudioUnit handle to
+    // pair with the acquire in stop_audiounit, modeling the per-unit HALB_Mutex.
+    #[cfg(feature = "tsan-annotations")]
+    {
+        extern "C" {
+            fn __tsan_release(addr: *mut c_void);
+        }
+        unsafe {
+            __tsan_release(stm.core_stream_data.input_unit as *mut c_void);
+        }
     }
 
     match handle {
@@ -967,10 +1018,17 @@ extern "C" fn audiounit_output_callback(
 
     // Mixing
     if let Some(mixer) = stm.core_stream_data.mixer.as_mut() {
-        assert!(
-            buffers[0].mDataByteSize
-                >= stm.core_stream_data.output_dev_desc.mBytesPerFrame * output_frames
-        );
+        let needed = stm.core_stream_data.output_dev_desc.mBytesPerFrame * output_frames;
+        if buffers[0].mDataByteSize < needed {
+            cubeb_log!(
+                "({:p}) output buffer too small for mixer: have {} bytes, need {} bytes",
+                stm as *const AudioUnitStream,
+                buffers[0].mDataByteSize,
+                needed
+            );
+            audiounit_make_silent(&buffers[0]);
+            return NO_ERR;
+        }
         mixer.mix(
             output_frames as usize,
             buffers[0].mData,
@@ -986,6 +1044,17 @@ extern "C" fn audiounit_output_callback(
             output_frames * stm.core_stream_data.output_dev_desc.mChannelsPerFrame,
         );
     }
+
+    #[cfg(feature = "tsan-annotations")]
+    {
+        extern "C" {
+            fn __tsan_release(addr: *mut c_void);
+        }
+        unsafe {
+            __tsan_release(stm.core_stream_data.output_unit as *mut c_void);
+        }
+    }
+
     NO_ERR
 }
 
@@ -1229,6 +1298,18 @@ fn start_audiounit(unit: AudioUnit) -> Result<()> {
 
 fn stop_audiounit(unit: AudioUnit) -> Result<()> {
     let status = audio_output_unit_stop(unit);
+    // AudioOutputUnitStop waits for in-flight callbacks, but TSan cannot see
+    // CoreAudio's internal HALB_Mutex synchronization. Acquire on the AudioUnit
+    // handle to pair with the release at the end of each callback.
+    #[cfg(feature = "tsan-annotations")]
+    {
+        extern "C" {
+            fn __tsan_acquire(addr: *mut c_void);
+        }
+        unsafe {
+            __tsan_acquire(unit as *mut c_void);
+        }
+    }
     if status == NO_ERR {
         Ok(())
     } else {
@@ -1435,6 +1516,7 @@ fn create_voiceprocessing_audiounit() -> Result<VoiceProcessingUnit> {
         return Err(Error::Error);
     }
 
+    #[cfg(not(feature = "no-private-apis"))]
     match get_default_device(DeviceType::OUTPUT) {
         None => {
             cubeb_log!("Could not get default output device in order to undo vpio ducking");
@@ -3365,6 +3447,12 @@ impl<'ctx> CoreStreamData<'ctx> {
         // and before the stream is destroyed.
         debug_assert!(!self.input_unit.is_null() || !self.output_unit.is_null());
 
+        // Match other cubeb backends: reset the async logger's recorded
+        // producer thread id before the CoreAudio I/O proc begins logging.
+        unsafe {
+            ffi::cubeb_async_log_reset_threads();
+        }
+
         if !self.input_unit.is_null() {
             start_audiounit(self.input_unit)?;
         }
@@ -3812,6 +3900,16 @@ impl<'ctx> CoreStreamData<'ctx> {
                 self.stm_ptr,
                 input_hw_desc
             );
+            // These have been observed in the wild.
+            if input_hw_desc.mSampleRate <= 0.0 || input_hw_desc.mChannelsPerFrame == 0 {
+                cubeb_log!(
+                    "({:p}) Invalid input hardware description: rate={}, channels={}",
+                    self.stm_ptr,
+                    input_hw_desc.mSampleRate,
+                    input_hw_desc.mChannelsPerFrame
+                );
+                return Err(Error::Error);
+            }
             // Notice: when we are using an aggregate device, input_hw_desc.mChannelsPerFrame is the
             // sum of all input channels of all devices added to the aggregate device.
             // Because we set the input device first on the aggregate device, the input device's
@@ -4020,11 +4118,13 @@ impl<'ctx> CoreStreamData<'ctx> {
                 output_hw_desc
             );
 
-            // This has been observed in the wild.
-            if output_hw_desc.mChannelsPerFrame == 0 {
+            // These have been observed in the wild.
+            if output_hw_desc.mSampleRate <= 0.0 || output_hw_desc.mChannelsPerFrame == 0 {
                 cubeb_log!(
-                    "({:p}) Output hardware description channel count is zero",
-                    self.stm_ptr
+                    "({:p}) Invalid output hardware description: rate={}, channels={}",
+                    self.stm_ptr,
+                    output_hw_desc.mSampleRate,
+                    output_hw_desc.mChannelsPerFrame
                 );
                 return Err(Error::Error);
             }
@@ -4325,6 +4425,7 @@ impl<'ctx> CoreStreamData<'ctx> {
             }
         }
 
+        #[cfg(not(feature = "no-private-apis"))]
         if using_voice_processing_unit {
             // The VPIO AudioUnit automatically ducks other audio streams on the VPIO
             // output device. Its ramp duration is 0.5s when ducking, so unduck similarly
@@ -5006,6 +5107,7 @@ impl<'ctx> AudioUnitStream<'ctx> {
 
             if self.reinit().is_err() {
                 self.core_stream_data.close();
+                self.stopped.store(true, Ordering::SeqCst);
                 self.notify_state_changed(State::Error);
                 cubeb_log!(
                     "({:p}) Could not reopen the stream after switching.",

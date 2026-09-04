@@ -1,11 +1,14 @@
-#include "gtest/gtest.h"
-
-#include "nsCOMPtr.h"
-#include "nsISocketTransport.h"
-#include "nsString.h"
-#include "nsComponentManagerUtils.h"
+#include "../../base/nsSocketTransport2.h"
 #include "../../base/nsSocketTransportService2.h"
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "AndroidNetworkBlockedReason.h"
+#endif
+#include "gtest/gtest.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsISocketTransport.h"
 #include "nsServiceManagerUtils.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
@@ -159,6 +162,29 @@ TEST(TestSocketTransportService, StatusValues)
       static_cast<nsresult>(nsISocketTransport::STATUS_TLS_HANDSHAKE_ENDED) ==
       NS_NET_STATUS_TLS_HANDSHAKE_ENDED);
 }
+
+// PR_END_OF_FILE_ERROR, PR_CONNECT_RESET_ERROR, and PR_CONNECT_ABORTED_ERROR
+// should all map to NS_ERROR_NET_RESET so that HTTP transactions automatically
+// retry on unexpected connection drops.
+TEST(TestSocketTransportService, ErrorAccordingToNSPR)
+{
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_END_OF_FILE_ERROR), NS_ERROR_NET_RESET);
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_CONNECT_RESET_ERROR), NS_ERROR_NET_RESET);
+  EXPECT_EQ(ErrorAccordingToNSPR(PR_CONNECT_ABORTED_ERROR), NS_ERROR_NET_RESET);
+}
+
+#if defined(MOZ_WIDGET_ANDROID)
+// 1 is ANDROID_NETWORK_BLOCKED_REASON_LNP from <android/multinetwork.h>; 0 is
+// ANDROID_NETWORK_BLOCKED_REASON_NONE. Any other value is some other Android
+// network-blocked reason and must not be misclassified as LNP.
+TEST(TestSocketTransportService, IsAndroidNetworkBlockedReasonLNP)
+{
+  EXPECT_TRUE(IsAndroidNetworkBlockedReasonLNP(1));
+  EXPECT_FALSE(IsAndroidNetworkBlockedReasonLNP(0));
+  EXPECT_FALSE(IsAndroidNetworkBlockedReasonLNP(-1));
+  EXPECT_FALSE(IsAndroidNetworkBlockedReasonLNP(2));
+}
+#endif  // defined(MOZ_WIDGET_ANDROID)
 
 }  // namespace net
 }  // namespace mozilla

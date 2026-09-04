@@ -72,6 +72,7 @@ config = {
                 "--certificate-path=tests/certs",
                 "--quiet",
                 "--log-errorsummary=%(error_summary_file)s",
+                "--log-testsummary=%(test_summary_file)s",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
                 "--marionette-startup-timeout=180",
@@ -99,6 +100,7 @@ config = {
                 "--self-test",
                 "--symbols-path=%(symbols_path)s",
                 "--log-errorsummary=%(error_summary_file)s",
+                "--log-testsummary=%(test_summary_file)s",
                 "--utility-path=tests/bin",
             ],
             "run_filename": "runxpcshelltests.py",
@@ -142,6 +144,10 @@ config = {
         "mochitest-browser-translations": [
             "--flavor=browser",
             "--subsuite=translations",
+        ],
+        "mochitest-browser-chrome-ml-models": [
+            "--flavor=browser",
+            "--subsuite=ml-models",
         ],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
         "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
@@ -245,8 +251,6 @@ config = {
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
     "unstructured_flavors": {
-        "gtest": [],
-        "cppunittest": [],
         "jittest": [],
     },
     "tooltool_cache": "/builds/tooltool_cache",

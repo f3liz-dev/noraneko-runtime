@@ -12,6 +12,7 @@ const {
 
 const {
   PSEUDO_CLASSES,
+  ELEMENT_SPECIFIC_PSEUDO_CLASSES,
 } = require("resource://devtools/shared/css/constants.js");
 
 loader.lazyRequireGetter(
@@ -440,6 +441,10 @@ class NodeActor extends Actor {
    * @returns {boolean}
    */
   hasEventListeners(refreshCache = false) {
+    if (Cu.isDeadWrapper(this.rawNode)) {
+      return false;
+    }
+
     if (this._hasEventListenersCached === undefined || refreshCache) {
       const result = this._eventCollector.hasEventListeners(this.rawNode);
       this._hasEventListenersCached = result;
@@ -467,7 +472,10 @@ class NodeActor extends Actor {
       return undefined;
     }
     let ret = undefined;
-    for (const pseudo of PSEUDO_CLASSES) {
+    for (const pseudo of [
+      ...PSEUDO_CLASSES,
+      ...Object.keys(ELEMENT_SPECIFIC_PSEUDO_CLASSES),
+    ]) {
       if (InspectorUtils.hasPseudoClassLock(this.rawNode, pseudo)) {
         ret = ret || [];
         ret.push(pseudo);
@@ -484,11 +492,11 @@ class NodeActor extends Actor {
     // Get a reference to the custom element definition function.
     const name = this.rawNode.localName;
 
-    if (!this.rawNode.ownerGlobal) {
+    if (!this.rawNode.documentGlobal) {
       return undefined;
     }
 
-    const customElementsRegistry = this.rawNode.ownerGlobal.customElements;
+    const customElementsRegistry = this.rawNode.documentGlobal.customElements;
     const customElement =
       customElementsRegistry && customElementsRegistry.get(name);
     if (!customElement) {
@@ -756,7 +764,7 @@ class NodeActor extends Actor {
    * @return {object}
    */
   getOwnerGlobalDimensions() {
-    const win = this.rawNode.ownerGlobal;
+    const win = this.rawNode.documentGlobal;
     return {
       innerWidth: win.innerWidth,
       innerHeight: win.innerHeight,
@@ -789,7 +797,7 @@ class NodeActor extends Actor {
       // transient document. In such case, we want to wait until the "final" document
       // is inserted.
 
-      const { chromeEventHandler } = this.rawNode.ownerGlobal.docShell;
+      const { chromeEventHandler } = this.rawNode.documentGlobal.docShell;
       const browsingContextID = this.rawNode.browsingContext.id;
       await new Promise((resolve, reject) => {
         this._waitForFrameLoadAbortController = new AbortController();

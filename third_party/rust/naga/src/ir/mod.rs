@@ -91,6 +91,15 @@ Naga's rules for when `Expression`s are evaluated are as follows:
     [`RayQuery`] statement whose [`Proceed::result`] points to it is
     executed.
 
+-   A [`SubgroupBallotResult`] expression is evaluated when the
+    [`SubgroupBallot`] statement whose [`result`][Statement::SubgroupBallot::result]
+    field points to it is executed.
+
+-   A [`SubgroupOperationResult`] expression is evaluated when the
+    [`SubgroupCollectiveOperation`] statement whose
+    [`result`][Statement::SubgroupCollectiveOperation::result]
+    field points to it is executed.
+
 -   All other expressions are evaluated when the (unique) [`Statement::Emit`]
     statement that covers them is executed.
 
@@ -179,6 +188,8 @@ An override expression can be evaluated at pipeline creation time.
 
 [`AtomicResult`]: Expression::AtomicResult
 [`RayQueryProceedResult`]: Expression::RayQueryProceedResult
+[`SubgroupBallotResult`]: Expression::SubgroupBallotResult
+[`SubgroupOperationResult`]: Expression::SubgroupOperationResult
 [`CallResult`]: Expression::CallResult
 [`Constant`]: Expression::Constant
 [`ZeroValue`]: Expression::ZeroValue
@@ -196,6 +207,8 @@ An override expression can be evaluated at pipeline creation time.
 [`Emit`]: Statement::Emit
 [`Store`]: Statement::Store
 [`RayQuery`]: Statement::RayQuery
+[`SubgroupBallot`]: Statement::SubgroupBallot
+[`SubgroupCollectiveOperation`]: Statement::SubgroupCollectiveOperation
 
 [`Proceed::result`]: RayQueryFunction::Proceed::result
 
@@ -236,6 +249,7 @@ use crate::diagnostic_filter::DiagnosticFilterNode;
 use crate::{FastIndexMap, NamedExpressions};
 
 pub use block::Block;
+pub use naga_types::{ResourceBinding, ShaderStage};
 
 /// Explicitly allows early depth/stencil tests.
 ///
@@ -315,28 +329,6 @@ pub enum ConservativeDepth {
     Unchanged,
 }
 
-/// Stage of the programmable pipeline.
-#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "deserialize", derive(Deserialize))]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-pub enum ShaderStage {
-    /// A vertex shader, in a render pipeline.
-    Vertex,
-
-    /// A task shader, in a mesh render pipeline.
-    Task,
-
-    /// A mesh shader, in a mesh render pipeline.
-    Mesh,
-
-    /// A fragment shader, in a render pipeline.
-    Fragment,
-
-    /// Compute pipeline shader.
-    Compute,
-}
-
 /// Addressing space of variables.
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
@@ -373,6 +365,14 @@ pub enum AddressSpace {
     Immediate,
     /// Task shader to mesh shader payload
     TaskPayload,
+
+    /// Ray tracing payload, for inputting in TraceRays
+    RayPayload,
+    /// Ray tracing payload, for entrypoints invoked by a TraceRays call
+    ///
+    /// Each entrypoint may reference only one variable in this scope, as
+    /// only one may be passed as a payload.
+    IncomingRayPayload,
 }
 
 /// Built-in inputs and outputs.
@@ -381,6 +381,11 @@ pub enum AddressSpace {
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum BuiltIn {
+    // This must be at the top so that it gets sorted to the top. PrimitiveIndex is considered a non SV
+    // by FXC so it must appear before any other SVs.
+    /// Read in fragment shaders, written in mesh shaders, read in any and closest hit shaders.
+    PrimitiveIndex,
+
     /// Written in vertex/mesh shaders, read in fragment shaders
     Position { invariant: bool },
     /// Read in task, mesh, vertex, and fragment shaders
@@ -391,17 +396,17 @@ pub enum BuiltIn {
     /// Read in vertex shaders
     BaseVertex,
     /// Written in vertex & mesh shaders
-    ClipDistance,
+    ClipDistances,
     /// Written in vertex & mesh shaders
     CullDistance,
-    /// Read in vertex shaders
+    /// Read in vertex, any- and closest-hit shaders
     InstanceIndex,
     /// Written in vertex & mesh shaders
     PointSize,
     /// Read in vertex shaders
     VertexIndex,
     /// Read in vertex & task shaders, or mesh shaders in pipelines without task shaders
-    DrawID,
+    DrawIndex,
 
     /// Written in fragment shaders
     FragDepth,
@@ -409,8 +414,6 @@ pub enum BuiltIn {
     PointCoord,
     /// Read in fragment shaders
     FrontFacing,
-    /// Read in fragment shaders, written in mesh shaders
-    PrimitiveIndex,
     /// Read in fragment shaders
     Barycentric { perspective: bool },
     /// Read in fragment shaders
@@ -459,6 +462,46 @@ pub enum BuiltIn {
     PrimitiveCount,
     /// Written to a workgroup variable in mesh shaders
     Primitives,
+
+    /// Read in all ray tracing pipeline shaders, the id within the number of
+    /// rays that this current ray is.
+    RayInvocationId,
+    /// Read in all ray tracing pipeline shaders, the number of rays created.
+    NumRayInvocations,
+    /// Read in closest hit and any hit shaders, the custom data in the tlas
+    /// instance
+    InstanceCustomData,
+    /// Read in closest hit and any hit shaders, the index of the geometry in
+    /// the blas.
+    GeometryIndex,
+    /// Read in closest hit, any hit, and miss shaders, the origin of the ray.
+    WorldRayOrigin,
+    /// Read in closest hit, any hit, and miss shaders, the direction of the
+    /// ray.
+    WorldRayDirection,
+    /// Read in closest hit and any hit shaders, the direction of the ray in
+    /// object space.
+    ObjectRayOrigin,
+    /// Read in closest hit and any hit shaders, the direction of the ray in
+    /// object space.
+    ObjectRayDirection,
+    /// Read in closest hit, any hit, and miss shaders, the t min provided by
+    /// in the ray desc.
+    RayTmin,
+    /// Read in closest hit, any hit, and miss shaders, the final bounds at which
+    /// a hit is accepted (the closest committed hit if there is one otherwise, t
+    /// max provided in the ray desc).
+    RayTCurrentMax,
+    /// Read in closest hit and any hit shaders, the matrix for converting from
+    /// object space to world space
+    ObjectToWorld,
+    /// Read in closest hit and any hit shaders, the matrix for converting from
+    /// world space to object space
+    WorldToObject,
+    /// Read in closest hit and any hit shaders, the type of hit as provided by
+    /// the intersection function if any, otherwise this is 254 (0xFE) for a
+    /// front facing triangle and 255 (0xFF) for a back facing triangle
+    HitKind,
 }
 
 /// Number of bytes per scalar.
@@ -664,6 +707,22 @@ bitflags::bitflags! {
         const STORE = 0x2;
         /// Storage can be used as a target for atomic ops.
         const ATOMIC = 0x4;
+    }
+}
+
+bitflags::bitflags! {
+    /// Memory decorations for global variables.
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    #[cfg_attr(feature = "deserialize", derive(Deserialize))]
+    #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MemoryDecorations: u8 {
+        /// Reads and writes are automatically visible to other invocations
+        /// without explicit barriers.
+        const COHERENT = 0x1;
+        /// The variable may be modified by something external to the shader,
+        /// preventing certain compiler optimizations.
+        const VOLATILE = 0x2;
     }
 }
 
@@ -983,6 +1042,8 @@ pub enum Literal {
     F32(f32),
     /// May not be NaN or infinity.
     F16(f16),
+    U16(u16),
+    I16(i16),
     U32(u32),
     I32(i32),
     U64(u64),
@@ -1080,18 +1141,6 @@ pub enum Binding {
     },
 }
 
-/// Pipeline binding information for global resources.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "deserialize", derive(Deserialize))]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-pub struct ResourceBinding {
-    /// The bind group index.
-    pub group: u32,
-    /// Binding number within the group.
-    pub binding: u32,
-}
-
 /// Variable defined at module level.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
@@ -1110,6 +1159,13 @@ pub struct GlobalVariable {
     ///
     /// This refers to an [`Expression`] in [`Module::global_expressions`].
     pub init: Option<Handle<Expression>>,
+    /// Memory decorations for this variable.
+    ///
+    /// These are meaningful for storage address space variables in SPIR-V,
+    /// where they map to SPIR-V memory decorations on the variable.
+    ///
+    /// In WGSL, these can be set with attributes like `@coherent` or `@volatile`.
+    pub memory_decorations: MemoryDecorations,
 }
 
 /// Variable defined at function level.
@@ -1493,7 +1549,7 @@ bitflags::bitflags! {
     pub struct Barrier: u32 {
         /// Barrier affects all [`AddressSpace::Storage`] accesses.
         const STORAGE = 1 << 0;
-        /// Barrier affects all [`AddressSpace::WorkGroup`] accesses.
+        /// Barrier affects all [`AddressSpace::WorkGroup`] and [`AddressSpace::TaskPayload`] accesses.
         const WORK_GROUP = 1 << 1;
         /// Barrier synchronizes execution across all invocations within a subgroup that execute this instruction.
         const SUB_GROUP = 1 << 2;
@@ -2278,6 +2334,8 @@ pub enum Statement {
         /// The specific operation we're performing on `query`.
         fun: RayQueryFunction,
     },
+    /// A ray tracing pipeline shader intrinsic.
+    RayPipelineFunction(RayPipelineFunction),
     /// Calculate a bitmask using a boolean from each active thread in the subgroup
     SubgroupBallot {
         /// The [`SubgroupBallotResult`] expression representing this load's result.
@@ -2353,6 +2411,12 @@ pub struct FunctionResult {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct Function {
     /// Name of the function, if any.
+    ///
+    /// Unlike WGSL, Naga IR allows a module to have multiple functions with the
+    /// same name. Since functions are generally identified by handle, the name
+    /// is mostly needed for diagnostics and as a hint to [`Namer`].
+    ///
+    /// [`Namer`]: crate::proc::Namer
     pub name: Option<String>,
     /// Information about function argument.
     pub arguments: Vec<FunctionArgument>,
@@ -2444,7 +2508,9 @@ pub struct Function {
 pub struct EntryPoint {
     /// Name of this entry point, visible externally.
     ///
-    /// Entry point names for a given `stage` must be distinct within a module.
+    /// Unlike WGSL, Naga IR allows a module to have multiple entry points with
+    /// the same name, as long as they are for different shader stages. That is,
+    /// `(name, stage)` pairs must be distinct within a module.
     pub name: String,
     /// Shader stage.
     pub stage: ShaderStage,
@@ -2462,6 +2528,9 @@ pub struct EntryPoint {
     pub mesh_info: Option<MeshStageInfo>,
     /// The unique global variable used as a task payload from task shader to mesh shader
     pub task_payload: Option<Handle<GlobalVariable>>,
+    /// The unique global variable used as an incoming ray payload going into any hit, closest hit and miss shaders.
+    /// Unlike the outgoing ray payload, an incoming ray payload must be unique
+    pub incoming_ray_payload: Option<Handle<GlobalVariable>>,
 }
 
 /// Return types predeclared for the frexp, modf, and atomicCompareExchangeWeak built-in functions.
@@ -2675,6 +2744,36 @@ pub struct MeshStageInfo {
     pub primitive_output_type: Handle<Type>,
     /// The global variable holding the outputted vertices, primitives, and counts
     pub output_variable: Handle<GlobalVariable>,
+}
+
+/// Ray tracing pipeline intrinsics
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "deserialize", derive(Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+pub enum RayPipelineFunction {
+    /// Traces a ray through the given acceleration structure
+    TraceRay {
+        /// The acceleration structure within which this ray should search for hits.
+        ///
+        /// The expression must be an [`AccelerationStructure`].
+        ///
+        /// [`AccelerationStructure`]: TypeInner::AccelerationStructure
+        acceleration_structure: Handle<Expression>,
+
+        #[allow(rustdoc::private_intra_doc_links)]
+        /// A struct of detailed parameters for the ray query.
+        ///
+        /// This expression should have the struct type given in
+        /// [`SpecialTypes::ray_desc`]. This is available in the WGSL
+        /// front end as the `RayDesc` type.
+        descriptor: Handle<Expression>,
+
+        /// A pointer in the ray_payload or incoming_ray_payload address spaces
+        payload: Handle<Expression>,
+        // Do we want miss index? What about sbt offset and sbt stride (could be hard to validate)?
+        // https://github.com/gfx-rs/wgpu/issues/8894
+    },
 }
 
 /// Shader module.

@@ -1,0 +1,559 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@mixin widget-celebration-styles($prefix) {
+  .#{$prefix} {
+    animation:
+      widget-celebration-lifecycle
+      calc(var(--widget-celebration-hold-duration) + var(--widget-celebration-exit-duration))
+      linear
+      forwards;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 3;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background: var(--widget-celebration-tint-color);
+      opacity: 0;
+      animation:
+        widget-celebration-tint-in 260ms var(--widget-celebration-enter-ease) forwards,
+        widget-celebration-tint-out var(--widget-celebration-exit-duration) ease forwards;
+      animation-delay: 0ms, var(--widget-celebration-hold-duration);
+    }
+  }
+
+  .#{$prefix}-effects {
+    inset: 0;
+    position: absolute;
+
+    svg {
+      display: block;
+      filter: drop-shadow(0 0 10px var(--widget-celebration-glow-color));
+      height: 100%;
+      width: 100%;
+    }
+  }
+
+  .#{$prefix}-stroke-track,
+  .#{$prefix}-stroke,
+  .#{$prefix}-stroke-orbit {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+  }
+
+  .#{$prefix}-stroke-track {
+    // No matching opacity token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0.22;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--widget-celebration-track-color);
+  }
+
+  .#{$prefix}-stroke {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation-name: widget-celebration-border-draw, widget-celebration-border-fade;
+    animation-duration: var(--widget-celebration-border-draw-duration), var(--widget-celebration-exit-duration);
+    animation-timing-function: var(--widget-celebration-enter-ease), ease;
+    animation-fill-mode: forwards, forwards;
+    animation-delay: 0ms, var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-stroke-orbit {
+    opacity: 0;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    stroke: var(--widget-celebration-orbit-color);
+    stroke-dasharray: 14 86;
+    stroke-dashoffset: 100;
+    stroke-width: 3;
+    animation:
+      widget-celebration-border-orbit-in 240ms var(--widget-celebration-enter-ease) 160ms forwards,
+      widget-celebration-border-orbit-loop var(--widget-celebration-orbit-duration) linear 260ms infinite,
+      widget-celebration-border-orbit-out var(--widget-celebration-exit-duration) ease var(--widget-celebration-hold-duration) forwards;
+  }
+
+  // Conic ring confined to a 2px border band by an xor mask. The angle needs
+  // the registered --widget-celebration-spin property below to interpolate;
+  // without it the gradient jumps instead of rotating.
+  .#{$prefix}-ring {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border-radius: inherit;
+    padding: var(--space-xxsmall);
+    background: conic-gradient(from var(--widget-celebration-spin), var(--widget-celebration-ring-stops));
+    mask-image: linear-gradient(#FFF 0 0), linear-gradient(#FFF 0 0);
+    mask-clip: content-box, border-box;
+    mask-composite: exclude;
+    mask-origin: border-box;
+    transform: translateZ(0);
+    pointer-events: none;
+    animation:
+      widget-celebration-tint-in 600ms ease forwards,
+      widget-celebration-ring-spin var(--widget-celebration-ring-duration) linear infinite,
+      widget-celebration-tint-out var(--widget-celebration-exit-duration) ease var(--widget-celebration-hold-duration) forwards;
+  }
+
+  // Rendered inside the element it decorates. Room above and to the sides,
+  // almost none below, so sparkles never stray into text beneath.
+  .#{$prefix}-sparkles {
+    position: absolute;
+    // Decorative overhang around the decorated element, not layout spacing —
+    // no design token expresses a negative inset triple.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens, declaration-property-value-disallowed-list */
+    inset: -12px -8px -2px;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .#{$prefix}-sparkle {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform-origin: 50% 50%;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--widget-celebration-sparkle-color);
+    animation: widget-celebration-sparkle var(--widget-celebration-sparkle-duration)
+      cubic-bezier(0.22, 1, 0.36, 1) var(--sparkle-delay) forwards;
+
+    svg {
+      display: block;
+      height: 100%;
+      width: 100%;
+      fill: currentColor;
+    }
+
+    // Sparkle sizes are decorative glyph dimensions, not layout items; the
+    // two smaller steps have no matching size token.
+    &--lg {
+      height: var(--size-item-xsmall);
+      width: var(--size-item-xsmall);
+    }
+
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    &--md {
+      height: 9px;
+      width: 9px;
+    }
+
+    &--sm {
+      height: 7px;
+      width: 7px;
+    }
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+  }
+
+  .#{$prefix}-copy {
+    align-items: center;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--widget-celebration-copy-color);
+    display: flex;
+    flex-direction: column;
+    inset-block-start: 52%;
+    inset-inline: var(--space-large);
+    padding-block: var(--space-small);
+    padding-inline: var(--space-medium);
+    position: absolute;
+    text-align: center;
+    transform: translateY(-50%);
+    z-index: 1;
+
+    &::before {
+      display: none;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background: color-mix(
+        in srgb,
+        var(--widget-celebration-surface-color) 88%,
+        transparent
+      );
+      border-radius: var(--border-radius-large);
+      content: '';
+      inset: 0;
+      opacity: 0;
+      position: absolute;
+      animation:
+        widget-celebration-copy-panel-in 320ms var(--widget-celebration-enter-ease) forwards,
+        widget-celebration-copy-panel-out var(--widget-celebration-exit-duration) ease forwards;
+      animation-delay: var(--widget-celebration-panel-delay), var(--widget-celebration-hold-duration);
+    }
+  }
+
+  .#{$prefix}-headline,
+  .#{$prefix}-subhead {
+    opacity: 0;
+    position: relative;
+    transform: translateY(8px);
+    z-index: 1;
+  }
+
+  .#{$prefix}-headline {
+    display: inline-block;
+    background-image: linear-gradient(
+      var(--widget-celebration-headline-gradient-angle),
+      var(--widget-celebration-headline-gradient-start),
+      var(--widget-celebration-headline-gradient-mid-start) 28%,
+      var(--widget-celebration-headline-gradient-mid-end) 64%,
+      var(--widget-celebration-headline-gradient-end)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    // Required by background-clip: text.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: transparent;
+    font-size: var(--font-size-xlarge);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+    animation:
+      widget-celebration-copy-in 320ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-copy-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-headline-delay), var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-subhead {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--widget-celebration-copy-color);
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    margin-block-start: var(--space-xxsmall);
+    animation:
+      widget-celebration-copy-in 320ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-copy-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-subhead-delay), var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-illustration {
+    // Image-specific dimensions, not on the size-image scale.
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    block-size: 132px;
+    inset-block-end: var(--space-xxsmall);
+    inline-size: auto;
+    max-inline-size: 209px;
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    inset-inline-end: var(--space-small);
+    opacity: 0;
+    position: absolute;
+    transform: translateY(12px) scale(0.96);
+    transform-origin: bottom right;
+    animation:
+      widget-celebration-illustration-in 360ms var(--widget-celebration-enter-ease) forwards,
+      widget-celebration-illustration-out var(--widget-celebration-exit-duration) ease forwards;
+    animation-delay: var(--widget-celebration-illustration-delay), var(--widget-celebration-hold-duration);
+  }
+
+  .#{$prefix}-confetti {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .#{$prefix}-confetti-defs {
+    position: absolute;
+    inline-size: 0;
+    block-size: 0;
+  }
+
+  .#{$prefix}-confetti-piece {
+    position: absolute;
+    inset-block-start: -12%;
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    inset-inline-start: var(--confetti-x);
+    inline-size: var(--confetti-w);
+    block-size: var(--confetti-h);
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0;
+    animation-name: widget-celebration-confetti-fall;
+    animation-duration: calc(
+      var(--confetti-duration) * var(--confetti-duration-scale, 1)
+    );
+    animation-timing-function: cubic-bezier(0.3, 0.45, 0.55, 1);
+    animation-delay: calc(var(--confetti-delay) * var(--confetti-delay-scale, 1));
+    animation-fill-mode: forwards;
+  }
+
+  i.#{$prefix}-confetti-piece {
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    background-color: var(--confetti-color);
+    border-radius: var(--confetti-radius);
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    clip-path: var(--confetti-clip);
+  }
+
+  svg.#{$prefix}-confetti-piece {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--confetti-color);
+  }
+
+  .#{$prefix}-fireworks {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .#{$prefix}-firework {
+    position: absolute;
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    inset-block-start: var(--fw-top);
+    inset-inline-start: var(--fw-left);
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    inline-size: 0;
+    block-size: 0;
+    color: inherit;
+  }
+
+  .#{$prefix}-firework-spark {
+    position: absolute;
+    /* stylelint-disable stylelint-plugin-mozilla/use-design-tokens */
+    inline-size: calc(6px * var(--fw-scale, 1));
+    block-size: calc(6px * var(--fw-scale, 1));
+    box-shadow: 0 0 4px currentColor;
+    /* stylelint-enable stylelint-plugin-mozilla/use-design-tokens */
+    border-radius: var(--border-radius-circle);
+    background-color: currentColor;
+    opacity: 0;
+    animation: widget-celebration-firework 1000ms ease-out
+      calc(var(--fw-delay) + var(--firework-start-delay, 0ms)) forwards;
+  }
+}
+
+@keyframes widget-celebration-confetti-fall {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    rotate: 0deg;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    translate: var(--confetti-drift) var(--confetti-fall, 360px);
+    rotate: var(--confetti-rotate);
+  }
+}
+
+@keyframes widget-celebration-firework {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    scale: 0.3;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    translate: var(--fw-dx) calc(var(--fw-dy) + 14px);
+    scale: 1;
+  }
+}
+
+@keyframes widget-celebration-lifecycle {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-border-draw {
+  from {
+    // Keyframe midpoint, no matching opacity token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0.4;
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes widget-celebration-border-fade {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-border-orbit-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: var(--opacity-deemphasized-strong);
+  }
+}
+
+@keyframes widget-celebration-border-orbit-loop {
+  from {
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes widget-celebration-border-orbit-out {
+  from {
+    opacity: var(--opacity-deemphasized-strong);
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes widget-celebration-copy-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes widget-celebration-copy-panel-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-copy-panel-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes widget-celebration-illustration-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes widget-celebration-illustration-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes widget-celebration-tint-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes widget-celebration-tint-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@property --widget-celebration-spin {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes widget-celebration-ring-spin {
+  to {
+    --widget-celebration-spin: 360deg;
+  }
+}
+
+@keyframes widget-celebration-sparkle {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) translate3d(0, 4px, 0) rotate(-4deg);
+  }
+
+  30% {
+    // Keyframe midpoint, no matching opacity token.
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    opacity: 0.92;
+    transform: scale(1) translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.65) translate3d(0, -8px, 0) rotate(3deg);
+  }
+}

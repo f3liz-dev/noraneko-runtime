@@ -104,7 +104,8 @@ impl InitGlean {
         // No need to check `cfg!(test)`, since we don't set an uploader in unit tests (and if we
         // did, it would be test-specific).
         let is_test = std::env::var_os("XPCSHELL_TEST_PROFILE_DIR").is_some()
-            || std::env::var_os("MOZ_AUTOMATION").is_some();
+            || std::env::var_os("MOZ_AUTOMATION").is_some()
+            || std::env::var_os("MOZ_DISABLE_NONLOCAL_CONNECTIONS") == Some("1".into());
         if self.clear_uploader_for_tests && is_test {
             self.configuration.uploader = None;
             self.configuration.server_endpoint = None;
@@ -122,6 +123,11 @@ pub fn send(annotations: &serde_json::Value, reason: Option<&str>) -> anyhow::Re
     log::debug!("submitting Glean crash ping");
     glean_metrics::crash.submit(reason);
     Ok(())
+}
+
+/// Set whether upload is enabled or not.
+pub fn set_collection_enabled(enabled: bool) {
+    glean::set_collection_enabled(enabled);
 }
 
 /// **Test-only API**
@@ -146,18 +152,24 @@ pub fn test_get_metric_values() -> serde_json::Value {
 
 /// Set Glean metrics from the given annotations.
 fn set_metrics_from_annotations(annotations: &serde_json::Value) -> anyhow::Result<()> {
+    let mut meta_annotations = serde_json::Map::default();
     for annotation in ANNOTATIONS {
         if let Some(value) = annotations.get(annotation.key) {
             (annotation.set_glean_metric)(value)?;
+            meta_annotations.insert(annotation.key.to_owned(), value.clone());
         }
     }
+    glean_metrics::meta::annotations.set(glean_metrics::meta::AnnotationsObject {
+        source: Some(serde_json::Value::Object(meta_annotations).to_string()),
+    });
 
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
-    use super::{send, test_before_next_send, ANNOTATIONS};
+    use super::{glean_metrics, send, test_before_next_send, ANNOTATIONS};
+    use glean::TestGetValue;
     use std::sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc, Mutex,
@@ -236,6 +248,7 @@ mod test {
                 "AsyncShutdownTimeout": "{\"phase\":\"abcd\",\"conditions\":[{\"foo\":\"bar\"}],\"brokenAddBlockers\":[\"foo\"]}",
                 "BlockedDllList": "Foo.dll;bar.dll;rawr.dll",
                 "CrashTime": "1234",
+                "InstallTime": "1784641473",
                 "LastInteractionDuration": "100",
                 "NimbusEnrollments": "a,b,c,d,e",
                 "QuotaManagerShutdownTimeout": "line1\nline2\nline3",
@@ -258,19 +271,16 @@ mod test {
                     }
                 }"#,
                 "SecondsSinceLastCrash": "50000",
-                "StackTraces": {
-                    "status": "OK",
-                    // Add extraneous field to ensure it doesn't affect setting the metric
+                // Add extraneous field `foobar` to ensure it doesn't affect setting the metric
+                "StackTraces": r#"{
                     "foobar": "baz",
-                    "crash_info": {
-                        "type": "bad crash",
-                        "address": "0xcafe",
-                        "crashing_thread": 1
-                    },
+                    "crash_type": "bad crash",
+                    "crash_address": "0xcafe",
+                    "crash_thread": 1,
                     "main_module": 0,
                     "modules": [{
-                        "base_addr": "0xcafe",
-                        "end_addr": "0xf000",
+                        "base_address": "0xcafe",
+                        "end_address": "0xf000",
                         "code_id": "CODEID",
                         "debug_file": "debug_file.so",
                         "debug_id": "DEBUGID",
@@ -298,7 +308,7 @@ mod test {
                             }
                         ]}
                     ]
-                },
+                }"#,
                 "UptimeTS": "400.5",
                 "UtilityActorsName": "abc,def",
                 "WindowsFileDialogErrorCode": "40",
@@ -352,6 +362,44 @@ mod test {
                         );
                     }
                     metrics_tested.clear();
+                });
+            }
+
+            send(&annotations, Some("crash")).expect("failed to set metrics");
+        });
+    }
+
+    #[test]
+    fn meta_annotations() {
+        glean_test(|| {
+            let mut annotations = serde_json::json!({
+                "AsyncShutdownTimeout": "{\"phase\":\"abcd\",\"conditions\":[{\"foo\":\"bar\"}],\"brokenAddBlockers\":[\"foo\"]}",
+                "BlockedDllList": "Foo.dll;bar.dll;rawr.dll",
+                "CrashEventID": "2ce9f2ba-1801-4661-8045-c48d8a3456c7",
+                "CrashTime": "1234",
+                "CrashType": "test",
+                "LastInteractionDuration": "100",
+                "MozCrashReason": "testing",
+            });
+
+            let expected_string = annotations.to_string();
+
+            annotations["NonExistentAnnotation"] = "should not be there".into();
+            annotations["TestKey"] = "should only be in reports".into();
+
+            // Check that the metric has the expected value.
+            let success = SoftAssert::new(false, "one or more failures occurred");
+            let metric_tested = SoftAssert::new(true, "test_before_next_send did not run");
+            {
+                let success = success.clone();
+                let metric_tested = metric_tested.clone();
+                test_before_next_send(move |_| {
+                    success.assert(
+                        glean_metrics::meta::annotations.test_get_value(Some("crash".into()))
+                            == Some(serde_json::json!({"source": expected_string})),
+                        "incorrect meta annotation content",
+                    );
+                    metric_tested.clear();
                 });
             }
 
@@ -482,18 +530,15 @@ mod test {
         }
 
         test_stack_traces(StackTraces) {
-            {
-                "status": "OK",
-                "crash_info": {
-                    "type": "main",
-                    "address": "0xf001ba11",
-                    "crashing_thread": 1
-                },
+            r#"{
+                "crash_type": "main",
+                "crash_address": "0xf001ba11",
+                "crash_thread": 1,
                 "main_module": 0,
                 "modules": [
                     {
-                        "base_addr": "0x00000000",
-                        "end_addr": "0x00004000",
+                        "base_address": "0x00000000",
+                        "end_address": "0x00004000",
                         "code_id": "8675309",
                         "debug_file": "",
                         "debug_id": "18675309",
@@ -501,8 +546,8 @@ mod test {
                         "version": "1.0.0"
                     },
                     {
-                        "base_addr": "0x00004000",
-                        "end_addr": "0x00008000",
+                        "base_address": "0x00004000",
+                        "end_address": "0x00008000",
                         "code_id": "42",
                         "debug_file": "foo.pdb",
                         "debug_id": "43",
@@ -524,7 +569,7 @@ mod test {
                         ]
                     }
                 ]
-            }
+            }"#
             => {
                 "crash_type": "main",
                 "crash_address": "0xf001ba11",

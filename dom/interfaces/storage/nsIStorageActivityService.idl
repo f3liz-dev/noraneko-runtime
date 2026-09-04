@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,7 +24,7 @@ interface nsIStorageActivityService : nsISupports
   // timestamps. Note activities older than 1 day are forgotten.
   // Activity details are not persisted, so this only covers activity since
   // Firefox was started.  All content principals are logged, which includes
-  // non-system principals like "moz-extension://ID", "moz-safe-about:home",
+  // non-system principals like "moz-extension://ID", "about:home",
   // "about:newtab", so principals may need to be filtered before being used.
   nsIArray getActiveOrigins(in PRTime from, in PRTime to);
 

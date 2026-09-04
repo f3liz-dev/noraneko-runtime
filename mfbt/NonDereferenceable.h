@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,9 +7,9 @@
 
 /* A pointer wrapper indicating that the pointer should not be dereferenced. */
 
-#include "mozilla/Attributes.h"
-
 #include <cstdint>
+
+#include "mozilla/Attributes.h"
 
 // Macro indicating that a function manipulates a pointer that will not be
 // dereferenced, and therefore there is no need to check the object.

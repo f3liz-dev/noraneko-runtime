@@ -1,11 +1,42 @@
 .logo-and-wordmark-wrapper {
   // Override default h1 margins
   margin-block: 0;
+
+  .nova-enabled .content & {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+  }
+
 }
 
 .logo-and-wordmark {
   $logo-size: 64px;
   $wordmark-size: 105px;
+
+  // @nova-cleanup(remove-conditional): Make default behavior, remove .nova-enabled selector
+  .nova-enabled & {
+    justify-content: flex-start;
+
+    .wordmark {
+      display: none;
+    }
+
+    @include at-outer-grid-cols(8) {
+      width: max-content;
+
+      .wordmark {
+        display: inline-block;
+      }
+    }
+  }
+
+  .nova-enabled .content & {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
 
   align-items: center;
   display: flex;
@@ -41,22 +72,24 @@
     @include wallpaper-contrast-fix;
   }
 
-  @media (max-width: $break-point-medium - 1) {
-    $logo-size-small: 64px;
-    $wordmark-small-size: 100px;
+  // @nova-cleanup(remove-conditional): Delete this entire .classic-enabled block and its contents
+  .classic-enabled & {
+    @media (max-width: $break-point-medium - 1) {
+      $logo-size-small: 64px;
+      $wordmark-small-size: 100px;
 
-    .logo {
-      background-size: $logo-size-small;
-      height: $logo-size-small;
-      width: $logo-size-small;
-    }
+      .logo {
+        background-size: $logo-size-small;
+        height: $logo-size-small;
+        width: $logo-size-small;
+      }
 
-    .wordmark {
-      background-size: $wordmark-small-size;
-      height: $logo-size-small;
-      width: $wordmark-small-size;
-      margin-inline-start: var(--space-medium);
+      .wordmark {
+        background-size: $wordmark-small-size;
+        height: $logo-size-small;
+        width: $wordmark-small-size;
+        margin-inline-start: var(--space-medium);
+      }
     }
   }
 }
-

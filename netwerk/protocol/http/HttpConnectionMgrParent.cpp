@@ -1,27 +1,25 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "HttpConnectionMgrParent.h"
+
 #include "AltSvcTransactionParent.h"
+#include "HttpLog.h"
 #include "mozilla/net/HttpTransactionParent.h"
 #include "mozilla/net/WebSocketConnectionParent.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsISpeculativeConnect.h"
 #include "nsIOService.h"
+#include "nsISpeculativeConnect.h"
 #include "nsQueryObject.h"
 
 namespace mozilla::net {
 
-MOZ_RUNINIT nsTHashMap<uint32_t, nsCOMPtr<nsIHttpUpgradeListener>>
+constinit nsTHashMap<uint32_t, nsCOMPtr<nsIHttpUpgradeListener>>
     HttpConnectionMgrParent::sHttpUpgradeListenerMap;
 uint32_t HttpConnectionMgrParent::sListenerId = 0;
 StaticMutex HttpConnectionMgrParent::sLock;

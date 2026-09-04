@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,15 +11,15 @@
 #undef LOG_ENABLED
 #define LOG_ENABLED() LOG5_ENABLED()
 
-#include "nsHttpConnectionInfo.h"
-
+#include "mozilla/HashFunctions.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "nsComponentManagerUtils.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
 #include "nsICryptoHash.h"
 #include "nsIDNSByTypeRecord.h"
 #include "nsIProtocolProxyService.h"
-#include "nsHttpHandler.h"
 #include "nsNetCID.h"
 #include "nsProxyInfo.h"
 #include "prnetdb.h"
@@ -103,7 +101,10 @@ void nsHttpConnectionInfo::Init(const nsACString& host, int32_t port,
   mTRRMode = nsIRequest::TRR_DEFAULT_MODE;
   mIPv4Disabled = false;
   mIPv6Disabled = false;
+  mHttp3Disabled = false;
   mHasIPHintAddress = false;
+  mHttp3Only = false;
+  mIsWildCard = host.Equals("*"_ns);
 
   mUsingHttpsProxy = (proxyInfo && proxyInfo->IsHTTPS());
   mUsingHttpProxy = mUsingHttpsProxy || (proxyInfo && proxyInfo->IsHTTP());
@@ -162,14 +163,14 @@ void nsHttpConnectionInfo::BuildHashKey() {
   // byte 7 is B/. B is for allowing client certs on an anonymous channel
   // byte 8 is F/. F is for indicating a fallback connection
   // byte 9 is W/. W is for indicating a webTransport
+  // byte 10 is H/. H is for indicating HappyEyeballs is used
   // Note: when adding/removing fields from this list which do not have
   // corresponding data fields on the object itself, you may also need to
   // modify RebuildHashKey.
 
-  const auto keyTemplate =
-      std::string(UnderlyingIndex(HashKeyIndex::End), '.') +
-      std::string("[tlsflags0x00000000]");
-  mHashKey.Assign(keyTemplate.c_str());
+  static_assert(static_cast<uint32_t>(HashKeyIndex::End) == 11,
+                "Update dot string in BuildHashKey if HashKeyIndex changes");
+  mHashKey.AssignLiteral("...........[tlsflags0x00000000]");
 
   mHashKey.Append(keyHost);
   mHashKey.Append(':');
@@ -230,18 +231,21 @@ void nsHttpConnectionInfo::BuildHashKey() {
     mHashKey.Append(']');
   }
 
-  if (!mRoutedHost.IsEmpty()) {
-    mHashKey.AppendLiteral(" <ROUTE-via ");
-    mHashKey.Append(mRoutedHost);
-    mHashKey.Append(':');
-    mHashKey.AppendInt(mRoutedPort);
-    mHashKey.Append('>');
-  }
+  // When HappyEyeballs is enabled, don't encode routedHost and NPN-TOKEN.
+  if (!mHappyEyeballsEnabled) {
+    if (!mRoutedHost.IsEmpty()) {
+      mHashKey.AppendLiteral(" <ROUTE-via ");
+      mHashKey.Append(mRoutedHost);
+      mHashKey.Append(':');
+      mHashKey.AppendInt(mRoutedPort);
+      mHashKey.Append('>');
+    }
 
-  if (!mNPNToken.IsEmpty()) {
-    mHashKey.AppendLiteral(" {NPN-TOKEN ");
-    mHashKey.Append(mNPNToken);
-    mHashKey.AppendLiteral("}");
+    if (!mNPNToken.IsEmpty()) {
+      mHashKey.AppendLiteral(" {NPN-TOKEN ");
+      mHashKey.Append(mNPNToken);
+      mHashKey.AppendLiteral("}");
+    }
   }
 
   if (GetTRRMode() != nsIRequest::TRR_DEFAULT_MODE) {
@@ -259,6 +263,10 @@ void nsHttpConnectionInfo::BuildHashKey() {
 
   if (GetIPv6Disabled()) {
     mHashKey.AppendLiteral("[!v6]");
+  }
+
+  if (GetHttp3Disabled()) {
+    mHashKey.AppendLiteral("[!h3]");
   }
 
   if (mProxyInfo) {
@@ -294,6 +302,7 @@ void nsHttpConnectionInfo::RebuildHashKey() {
   bool isBeConservative = GetBeConservative();
   bool isAnonymousAllowClientCert = GetAnonymousAllowClientCert();
   bool isFallback = GetFallbackConnection();
+  bool isHappyEyeballs = GetHappyEyeballsEnabled();
 
   BuildHashKey();
 
@@ -306,6 +315,7 @@ void nsHttpConnectionInfo::RebuildHashKey() {
   SetAnonymousAllowClientCert(isAnonymousAllowClientCert);
   SetFallbackConnection(isFallback);
   SetTlsFlags(mTlsFlags);
+  SetHappyEyeballsEnabled(isHappyEyeballs);
 }
 
 void nsHttpConnectionInfo::SetOriginServer(const nsACString& host,
@@ -347,9 +357,13 @@ already_AddRefed<nsHttpConnectionInfo> nsHttpConnectionInfo::Clone() const {
   clone->SetTRRMode(GetTRRMode());
   clone->SetIPv4Disabled(GetIPv4Disabled());
   clone->SetIPv6Disabled(GetIPv6Disabled());
+  clone->SetHttp3Disabled(GetHttp3Disabled());
   clone->SetHasIPHintAddress(HasIPHintAddress());
+  clone->SetHttp3Only(GetHttp3Only());
   clone->SetEchConfig(GetEchConfig());
   clone->SetWebTransportId(GetWebTransportId());
+  clone->SetHappyEyeballsEnabled(GetHappyEyeballsEnabled());
+
   MOZ_ASSERT(clone->Equals(this));
 
   return clone.forget();
@@ -378,9 +392,10 @@ nsHttpConnectionInfo::CloneAndAdoptHTTPSSVCRecord(
 
   RefPtr<nsHttpConnectionInfo> clone;
   if (name.IsEmpty()) {
-    clone = new nsHttpConnectionInfo(
-        mOrigin, mOriginPort, alpn ? std::get<0>(*alpn) : EmptyCString(),
-        mUsername, mProxyInfo, mOriginAttributes, mEndToEndSSL, isHttp3);
+    clone = new nsHttpConnectionInfo(mOrigin, mOriginPort,
+                                     alpn ? std::get<0>(*alpn) : EmptyCString(),
+                                     mUsername, mProxyInfo, mOriginAttributes,
+                                     mEndToEndSSL, isHttp3, mWebTransport);
   } else {
     MOZ_ASSERT(mEndToEndSSL);
     clone = new nsHttpConnectionInfo(
@@ -402,6 +417,8 @@ nsHttpConnectionInfo::CloneAndAdoptHTTPSSVCRecord(
   clone->SetTRRMode(GetTRRMode());
   clone->SetIPv4Disabled(GetIPv4Disabled());
   clone->SetIPv6Disabled(GetIPv6Disabled());
+  clone->SetHttp3Disabled(GetHttp3Disabled());
+  clone->SetHappyEyeballsEnabled(GetHappyEyeballsEnabled());
 
   bool hasIPHint = false;
   (void)aRecord->GetHasIPHintAddress(&hasIPHint);
@@ -413,6 +430,54 @@ nsHttpConnectionInfo::CloneAndAdoptHTTPSSVCRecord(
   (void)aRecord->GetEchConfig(echConfig);
   clone->SetEchConfig(echConfig);
 
+  return clone.forget();
+}
+
+already_AddRefed<nsHttpConnectionInfo>
+nsHttpConnectionInfo::CloneAndAdoptPortAndAlpn(
+    uint16_t aPort,
+    happy_eyeballs::ConnectionAttemptHttpVersions aProtocol) const {
+  // See TlsHandshaker::SetupNPNList, "http/1.1" and "h2" are added
+  // automatically, so we only need to set "h3".
+  nsAutoCString alpnStr(
+      aProtocol == happy_eyeballs::ConnectionAttemptHttpVersions::H3
+          ? "h3"_ns
+          : EmptyCString());
+  bool isHttp3 = aProtocol == happy_eyeballs::ConnectionAttemptHttpVersions::H3;
+  int32_t port = aPort != 0 ? aPort : mOriginPort;
+  RefPtr<nsHttpConnectionInfo> clone;
+  if (mEndToEndSSL && port != mOriginPort) {
+    const nsACString& routedHost =
+        mRoutedHost.IsEmpty() ? mOrigin : mRoutedHost;
+    clone = new nsHttpConnectionInfo(mOrigin, mOriginPort, alpnStr, mUsername,
+                                     mProxyInfo, mOriginAttributes, routedHost,
+                                     port, isHttp3, mWebTransport);
+  } else {
+    clone = new nsHttpConnectionInfo(mOrigin, port, alpnStr, mUsername,
+                                     mProxyInfo, mOriginAttributes,
+                                     mEndToEndSSL, isHttp3, mWebTransport);
+  }
+
+  clone->SetAnonymous(GetAnonymous());
+  clone->SetPrivate(GetPrivate());
+  clone->SetInsecureScheme(GetInsecureScheme());
+  clone->SetNoSpdy(GetNoSpdy());
+  clone->SetBeConservative(GetBeConservative());
+  clone->SetAnonymousAllowClientCert(GetAnonymousAllowClientCert());
+  clone->SetFallbackConnection(GetFallbackConnection());
+  clone->SetTlsFlags(GetTlsFlags());
+  clone->SetIsTrrServiceChannel(GetIsTrrServiceChannel());
+  clone->SetTRRMode(GetTRRMode());
+  clone->SetIPv4Disabled(GetIPv4Disabled());
+  clone->SetIPv6Disabled(GetIPv6Disabled());
+  clone->SetHttp3Disabled(GetHttp3Disabled());
+  clone->SetHappyEyeballsEnabled(GetHappyEyeballsEnabled());
+  // Preserve the WebTransport id so the clone hashes to the same connection
+  // entry as the origin connection info — WebTransport server cert hashes are
+  // stored under that entry and looked up by Http3Session::Init.
+  clone->SetWebTransportId(GetWebTransportId());
+
+  // IPHints and echConfig are handled in HappyEyeballsConnectionAttempt.
   return clone.forget();
 }
 
@@ -438,11 +503,14 @@ void nsHttpConnectionInfo::SerializeHttpConnectionInfo(
   aArgs.trrMode() = aInfo->GetTRRMode();
   aArgs.isIPv4Disabled() = aInfo->GetIPv4Disabled();
   aArgs.isIPv6Disabled() = aInfo->GetIPv6Disabled();
+  aArgs.isHttp3Disabled() = aInfo->GetHttp3Disabled();
   aArgs.isHttp3() = aInfo->IsHttp3();
   aArgs.hasIPHintAddress() = aInfo->HasIPHintAddress();
+  aArgs.http3Only() = aInfo->GetHttp3Only();
   aArgs.echConfig() = aInfo->GetEchConfig();
   aArgs.webTransport() = aInfo->GetWebTransport();
   aArgs.webTransportId() = aInfo->GetWebTransportId();
+  aArgs.happyEyeballsEnabled() = aInfo->GetHappyEyeballsEnabled();
 
   if (!aInfo->ProxyInfo()) {
     return;
@@ -458,7 +526,8 @@ void nsHttpConnectionInfo::SerializeHttpConnectionInfo(
 already_AddRefed<nsHttpConnectionInfo>
 nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(
     const HttpConnectionInfoCloneArgs& aInfoArgs) {
-  nsProxyInfo* pi = nsProxyInfo::DeserializeProxyInfo(aInfoArgs.proxyInfo());
+  RefPtr<nsProxyInfo> pi =
+      nsProxyInfo::DeserializeProxyInfo(aInfoArgs.proxyInfo());
   RefPtr<nsHttpConnectionInfo> cinfo;
   if (aInfoArgs.routedHost().IsEmpty()) {
     cinfo = new nsHttpConnectionInfo(
@@ -489,8 +558,11 @@ nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(
   cinfo->SetTRRMode(static_cast<nsIRequest::TRRMode>(aInfoArgs.trrMode()));
   cinfo->SetIPv4Disabled(aInfoArgs.isIPv4Disabled());
   cinfo->SetIPv6Disabled(aInfoArgs.isIPv6Disabled());
+  cinfo->SetHttp3Disabled(aInfoArgs.isHttp3Disabled());
   cinfo->SetHasIPHintAddress(aInfoArgs.hasIPHintAddress());
+  cinfo->SetHttp3Only(aInfoArgs.http3Only());
   cinfo->SetEchConfig(aInfoArgs.echConfig());
+  cinfo->SetHappyEyeballsEnabled(aInfoArgs.happyEyeballsEnabled());
 
   return cinfo.forget();
 }
@@ -517,8 +589,11 @@ void nsHttpConnectionInfo::CloneAsDirectRoute(nsHttpConnectionInfo** outCI,
   clone->SetTRRMode(GetTRRMode());
   clone->SetIPv4Disabled(GetIPv4Disabled());
   clone->SetIPv6Disabled(GetIPv6Disabled());
+  clone->SetHttp3Disabled(GetHttp3Disabled());
   clone->SetHasIPHintAddress(HasIPHintAddress());
+  clone->SetHttp3Only(GetHttp3Only());
   clone->SetEchConfig(GetEchConfig());
+  clone->SetHappyEyeballsEnabled(GetHappyEyeballsEnabled());
 
   clone.forget(outCI);
 }
@@ -577,6 +652,13 @@ void nsHttpConnectionInfo::SetIPv6Disabled(bool aNoIPv6) {
   }
 }
 
+void nsHttpConnectionInfo::SetHttp3Disabled(bool aHttp3Disabled) {
+  if (mHttp3Disabled != aHttp3Disabled) {
+    mHttp3Disabled = aHttp3Disabled;
+    RebuildHashKey();
+  }
+}
+
 void nsHttpConnectionInfo::SetWebTransport(bool aWebTransport) {
   if (mWebTransport != aWebTransport) {
     mWebTransport = aWebTransport;
@@ -616,27 +698,18 @@ bool nsHttpConnectionInfo::HostIsLocalIPLiteral() const {
 }
 
 // static
-void nsHttpConnectionInfo::BuildOriginFrameHashKey(nsACString& newKey,
-                                                   nsHttpConnectionInfo* ci,
-                                                   const nsACString& host,
-                                                   int32_t port) {
-  newKey.Assign(host);
-  if (ci->GetAnonymous()) {
-    newKey.AppendLiteral("~A:");
-  } else {
-    newKey.AppendLiteral("~.:");
-  }
-  if (ci->GetFallbackConnection()) {
-    newKey.AppendLiteral("~F:");
-  } else {
-    newKey.AppendLiteral("~.:");
-  }
+CoalescingKey nsHttpConnectionInfo::BuildOriginFrameHashKey(
+    nsHttpConnectionInfo* ci, const nsACString& host, int32_t port) {
+  nsCString newKey(host);
+  newKey.Append(ci->GetAnonymous() ? "~A:" : "~.:");
+  newKey.Append(ci->GetFallbackConnection() ? "~F:" : "~.:");
   newKey.AppendInt(port);
   newKey.AppendLiteral("/[");
   nsAutoCString suffix;
   ci->GetOriginAttributes().CreateSuffix(suffix);
   newKey.Append(suffix);
   newKey.AppendLiteral("]viaORIGIN.FRAME");
+  return CoalescingKey{HashString(newKey), std::move(newKey)};
 }
 
 }  // namespace net

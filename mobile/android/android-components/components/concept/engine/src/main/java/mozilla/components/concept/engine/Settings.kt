@@ -4,7 +4,6 @@
 
 package mozilla.components.concept.engine
 
-import mozilla.components.concept.engine.EngineSession.CookieBannerHandlingMode
 import mozilla.components.concept.engine.EngineSession.SafeBrowsingPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.fission.WebContentIsolationStrategy
@@ -52,34 +51,9 @@ abstract class Settings {
     open var trackingProtectionPolicy: TrackingProtectionPolicy? by UnsupportedSetting()
 
     /**
-     * Setting to control the cookie banner handling feature.
-     */
-    open var cookieBannerHandlingMode: CookieBannerHandlingMode by UnsupportedSetting()
-
-    /**
-     * Setting to control the cookie banner handling feature in the private browsing mode.
-     */
-    open var cookieBannerHandlingModePrivateBrowsing: CookieBannerHandlingMode by UnsupportedSetting()
-
-    /**
      * Setting to control tracking protection.
      */
     open var safeBrowsingPolicy: Array<SafeBrowsingPolicy> by UnsupportedSetting()
-
-    /**
-     * Setting to control the cookie banner handling feature detect only mode.
-     */
-    open var cookieBannerHandlingDetectOnlyMode: Boolean by UnsupportedSetting()
-
-    /**
-     * Setting to control the cookie banner handling global rules feature.
-     */
-    open var cookieBannerHandlingGlobalRules: Boolean by UnsupportedSetting()
-
-    /**
-     * Setting to control the cookie banner handling global rules subFrames feature.
-     */
-    open var cookieBannerHandlingGlobalRulesSubFrames: Boolean by UnsupportedSetting()
 
     /**
      * Setting to control the cookie banner enables / disables the URL query string
@@ -106,6 +80,14 @@ abstract class Settings {
      * from  URIs. The query parameters are separated by a space.
      */
     open var queryParameterStrippingStripList: String by UnsupportedSetting()
+
+    /**
+     * Setting to control whether the content blocking database is enabled.
+     *
+     * When enabled, the engine persists tracking protection blocking events to a database that
+     * can be queried for aggregate statistics (e.g., total trackers blocked, events by date range).
+     */
+    open var useContentBlockingDatabase: Boolean by UnsupportedSetting()
 
     /**
      * Setting to intercept and override requests.
@@ -232,6 +214,11 @@ abstract class Settings {
      * Setting to control the Firefox Relay feature state.
      */
     open var firefoxRelay: Engine.FirefoxRelayMode? by UnsupportedSetting()
+
+    /**
+     * Setting to control the IP Protection auth provider ("fxa" or "gpi").
+     */
+    open var ipProtectionAuthProvider: String? by UnsupportedSetting()
 
     /**
      * Setting to force the ability to scale the content
@@ -398,6 +385,41 @@ abstract class Settings {
      * Setting to control whether Safe Browsing V5 is enabled.
      */
     open var safeBrowsingV5Enabled: Boolean? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether Safe Browsing Global Cache is enabled.
+     */
+    open var safeBrowsingGlobalCacheEnabled: Boolean? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether Safe Browsing Real-Time lookup is enabled.
+     */
+    open var safeBrowsingRealTimeEnabled: Boolean? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether Safe Browsing Real-Time simulation is enabled.
+     */
+    open var safeBrowsingRealTimeSimulationEnabled: Boolean? by UnsupportedSetting()
+
+    /**
+     * Setting to control the hit probability for Safe Browsing Real-Time simulation.
+     */
+    open var safeBrowsingRealTimeSimulationHitProbability: Int? by UnsupportedSetting()
+
+    /**
+     * Setting to control the cache TTL in seconds for Safe Browsing Real-Time simulation.
+     */
+    open var safeBrowsingRealTimeSimulationCacheTTLSec: Int? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether the negative cache for Safe Browsing Real-Time simulation is enabled.
+     */
+    open var safeBrowsingRealTimeSimulationNegativeCacheEnabled: Boolean? by UnsupportedSetting()
+
+    /**
+     * Setting to control the negative cache TTL in seconds for Safe Browsing Real-Time simulation.
+     */
+    open var safeBrowsingRealTimeSimulationNegativeCacheTTLSec: Int? by UnsupportedSetting()
 }
 
 /**
@@ -430,6 +452,7 @@ data class DefaultSettings(
     override var testingModeEnabled: Boolean = false,
     override var suspendMediaWhenInactive: Boolean = false,
     override var firefoxRelay: Engine.FirefoxRelayMode? = null,
+    override var ipProtectionAuthProvider: String? = null,
     override var fontInflationEnabled: Boolean? = null,
     override var fontSizeFactor: Float? = null,
     override var forceUserScalableContent: Boolean = false,
@@ -448,16 +471,11 @@ data class DefaultSettings(
     override var fdlibmMathEnabled: Boolean = false,
     override var baselineFingerprintingProtection: Boolean? = null,
     override var baselineFingerprintingProtectionOverrides: String? = null,
-    override var cookieBannerHandlingMode: CookieBannerHandlingMode = CookieBannerHandlingMode.DISABLED,
-    override var cookieBannerHandlingModePrivateBrowsing: CookieBannerHandlingMode =
-        CookieBannerHandlingMode.DISABLED,
-    override var cookieBannerHandlingDetectOnlyMode: Boolean = false,
-    override var cookieBannerHandlingGlobalRules: Boolean = false,
-    override var cookieBannerHandlingGlobalRulesSubFrames: Boolean = false,
     override var queryParameterStripping: Boolean = false,
     override var queryParameterStrippingPrivateBrowsing: Boolean = false,
     override var queryParameterStrippingAllowList: String = "",
     override var queryParameterStrippingStripList: String = "",
+    override var useContentBlockingDatabase: Boolean = false,
     override var emailTrackerBlockingPrivateBrowsing: Boolean = false,
     override var userCharacteristicPingCurrentVersion: Int = 0,
     override var webContentIsolationStrategy: WebContentIsolationStrategy? =
@@ -477,6 +495,13 @@ data class DefaultSettings(
     override var crliteChannel: String? = null,
     override var safeBrowsingV5Enabled: Boolean? = null,
     override var downloadDelegate: DownloadDelegate? = null,
+    override var safeBrowsingGlobalCacheEnabled: Boolean? = null,
+    override var safeBrowsingRealTimeEnabled: Boolean? = null,
+    override var safeBrowsingRealTimeSimulationEnabled: Boolean? = null,
+    override var safeBrowsingRealTimeSimulationHitProbability: Int? = null,
+    override var safeBrowsingRealTimeSimulationCacheTTLSec: Int? = null,
+    override var safeBrowsingRealTimeSimulationNegativeCacheEnabled: Boolean? = null,
+    override var safeBrowsingRealTimeSimulationNegativeCacheTTLSec: Int? = null,
 ) : Settings() {
     override val desktopModeEnabled: Boolean
         get() = getDesktopMode()

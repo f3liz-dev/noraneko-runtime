@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EventQueue.h"
 
+#include "DocAccessibleChild.h"
+#include "LocalAccessible-inl.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/ProfilerMarkers.h"
-
-#include "LocalAccessible-inl.h"
 #include "nsEventShell.h"
-#include "DocAccessibleChild.h"
 #include "nsTextEquivUtils.h"
 #ifdef A11Y_LOG
 #  include "Logging.h"
@@ -85,7 +83,7 @@ bool EventQueue::PushNameOrDescriptionChangeToRelations(
                            : nsIAccessibleEvent::EVENT_DESCRIPTION_CHANGE;
   Relation rel = aAccessible->RelationByType(aType);
   while (LocalAccessible* relTarget = rel.LocalNext()) {
-    RefPtr<AccEvent> nameChangeEvent = new AccEvent(eventType, relTarget);
+    auto nameChangeEvent = MakeRefPtr<AccEvent>(eventType, relTarget);
     pushed |= PushEvent(nameChangeEvent);
   }
 
@@ -156,8 +154,8 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
         }
 
         if (fireNameChange) {
-          RefPtr<AccEvent> nameChangeEvent =
-              new AccEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
+          auto nameChangeEvent = MakeRefPtr<AccEvent>(
+              nsIAccessibleEvent::EVENT_NAME_CHANGE, parent);
           pushed |= PushEvent(nameChangeEvent);
         }
         nameCheckAncestor = false;
@@ -492,9 +490,11 @@ void EventQueue::ProcessEventQueue() {
     }
   }
 
-  if (mDocument && IPCAccessibilityActive() &&
-      (!selectedIDs.IsEmpty() || !unselectedIDs.IsEmpty())) {
-    DocAccessibleChild* ipcDoc = mDocument->IPCDoc();
+  if (!mDocument) {
+    return;
+  }
+  if (auto* ipcDoc = mDocument->IPCDoc();
+      ipcDoc && (!selectedIDs.IsEmpty() || !unselectedIDs.IsEmpty())) {
     ipcDoc->SendSelectedAccessiblesChanged(selectedIDs, unselectedIDs);
   }
 }

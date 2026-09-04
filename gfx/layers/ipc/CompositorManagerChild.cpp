@@ -1,22 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/CompositorManagerChild.h"
 
+#include "VsyncSource.h"
 #include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/dom/BrowserChild.h"  // for BrowserChild
+#include "mozilla/dom/ContentChild.h"  // for ContentChild
+#include "mozilla/gfx/CanvasShutdownManager.h"
+#include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/gfx/CanvasShutdownManager.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/dom/ContentChild.h"  // for ContentChild
-#include "mozilla/dom/BrowserChild.h"  // for BrowserChild
-#include "mozilla/ipc/Endpoint.h"
-#include "VsyncSource.h"
 
 namespace mozilla {
 namespace layers {
@@ -138,9 +136,9 @@ bool CompositorManagerChild::CreateContentCompositorBridge(
 
   CompositorBridgeOptions options = ContentCompositorOptions();
 
-  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
-  if (NS_WARN_IF(
-          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
+  RefPtr bridge = MakeRefPtr<CompositorBridgeChild>(sInstance);
+  if (NS_WARN_IF(!sInstance->SendPCompositorBridgeConstructor(bridge, options,
+                                                              aNamespace))) {
     return false;
   }
 
@@ -151,8 +149,7 @@ bool CompositorManagerChild::CreateContentCompositorBridge(
 /* static */
 already_AddRefed<CompositorBridgeChild>
 CompositorManagerChild::CreateWidgetCompositorBridge(
-    uint64_t aProcessToken, WebRenderLayerManager* aLayerManager,
-    uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
+    uint64_t aProcessToken, uint32_t aNamespace, CSSToLayoutDeviceScale aScale,
     const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
     const gfx::IntSize& aSurfaceSize, uint64_t aInnerWindowId) {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -168,20 +165,20 @@ CompositorManagerChild::CreateWidgetCompositorBridge(
       aScale, vsyncRate, aOptions, aUseExternalSurfaceSize, aSurfaceSize,
       aInnerWindowId);
 
-  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
-  if (NS_WARN_IF(
-          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
+  RefPtr bridge = MakeRefPtr<CompositorBridgeChild>(sInstance);
+  if (NS_WARN_IF(!sInstance->SendPCompositorBridgeConstructor(bridge, options,
+                                                              aNamespace))) {
     return nullptr;
   }
 
-  bridge->InitForWidget(aProcessToken, aLayerManager, aNamespace);
+  bridge->InitForWidget(aProcessToken, aNamespace);
   return bridge.forget();
 }
 
 /* static */
 already_AddRefed<CompositorBridgeChild>
 CompositorManagerChild::CreateSameProcessWidgetCompositorBridge(
-    WebRenderLayerManager* aLayerManager, uint32_t aNamespace) {
+    uint32_t aNamespace) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   if (NS_WARN_IF(!sInstance || !sInstance->CanSend())) {
@@ -190,13 +187,13 @@ CompositorManagerChild::CreateSameProcessWidgetCompositorBridge(
 
   CompositorBridgeOptions options = SameProcessWidgetCompositorOptions();
 
-  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
-  if (NS_WARN_IF(
-          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
+  RefPtr bridge = MakeRefPtr<CompositorBridgeChild>(sInstance);
+  if (NS_WARN_IF(!sInstance->SendPCompositorBridgeConstructor(bridge, options,
+                                                              aNamespace))) {
     return nullptr;
   }
 
-  bridge->InitForWidget(1, aLayerManager, aNamespace);
+  bridge->InitForWidget(1, aNamespace);
   return bridge.forget();
 }
 

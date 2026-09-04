@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,10 +5,10 @@
 #ifndef MozNewTabWallpaperProtocolHandler_h_
 #define MozNewTabWallpaperProtocolHandler_h_
 
-#include "mozilla/Result.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/net/RemoteStreamGetter.h"
 #include "SubstitutingProtocolHandler.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/Result.h"
+#include "mozilla/net/RemoteStreamGetter.h"
 #include "nsIInputStream.h"
 #include "nsWeakReference.h"
 
@@ -33,11 +32,13 @@ class MozNewTabWallpaperProtocolHandler final
    * Obtains an input stream for a user-uploaded New Tab wallpaper.
    *
    * @param aChildURI moz-newtab-wallpaper URI from child process
+   * @param aLoadInfo the loadinfo from the child process
    * @param aTerminateSender set to true if URI is invalid (terminates child)
    * @return RemoteStreamPromise resolving to RemoteStreamInfo on success or
    * nsresult on failure
    */
   RefPtr<RemoteStreamPromise> NewStream(nsIURI* aChildURI,
+                                        nsILoadInfo* aLoadInfo,
                                         bool* aTerminateSender);
 
  protected:

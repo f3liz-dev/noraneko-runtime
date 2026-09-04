@@ -66,12 +66,15 @@ class WebGLImageConverter {
       case WebGLTexelFormat::RGBA8:
       case WebGLTexelFormat::RGBA16F:
       case WebGLTexelFormat::RGBA32F:
+      case WebGLTexelFormat::RGBX8:
       case WebGLTexelFormat::BGRX8:
       case WebGLTexelFormat::BGRA8:
         return 4;
       default:
-        MOZ_ASSERT(false, "Unknown texel format. Coding mistake?");
-        return 0;
+        // Returning 0 here would make the conversion loop below a no-op that
+        // still reports success, leaving the destination uninitialized; crash
+        // in all build types instead.
+        MOZ_CRASH("GFX: Unknown texel format. Coding mistake?");
     }
   }
 
@@ -108,13 +111,14 @@ class WebGLImageConverter {
     }
 
     // Only textures uploaded from DOM elements or ImageData can allow DstFormat
-    // != SrcFormat. DOM elements can only give BGRA8, BGRX8, A8, RGB565
-    // formats. See DOMElementToImageSurface. ImageData is always RGBA8. So all
+    // != SrcFormat. DOM elements can only give BGRA8, BGRX8, RGBX8, A8, RGB565
+    // formats. See GetFormatForSurf. ImageData is always RGBA8. So all
     // other SrcFormat will always satisfy DstFormat==SrcFormat, so we can avoid
     // compiling the code for all the unreachable paths.
     const bool CanSrcFormatComeFromDOMElementOrImageData =
         SrcFormat == WebGLTexelFormat::BGRA8 ||
         SrcFormat == WebGLTexelFormat::BGRX8 ||
+        SrcFormat == WebGLTexelFormat::RGBX8 ||
         SrcFormat == WebGLTexelFormat::A8 ||
         SrcFormat == WebGLTexelFormat::RGB565 ||
         SrcFormat == WebGLTexelFormat::RGBA8;
@@ -193,9 +197,13 @@ class WebGLImageConverter {
 
     static auto inColorSpace2 = gfx::ToColorSpace2(SrcColorSpace);
     static auto outColorSpace2 = gfx::ToColorSpace2(DstColorSpace);
+    static auto inTransferFunction = gfx::TransferFunction::SRGB;
+    static auto outTransferFunction = gfx::TransferFunction::SRGB;
 
-    auto inColorProfile = gl::GLBlitHelper::ToColorProfileDesc(inColorSpace2);
-    auto outColorProfile = gl::GLBlitHelper::ToColorProfileDesc(outColorSpace2);
+    auto inColorProfile =
+        gl::GLBlitHelper::ToColorProfileDesc(inColorSpace2, inTransferFunction);
+    auto outColorProfile = gl::GLBlitHelper::ToColorProfileDesc(
+        outColorSpace2, outTransferFunction);
 
     const auto conversion = color::ColorProfileConversionDesc::From({
         .src = *inColorProfile,

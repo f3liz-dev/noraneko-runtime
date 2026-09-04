@@ -1,25 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "vm/ArgumentsObject-inl.h"
-
-#include "mozilla/Maybe.h"
 #include "mozilla/PodOperations.h"
 
 #include <algorithm>
 
+#include "ds/BitArray.h"
 #include "gc/GCContext.h"
 #include "jit/CalleeToken.h"
 #include "jit/JitFrames.h"
-#include "util/BitArray.h"
 #include "vm/GlobalObject.h"
 #include "vm/Stack.h"
 
 #include "gc/BufferAllocator-inl.h"
 #include "gc/Nursery-inl.h"
+#include "vm/ArgumentsObject-inl.h"
 #include "vm/FrameIter-inl.h"  // js::FrameIter::unaliasedForEachActual
 #include "vm/NativeObject-inl.h"
 #include "vm/Stack-inl.h"
@@ -28,7 +24,8 @@ using namespace js;
 
 /* static */
 size_t RareArgumentsData::bytesRequired(size_t numActuals) {
-  size_t extraBytes = NumWordsForBitArrayOfLength(numActuals) * sizeof(size_t);
+  size_t extraBytes =
+      BitArray::NumWordsForLength(numActuals) * sizeof(BitArray::WordT);
   return offsetof(RareArgumentsData, deletedBits_) + extraBytes;
 }
 
@@ -82,7 +79,7 @@ void ArgumentsObject::MaybeForwardToCallObject(AbstractFramePtr frame,
                                                ArgumentsData* data) {
   JSScript* script = frame.script();
   if (frame.callee()->needsCallObject() && script->argsObjAliasesFormals()) {
-    obj->initFixedSlot(MAYBE_CALL_SLOT, ObjectValue(frame.callObj()));
+    obj->initFixedSlotTyped(MAYBE_CALL_SLOT, ObjectValue(frame.callObj()));
     for (PositionalFormalParameterIter fi(script); fi; fi++) {
       if (fi.closedOver()) {
         data->args.setElement(obj, fi.argumentSlot(),
@@ -101,7 +98,7 @@ void ArgumentsObject::MaybeForwardToCallObject(JSFunction* callee,
   JSScript* script = callee->nonLazyScript();
   if (callee->needsCallObject() && script->argsObjAliasesFormals()) {
     MOZ_ASSERT(callObj && callObj->is<CallObject>());
-    obj->initFixedSlot(MAYBE_CALL_SLOT, ObjectValue(*callObj));
+    obj->initFixedSlotTyped(MAYBE_CALL_SLOT, ObjectValue(*callObj));
     for (PositionalFormalParameterIter fi(script); fi; fi++) {
       if (fi.closedOver()) {
         data->args.setElement(obj, fi.argumentSlot(),
@@ -271,7 +268,7 @@ ArgumentsObject* ArgumentsObject::createTemplateObject(JSContext* cx,
     return nullptr;
   }
 
-  obj->initFixedSlot(ArgumentsObject::DATA_SLOT, PrivateValue(nullptr));
+  obj->initFixedSlotTyped(ArgumentsObject::DATA_SLOT, PrivateValue(nullptr));
   return obj;
 }
 
@@ -333,16 +330,16 @@ ArgumentsObject* ArgumentsObject::create(JSContext* cx, HandleFunction callee,
       AllocateCellBuffer<uint8_t>(cx, obj, numBytes));
   if (!data) {
     // Make the object safe for GC.
-    obj->initFixedSlot(DATA_SLOT, PrivateValue(nullptr));
+    obj->initFixedSlotTyped(DATA_SLOT, PrivateValue(nullptr));
     return nullptr;
   }
 
   new (data) ArgumentsData(numArgs);
 
-  obj->initReservedSlot(DATA_SLOT, PrivateValue(data));
-  obj->initFixedSlot(CALLEE_SLOT, ObjectValue(*callee));
-  obj->initFixedSlot(INITIAL_LENGTH_SLOT,
-                     Int32Value(numActuals << PACKED_BITS_COUNT));
+  obj->initReservedSlotTyped(DATA_SLOT, PrivateValue(data));
+  obj->initFixedSlotTyped(CALLEE_SLOT, ObjectValue(*callee));
+  obj->initFixedSlotTyped(INITIAL_LENGTH_SLOT,
+                          Int32Value(numActuals << PACKED_BITS_COUNT));
 
   // Copy [0, numActuals) into data->args.
   copy.copyActualArgs(obj, data->args, numActuals);
@@ -443,17 +440,17 @@ ArgumentsObject* ArgumentsObject::finishPure(
     // Make the object safe for GC. Don't report OOM, the slow path will
     // retry the allocation.
     cx->recoverFromOutOfMemory();
-    obj->initFixedSlot(DATA_SLOT, PrivateValue(nullptr));
+    obj->initFixedSlotTyped(DATA_SLOT, PrivateValue(nullptr));
     return nullptr;
   }
 
   new (data) ArgumentsData(numArgs);
 
-  obj->initFixedSlot(INITIAL_LENGTH_SLOT,
-                     Int32Value(numActuals << PACKED_BITS_COUNT));
-  obj->initFixedSlot(DATA_SLOT, PrivateValue(data));
-  obj->initFixedSlot(MAYBE_CALL_SLOT, UndefinedValue());
-  obj->initFixedSlot(CALLEE_SLOT, ObjectValue(*callee));
+  obj->initFixedSlotTyped(INITIAL_LENGTH_SLOT,
+                          Int32Value(numActuals << PACKED_BITS_COUNT));
+  obj->initFixedSlotTyped(DATA_SLOT, PrivateValue(data));
+  obj->initFixedSlotTyped(MAYBE_CALL_SLOT, UndefinedValue());
+  obj->initFixedSlotTyped(CALLEE_SLOT, ObjectValue(*callee));
 
   copy.copyActualArgs(obj, data->args, numActuals);
 
@@ -517,7 +514,7 @@ bool ArgumentsObject::obj_delProperty(JSContext* cx, HandleObject obj,
                                       HandleId id, ObjectOpResult& result) {
   ArgumentsObject& argsobj = obj->as<ArgumentsObject>();
   if (id.isInt()) {
-    unsigned arg = unsigned(id.toInt());
+    uint32_t arg = id.toInt();
     if (argsobj.isElement(arg)) {
       if (!argsobj.markElementDeleted(cx, arg)) {
         return false;
@@ -553,7 +550,7 @@ bool js::MappedArgGetter(JSContext* cx, HandleObject obj, HandleId id,
      * arg can exceed the number of arguments if a script changed the
      * prototype to point to another Arguments object with a bigger argc.
      */
-    unsigned arg = unsigned(id.toInt());
+    uint32_t arg = id.toInt();
     if (argsobj.isElement(arg)) {
       vp.set(argsobj.element(arg));
     }
@@ -574,17 +571,8 @@ bool js::MappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
                          HandleValue v, ObjectOpResult& result) {
   Handle<MappedArgumentsObject*> argsobj = obj.as<MappedArgumentsObject>();
 
-  Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
-  if (!GetOwnPropertyDescriptor(cx, argsobj, id, &desc)) {
-    return false;
-  }
-  MOZ_ASSERT(desc.isSome());
-  MOZ_ASSERT(desc->isDataDescriptor());
-  MOZ_ASSERT(desc->writable());
-  MOZ_ASSERT(!desc->resolving());
-
   if (id.isInt()) {
-    unsigned arg = unsigned(id.toInt());
+    uint32_t arg = id.toInt();
     if (argsobj->isElement(arg)) {
       argsobj->setElement(arg, v);
       return result.succeed();
@@ -593,19 +581,10 @@ bool js::MappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
     MOZ_ASSERT(id.isAtom(cx->names().length) || id.isAtom(cx->names().callee));
   }
 
-  /*
-   * For simplicity we use delete/define to replace the property with a
-   * simple data property. Note that we rely on ArgumentsObject::obj_delProperty
-   * to set the corresponding override-bit.
-   * Note also that we must define the property instead of setting it in case
-   * the user has changed the prototype to an object that has a setter for
-   * this id.
-   */
-  Rooted<PropertyDescriptor> desc_(cx, *desc);
-  desc_.setValue(v);
-  ObjectOpResult ignored;
-  return NativeDeleteProperty(cx, argsobj, id, ignored) &&
-         NativeDefineProperty(cx, argsobj, id, desc_, result);
+  // Use define to replace the property with a simple data property.
+  Rooted<PropertyDescriptor> desc(cx);
+  desc.setValue(v);
+  return NativeDefineProperty(cx, argsobj, id, desc, result);
 }
 
 /* static */
@@ -705,7 +684,7 @@ bool MappedArgumentsObject::obj_resolve(JSContext* cx, HandleObject obj,
   PropertyFlags flags = {PropertyFlag::CustomDataProperty,
                          PropertyFlag::Configurable, PropertyFlag::Writable};
   if (id.isInt()) {
-    uint32_t arg = uint32_t(id.toInt());
+    uint32_t arg = id.toInt();
     if (!argsobj->isElement(arg)) {
       return true;
     }
@@ -840,8 +819,7 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
   // Steps 2-3.
   bool isMapped = false;
   if (id.isInt()) {
-    unsigned arg = unsigned(id.toInt());
-    isMapped = argsobj->isElement(arg);
+    isMapped = argsobj->isElement(id.toInt());
   }
 
   // Step 4.
@@ -862,6 +840,12 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
     }
   }
 
+  // Ensure the arguments object has RareArgumentsData so that step 8 is
+  // infallible.
+  if (isMapped && !argsobj->getOrCreateRareData(cx)) {
+    return false;
+  }
+
   // Step 6. NativeDefineProperty will lookup [[Value]] for us.
   if (defineMapped) {
     if (!DefineMappedIndex(cx, argsobj, id, &newArgDesc, result)) {
@@ -880,19 +864,17 @@ bool MappedArgumentsObject::obj_defineProperty(JSContext* cx, HandleObject obj,
 
   // Step 8.
   if (isMapped) {
-    unsigned arg = unsigned(id.toInt());
+    uint32_t arg = id.toInt();
     if (desc.isAccessorDescriptor()) {
-      if (!argsobj->markElementDeleted(cx, arg)) {
-        return false;
-      }
+      bool ok = argsobj->markElementDeleted(cx, arg);
+      MOZ_RELEASE_ASSERT(ok, "shouldn't fail after getOrCreateRareData");
     } else {
       if (desc.hasValue()) {
         argsobj->setElement(arg, desc.value());
       }
       if (desc.hasWritable() && !desc.writable()) {
-        if (!argsobj->markElementDeleted(cx, arg)) {
-          return false;
-        }
+        bool ok = argsobj->markElementDeleted(cx, arg);
+        MOZ_RELEASE_ASSERT(ok, "shouldn't fail after getOrCreateRareData");
       }
     }
   }
@@ -910,7 +892,7 @@ bool js::UnmappedArgGetter(JSContext* cx, HandleObject obj, HandleId id,
      * arg can exceed the number of arguments if a script changed the
      * prototype to point to another Arguments object with a bigger argc.
      */
-    unsigned arg = unsigned(id.toInt());
+    uint32_t arg = id.toInt();
     if (argsobj.isElement(arg)) {
       vp.set(argsobj.element(arg));
     }
@@ -927,18 +909,9 @@ bool js::UnmappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
                            HandleValue v, ObjectOpResult& result) {
   Handle<UnmappedArgumentsObject*> argsobj = obj.as<UnmappedArgumentsObject>();
 
-  Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
-  if (!GetOwnPropertyDescriptor(cx, argsobj, id, &desc)) {
-    return false;
-  }
-  MOZ_ASSERT(desc.isSome());
-  MOZ_ASSERT(desc->isDataDescriptor());
-  MOZ_ASSERT(desc->writable());
-  MOZ_ASSERT(!desc->resolving());
-
   if (id.isInt()) {
-    unsigned arg = unsigned(id.toInt());
-    if (arg < argsobj->initialLength()) {
+    uint32_t arg = id.toInt();
+    if (argsobj->isElement(arg)) {
       argsobj->setElement(arg, v);
       return result.succeed();
     }
@@ -946,16 +919,10 @@ bool js::UnmappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
     MOZ_ASSERT(id.isAtom(cx->names().length));
   }
 
-  /*
-   * For simplicity we use delete/define to replace the property with a
-   * simple data property. Note that we rely on ArgumentsObject::obj_delProperty
-   * to set the corresponding override-bit.
-   */
-  Rooted<PropertyDescriptor> desc_(cx, *desc);
-  desc_.setValue(v);
-  ObjectOpResult ignored;
-  return NativeDeleteProperty(cx, argsobj, id, ignored) &&
-         NativeDefineProperty(cx, argsobj, id, desc_, result);
+  // Use define to replace the property with a simple data property.
+  Rooted<PropertyDescriptor> desc(cx);
+  desc.setValue(v);
+  return NativeDefineProperty(cx, argsobj, id, desc, result);
 }
 
 /* static */
@@ -995,7 +962,7 @@ bool UnmappedArgumentsObject::obj_resolve(JSContext* cx, HandleObject obj,
   PropertyFlags flags = {PropertyFlag::CustomDataProperty,
                          PropertyFlag::Configurable, PropertyFlag::Writable};
   if (id.isInt()) {
-    uint32_t arg = uint32_t(id.toInt());
+    uint32_t arg = id.toInt();
     if (!argsobj->isElement(arg)) {
       return true;
     }
@@ -1051,12 +1018,12 @@ void ArgumentsObject::trace(JSTracer* trc, JSObject* obj) {
   ArgumentsData* buffer = argsobj.data();
   ArgumentsData* copiedBuffer = buffer;
   if (buffer) {
-    TraceBufferEdge(trc, obj, &buffer, "ArgumentsData");
+    TraceBufferEdge(trc, &buffer, "ArgumentsData");
     if (buffer->rareData) {
-      TraceBufferEdge(trc, obj, &buffer->rareData, "RareArgumentsData");
+      TraceBufferEdge(trc, &buffer->rareData, "RareArgumentsData");
     }
     if (buffer != copiedBuffer) {
-      argsobj.setFixedSlot(DATA_SLOT, PrivateValue(buffer));
+      argsobj.setFixedSlotTyped(DATA_SLOT, PrivateValue(buffer));
     }
     buffer->args.trace(trc);
   }
@@ -1081,7 +1048,7 @@ size_t ArgumentsObject::objectMoved(JSObject* dst, JSObject* src) {
   Nursery::WasBufferMoved result =
       nursery.maybeMoveBufferOnPromotion(&data, dst, nDataBytes);
   if (result == Nursery::BufferMoved) {
-    ndst->initFixedSlot(DATA_SLOT, PrivateValue(data));
+    ndst->initFixedSlotTyped(DATA_SLOT, PrivateValue(data));
     nbytesTotal += nDataBytes;
   }
 
@@ -1122,16 +1089,11 @@ size_t ArgumentsObject::sizeOfData() const {
  * arguments object.
  */
 const JSClassOps MappedArgumentsObject::classOps_ = {
-    nullptr,                               // addProperty
-    ArgumentsObject::obj_delProperty,      // delProperty
-    MappedArgumentsObject::obj_enumerate,  // enumerate
-    nullptr,                               // newEnumerate
-    MappedArgumentsObject::obj_resolve,    // resolve
-    ArgumentsObject::obj_mayResolve,       // mayResolve
-    nullptr,                               // finalize
-    nullptr,                               // call
-    nullptr,                               // construct
-    ArgumentsObject::trace,                // trace
+    .delProperty = ArgumentsObject::obj_delProperty,
+    .enumerate = MappedArgumentsObject::obj_enumerate,
+    .resolve = MappedArgumentsObject::obj_resolve,
+    .mayResolve = ArgumentsObject::obj_mayResolve,
+    .trace = ArgumentsObject::trace,
 };
 
 const js::ClassExtension MappedArgumentsObject::classExt_ = {
@@ -1166,16 +1128,11 @@ const JSClass MappedArgumentsObject::class_ = {
  * it is represented by a different class while sharing some functionality.
  */
 const JSClassOps UnmappedArgumentsObject::classOps_ = {
-    nullptr,                                 // addProperty
-    ArgumentsObject::obj_delProperty,        // delProperty
-    UnmappedArgumentsObject::obj_enumerate,  // enumerate
-    nullptr,                                 // newEnumerate
-    UnmappedArgumentsObject::obj_resolve,    // resolve
-    ArgumentsObject::obj_mayResolve,         // mayResolve
-    nullptr,                                 // finalize
-    nullptr,                                 // call
-    nullptr,                                 // construct
-    ArgumentsObject::trace,                  // trace
+    .delProperty = ArgumentsObject::obj_delProperty,
+    .enumerate = UnmappedArgumentsObject::obj_enumerate,
+    .resolve = UnmappedArgumentsObject::obj_resolve,
+    .mayResolve = ArgumentsObject::obj_mayResolve,
+    .trace = ArgumentsObject::trace,
 };
 
 const js::ClassExtension UnmappedArgumentsObject::classExt_ = {

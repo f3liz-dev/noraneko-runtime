@@ -17,6 +17,9 @@ harness = false
 
 [dependencies]
 uniffi = { workspace = true }
+
+ads-client = "0.1"
+autofill = "0.1"
 context_id = "0.1"
 filter_adult = "0.1"
 tabs = "0.1"
@@ -26,9 +29,15 @@ relevancy = "0.1"
 webext-storage = "0.1"
 error-support = { version = "0.1" }
 tracing-support = "0.1"
-logins = { version = "0.1", features = ["keydb"] }
+logins = { version = "0.1", features = ["keydb", "allow_empty_passwords", "ignore_form_action_origin_validation_errors", "perform_additional_origin_fixups"] }
 init_rust_components = { version = "0.1", features = ["keydb"] }
+breach-alerts = { version = "0.1" }
+
+rc_crypto = { path = "../../../../third_party/application-services/components/support/rc_crypto", optional = true }
+
+mozilla-central-workspace-hack = { version = "0.1", features = ["gkrust-uniffi-components"], optional = true }
 
 [features]
 # Should we depend on xpcom crates?
 xpcom = []
+mozbuild = ["dep:rc_crypto"]

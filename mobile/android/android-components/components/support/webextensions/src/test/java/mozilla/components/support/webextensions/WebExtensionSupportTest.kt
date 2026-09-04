@@ -45,7 +45,6 @@ import mozilla.components.support.webextensions.facts.WebExtensionFacts.Items.WE
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -55,6 +54,7 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import kotlin.coroutines.ContinuationInterceptor
+import kotlin.test.assertNotNull
 import mozilla.components.support.base.facts.Action as FactsAction
 
 @RunWith(AndroidJUnit4::class)
@@ -146,7 +146,7 @@ class WebExtensionSupportTest {
         WebExtensionSupport.initialize(engine, store)
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
-        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org")
+        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org", false)
 
         captureMiddleware.assertFirstAction(TabListAction.AddTabAction::class) { action ->
             assertEquals("https://mozilla.org", action.tab.content.url)
@@ -169,15 +169,66 @@ class WebExtensionSupportTest {
         WebExtensionSupport.initialize(
             engine,
             store,
-            onNewTabOverride = { _, _, _ ->
+            onNewTabOverride = { _, _, _, _, _ ->
                 onNewTabCalled = true
                 "123"
             },
         )
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
-        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org")
+        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org", false)
         assertTrue(onNewTabCalled)
+    }
+
+    @Test
+    fun `forwards active flag to onNewTabOverride`() {
+        val store = BrowserStore()
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val engineSession: EngineSession = mock()
+        val capturedSelected = mutableListOf<Boolean>()
+        var selectTabOverrideCallCount = 0
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(
+            engine,
+            store,
+            onNewTabOverride = { _, _, _, selected, _ ->
+                capturedSelected.add(selected)
+                "session-${capturedSelected.size}"
+            },
+            onSelectTabOverride = { _, _ ->
+                selectTabOverrideCallCount++
+            },
+        )
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onNewTab(ext, engineSession, true, "https://mozilla.org", false)
+        delegateCaptor.value.onNewTab(ext, engineSession, false, "https://mozilla.org", false)
+
+        assertEquals(listOf(true, false), capturedSelected)
+        // onSelectTabOverride should only fire for the active=true case; the override
+        // is responsible for the active=false case via its own selected argument.
+        assertEquals(1, selectTabOverrideCallCount)
+    }
+
+    @Test
+    fun `reacts to new tab being opened in background by adding unselected tab to store`() {
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val engineSession: EngineSession = mock()
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onNewTab(ext, engineSession, false, "https://mozilla.org", false)
+
+        captureMiddleware.assertFirstAction(TabListAction.AddTabAction::class) { action ->
+            assertEquals("https://mozilla.org", action.tab.content.url)
+            assertFalse(action.select)
+        }
     }
 
     @Test
@@ -774,6 +825,31 @@ class WebExtensionSupportTest {
     }
 
     @Test
+    fun `reacts to call for opening options page by dispatching to the store`() {
+        val store = BrowserStore(middleware = listOf(captureMiddleware))
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        val metaData: Metadata = mock()
+        whenever(ext.id).thenReturn("testId")
+        whenever(ext.getMetadata()).thenReturn(metaData)
+        whenever(metaData.openOptionsPageInTab).thenReturn(false)
+        whenever(metaData.optionsPageUrl).thenReturn("testUrl")
+        whenever(metaData.name).thenReturn("testName")
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        delegateCaptor.value.onOpenOptionsPage(ext)
+        captureMiddleware.assertFirstAction(WebExtensionAction.UpdateOptionsPageSessionAction::class) { action ->
+            assertEquals(ext.id, action.extensionId)
+            assertTrue(action.optionsPageInstanceId.isNotEmpty())
+            assertEquals(metaData.optionsPageUrl, action.optionsPageUrl)
+            assertEquals(metaData.name, action.extensionTranslatedName)
+        }
+    }
+
+    @Test
     fun `reacts to action popup being toggled by opening tab as needed`() {
         val engine: Engine = mock()
 
@@ -794,7 +870,7 @@ class WebExtensionSupportTest {
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
         // Toggling should open tab
-        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction)
+        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction, false)
 
         captureMiddleware.assertFirstAction(TabListAction.AddTabAction::class) { action ->
             assertEquals("", action.tab.content.url)
@@ -806,6 +882,38 @@ class WebExtensionSupportTest {
 
         captureMiddleware.assertFirstAction(WebExtensionAction.UpdatePopupSessionAction::class) { action ->
             assertNotNull(action.popupSessionId)
+        }
+    }
+
+    @Test
+    fun `reacts to action popup being toggled in private browsing mode by opening popup in a private tab`() {
+        val engine: Engine = mock()
+
+        val ext: WebExtension = mock()
+        whenever(ext.id).thenReturn("test")
+
+        val engineSession: EngineSession = mock()
+        val browserAction: Action = mock()
+        val store = BrowserStore(
+            BrowserState(
+                extensions = mapOf(ext.id to WebExtensionState(ext.id)),
+            ),
+            middleware = listOf(captureMiddleware),
+        )
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store, openPopupInTab = true)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        // WebExtensionDelegate.onToggleActionPopup with isPrivate=true should
+        // open a private tab. Note that this happens despite the extension
+        // not having been initialized with metaData.allowedInPrivateBrowsing
+        // set to true, because the enforcement of private browsing access
+        // happens at the caller in GeckoEngine.onToggleActionPopup.
+        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction, true)
+
+        captureMiddleware.assertFirstAction(TabListAction.AddTabAction::class) { action ->
+            assertTrue(action.tab.content.private)
         }
     }
 
@@ -836,7 +944,7 @@ class WebExtensionSupportTest {
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
         // Toggling again should select popup tab
-        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction)
+        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction, false)
 
         captureMiddleware.assertFirstAction(TabListAction.SelectTabAction::class) { action ->
             assertEquals("popupTab", action.tabId)
@@ -871,7 +979,7 @@ class WebExtensionSupportTest {
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
         // Toggling again should close tab
-        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction)
+        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction, false)
 
         captureMiddleware.assertFirstAction(TabListAction.RemoveTabAction::class) { action ->
             assertEquals("popupTab", action.tabId)
@@ -900,7 +1008,7 @@ class WebExtensionSupportTest {
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
         // Toggling should allow state to have popup EngineSession instance
-        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction)
+        delegateCaptor.value.onToggleActionPopup(ext, engineSession, browserAction, false)
 
         captureMiddleware.assertFirstAction(WebExtensionAction.UpdatePopupSessionAction::class) { action ->
             assertNotNull(action.popupSession)

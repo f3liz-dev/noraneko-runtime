@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PromiseDebugging.h"
 
+#include "js/Promise.h"
 #include "js/Value.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/RefPtr.h"
@@ -45,7 +44,7 @@ class FlushRejections : public DiscardableRunnable {
     NS_DispatchToCurrentThread(new FlushRejections());
   }
 
-  static void FlushSync() {
+  static void FlushSync(bool aDeferToEventPath = true) {
     sDispatched.set(false);
 
     // Call the callbacks if necessary.
@@ -53,7 +52,7 @@ class FlushRejections : public DiscardableRunnable {
     // uncaught or consumed. Since `sDispatched` is `false`,
     // `FlushRejections` will be called once again, on an ulterior
     // tick.
-    PromiseDebugging::FlushUncaughtRejectionsInternal();
+    PromiseDebugging::FlushUncaughtRejectionsInternal(aDeferToEventPath);
   }
 
   NS_IMETHOD Run() override {
@@ -158,7 +157,7 @@ void PromiseDebugging::GetFullfillmentStack(GlobalObject& aGlobal,
 }
 
 /*static */
-MOZ_RUNINIT nsString PromiseDebugging::sIDPrefix;
+constinit nsString PromiseDebugging::sIDPrefix;
 
 /* static */
 void PromiseDebugging::Init() {
@@ -180,7 +179,9 @@ void PromiseDebugging::Shutdown() { sIDPrefix.SetIsVoid(true); }
 /* static */
 void PromiseDebugging::FlushUncaughtRejections() {
   MOZ_ASSERT(!NS_IsMainThread());
-  FlushRejections::FlushSync();
+  // Worker shutdown — NotifyUnhandledRejections may never run,
+  // so don't defer console reporting to the event path.
+  FlushRejections::FlushSync(/* aDeferToEventPath = */ false);
 }
 
 /* static */
@@ -210,36 +211,73 @@ bool PromiseDebugging::RemoveUncaughtRejectionObserver(
 }
 
 /* static */
-void PromiseDebugging::AddUncaughtRejection(JS::Handle<JSObject*> aPromise) {
+void PromiseDebugging::AddUncaughtRejection(JS::Handle<JSObject*> aPromise,
+                                            uint64_t aPromiseID) {
+  static constexpr size_t kThreshold =
+      CycleCollectedJSContext::kRejectedPromiseIndexThreshold;
+
+  CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+  auto& uncaughtRejections = ccjs->mUncaughtRejections;
+  size_t index = uncaughtRejections.length();
   // This might OOM, but won't set a pending exception, so we'll just ignore it.
-  if (CycleCollectedJSContext::Get()->mUncaughtRejections.append(aPromise)) {
-    FlushRejections::DispatchNeeded();
+  if (!uncaughtRejections.append(aPromise)) {
+    return;
   }
+  if (index >= kThreshold) {
+    auto& indicesHashTable = ccjs->mUncaughtRejectionIndices;
+    if (index == kThreshold) {
+      // We just grew past the threshold, so index what is already here.
+      for (size_t i = 0; i < index; i++) {
+        if (uncaughtRejections[i].get()) {
+          indicesHashTable.InsertOrUpdate(
+              JS::GetPromiseID(uncaughtRejections[i]), i);
+        }
+      }
+    }
+    indicesHashTable.InsertOrUpdate(aPromiseID, index);
+  }
+  FlushRejections::DispatchNeeded();
 }
 
 /* void */
-void PromiseDebugging::AddConsumedRejection(JS::Handle<JSObject*> aPromise) {
+void PromiseDebugging::AddConsumedRejection(JS::Handle<JSObject*> aPromise,
+                                            uint64_t aPromiseID) {
+  static constexpr size_t kThreshold =
+      CycleCollectedJSContext::kRejectedPromiseIndexThreshold;
+
   // If the promise is in our list of uncaught rejections, we haven't yet
   // reported it as unhandled. In that case, just remove it from the list
   // and don't add it to the list of consumed rejections.
-  auto& uncaughtRejections =
-      CycleCollectedJSContext::Get()->mUncaughtRejections;
-  for (size_t i = 0; i < uncaughtRejections.length(); i++) {
-    if (uncaughtRejections[i] == aPromise) {
-      // To avoid large amounts of memmoves, we don't shrink the vector here.
-      // Instead, we filter out nullptrs when iterating over the vector later.
-      uncaughtRejections[i].set(nullptr);
-      return;
+  CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+  auto& uncaughtRejections = ccjs->mUncaughtRejections;
+
+  Maybe<size_t> index;
+  if (uncaughtRejections.length() <= kThreshold) {
+    MOZ_ASSERT(ccjs->mUncaughtRejectionIndices.IsEmpty());
+    for (size_t i = 0; i < uncaughtRejections.length(); i++) {
+      if (uncaughtRejections[i] == aPromise) {
+        index = Some(i);
+        break;
+      }
     }
+  } else {
+    index = ccjs->mUncaughtRejectionIndices.Extract(aPromiseID);
+  }
+  if (index.isSome()) {
+    // To avoid large amounts of memmoves, we don't shrink the vector here.
+    // Instead, we filter out nullptrs when iterating over the vector later.
+    MOZ_ASSERT(uncaughtRejections[*index] == aPromise);
+    uncaughtRejections[*index].set(nullptr);
+    return;
   }
   // This might OOM, but won't set a pending exception, so we'll just ignore it.
-  if (CycleCollectedJSContext::Get()->mConsumedRejections.append(aPromise)) {
+  if (ccjs->mConsumedRejections.append(aPromise)) {
     FlushRejections::DispatchNeeded();
   }
 }
 
 /* static */
-void PromiseDebugging::FlushUncaughtRejectionsInternal() {
+void PromiseDebugging::FlushUncaughtRejectionsInternal(bool aDeferToEventPath) {
   CycleCollectedJSContext* storage = CycleCollectedJSContext::Get();
 
   auto& uncaught = storage->mUncaughtRejections;
@@ -260,6 +298,15 @@ void PromiseDebugging::FlushUncaughtRejectionsInternal() {
       continue;
     }
 
+    // If this promise will go through the NotifyUnhandledRejections event
+    // path, defer both observer notification and console reporting there.
+    if (aDeferToEventPath) {
+      const uint64_t promiseID = JS::GetPromiseID(promise);
+      if (storage->HasPendingUnhandledRejection(promiseID)) {
+        continue;
+      }
+    }
+
     bool suppressReporting = false;
     for (size_t j = 0; j < observers.Length(); ++j) {
       RefPtr<UncaughtRejectionObserver> obs =
@@ -276,6 +323,7 @@ void PromiseDebugging::FlushUncaughtRejectionsInternal() {
     }
   }
   storage->mUncaughtRejections.clear();
+  storage->mUncaughtRejectionIndices.Clear();
 
   // Notify observers of consumed Promise.
 

@@ -9,7 +9,7 @@ PromiseTestUtils.allowMatchingRejectionsGlobally(
 
 function extensionShortcutsReady(id) {
   let extension = WebExtensionPolicy.getByID(id).extension;
-  return BrowserTestUtils.waitForCondition(() => {
+  return TestUtils.waitForCondition(() => {
     return extension.shortcuts.keysetsMap.has(window);
   }, "Wait for add-on keyset to be registered");
 }
@@ -18,10 +18,9 @@ async function loadShortcutsView() {
   // Load the theme view initially so we can verify that the category is switched
   // to "extension" when the shortcuts view is loaded.
   let win = await loadInitialView("theme");
-  let categoryUtils = new CategoryUtilities(win);
 
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://list/theme",
     "The theme category is selected"
   );
@@ -32,11 +31,11 @@ async function loadShortcutsView() {
   ok(!shortcutsLink.hidden, "The shortcuts link is visible");
 
   let loaded = waitForViewLoad(win);
-  shortcutsLink.click();
+  await triggerPageOptionsAction(win, "manage-shortcuts");
   await loaded;
 
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     "addons://list/extension",
     "The extension category is now selected"
   );
@@ -143,7 +142,7 @@ add_task(async function testUpdatingCommands() {
     count++;
 
     // Wait for the shortcut attribute to change.
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => input.getAttribute("shortcut") == "Alt+Shift+8",
       "Wait for shortcut to update to Alt+Shift+8"
     );
@@ -162,7 +161,7 @@ add_task(async function testUpdatingCommands() {
       shiftKey: true,
       altKey: true,
     });
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => input.getAttribute("shortcut") == `Alt+Shift+${count}`,
       `Wait for shortcut to update to Alt+Shift+${count}`
     );
@@ -181,7 +180,7 @@ add_task(async function testUpdatingCommands() {
     shortcutInput.focus();
     EventUtils.synthesizeKey(synthesizeKey, { shiftKey: true, altKey: true });
     // Wait for the shortcut attribute to change.
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => shortcutInput.getAttribute("shortcut") == `Alt+Shift+${key}`,
       `Wait for shortcut to update to Alt+Shift+${key}`
     );

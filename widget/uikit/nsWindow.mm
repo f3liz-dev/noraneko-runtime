@@ -1,44 +1,43 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIEvent.h>
-#import <UIKit/UIKit.h>
 #import <UIKit/UIGraphics.h>
 #import <UIKit/UIInterface.h>
+#import <UIKit/UIKit.h>
 #import <UIKit/UIScreen.h>
 #import <UIKit/UITapGestureRecognizer.h>
 #import <UIKit/UITouch.h>
 #import <UIKit/UIView.h>
 #import <UIKit/UIViewController.h>
 #import <UIKit/UIWindow.h>
-#import <QuartzCore/QuartzCore.h>
 
-#include "nsWindow.h"
 #include "ScreenHelperUIKit.h"
 #include "nsAppShell.h"
 #include "nsIAppWindow.h"
 #include "nsIWindowWatcher.h"
+#include "nsWindow.h"
 #ifdef ACCESSIBILITY
-#  include "nsAccessibilityService.h"
 #  include "mozilla/a11y/LocalAccessible.h"
+#  include "nsAccessibilityService.h"
 #endif
 
-#include "nsWidgetsCID.h"
 #include "nsGfxCIID.h"
+#include "nsWidgetsCID.h"
 
+#include "TextInputHandler.h"
+#include "UIKitUtils.h"
+#include "gfxContext.h"
+#include "gfxImageSurface.h"
 #include "gfxPlatform.h"
 #include "gfxQuartzSurface.h"
 #include "gfxUtils.h"
-#include "gfxImageSurface.h"
-#include "gfxContext.h"
 #include "nsObjCExceptions.h"
 #include "nsQueryObject.h"
 #include "nsRegion.h"
 #include "nsTArray.h"
-#include "TextInputHandler.h"
-#include "UIKitUtils.h"
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventForwards.h"
@@ -46,8 +45,8 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/widget/GeckoViewSupport.h"
 #include "mozilla/layers/NativeLayerCA.h"
+#include "mozilla/widget/GeckoViewSupport.h"
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/MUIRootAccessibleProtocol.h"
 #endif
@@ -281,7 +280,7 @@ class nsAutoRetainUIKitObject {
       continue;
     }
     int id = [value intValue];
-    RefPtr<Touch> t = new Touch(id, loc, radius, 0.0f, 1.0f);
+    auto t = MakeRefPtr<Touch>(id, loc, radius, 0.0f, 1.0f);
     event.mRefPoint = loc;
     event.mTouches.AppendElement(t);
   }
@@ -1281,7 +1280,7 @@ id<GeckoViewWindow> GeckoViewOpenWindow(NSString* aId,
   }
 
   // Prepare an nsIGeckoViewView to pass as argument to the window.
-  RefPtr<IOSView> iosView = new IOSView();
+  auto iosView = MakeRefPtr<IOSView>();
   iosView->mEventDispatcher->Attach(aDispatcher);
   iosView->mInitData.AssignUnderGetRule((CFDictionaryRef)aInitData);
 

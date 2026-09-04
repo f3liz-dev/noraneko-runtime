@@ -1,11 +1,13 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFontMetrics.h"
-#include <math.h>                // for floor, ceil
-#include <algorithm>             // for max
+
+#include <math.h>  // for floor, ceil
+
+#include <algorithm>  // for max
+
 #include "gfxContext.h"          // for gfxContext
 #include "gfxFontConstants.h"    // for NS_FONT_{SUB,SUPER}SCRIPT_OFFSET_RATIO
 #include "gfxPlatform.h"         // for gfxPlatform
@@ -13,6 +15,8 @@
 #include "gfxRect.h"             // for gfxRect
 #include "gfxTextRun.h"          // for gfxFontGroup
 #include "gfxTypes.h"            // for gfxFloat
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT
+#include "mozilla/UniquePtr.h"   // for UniquePtr
 #include "nsAtom.h"              // for nsAtom
 #include "nsBoundingMetrics.h"   // for nsBoundingMetrics
 #include "nsDebug.h"             // for NS_ERROR
@@ -21,8 +25,6 @@
 #include "nsPresContext.h"       // for nsPresContext
 #include "nsString.h"            // for nsString
 #include "nsStyleConsts.h"       // for StyleHyphens::None
-#include "mozilla/Assertions.h"  // for MOZ_ASSERT
-#include "mozilla/UniquePtr.h"   // for UniquePtr
 
 class gfxUserFontSet;
 using namespace mozilla;
@@ -109,6 +111,7 @@ class StubPropertyProvider final : public gfxTextRun::PropertyProvider {
     NS_ERROR("This shouldn't be called because we never enable hyphens");
     return gfx::ShapedTextFlags();
   }
+  nscoord LetterSpacing() const override { return 0; }
 };
 
 }  // namespace
@@ -127,7 +130,7 @@ nsFontMetrics::nsFontMetrics(const nsFont& aFont, const Params& aParams,
       mTextRunRTL(false),
       mVertical(false),
       mTextOrientation(mozilla::StyleTextOrientation::Mixed) {
-  gfxFontStyle style(aFont.style, aFont.weight, aFont.stretch,
+  gfxFontStyle style(aFont.style, aFont.weight, aFont.width,
                      gfxFloat(aFont.size.ToAppUnits()) / mP2A, aFont.sizeAdjust,
                      aFont.family.is_system_font,
                      aContext->DeviceContext()->IsPrinterContext(),
@@ -165,8 +168,8 @@ void nsFontMetrics::Destroy() { mPresContext = nullptr; }
 #define ROUND_TO_TWIPS(x) (nscoord) floor(((x) * mP2A) + 0.5)
 #define CEIL_TO_TWIPS(x) (nscoord) ceil((x) * mP2A)
 
-static nscoord GetBaseline(const nsFontMetrics* aFontMetrics,
-                           gfxFont::Baseline aBaseline) {
+static gfxFloat GetBaseline(const nsFontMetrics* aFontMetrics,
+                            gfxFont::Baseline aBaseline) {
   RefPtr<gfxFont> font =
       aFontMetrics->GetThebesFontGroup()->GetFirstValidFont();
   return font->GetBaseline(aBaseline, aFontMetrics->Orientation());
@@ -402,7 +405,8 @@ void nsFontMetrics::DrawString(const char* aString, uint32_t aLength,
   mozilla::gfx::PaletteCache paletteCache;
   gfxTextRun::DrawParams params(aContext, paletteCache);
   params.provider = &provider;
-  textRun->Draw(range, pt, params);
+  mozilla::image::imgDrawingParams dummy;
+  textRun->Draw(range, pt, params, dummy);
 }
 
 void nsFontMetrics::DrawString(
@@ -428,7 +432,8 @@ void nsFontMetrics::DrawString(
   mozilla::gfx::PaletteCache paletteCache;
   gfxTextRun::DrawParams params(aContext, paletteCache);
   params.provider = &provider;
-  textRun->Draw(range, pt, params);
+  mozilla::image::imgDrawingParams dummy;
+  textRun->Draw(range, pt, params, dummy);
 }
 
 static nsBoundingMetrics GetTextBoundingMetrics(

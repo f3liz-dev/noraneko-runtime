@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,11 +7,11 @@
 
 #include <unordered_set>
 
+#include "GLContextTypes.h"   // for GLContext, etc
+#include "GLDefs.h"           // for GLuint, LOCAL_GL_TEXTURE_2D, etc
+#include "OGLShaderConfig.h"  // for ShaderConfigOGL
+#include "Units.h"            // for ScreenPoint
 #include "gfx2DGlue.h"
-#include "GLContextTypes.h"         // for GLContext, etc
-#include "GLDefs.h"                 // for GLuint, LOCAL_GL_TEXTURE_2D, etc
-#include "OGLShaderConfig.h"        // for ShaderConfigOGL
-#include "Units.h"                  // for ScreenPoint
 #include "mozilla/Assertions.h"     // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"         // for already_AddRefed, RefPtr
 #include "mozilla/gfx/2D.h"         // for DrawTarget

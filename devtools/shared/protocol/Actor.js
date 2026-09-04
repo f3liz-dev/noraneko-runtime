@@ -149,6 +149,10 @@ class Actor extends Pool {
         error == "out of memory"
           ? ChromeUtils.getLastOOMStackTrace()
           : error.stack,
+      // DevToolsProcessParent may convey yet another stack if the exception happened in the content process
+      // (in this edgecase, this code runs in the parent process and will emit the stack up to the client)
+      contentProcessStack:
+        typeof error == "object" ? error.contentProcessStack : undefined,
     });
   }
 
@@ -229,13 +233,20 @@ var generateRequestTypes = function (actorSpec) {
 
         const sendReturn = retToSend => {
           if (spec.oneway) {
+            if (spec.release) {
+              try {
+                this.destroy();
+              } catch (e) {
+                this.writeError(e, actorSpec.typeName, spec.name);
+              }
+            }
             // No need to send a response.
             return;
           }
           if (isBulkResponse) {
             if (retToSend) {
-              throw new Actor(
-                `Actor method '${this.typeName}.${spec.name}' is supposed to return a bulk response, but returned some value.`
+              throw new Error(
+                `Actor method '${this.typeName}.${spec.name}' is supposed to return a bulk response, via last 'startBulkSend' callback argument, but returned some value.`
               );
             }
             // Bulk response are one-way requests and are not replying any JSON packet.

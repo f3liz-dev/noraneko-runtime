@@ -99,6 +99,30 @@ class TestToolkitMozConfigure(BaseConfigureTest):
     def test_developer_options_release(self):
         self.test_developer_options("42.0")
 
+    def get_milestone(self, args=[]):
+        sandbox = self.get_sandbox({}, {}, args, {})
+        return sandbox._value_for(sandbox["milestone"])
+
+    def test_early_beta_or_earlier(self, milestone="42.0a1"):
+        milestone_path = os.path.join(topsrcdir, "config", "milestone.txt")
+        with MockedOpen({milestone_path: milestone}):
+            m = self.get_milestone()
+            self.assertIn(m.is_early_beta_or_earlier, (True, None))
+            self.assertEqual(m.is_early_beta_or_earlier, m.is_nightly)
+
+    def test_early_beta_or_earlier_beta(self):
+        self.test_early_beta_or_earlier("42.0b1")
+
+    def test_early_beta_or_earlier_release(self):
+        self.test_early_beta_or_earlier("42.0")
+
+    def test_as_milestone_never_enables_early_beta_or_earlier(self):
+        milestone_path = os.path.join(topsrcdir, "config", "milestone.txt")
+        with MockedOpen({milestone_path: "42.0a1"}):
+            for as_milestone in ("beta", "early-beta", "late-beta", "release"):
+                m = self.get_milestone([f"--as-milestone={as_milestone}"])
+                self.assertIsNone(m.is_early_beta_or_earlier, as_milestone)
+
     def test_elfhack(self):
         class ReadElf:
             def __init__(self, with_relr):
@@ -150,10 +174,9 @@ class TestToolkitMozConfigure(BaseConfigureTest):
                 {},
                 ["--disable-bootstrap", "--disable-release"] + args,
             )
-            value_for_depends = getattr(sandbox, "__value_for_depends")
             # Trick the sandbox into not running too much
             dep = sandbox._depends[sandbox["c_compiler"]]
-            value_for_depends[(dep,)] = CompilerResult(
+            sandbox._dependency_overrides[dep] = CompilerResult(
                 compiler="/usr/bin/mockcc",
                 language="C",
                 type="clang",
@@ -161,7 +184,7 @@ class TestToolkitMozConfigure(BaseConfigureTest):
                 flags=[],
             )
             dep = sandbox._depends[sandbox["readelf"]]
-            value_for_depends[(dep,)] = "/usr/bin/readelf"
+            sandbox._dependency_overrides[dep] = "/usr/bin/readelf"
 
             return (
                 sandbox._value_for(sandbox["select_linker"]).KIND,

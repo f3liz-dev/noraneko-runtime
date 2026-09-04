@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,11 +7,11 @@
 #ifndef xptcall_h_
 #define xptcall_h_
 
-#include "nscore.h"
-#include "nsISupports.h"
-#include "xptinfo.h"
 #include "js/Value.h"
 #include "mozilla/MemoryReporting.h"
+#include "nsISupports.h"
+#include "nscore.h"
+#include "xptinfo.h"
 
 struct nsXPTCMiniVariant {
   // No ctors or dtors so that we can use arrays of these on the stack
@@ -102,7 +101,7 @@ struct nsXPTCVariant {
 
   // As this type contains an anonymous union, we need to provide an explicit
   // destructor.
-  ~nsXPTCVariant() {}
+  ~nsXPTCVariant() {}  // NOLINT()
 };
 
 static_assert(offsetof(nsXPTCVariant, val) == offsetof(nsXPTCVariant, ext),

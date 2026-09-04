@@ -12,7 +12,9 @@ import mozunit
 import pytest
 from taskgraph.util import json
 
+from gecko_taskgraph.test.conftest import FakeParameters
 from gecko_taskgraph.transforms import test as test_transforms
+from gecko_taskgraph.transforms.test import chunk
 
 
 @pytest.fixture
@@ -162,14 +164,14 @@ def test_split_variants(monkeypatch, run_full_config_transform, make_test_task):
         pytest.param(
             {
                 "attributes": {"unittest_variant": "webrender-sw+1proc"},
-                "test-platform": "linux1804-64-clang-trunk-qr/opt",
+                "test-platform": "linux2404-64-clang-trunk/opt",
             },
             {
                 "platform": {
                     "arch": "64",
                     "os": {
                         "name": "linux",
-                        "version": "1804",
+                        "version": "2404",
                     },
                 },
                 "build": {
@@ -319,6 +321,235 @@ def test_ensure_spi_disabled_on_all_but_spi(
     )[0]
     pprint(task)
     callback(task)
+
+
+def test_resolve_dynamic_chunks_uses_variant_suffix(
+    monkeypatch, run_transform, make_test_task
+):
+    """resolve_dynamic_chunks should include variant-suffix in the suite name
+    passed to get_runtimes."""
+    calls = []
+
+    def fake_get_runtimes(platform, suite_name):
+        calls.append((platform, suite_name))
+        if suite_name == "task-swr":
+            return {"manifest.toml": 600}
+        return {}
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.get_runtimes", fake_get_runtimes
+    )
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.resolve_manifest_runtimes",
+        lambda runtimes, manifests: {
+            m: runtimes[m] for m in manifests if m in runtimes
+        },
+    )
+
+    task = make_test_task(**{
+        "chunks": "dynamic",
+        "default-chunks": 10,
+        "variant-suffix": "-swr",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(run_transform(test_transforms.chunk.resolve_dynamic_chunks, task))
+    assert len(tasks) == 1
+    assert ("linux64", "task-swr") in calls
+    assert tasks[0]["chunks"] == 1
+
+
+def test_resolve_dynamic_chunks_falls_back_without_runtimes(
+    monkeypatch, run_transform, make_test_task
+):
+    """resolve_dynamic_chunks should fall back to default-chunks when
+    get_runtimes returns no data."""
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.get_runtimes", lambda p, s: {}
+    )
+
+    task = make_test_task(**{
+        "chunks": "dynamic",
+        "default-chunks": 10,
+        "variant-suffix": "-swr",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(run_transform(test_transforms.chunk.resolve_dynamic_chunks, task))
+    assert tasks[0]["chunks"] == 10
+
+
+def test_split_chunks_uses_variant_suffix(monkeypatch, run_transform, make_test_task):
+    """split_chunks should pass the variant-suffixed suite name to
+    chunk_manifests so manifests are distributed using variant-specific
+    runtime data."""
+    calls = []
+
+    def fake_chunk_manifests(suite, platform, chunks, manifests):
+        calls.append(suite)
+        return [manifests]
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.chunk_manifests",
+        fake_chunk_manifests,
+    )
+
+    task = make_test_task(**{
+        "chunks": 1,
+        "variant-suffix": "-swr",
+        "treeherder-symbol": "M-swr(bc)",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(
+        run_transform(
+            test_transforms.chunk.split_chunks,
+            task,
+            params=FakeParameters({"backstop": False, "try_task_config": {}}),
+        )
+    )
+    assert len(tasks) == 1
+    assert "task-swr" in calls
+
+
+def test_split_chunks_base_task_no_variant_suffix(
+    monkeypatch, run_transform, make_test_task
+):
+    """split_chunks should pass the plain test-name when there is no variant."""
+    calls = []
+
+    def fake_chunk_manifests(suite, platform, chunks, manifests):
+        calls.append(suite)
+        return [manifests]
+
+    monkeypatch.setattr(
+        "gecko_taskgraph.transforms.test.chunk.chunk_manifests",
+        fake_chunk_manifests,
+    )
+
+    task = make_test_task(**{
+        "chunks": 1,
+        "treeherder-symbol": "M(bc)",
+        "test-manifests": {"active": ["manifest.toml"], "skipped": []},
+    })
+    tasks = list(
+        run_transform(
+            test_transforms.chunk.split_chunks,
+            task,
+            params=FakeParameters({"backstop": False, "try_task_config": {}}),
+        )
+    )
+    assert len(tasks) == 1
+    assert "task" in calls
+
+
+_TESTS_ROOT = "testing/web-platform/tests/"
+_MOZ_TESTS_ROOT = "testing/web-platform/mozilla/tests/"
+
+
+@pytest.mark.parametrize(
+    "test_name,input_paths,expected",
+    [
+        # A subsuite task runs when at least one path is under its prefix...
+        ("web-platform-tests-webrtc-1", [_TESTS_ROOT + "webrtc/a.html"], True),
+        # ...and does not when none are.
+        ("web-platform-tests-webrtc-1", [_TESTS_ROOT + "dom/a.html"], False),
+        # Prefix matching is deliberately loose: "webrtc" covers the webrtc-*
+        # sibling directories too.
+        (
+            "web-platform-tests-webrtc-1",
+            [_TESTS_ROOT + "webrtc-encoded-transform/a.html"],
+            True,
+        ),
+        # Every input path is considered, not just the first.
+        (
+            "web-platform-tests-webrtc-1",
+            [_TESTS_ROOT + "dom/a.html", _TESTS_ROOT + "webrtc/b.html"],
+            True,
+        ),
+        # The mozilla-specific wpt root is matched too.
+        ("web-platform-tests-webrtc-1", [_MOZ_TESTS_ROOT + "webrtc/a.html"], True),
+        # A nested subsuite prefix only matches its specific subdir.
+        (
+            "web-platform-tests-webcodecs-1",
+            [_TESTS_ROOT + "media-source/mse-for-webcodecs/a.html"],
+            True,
+        ),
+        # A general (non-subsuite) task runs when at least one path is outside
+        # every subsuite prefix.
+        ("web-platform-tests-1", [_TESTS_ROOT + "dom/a.html"], True),
+        ("web-platform-tests-1", [_MOZ_TESTS_ROOT + "dom/a.html"], True),
+        # media-source (but not mse-for-webcodecs) belongs to the general task.
+        ("web-platform-tests-1", [_TESTS_ROOT + "media-source/a.html"], True),
+        # A path that merely contains a subsuite name as a substring rather than
+        # a path prefix belongs to the general task.
+        ("web-platform-tests-1", [_TESTS_ROOT + "css/foo-webgpu/a.html"], True),
+        # A general task does not run when every path belongs to a subsuite.
+        ("web-platform-tests-1", [_TESTS_ROOT + "webrtc/a.html"], False),
+        (
+            "web-platform-tests-1",
+            [_TESTS_ROOT + "webrtc/a.html", _TESTS_ROOT + "webgpu/b.html"],
+            False,
+        ),
+        # ...but does when at least one path is non-subsuite.
+        (
+            "web-platform-tests-1",
+            [_TESTS_ROOT + "webrtc/a.html", _TESTS_ROOT + "dom/b.html"],
+            True,
+        ),
+        # A non-wpt (e.g. mochitest) path mixed into a wpt task's scheduled
+        # paths is ignored; the subsuite task still runs on its wpt path.
+        (
+            "web-platform-tests-webrtc-1",
+            [_TESTS_ROOT + "webrtc/a.html", "dom/media/webrtc/tests/mochitest/a.html"],
+            True,
+        ),
+        # ...and a subsuite task with only a non-wpt path does not run.
+        (
+            "web-platform-tests-webrtc-1",
+            ["dom/media/webrtc/tests/mochitest/a.html"],
+            False,
+        ),
+        # A non-wpt path that merely contains a subsuite name as a substring must
+        # not trigger the matching wpt subsuite task. webgpu exists as both a wpt
+        # and a mochitest subsuite, but only paths under the wpt roots count.
+        ("web-platform-tests-webgpu-1", ["dom/webgpu/mochitest/a.html"], False),
+        # No scheduled paths means there is nothing for the task to run.
+        ("web-platform-tests-webrtc-1", [], False),
+        ("web-platform-tests-1", [], False),
+    ],
+)
+def test_wpt_task_should_run(test_name, input_paths, expected):
+    assert chunk._wpt_task_should_run(test_name, input_paths) == expected
+
+
+def test_test_paths_do_not_drop_no_manifest_loader_tasks(run_transform):
+    """MOZHARNESS_TEST_PATHS must not drop tasks that opt out of taskgraph-time
+    manifest resolution (test-manifest-loader=None), such as gtest/cppunittest.
+    """
+    tasks = [
+        {
+            "test-name": "gtest",
+            "attributes": {"unittest_suite": "gtest"},
+            "test-manifest-loader": None,
+        },
+        {
+            "test-name": "cppunittest",
+            "attributes": {"unittest_suite": "cppunittest"},
+            "test-manifest-loader": None,
+        },
+    ]
+    params = FakeParameters({
+        "try_task_config": {
+            "env": {
+                "MOZHARNESS_TEST_PATHS": json.dumps({
+                    "web-platform-tests": [_TESTS_ROOT + "webrtc/a.html"],
+                    "mochitest-plain": ["dom/media/test/a.html"],
+                })
+            }
+        },
+        "test_manifest_loader": "default",
+    })
+
+    result = list(run_transform(chunk.set_test_manifests, tasks, params=params))
+    assert sorted(t["test-name"] for t in result) == ["cppunittest", "gtest"]
 
 
 if __name__ == "__main__":

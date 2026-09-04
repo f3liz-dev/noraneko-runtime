@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,14 @@
 #ifndef nsMenuItemX_h_
 #define nsMenuItemX_h_
 
+#import <Cocoa/Cocoa.h>
+
 #include "mozilla/RefPtr.h"
+#include "nsChangeObserver.h"
 #include "nsISupports.h"
 #include "nsMenuGroupOwnerX.h"
 #include "nsMenuItemIconX.h"
-#include "nsChangeObserver.h"
 #include "nsStringFwd.h"
-
-#import <Cocoa/Cocoa.h>
 
 class nsMenuItemIconX;
 class nsMenuX;

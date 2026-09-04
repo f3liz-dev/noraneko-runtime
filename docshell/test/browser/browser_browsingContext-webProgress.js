@@ -34,9 +34,6 @@ add_task(async function () {
   await loaded;
 
   const firstPageBrowsingContext = browser.browsingContext;
-  const isBfcacheInParentEnabled =
-    SpecialPowers.Services.appinfo.sessionHistoryInParent &&
-    SpecialPowers.Services.prefs.getBoolPref("fission.bfcacheInParent");
   is(
     aboutBlankBrowsingContext,
     firstPageBrowsingContext,
@@ -96,13 +93,16 @@ add_task(async function () {
 
   const onSecondLocationChanged = waitForNextLocationChange(webProgress);
   const onSecondPageDocumentStart = waitForNextDocumentStart(webProgress);
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   const secondLocation = "http://example.com/document-builder.sjs?html=com";
   loaded = BrowserTestUtils.browserLoaded(browser);
   BrowserTestUtils.startLoadingURIString(browser, secondLocation);
   await loaded;
 
   const secondPageBrowsingContext = browser.browsingContext;
+  const isBfcacheInParentEnabled = SpecialPowers.Services.prefs.getBoolPref(
+    "fission.bfcacheInParent"
+  );
   if (isBfcacheInParentEnabled) {
     isnot(
       firstPageBrowsingContext,

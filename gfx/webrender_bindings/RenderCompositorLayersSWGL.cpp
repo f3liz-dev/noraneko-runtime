@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  *
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,11 +8,11 @@
 
 #include "GLContext.h"
 #include "GLContextEGL.h"
+#include "RenderCompositorRecordedFrame.h"
 #include "mozilla/layers/BuildConstants.h"
 #include "mozilla/layers/Effects.h"
 #include "mozilla/layers/TextureHostOGL.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "RenderCompositorRecordedFrame.h"
 
 #if defined(XP_WIN)
 #  include "mozilla/webrender/RenderCompositorD3D11SWGL.h"
@@ -294,7 +292,8 @@ void RenderCompositorLayersSWGL::AttachExternalImage(
 #elif defined(ANDROID)
   MOZ_RELEASE_ASSERT(image->AsRenderAndroidHardwareBufferTextureHost() ||
                      image->AsRenderAndroidSurfaceTextureHost() ||
-                     image->AsRenderEGLImageTextureHost());
+                     image->AsRenderEGLImageTextureHost() ||
+                     image->AsRenderAndroidImageReaderImageTextureHost());
 #endif
 
   auto surfaceCursor = mSurfaces.find(aId);
@@ -367,7 +366,7 @@ class RenderSourceLMC : public profiler_screenshots::RenderSource {
   const auto& RenderTarget() { return mRT; }
 
  protected:
-  virtual ~RenderSourceLMC() {}
+  virtual ~RenderSourceLMC() = default;
 
   RefPtr<CompositingRenderTarget> mRT;
 };
@@ -405,7 +404,7 @@ class DownscaleTargetLMC : public profiler_screenshots::DownscaleTarget {
   }
 
  protected:
-  virtual ~DownscaleTargetLMC() {}
+  virtual ~DownscaleTargetLMC() = default;
 
   RefPtr<RenderSourceLMC> mRenderSource;
   Compositor* mCompositor;
@@ -429,7 +428,7 @@ class AsyncReadbackBufferLMC
   }
 
  protected:
-  virtual ~AsyncReadbackBufferLMC() {}
+  virtual ~AsyncReadbackBufferLMC() = default;
 
   RefPtr<mozilla::layers::AsyncReadbackBuffer> mARB;
   Compositor* mCompositor;

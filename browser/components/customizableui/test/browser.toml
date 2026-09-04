@@ -9,6 +9,7 @@ prefs = [
   "browser.toolbars.share-button.enabled=true",
   "browser.urlbar.trustPanel.featureGate=false",
   "sidebar.revamp=false",
+  "browser.tabs.groups.alternateMenu=true",
 ]
 
 ["browser_1003588_no_specials_in_panel.js"]
@@ -47,6 +48,9 @@ skip-if = [
 ]
 
 ["browser_1880230_hideInNonPrivateBrowsing.js"]
+
+["browser_2041653_non_removable_overflow_reset.js"]
+tags = "overflowable-toolbar"
 
 ["browser_873501_handle_specials.js"]
 
@@ -170,6 +174,7 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775671
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1775671
+  "os == 'win' && os_version == '11.26200' && arch == 'x86_64' && debug", # Bug 1775671
 ]
 
 ["browser_947987_removable_default.js"]
@@ -244,6 +249,7 @@ skip-if = [
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && swgl && verify-standalone",
   "os == 'win' && os_version == '11.26100' && arch == 'x86' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26200' && arch == 'x86' && opt && verify-standalone",
 ]
 
 ["browser_995164_registerArea_during_customize_mode.js"]
@@ -263,6 +269,7 @@ skip-if = [
 ["browser_PanelMultiView_focus.js"]
 
 ["browser_PanelMultiView_keyboard.js"]
+support-files = ["file_embedded_document.html"]
 
 ["browser_addons_area.js"]
 
@@ -271,6 +278,8 @@ skip-if = [
 ["browser_backfwd_enabled_post_customize.js"]
 
 ["browser_bookmarks_empty_message.js"]
+
+["browser_bookmarks_sync_promo.js"]
 
 ["browser_bookmarks_toolbar_collapsed_restore_default.js"]
 
@@ -321,6 +330,8 @@ https_first_disabled = true
 
 ["browser_history_restore_session.js"]
 
+["browser_history_sync_promo.js"]
+
 ["browser_insert_before_moved_node.js"]
 
 ["browser_menubar_visibility.js"]
@@ -329,6 +340,8 @@ run-if = [
 ]
 
 ["browser_newtab_button_customizemode.js"]
+
+["browser_novaHelpSwitchDevicePromo.js"]
 
 ["browser_open_from_popup.js"]
 
@@ -356,11 +369,18 @@ tags = "fullscreen"
 
 ["browser_panelUINotifications_multiWindow.js"]
 
+["browser_panelUINotifications_novaUpdateBanner.js"]
+
 ["browser_panel_keyboard_navigation.js"]
+skip-if = [
+  "nova", # Bug 2058027
+]
 
 ["browser_panel_locationSpecific.js"]
 
 ["browser_panel_menulist.js"]
+
+["browser_panel_role_and_label.js"]
 
 ["browser_panel_toggle.js"]
 
@@ -419,11 +439,16 @@ support-files = ["browser_shareurl.html"]
 ["browser_sidebar_toggle.js"]
 
 ["browser_switch_to_customize_mode.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26200' && asan", # Bug 2019745
+]
 
 ["browser_synced_tabs_menu.js"]
 fail-if = [
   "a11y_checks", # Bug 1854536 clicked #PanelUI-remotetabs-connect-device-button may not be focusable
 ]
+
+["browser_tab_groups_button.js"]
 
 ["browser_tabbar_big_widgets.js"]
 
@@ -435,6 +460,10 @@ skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
   "os == 'win'",
 ]
+
+["browser_uidensity_auto_compact.js"]
+
+["browser_uidensity_auto_touch.js"]
 
 ["browser_unified_extensions_reset.js"]
 

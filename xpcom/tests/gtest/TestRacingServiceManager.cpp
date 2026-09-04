@@ -1,24 +1,20 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIFactory.h"
-#include "nsXULAppAPI.h"
-#include "nsIThread.h"
-
+#include "gtest/gtest.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ReentrantMonitor.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "nsComponentManager.h"
+#include "nsIFactory.h"
+#include "nsIThread.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOMCIDInternal.h"
+#include "nsXULAppAPI.h"
 #include "pratom.h"
 #include "prmon.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/gtest/MozAssertions.h"
-
-#include "mozilla/ReentrantMonitor.h"
-
-#include "gtest/gtest.h"
 
 using namespace mozilla;
 
@@ -139,9 +135,9 @@ Factory::CreateInstance(const nsIID& aIID, void** aResult) {
   nsCOMPtr<nsISupports> instance;
 
   if (!mFirstComponentCreated) {
-    instance = new Component1();
+    instance = MakeRefPtr<Component1>();
   } else {
-    instance = new Component2();
+    instance = MakeRefPtr<Component2>();
   }
   NS_ENSURE_TRUE(instance, NS_ERROR_OUT_OF_MEMORY);
 
@@ -201,7 +197,7 @@ TEST(RacingServiceManager, Test)
 
   AutoCreateAndDestroyReentrantMonitor mon1(&gReentrantMonitor);
 
-  RefPtr<TestRunnable> runnable = new TestRunnable();
+  RefPtr runnable = MakeRefPtr<TestRunnable>();
   ASSERT_TRUE(runnable);
 
   // Run the classID test

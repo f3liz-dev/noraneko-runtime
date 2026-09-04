@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,16 +51,18 @@ class PromiseDebugging {
       GlobalObject&, UncaughtRejectionObserver& aObserver);
 
   // Mark a Promise as having been left uncaught at script completion.
-  static void AddUncaughtRejection(JS::Handle<JSObject*>);
+  // aPromiseID must be JS::GetPromiseID(aPromise); it is passed in because
+  // the sole caller has already computed it.
+  static void AddUncaughtRejection(JS::Handle<JSObject*>, uint64_t aPromiseID);
   // Mark a Promise previously added with `AddUncaughtRejection` as
   // eventually consumed.
-  static void AddConsumedRejection(JS::Handle<JSObject*>);
+  static void AddConsumedRejection(JS::Handle<JSObject*>, uint64_t aPromiseID);
   // Propagate the informations from AddUncaughtRejection
   // and AddConsumedRejection to observers.
   static void FlushUncaughtRejections();
 
  protected:
-  static void FlushUncaughtRejectionsInternal();
+  static void FlushUncaughtRejectionsInternal(bool aDeferToEventPath = true);
   friend class FlushRejections;
   friend class mozilla::dom::WorkerPrivate;
 

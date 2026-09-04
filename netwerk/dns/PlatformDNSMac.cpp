@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <arpa/inet.h>
+#include <dns_sd.h>
+#include <poll.h>
+
 #include "GetAddrInfo.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/net/DNSPacket.h"
 #include "nsIDNSService.h"
-#include "mozilla/StaticPrefs_network.h"
-
-#include <dns_sd.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 
 namespace mozilla::net {
 
@@ -24,6 +22,8 @@ struct DNSContext {
   TypeRecordResultType* mResult;
   nsCString mHost;
   uint32_t* mTTL;
+  // Set to the TargetName when the response is an HTTPS AliasMode record.
+  nsCString mAliasName;
 };
 
 // Callback for DNSServiceQueryRecord
@@ -48,13 +48,19 @@ void QueryCallback(DNSServiceRef aSDRef, DNSServiceFlags aFlags,
     return;
   }
 
+  // Skip intermediate records (e.g. CNAMEs) returned when
+  // kDNSServiceFlagsReturnIntermediates is set.
+  if (aRRType != TRRTYPE_HTTPSSVC) {
+    return;
+  }
+
   // Process the rdata for HTTPS records (type 65)
-  if (aRRType != TRRTYPE_HTTPSSVC || aRDLen == 0) {
+  if (aRDLen == 0) {
     context->mRv = NS_ERROR_UNKNOWN_HOST;
     return;
   }
 
-  nsDependentCString fullname(aFullname);
+  auto fullname = Substring(nsDependentCString(aFullname), 0, -1);
   if (fullname.Length() && fullname.Last() == '.') {
     // The fullname argument is always FQDN
     fullname.Rebind(aFullname, fullname.Length() - 1);
@@ -83,8 +89,8 @@ void QueryCallback(DNSServiceRef aSDRef, DNSServiceFlags aFlags,
     }
     LOG("alias mode %s -> %s", context->mHost.get(),
         parsed.mSvcDomainName.get());
-    context->mHost = parsed.mSvcDomainName;
-    ToLowerCase(context->mHost);
+    context->mAliasName = parsed.mSvcDomainName;
+    ToLowerCase(context->mAliasName);
     return;
   }
 
@@ -98,7 +104,8 @@ void QueryCallback(DNSServiceRef aSDRef, DNSServiceFlags aFlags,
 
 nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
                                 nsIDNSService::DNSFlags aFlags,
-                                TypeRecordResultType& aResult, uint32_t& aTTL) {
+                                TypeRecordResultType& aResult, uint32_t& aTTL,
+                                nsACString& aAliasName) {
   nsAutoCString host(aHost);
   nsAutoCString cname;
 
@@ -119,8 +126,7 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
   DNSServiceRef sdRef;
   DNSServiceErrorType err;
 
-  err = DNSServiceQueryRecord(&sdRef,
-                              0,  // No flags
+  err = DNSServiceQueryRecord(&sdRef, kDNSServiceFlagsReturnIntermediates,
                               0,  // All interfaces
                               host.get(), TRRTYPE_HTTPSSVC, kDNSServiceClass_IN,
                               QueryCallback, &context);
@@ -130,28 +136,23 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
     return NS_ERROR_UNKNOWN_HOST;
   }
 
-  int fd = DNSServiceRefSockFD(sdRef);
-  fd_set readfds;
-  FD_ZERO(&readfds);
-  FD_SET(fd, &readfds);
+  struct pollfd pfd = {
+      .fd = DNSServiceRefSockFD(sdRef),
+      .events = POLLIN,
+  };
 
   // If the domain queried results in NXDOMAIN, then QueryCallback will
-  // never get called, and select will hang forever. We need to use a
-  // timeout so that select() eventually returns.
-  struct timeval timeout;
-  timeout.tv_sec =
-      StaticPrefs::network_dns_native_https_timeout_mac_msec() / 1000;
-  timeout.tv_usec =
-      (StaticPrefs::network_dns_native_https_timeout_mac_msec() % 1000) * 1000;
-
-  int result = select(fd + 1, &readfds, NULL, NULL, &timeout);
-  if (result > 0 && FD_ISSET(fd, &readfds)) {
+  // never get called, and poll will hang forever. We need to use a
+  // timeout so that poll() eventually returns.
+  int result =
+      poll(&pfd, 1, StaticPrefs::network_dns_native_https_timeout_mac_msec());
+  if (result > 0 && (pfd.revents & POLLIN)) {
     // Process the result
     DNSServiceProcessResult(sdRef);
   } else if (result < 0) {
-    LOG("select() failed");
+    LOG("poll() failed");
   } else if (result == 0) {
-    LOG("select timed out");
+    LOG("poll timed out");
   }
 
   // Cleanup
@@ -164,6 +165,12 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
     return context.mRv;
   }
   if (aResult.is<Nothing>()) {
+    if (!context.mAliasName.IsEmpty()) {
+      // The response was an HTTPS AliasMode record; hand the target back so
+      // the caller can issue a fresh lookup for it.
+      aAliasName = context.mAliasName;
+      return NS_OK;
+    }
     // The call succeeded, but no HTTPS records were found.
     return NS_ERROR_UNKNOWN_HOST;
   }

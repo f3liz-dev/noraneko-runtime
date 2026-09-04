@@ -5,6 +5,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import datetime
+import time
+import os
 import functools
 import json
 from pathlib import Path
@@ -298,14 +300,14 @@ def fetch_remote_url(url: str, cache: bool = True):
 
     if cache:
         cache_dir = platformdirs.user_cache_dir("glean_parser", "mozilla")
-        with diskcache.Cache(cache_dir) as dc:
+        with diskcache.Cache(cache_dir, disk=diskcache.JSONDisk) as dc:
             if key in dc:
                 return dc[key]
 
-    contents: str = urllib.request.urlopen(url).read()
+    contents = urllib.request.urlopen(url).read().decode("utf-8")
 
     if cache:
-        with diskcache.Cache(cache_dir) as dc:
+        with diskcache.Cache(cache_dir, disk=diskcache.JSONDisk) as dc:
             dc[key] = contents
 
     return contents
@@ -412,6 +414,15 @@ def parse_expiration_version(expires: str) -> int:
         )
 
 
+def now_epoch():
+    try:
+        epoch_ts = int(os.environ.get("SOURCE_DATE_EPOCH", time.time()))
+    except ValueError:
+        raise ValueError("Invalid SOURCE_DATE_EPOCH")
+
+    return datetime.datetime.fromtimestamp(epoch_ts, tz=datetime.timezone.utc)
+
+
 def is_expired(expires: str, major_version: Optional[int] = None) -> bool:
     """
     Parses the `expires` field in a metric or ping and returns whether
@@ -425,7 +436,7 @@ def is_expired(expires: str, major_version: Optional[int] = None) -> bool:
         return parse_expiration_version(expires) <= major_version
     else:
         date = parse_expiration_date(expires)
-        return date <= datetime.datetime.now(datetime.timezone.utc).date()
+        return date <= now_epoch().date()
 
 
 def validate_expires(expires: str, major_version: Optional[int] = None) -> None:
@@ -515,6 +526,7 @@ common_metric_args = [
     "send_in_pings",
     "lifetime",
     "disabled",
+    "in_session",
 ]
 
 

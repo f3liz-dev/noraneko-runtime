@@ -1,4 +1,3 @@
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -93,20 +92,38 @@ export class PromptParent extends JSWindowActorParent {
     );
   }
 
+  #isNestedInSidebarBrowser(browser) {
+    return (
+      browser?.documentGlobal?.browsingContext.embedderElement?.id == "sidebar"
+    );
+  }
+
   // Note that this will return false for the sidebar <browser> element
   // itself.
   isEmbeddedInSidebar(browser) {
-    if (
-      browser?.ownerGlobal?.browsingContext.embedderElement?.id != "sidebar"
-    ) {
+    if (!this.#isNestedInSidebarBrowser(browser)) {
       return false;
     }
     // Extensions in the sidebar have more layers of nesting, and this causes
     // window leaks in tests. We would like to fix this at some point (bug 1513656)
-    if (browser.getAttribute("messagemanagergroup") == "webext-browsers") {
+    if (
+      browser.getAttribute("messagemanagergroup") == "webext-browsers" ||
+      browser.getAttribute("messagemanagergroup") == "chatbot-browser"
+    ) {
       return false;
     }
     return true;
+  }
+
+  // Prompts from the AI chatbot browser also need to be hoisted to the sidebar
+  // <browser> so they are shown as tab dialogs (bug 1955250), even though
+  // isEmbeddedInSidebar() excludes it.
+  shouldShowPromptOnSidebarBrowser(browser) {
+    return (
+      this.isEmbeddedInSidebar(browser) ||
+      (this.#isNestedInSidebarBrowser(browser) &&
+        browser.getAttribute("messagemanagergroup") == "chatbot-browser")
+    );
   }
 
   receiveMessage(message) {
@@ -142,9 +159,12 @@ export class PromptParent extends JSWindowActorParent {
 
     let browser = browsingContext.embedderElement;
 
-    let isEmbeddedInSidebar = this.isEmbeddedInSidebar(browser);
-    if (isEmbeddedInSidebar || this.isAboutAddonsOptionsPage(browsingContext)) {
-      browser = browser.ownerGlobal.browsingContext.embedderElement;
+    let showOnSidebarBrowser = this.shouldShowPromptOnSidebarBrowser(browser);
+    if (
+      showOnSidebarBrowser ||
+      this.isAboutAddonsOptionsPage(browsingContext)
+    ) {
+      browser = browser.documentGlobal.browsingContext.embedderElement;
     }
 
     let promptRequiresBrowser =
@@ -170,7 +190,7 @@ export class PromptParent extends JSWindowActorParent {
     if (!browsingContext.isContent && browsingContext.window) {
       win = browsingContext.window;
     } else {
-      win = browser?.ownerGlobal;
+      win = browser?.documentGlobal;
     }
 
     // There's a requirement for prompts to be blocked if a window is
@@ -248,7 +268,7 @@ export class PromptParent extends JSWindowActorParent {
               allowFocusCheckbox: args.allowFocusCheckbox,
               hideContent: args.isTopLevelCrossDomainAuth,
               // If we are in the sidebar, use the inner browser to detect when navigation is done
-              webProgress: isEmbeddedInSidebar
+              webProgress: showOnSidebarBrowser
                 ? browsingContext?.webProgress
                 : undefined,
             },

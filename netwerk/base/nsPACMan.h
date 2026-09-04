@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +5,21 @@
 #ifndef nsPACMan_h_
 #define nsPACMan_h_
 
+#include "ProxyAutoConfig.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/DataMutex.h"
-#include "mozilla/Monitor.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Logging.h"
-#include "mozilla/net/NeckoTargetHolder.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/net/NeckoTargetHolder.h"
 #include "nsCOMPtr.h"
 #include "nsIChannelEventSink.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamLoader.h"
-#include "nsThreadUtils.h"
 #include "nsIURI.h"
 #include "nsString.h"
-#include "ProxyAutoConfig.h"
+#include "nsThreadUtils.h"
 
 class nsISystemProxySettings;
 class nsIDHCPClient;

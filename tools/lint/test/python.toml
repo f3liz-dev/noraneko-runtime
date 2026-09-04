@@ -1,6 +1,10 @@
 [DEFAULT]
 subsuite = "mozlint"
 
+["test_agent_skills_sync.py"]
+
+["test_android_expired_strings.py"]
+
 ["test_android_format.py"]
 
 ["test_cargo-audit.py"]
@@ -32,6 +36,8 @@ skip-if = ["os == 'win'"]
 
 ["test_fluent_lint.py"]
 
+["test_forbid_moduleloaderbase_include.py"]
+
 ["test_gecko_trace.py"]
 
 ["test_glean_parser.py"]
@@ -46,19 +52,13 @@ skip-if = ["os == 'win'"]
 
 ["test_manifest_toml.py"]
 
+["test_md.py"]
+
 ["test_node_licenses.py"]
 
 ["test_node_package_names.py"]
 
-["test_perfdocs.py"]
-
-["test_perfdocs_generation.py"]
-
-["test_perfdocs_helpers.py"]
-
 ["test_python_sites.py"]
-
-["test_rst.py"]
 
 ["test_ruff.py"]
 
@@ -76,5 +76,7 @@ sequential = true
 ["test_trojan_source.py"]
 
 ["test_updatebot.py"]
+
+["test_wpt-subsuite-tagging.py"]
 
 ["test_yaml.py"]

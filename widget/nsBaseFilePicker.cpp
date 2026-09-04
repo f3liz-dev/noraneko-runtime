@@ -1,34 +1,35 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "nsPIDOMWindow.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIWidget.h"
+#include "nsBaseFilePicker.h"
 
-#include "nsArrayEnumerator.h"
-#include "nsIStringBundle.h"
-#include "nsString.h"
-#include "nsCOMArray.h"
-#include "nsIFile.h"
-#include "nsEnumeratorUtils.h"
-#include "mozilla/dom/Directory.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Element.h"
+#include "WidgetUtils.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/Components.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "WidgetUtils.h"
-#include "nsSimpleEnumerator.h"
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "nsArrayEnumerator.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
 #include "nsContentUtils.h"
+#include "nsEnumeratorUtils.h"
+#include "nsIFile.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIStringBundle.h"
+#include "nsIWidget.h"
+#include "nsPIDOMWindow.h"
+#include "nsSimpleEnumerator.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
-
-#include "nsBaseFilePicker.h"
 
 using namespace mozilla::widget;
 using namespace mozilla::dom;
@@ -39,10 +40,9 @@ using mozilla::ErrorResult;
 
 namespace {
 
-nsresult LocalFileToDirectoryOrBlob(nsPIDOMWindowInner* aWindow,
-                                    bool aIsDirectory, nsIFile* aFile,
-                                    nsISupports** aResult) {
-  MOZ_ASSERT(aWindow);
+nsresult LocalFileToDirectoryOrBlob(nsIGlobalObject* aGlobal, bool aIsDirectory,
+                                    nsIFile* aFile, nsISupports** aResult) {
+  MOZ_ASSERT(aGlobal);
 
   if (aIsDirectory) {
 #ifdef DEBUG
@@ -51,14 +51,14 @@ nsresult LocalFileToDirectoryOrBlob(nsPIDOMWindowInner* aWindow,
     MOZ_ASSERT(isDir);
 #endif
 
-    RefPtr<Directory> directory = Directory::Create(aWindow->AsGlobal(), aFile);
+    RefPtr<Directory> directory = Directory::Create(aGlobal, aFile);
     MOZ_ASSERT(directory);
 
     directory.forget(aResult);
     return NS_OK;
   }
 
-  RefPtr<File> file = File::CreateFromFile(aWindow->AsGlobal(), aFile);
+  RefPtr<File> file = File::CreateFromFile(aGlobal, aFile);
   if (NS_WARN_IF(!file)) {
     return NS_ERROR_FAILURE;
   }
@@ -71,12 +71,10 @@ nsresult LocalFileToDirectoryOrBlob(nsPIDOMWindowInner* aWindow,
 
 class nsBaseFilePickerEnumerator : public nsSimpleEnumerator {
  public:
-  nsBaseFilePickerEnumerator(nsPIDOMWindowOuter* aParent,
+  nsBaseFilePickerEnumerator(nsIGlobalObject* aGlobal,
                              nsISimpleEnumerator* iterator,
                              nsIFilePicker::Mode aMode)
-      : mIterator(iterator),
-        mParent(aParent->GetCurrentInnerWindow()),
-        mMode(aMode) {}
+      : mIterator(iterator), mGlobal(aGlobal), mMode(aMode) {}
 
   const nsID& DefaultInterface() override { return NS_GET_IID(nsIFile); }
 
@@ -95,12 +93,12 @@ class nsBaseFilePickerEnumerator : public nsSimpleEnumerator {
       return NS_ERROR_FAILURE;
     }
 
-    if (!mParent) {
+    if (!mGlobal) {
       return NS_ERROR_FAILURE;
     }
 
     return LocalFileToDirectoryOrBlob(
-        mParent, mMode == nsIFilePicker::modeGetFolder, localFile, aResult);
+        mGlobal, mMode == nsIFilePicker::modeGetFolder, localFile, aResult);
   }
 
   NS_IMETHOD
@@ -110,7 +108,7 @@ class nsBaseFilePickerEnumerator : public nsSimpleEnumerator {
 
  private:
   nsCOMPtr<nsISimpleEnumerator> mIterator;
-  nsCOMPtr<nsPIDOMWindowInner> mParent;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   nsIFilePicker::Mode mMode;
 };
 
@@ -120,7 +118,8 @@ nsBaseFilePicker::~nsBaseFilePicker() = default;
 
 NS_IMETHODIMP nsBaseFilePicker::Init(BrowsingContext* aBrowsingContext,
                                      const nsAString& aTitle,
-                                     nsIFilePicker::Mode aMode) {
+                                     nsIFilePicker::Mode aMode,
+                                     nsISupports* aGlobal) {
   MOZ_ASSERT(XRE_IsParentProcess());
   NS_ENSURE_ARG_POINTER(aBrowsingContext);
 
@@ -129,6 +128,7 @@ NS_IMETHODIMP nsBaseFilePicker::Init(BrowsingContext* aBrowsingContext,
   NS_ENSURE_TRUE(widget, NS_ERROR_FAILURE);
 
   mBrowsingContext = aBrowsingContext;
+  mGlobal = do_QueryInterface(aGlobal);
   mMode = aMode;
   InitNative(widget, aTitle);
 
@@ -383,6 +383,49 @@ bool nsBaseFilePicker::MaybeBlockFilePicker(
   return true;
 }
 
+// static
+bool nsBaseFilePicker::IsWithinInputProtectionTimeRange(
+    mozilla::TimeStamp aShowTime, mozilla::TimeStamp aNow,
+    uint32_t aProtectionMs) {
+  if (!aProtectionMs || aShowTime.IsNull()) {
+    return false;
+  }
+  // TimeStamp only moves forward, so the current time should never be earlier
+  // than the shown time. We do not expect this to happen; if it ever does we
+  // want to find out and decide how to handle it, so assert on debug and
+  // Nightly builds. On other builds, fall back to "not protected" so we never
+  // block the user from confirming.
+  MOZ_DIAGNOSTIC_ASSERT(aNow >= aShowTime,
+                        "file picker shown time is in the future");
+  if (aNow < aShowTime) {
+    return false;
+  }
+  return (aNow - aShowTime).ToMilliseconds() < double(aProtectionMs);
+}
+
+bool nsBaseFilePicker::IsContentInitiated() const {
+  if (!mBrowsingContext || !mBrowsingContext->IsContent()) {
+    return false;
+  }
+  // Only web content is subject to input protection. Exempt trusted documents
+  // (system principal and about: pages), which run in a content browsing
+  // context but are not untrusted web content.
+  if (mozilla::dom::WindowGlobalParent* wgp =
+          mBrowsingContext->Canonical()->GetCurrentWindowGlobal()) {
+    if (nsIPrincipal* principal = wgp->DocumentPrincipal()) {
+      return !principal->IsSystemPrincipal() && !principal->SchemeIs("about");
+    }
+  }
+  return true;
+}
+
+bool nsBaseFilePicker::IsPickerInputProtected() const {
+  return IsContentInitiated() &&
+         IsWithinInputProtectionTimeRange(
+             mShowTime, mozilla::TimeStamp::Now(),
+             mozilla::StaticPrefs::security_notification_enable_delay());
+}
+
 nsresult nsBaseFilePicker::ResolveSpecialDirectory(
     const nsAString& aSpecialDirectory) {
   // Only perform special-directory name resolution in the parent process.
@@ -430,6 +473,20 @@ nsBaseFilePicker::GetOkButtonLabel(nsAString& aLabel) {
   return NS_OK;
 }
 
+nsIGlobalObject* nsBaseFilePicker::GetRelevantGlobal() const {
+  if (mGlobal) {
+    return mGlobal;
+  }
+  if (mBrowsingContext) {
+    if (auto* win = mBrowsingContext->GetDOMWindow()) {
+      if (auto* inner = win->GetCurrentInnerWindow()) {
+        return inner->AsGlobal();
+      }
+    }
+  }
+  return nullptr;
+}
+
 NS_IMETHODIMP
 nsBaseFilePicker::GetDomFileOrDirectory(nsISupports** aValue) {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -443,11 +500,7 @@ nsBaseFilePicker::GetDomFileOrDirectory(nsISupports** aValue) {
     return NS_OK;
   }
 
-  auto* innerParent =
-      mBrowsingContext->GetDOMWindow()
-          ? mBrowsingContext->GetDOMWindow()->GetCurrentInnerWindow()
-          : nullptr;
-
+  auto* innerParent = GetRelevantGlobal();
   if (!innerParent) {
     return NS_ERROR_FAILURE;
   }
@@ -465,15 +518,13 @@ nsBaseFilePicker::GetDomFileOrDirectoryEnumerator(
   nsresult rv = GetFiles(getter_AddRefs(iter));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  auto* parent = mBrowsingContext->GetDOMWindow();
-
-  if (!parent) {
+  auto* global = GetRelevantGlobal();
+  if (!global) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsBaseFilePickerEnumerator> retIter =
-      new nsBaseFilePickerEnumerator(parent, iter, mMode);
-
+  auto retIter =
+      mozilla::MakeRefPtr<nsBaseFilePickerEnumerator>(global, iter, mMode);
   retIter.forget(aValue);
   return NS_OK;
 }

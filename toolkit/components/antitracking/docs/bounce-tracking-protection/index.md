@@ -20,8 +20,8 @@ Mozilla also has a [specification position on Bounce Tracking Mitigations](https
 
 BTP detects bounce trackers by looking at navigation timing. It establishes the
 concept of an extended navigation which can encompass a chain of short-lived
-redirects. These short-lived redirects are commonly used by bounce trackers. If
-a site accesses cookies or storage in such a short-lived redirect it gets added
+redirects. These short-lived redirects are commonly used by bounce trackers. Any
+site that appears as an intermediary in such a short-lived redirect gets added
 to a classification list. Classified bounce trackers have their cookies, site
 data and cache purged periodically. In order to avoid false positives and
 purging data that may be important for users, sites which the user directly
@@ -35,6 +35,51 @@ for a more detailed (albeit chromium-oriented) description of the feature and ho
     TODO: This section should be extended to describe the behavior and rely less on the chromium explainer.
     It should also talk about potential deviations from the spec.
 -->
+
+### Deviations from the spec
+
+#### Initial host of an extended navigation
+
+The spec's *process navigation start* algorithm derives the extended
+navigation's initial host from the navigation's source document. Because the
+initial host is exempt from classification, that lets a cross-site iframe which
+navigates the top level nominate itself as the initial host and escape being
+classified for its own bounce
+([Bug 2060310](https://bugzilla.mozilla.org/show_bug.cgi?id=2060310)).
+
+Gecko instead uses the site the extended navigation is leaving: the site of the most
+recent non-initial document committed in the context being navigated. A context which
+has never committed a document of its own is one the navigation opened
+(`window.open`, `target="_blank"`), so the opener's top level document is used
+instead. Both signals are read at commit time, so a navigation which starts before
+the current document has finished loading still attributes that document.
+
+Reading the opener rather than the navigation's initiator is load bearing. A context
+opened by a cross-site frame holds an initial `about:blank` whose principal is
+inherited from that frame, and the initiator can resolve back into the opened context
+itself, so either would let the frame name itself again through an empty popup.
+
+Because the derivation does not depend on the navigation having an initiator at all,
+a navigation started by the browser rather than by content — address bar, bookmark,
+session restore — also exempts the site it is leaving. This matches how the spec
+attributes user activation, which already uses the top level traversable's active
+document.
+
+#### Comparison with Chromium
+
+Chromium's implementation starts a redirect chain the same way. In
+[`btm_bounce_detector.cc`](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/btm/btm_bounce_detector.cc),
+`BtmBounceDetector::DidStartNavigation` takes the chain start from the tab's last
+committed URL and only consults the navigation's initiator when the tab has nothing
+committed. `BtmServiceImpl::HandleRedirects` in
+[`btm_service_impl.cc`](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/btm/btm_service_impl.cc)
+then skips a redirector whose site equals the chain's initial or final site, which is
+what `RecordStatefulBounces` does with the initial and final host.
+
+Gecko is stricter in one case. Chromium's fallback is the initiator's origin as-is,
+so for a context opened by a cross-site frame it resolves to the frame's own site and
+the frame can still name itself. Gecko resolves the opener to its top level document
+instead.
 
 ## Gecko Implementation
 
@@ -52,14 +97,17 @@ classDiagram
     class BounceTrackingProtection {
         - mBounceTrackingPurgeTimer: nsITimer
         - mStorage: BounceTrackingProtectionStorage
-        - mStorageObserver: BounceTrackingStorageObserver
     }
 
     note for BounceTrackingProtection "Singleton class to manage the feature."
 
-    class BounceTrackingProtectionStorage {
-        - mStateGlobal : nsTHashMap&lt;OriginAttributesHashKey, RefPtr&lt;BounceTrackingStateGlobal&gt;&gt;
-        - mDatabaseFile : nsCOMPtr&lt;nsIFile&gt;
+    class BounceTrackingAllowList {
+        <!-- [...] -->
+    }
+
+    class nsIBTPExceptionList {
+        <!-- Bug 1930704: Empty classes lead to build errors. Adding a comment inside the class fixes the issue -->
+        <!-- [...] -->
     }
 
     class BounceTrackingStateGlobal {
@@ -71,18 +119,16 @@ classDiagram
     note for BounceTrackingStateGlobal "Manages the global maps for bounce tracker candidates
                                         and user activation for a specific OriginAttributes dict."
 
-    class BounceTrackingStorageObserver {
-        <!-- [...] -->
+    class BounceTrackingProtectionStorage {
+        - mStateGlobal : nsTHashMap&lt;OriginAttributesHashKey, RefPtr&lt;BounceTrackingStateGlobal&gt;&gt;
+        - mDatabaseFile : nsCOMPtr&lt;nsIFile&gt;
     }
 
-    note for BounceTrackingStorageObserver "Listens to cookie/storage access
-                                            and notifies BounceTrackingState"
 
     class BounceTrackingRecord {
         - mInitialHost: nsAutoCString
         - mBounceHosts: nsTHashSet&lt;nsCStringHashKey&gt;
         - mFinalHost: nsAutoCString
-        - mStorageAccessHosts: nsTHashSet&lt;nsCStringHashKey&gt;
     }
 
     note for BounceTrackingRecord "Encapsulates the per-tab navigation state
@@ -100,14 +146,6 @@ classDiagram
         - mBounceTrackingState: BounceTrackingState
     }
 
-    class nsIBTPExceptionList {
-        <!-- Bug 1930704: Empty classes lead to build errors. Adding a comment inside the class fixes the issue -->
-        <!-- [...] -->
-    }
-
-    class BounceTrackingAllowList {
-        <!-- [...] -->
-    }
 
     class DocumentLoadListener{
         <!-- [...] -->
@@ -117,11 +155,9 @@ classDiagram
                                          and therefore a BounceTrackingState"
 
     BounceTrackingProtection *-- BounceTrackingProtectionStorage
-    BounceTrackingProtection *-- BounceTrackingStorageObserver
     BounceTrackingState --o BounceTrackingProtection
     BounceTrackingState --> BounceTrackingProtection : RecordStatefulBounces() on extended nav end
     BounceTrackingState *-- BounceTrackingRecord
-    BounceTrackingStorageObserver --> BounceTrackingState : Storage access signals
     BrowsingContextWebProgress *-- BounceTrackingState
     BounceTrackingStateGlobal --* BounceTrackingProtectionStorage
     BounceTrackingStateGlobal --> BounceTrackingProtectionStorage : Persists state changes in storage.
@@ -146,14 +182,9 @@ fully disabled and `1` is fully enabled. See
 [nsIBounceTrackingProtection.idl](https://searchfox.org/mozilla-central/rev/ec342a3d481d9ac3324d1041e05eefa6b61392d2/toolkit/components/antitracking/bouncetrackingprotection/nsIBounceTrackingProtection.idl#10-42)
 for a full list of options.
 
-When classifying sites, BTP also looks at whether the site accessed cookies or
-storage in the redirect. Whether cookies or storage access is considered is
-controlled by the `privacy.bounceTrackingProtection.requireStatefulBounces`
-pref.
-
 # Nimbus Integration
 A subset of the BTP prefs can be controlled via Nimbus. See definition here:
-[FeatureManifest.yaml](https://searchfox.org/mozilla-central/source/toolkit/components/nimbus/FeatureManifest.yaml#:~:text=bounceTrackingProtection).
+[FeatureManifest.yaml](https://searchfox.org/firefox-main/source/toolkit/components/nimbus/FeatureManifest.yaml#:~:text=bounceTrackingProtection).
 
 ## Logging
 
@@ -186,7 +217,7 @@ The snippets in the following section need to be executed in the [Browser
 Toolbox]. Note that while the toolbox looks like the regular devtools it's a
 special console used to debug Firefox itself rather than websites.
 
-[Browser Toolbox]: /devtools-user/browser_toolbox/index.rst
+[Browser Toolbox]: /devtools-user/browser_toolbox/index.md
 
 ### Print the list of classified bounce trackers
 

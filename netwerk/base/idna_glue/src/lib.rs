@@ -15,10 +15,6 @@ use nserror::*;
 use nsstring::*;
 use percent_encoding::percent_decode;
 
-/// The URL deny list plus asterisk and double quote.
-/// Using AsciiDenyList::URL is https://bugzilla.mozilla.org/show_bug.cgi?id=1815926 .
-const GECKO: AsciiDenyList = AsciiDenyList::new(true, "%#/:<>?@[\\]^|*\"");
-
 /// Deny only glyphless ASCII to accommodate legacy callers.
 const GLYPHLESS: AsciiDenyList = AsciiDenyList::new(true, "");
 
@@ -34,6 +30,9 @@ extern "C" {
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `src` and `dst` must be valid, non-null pointers that do not alias.
 pub unsafe extern "C" fn mozilla_net_domain_to_ascii_impl(
     src: *const nsACString,
     allow_any_glyphful_ascii: bool,
@@ -44,6 +43,9 @@ pub unsafe extern "C" fn mozilla_net_domain_to_ascii_impl(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `src` and `dst` must be valid, non-null pointers that do not alias.
 pub unsafe extern "C" fn mozilla_net_domain_to_unicode_impl(
     src: *const nsACString,
     allow_any_glyphful_ascii: bool,
@@ -54,6 +56,9 @@ pub unsafe extern "C" fn mozilla_net_domain_to_unicode_impl(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `src` and `dst` must be valid, non-null pointers that do not alias.
 pub unsafe extern "C" fn mozilla_net_domain_to_display_impl(
     src: *const nsACString,
     allow_any_glyphful_ascii: bool,
@@ -82,6 +87,11 @@ pub unsafe extern "C" fn mozilla_net_domain_to_display_impl(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `src`, `dst`, and `ascii_dst` must be valid, non-null pointers.
+/// `src` must not alias either output pointer, and the output pointers
+/// must not alias each other.
 pub unsafe extern "C" fn mozilla_net_domain_to_display_and_ascii_impl(
     src: *const nsACString,
     dst: *mut nsACString,
@@ -109,7 +119,7 @@ pub unsafe extern "C" fn mozilla_net_domain_to_display_and_ascii_impl(
         let unpercent: Cow<'_, [u8]> = percent_decode(src).into();
         match Uts46::new().process(
             &unpercent,
-            GECKO,
+            AsciiDenyList::URL,
             Hyphens::Allow,
             ErrorPolicy::FailFast,
             |label, tld, _| unsafe {
@@ -206,7 +216,7 @@ fn process<OutputUnicode: FnMut(&[char], &[char], bool) -> bool>(
         }
     }
     match Uts46::new().process(
-        &src,
+        src,
         if allow_any_glyphful_ascii {
             GLYPHLESS
         } else {
@@ -231,6 +241,9 @@ fn process<OutputUnicode: FnMut(&[char], &[char], bool) -> bool>(
 
 /// Not general-purpose! Only to be used from `nsDocShell::AttemptURIFixup`.
 #[no_mangle]
+/// # Safety
+///
+/// `src` and `dst` must be valid, non-null pointers.
 pub unsafe extern "C" fn mozilla_net_recover_keyword_from_punycode(
     src: *const nsACString,
     dst: *mut nsACString,

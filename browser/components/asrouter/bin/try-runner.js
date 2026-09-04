@@ -87,6 +87,26 @@ const tests = {
           "asrouter-admin.bundle.js"
         ),
       },
+      "asrouter-newtab-multistage bundle": {
+        path: path.join(
+          "../",
+          "asrouter",
+          "content",
+          "components",
+          "asrouter-newtab-multistage",
+          "asrouter-newtab-multistage.bundle.js"
+        ),
+      },
+      "asrouter-newtab-multistage.css": {
+        path: path.join(
+          "../",
+          "asrouter",
+          "content",
+          "components",
+          "asrouter-newtab-multistage",
+          "asrouter-newtab-multistage.css"
+        ),
+      },
       "ASRouterAdmin.css": {
         path: path.join(
           "../",
@@ -201,24 +221,12 @@ const tests = {
     return errors.length === 0 && !exitCode;
   },
 
-  welcomekarma() {
-    let cwd = process.cwd();
-    process.chdir("../aboutwelcome");
-    const result = this.karma();
-    process.chdir(cwd);
-    return result;
-  },
-
   zipCodeCoverage() {
     logStart("zipCodeCoverage");
 
-    const welcomeCoveragePath = "../aboutwelcome/logs/coverage/lcov.info";
     const asrouterCoveragePath = "logs/coverage/lcov.info";
+    const asrouterCoverage = readFileSync(asrouterCoveragePath, "utf8");
 
-    const welcomeCoverage = readFileSync(welcomeCoveragePath, "utf8");
-    let asrouterCoverage = readFileSync(asrouterCoveragePath, "utf8");
-
-    asrouterCoverage = `${welcomeCoverage}${asrouterCoverage}`;
     writeFileSync(asrouterCoveragePath, asrouterCoverage, "utf8");
 
     const { exitCode, out } = execOut("zip", [
@@ -284,8 +292,6 @@ async function main() {
     coverage: "karma",
     cov: "karma",
     zip: "zipCodeCoverage",
-    welcomecoverage: "welcomekarma",
-    welcomecov: "welcomekarma",
   };
 
   const inputs = [...cli.input, ...cli.flags.test].map(input =>

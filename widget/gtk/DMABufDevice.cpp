@@ -1,34 +1,33 @@
-/* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DMABufDevice.h"
+
 #include "DMABufFormats.h"
 #include "DMABufSurface.h"
 #ifdef MOZ_WAYLAND
 #  include "nsWaylandDisplay.h"
 #endif
-#include "base/message_loop.h"    // for MessageLoop
-#include "mozilla/gfx/Logging.h"  // for gfxCriticalNote
-#include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "WidgetUtilsGtk.h"
-#include "gfxConfig.h"
-#include "nsIGfxInfo.h"
-#include "GfxInfo.h"
-#include "mozilla/Components.h"
-#include "mozilla/ClearOnShutdown.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <dlfcn.h>
-#include <mutex>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include <mutex>
+
+#include "GfxInfo.h"
+#include "WidgetUtilsGtk.h"
+#include "base/message_loop.h"  // for MessageLoop
+#include "gfxConfig.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/gfx/Logging.h"  // for gfxCriticalNote
+#include "mozilla/gfx/gfxVars.h"
+#include "nsIGfxInfo.h"
 
 using namespace mozilla::gfx;
 
@@ -156,6 +155,12 @@ DMABufDevice* DMABufDeviceLock::EnsureDMABufDevice() {
 
   MOZ_DIAGNOSTIC_ASSERT(sDMABufDevice, "Missing DMABufDevice!");
   return sDMABufDevice;
+}
+
+void DMABufDeviceLock::Shutdown() {
+  StaticMutexAutoLock lock(sMutex);
+  delete sDMABufDevice;
+  sDMABufDevice = nullptr;
 }
 
 DMABufDeviceLock::DMABufDeviceLock() {

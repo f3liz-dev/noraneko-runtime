@@ -18,6 +18,7 @@ import androidx.core.net.toUri
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.pm.isPackageInstalled
 import mozilla.components.support.ktx.android.net.isHttpOrHttps
+import mozilla.components.support.ktx.kotlin.trimmed
 import mozilla.components.support.utils.Browsers
 import mozilla.components.support.utils.BrowsersCache
 import mozilla.components.support.utils.ext.packageManagerCompatHelper
@@ -53,7 +54,7 @@ class AppLinksUseCases(
     private val context: Context,
     private var launchInApp: () -> Boolean = { false },
     private val alwaysDeniedSchemes: AlwaysDeniedSchemes = AlwaysDeniedSchemes(ALWAYS_DENY_SCHEMES),
-    private val installedBrowsers: Browsers = BrowsersCache.all(context),
+    private val installedBrowsers: () -> Browsers = { BrowsersCache.all(context) },
 ) {
     @Suppress(
         "QueryPermissionsNeeded", // We expect our browsers to have the QUERY_ALL_PACKAGES permission
@@ -70,11 +71,17 @@ class AppLinksUseCases(
         }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private fun findDefaultActivity(intent: Intent): ResolveInfo? {
-        return context.packageManagerCompatHelper.resolveActivityCompat(
-            intent,
-            PackageManager.MATCH_DEFAULT_ONLY,
-        )
+        return try {
+            context.packageManagerCompatHelper.resolveActivityCompat(
+                intent,
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )
+        } catch (e: RuntimeException) {
+            Logger("AppLinksUseCases").error("failed to resolve activity", e)
+            null
+        }
     }
 
     /**
@@ -93,6 +100,8 @@ class AppLinksUseCases(
     ) {
         @Suppress("CyclomaticComplexMethod")
         operator fun invoke(url: String): AppLinkRedirect {
+            // Absurdly long URLs put unneeded pressure on the system and can even lead to crashes.
+            val url = url.trimmed()
             val urlHash = (url + includeHttpAppLinks + includeHttpAppLinks).hashCode()
             val currentTimeStamp = SystemClock.elapsedRealtime()
             // since redirectCache is mutable, get the latest
@@ -107,7 +116,7 @@ class AppLinksUseCases(
             val isAppIntentHttpOrHttps = redirectData.appIntent?.data?.isHttpOrHttps ?: false
             val isEngineSupportedScheme = ENGINE_SUPPORTED_SCHEMES.contains(url.toUri().scheme)
             val isBrowserRedirect = redirectData.resolveInfo?.activityInfo?.packageName?.let { packageName ->
-                installedBrowsers.isInstalled(packageName)
+                installedBrowsers().isInstalled(packageName)
             } ?: false
 
             val appName = redirectData.resolveInfo?.let { resolveInfo ->
@@ -167,8 +176,7 @@ class AppLinksUseCases(
                 it.addCategory(Intent.CATEGORY_BROWSABLE)
                 it.component = null
                 it.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                it.selector?.addCategory(Intent.CATEGORY_BROWSABLE)
-                it.selector?.component = null
+                it.selector = null
                 it.putExtra(EXTRA_APPLICATION_ID, context.packageName)
             }
 
@@ -239,11 +247,13 @@ class AppLinksUseCases(
          *
          * @param appIntent the [Intent] to open the external app for.
          * @param launchInNewTask whether or not the app should be launched in a new task.
+         * @param clearTop whether if the app should be launched with the top of the back stack cleared.
          * @param failedToLaunchAction callback invoked in case opening the external app fails.
          */
         operator fun invoke(
             appIntent: Intent?,
             launchInNewTask: Boolean = true,
+            clearTop: Boolean = false,
             failedToLaunchAction: (fallbackUrl: String?) -> Unit = {},
         ) {
             appIntent?.let {
@@ -255,6 +265,9 @@ class AppLinksUseCases(
 
                     if (launchInNewTask) {
                         it.flags = it.flags or Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    if (clearTop) {
+                        it.flags = it.flags or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     }
                     context.startActivity(it)
                 } catch (e: Exception) {
@@ -331,7 +344,7 @@ class AppLinksUseCases(
             redirectCache = null
         }
 
-        // list of scheme from https://searchfox.org/mozilla-central/source/netwerk/build/components.conf
+        // list of scheme from https://searchfox.org/firefox-main/source/netwerk/build/components.conf
         internal val ENGINE_SUPPORTED_SCHEMES: Set<String> = setOf(
             "about",
             "data",

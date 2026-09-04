@@ -204,7 +204,7 @@ export class ScreenshotsOverlay {
 
   constructor(contentDocument) {
     this.document = contentDocument;
-    this.window = contentDocument.ownerGlobal;
+    this.window = contentDocument.documentGlobal;
 
     this.windowDimensions = new WindowDimensions();
     this.selectionRegion = new Region(this.windowDimensions);
@@ -632,7 +632,7 @@ export class ScreenshotsOverlay {
         // face and move focus to the bottom right mover for adjustments
         if (Services.focus.focusedElement === this.previewFace) {
           let rect = this.previewFace.getBoundingClientRect();
-          this.hoverElementRegion.dimensions = rect;
+          this.hoverElementRegion.setDimensionsFromDOMRect(rect);
           this.draggingReadyStart();
           this.draggingReadyDragEnd({ doNotMoveFocus: true });
           this.bottomRightMover.focus({ focusVisible: true });
@@ -1630,7 +1630,7 @@ export class ScreenshotsOverlay {
   updateScreenshotsOverlayContainer() {
     let { scrollWidth, scrollHeight, scrollMinX } =
       this.windowDimensions.dimensions;
-    this.screenshotsContainer.style = `left:${scrollMinX};width:${scrollWidth}px;height:${scrollHeight}px;`;
+    this.screenshotsContainer.style = `left:${scrollMinX}px;width:${scrollWidth}px;height:${scrollHeight}px;`;
   }
 
   showScreenshotsOverlayContainer() {
@@ -1831,15 +1831,7 @@ export class ScreenshotsOverlay {
     }
 
     if (rect) {
-      let { scrollX, scrollY } = this.windowDimensions.dimensions;
-      let { left, top, right, bottom } = rect;
-      let newRect = {
-        left: left + scrollX,
-        top: top + scrollY,
-        right: right + scrollX,
-        bottom: bottom + scrollY,
-      };
-      this.hoverElementRegion.dimensions = newRect;
+      this.hoverElementRegion.setDimensionsFromDOMRect(rect);
       this.drawHoverElementRegion();
     } else {
       this.hoverElementRegion.resetDimensions();
@@ -1942,11 +1934,6 @@ export class ScreenshotsOverlay {
       scrollX,
     } = this.window;
 
-    let scrollWidth = innerWidth + scrollMaxX - scrollMinX;
-    let scrollHeight = innerHeight + scrollMaxY - scrollMinY;
-    let clientHeight = innerHeight;
-    let clientWidth = innerWidth;
-
     const scrollbarHeight = {};
     const scrollbarWidth = {};
     this.window.windowUtils.getScrollbarSize(
@@ -1954,10 +1941,18 @@ export class ScreenshotsOverlay {
       scrollbarWidth,
       scrollbarHeight
     );
-    scrollWidth -= scrollbarWidth.value;
-    scrollHeight -= scrollbarHeight.value;
-    clientWidth -= scrollbarWidth.value;
-    clientHeight -= scrollbarHeight.value;
+
+    let clientHeight = innerHeight - scrollbarHeight.value;
+    let clientWidth = innerWidth - scrollbarWidth.value;
+
+    // Use the document element's scrollWidth/scrollHeight which give the
+    // actual content dimensions via a single rounding. The previous formula
+    // (innerHeight + scrollMaxY - scrollMinY) can overshoot by 1 CSS pixel
+    // because it adds separately rounded values derived from the scroll
+    // range, causing transparent rows at the image edges.
+    let docEl = this.window.document.documentElement;
+    let scrollWidth = Math.max(docEl.scrollWidth, clientWidth);
+    let scrollHeight = Math.max(docEl.scrollHeight, clientHeight);
 
     return {
       clientWidth,

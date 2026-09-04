@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,7 +103,7 @@ class AppleVTDecoder final : public MediaDataDecoder,
   RefPtr<DecodePromise> ProcessDrain();
   void ProcessShutdown();
   void ProcessDecode(MediaRawData* aSample);
-  void MaybeResolveBufferedFrames();
+  void MaybeResolveBufferedFrames() MOZ_REQUIRES(mMonitor);
 
   void MaybeRegisterCallbackThread();
 
@@ -124,6 +122,7 @@ class AppleVTDecoder final : public MediaDataDecoder,
   const gfx::TransferFunction mTransferFunction;
   const gfx::ColorRange mColorRange;
   const gfx::ColorDepth mColorDepth;
+  const Maybe<gfx::HDRMetadata> mHDRMetadata;
 
   // Method to set up the decompression session.
   MediaResult InitializeSession();
@@ -150,15 +149,12 @@ class AppleVTDecoder final : public MediaDataDecoder,
   // not required and so input samples on mTaskQueue need not be processed.
   Atomic<bool> mIsFlushing;
   std::atomic<ProfilerThreadId> mCallbackThreadId;
-  // Protects mReorderQueue and mPromise.
-  Monitor mMonitor MOZ_UNANNOTATED;
-  ReorderQueue mReorderQueue;
-  MozMonitoredPromiseHolder<DecodePromise> mPromise;
+  Monitor mMonitor;
+  ReorderQueue mReorderQueue MOZ_GUARDED_BY(mMonitor);
+  MozMonitoredPromiseHolder<DecodePromise> mPromise MOZ_GUARDED_BY(mMonitor);
 
-  // Decoded frame will be dropped if its pts is smaller than this
-  // value. It shold be initialized before Input() or after Flush(). So it is
-  // safe to access it in OutputFrame without protecting.
-  Maybe<media::TimeUnit> mSeekTargetThreshold;
+  // Decoded frame will be dropped if its pts is smaller than this value.
+  Maybe<media::TimeUnit> mSeekTargetThreshold MOZ_GUARDED_BY(mMonitor);
 
   AutoCFTypeRef<CMVideoFormatDescriptionRef> mFormat;
   AutoCFTypeRef<VTDecompressionSessionRef> mSession;

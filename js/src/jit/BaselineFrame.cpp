@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "jit/BaselineFrame-inl.h"
 
 #include <algorithm>
 
@@ -12,6 +8,7 @@
 #include "vm/EnvironmentObject.h"
 #include "vm/JSContext.h"
 
+#include "jit/BaselineFrame-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
 #include "vm/Stack-inl.h"
 
@@ -36,6 +33,14 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
 
     unsigned numArgs = std::max(numActualArgs(), numFormalArgs());
     TraceRootRange(trc, numArgs + isConstructing(), argv(), "baseline-args");
+  }
+
+  // A resumed generator/async frame stores the resume args (ResumeFrameArgs)
+  // after the formals (for function frames) or before the frame (for module
+  // frames).
+  if (isResumingGenerator()) {
+    TraceRootRange(trc, ResumeFrameArgs::NumSlots, resumeArgs(),
+                   "baseline-resume-args");
   }
 
   // Trace environment chain, if it exists.
@@ -80,6 +85,12 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
       // All locals are live.
       TraceLocals(this, trc, 0, numValueSlots);
     } else {
+      // Make sure we don't incorrectly clear locals of a frame that's still
+      // resuming before we reach JSOp::AfterYield. Currently nothing can
+      // trigger GC between restoring stack slots and jumping to
+      // JSOp::AfterYield.
+      MOZ_ASSERT_IF(isResumingGenerator(), JSOp(*pc) == JSOp::AfterYield);
+
       // Trace operand stack.
       TraceLocals(this, trc, nfixed, numValueSlots);
 
@@ -131,8 +142,11 @@ void BaselineFrame::setInterpreterFieldsForPrologue(JSScript* script) {
   }
 }
 
-bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
+void BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   mozilla::PodZero(this);
+
+  MOZ_ASSERT(!fp->isResumingGenerator());
+  MOZ_ASSERT(!isResumingGenerator());
 
   envChain_ = fp->environmentChain();
 
@@ -179,11 +193,7 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   if (fp->isDebuggee()) {
     // For debuggee frames, update any Debugger.Frame objects for the
     // InterpreterFrame to point to the BaselineFrame.
-    if (!DebugAPI::handleBaselineOsr(cx, fp, this)) {
-      return false;
-    }
+    DebugAPI::handleBaselineOsr(cx, fp, this);
     setIsDebuggee();
   }
-
-  return true;
 }

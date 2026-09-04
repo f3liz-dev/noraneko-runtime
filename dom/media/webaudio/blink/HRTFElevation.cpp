@@ -106,7 +106,7 @@ nsReturnRef<HRTFKernel> HRTFElevation::calculateKernelForAzimuthElevation(
   int azimuthIndex = azimuth / azimuthSpacing;
   MOZ_ASSERT(azimuthIndex * azimuthSpacing == azimuth);
 
-  const int16_t(&impulse_response_data)[ResponseFrameSize] =
+  const int16_t (&impulse_response_data)[ResponseFrameSize] =
       irc_composite_c_r0195[elevationIndex].azimuths[azimuthIndex];
 
   float response[ResponseFrameSize];
@@ -288,8 +288,8 @@ void HRTFElevation::getKernelsFromAzimuth(
   bool isIndexGood = azimuthIndex < numKernels;
   MOZ_ASSERT(isIndexGood);
   if (!isIndexGood) {
-    kernelL = 0;
-    kernelR = 0;
+    kernelL = nullptr;
+    kernelR = nullptr;
     return;
   }
 

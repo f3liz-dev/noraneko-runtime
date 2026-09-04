@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,8 +5,8 @@
 #ifndef mozilla_net_CookieServiceParent_h
 #define mozilla_net_CookieServiceParent_h
 
-#include "mozilla/net/PCookieServiceParent.h"
 #include "mozilla/net/CookieKey.h"
+#include "mozilla/net/PCookieServiceParent.h"
 
 class nsIArray;
 class nsICookie;
@@ -41,25 +40,26 @@ class CookieServiceParent : public PCookieServiceParent {
     }
 
     void Initialize(CookieServiceParent* aActor) {
-      MOZ_ASSERT(!mActor && aActor);
+      MOZ_ASSERT(!mProxy && aActor);
 
-      mActor = aActor;
-
-      if (mActor) {
-        MOZ_ASSERT(!mActor->mProcessingCookie);
-        mActor->mProcessingCookie = true;
+      mProxy = aActor->GetLifecycleProxy();
+      if (mProxy && mProxy->Get()) {
+        auto* actor = static_cast<CookieServiceParent*>(mProxy->Get());
+        MOZ_ASSERT(!actor->mProcessingCookie);
+        actor->mProcessingCookie = true;
       }
     }
 
     ~CookieProcessingGuard() {
-      if (mActor) {
-        MOZ_ASSERT(mActor->mProcessingCookie);
-        mActor->mProcessingCookie = false;
+      if (mProxy && mProxy->Get()) {
+        auto* actor = static_cast<CookieServiceParent*>(mProxy->Get());
+        MOZ_ASSERT(actor->mProcessingCookie);
+        actor->mProcessingCookie = false;
       }
     }
 
    private:
-    CookieServiceParent* mActor = nullptr;
+    RefPtr<mozilla::ipc::ActorLifecycleProxy> mProxy;
   };
 
   explicit CookieServiceParent(dom::ContentParent* aContentParent);
@@ -82,7 +82,7 @@ class CookieServiceParent : public PCookieServiceParent {
   bool ProcessingCookie() { return mProcessingCookie; }
 
   bool ContentProcessHasCookie(const Cookie& cookie);
-  bool ContentProcessHasCookie(const nsACString& aHost,
+  bool ContentProcessHasCookie(const nsACString& aBaseDomain,
                                const OriginAttributes& aOriginAttributes);
   bool InsecureCookieOrSecureOrigin(const Cookie& cookie);
   void UpdateCookieInContentList(nsIURI* aHostURI,
@@ -90,8 +90,7 @@ class CookieServiceParent : public PCookieServiceParent {
 
   mozilla::ipc::IPCResult SetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
-      const nsTArray<CookieStruct>& aCookies,
+      nsIURI* aHost, bool aIsThirdParty, const nsTArray<CookieStruct>& aCookies,
       dom::BrowsingContext* aBrowsingContext = nullptr);
 
  protected:
@@ -99,7 +98,7 @@ class CookieServiceParent : public PCookieServiceParent {
 
   mozilla::ipc::IPCResult RecvSetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
+      nsIURI* aHost, bool aIsThirdParty,
       const nsTArray<CookieStruct>& aCookies);
 
   mozilla::ipc::IPCResult RecvGetCookieList(

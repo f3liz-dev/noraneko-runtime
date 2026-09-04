@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/StackingContextHelper.h"
 
-#include "mozilla/PresShell.h"
-#include "mozilla/gfx/Point.h"
-#include "mozilla/gfx/Matrix.h"
-#include "UnitTransforms.h"
-#include "nsDisplayList.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "nsLayoutUtils.h"
 #include "ActiveLayerTracker.h"
+#include "UnitTransforms.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/gfx/Matrix.h"
+#include "mozilla/gfx/Point.h"
+#include "nsDisplayList.h"
+#include "nsLayoutUtils.h"
 
 namespace mozilla {
 namespace layers {
@@ -22,9 +20,9 @@ using namespace gfx;
 StackingContextHelper::StackingContextHelper()
     : mBuilder(nullptr),
       mScale(1.0f, 1.0f),
+      mRasterScaleIsDegenerate(false),
       mAffectsClipPositioning(false),
-      mDeferredTransformItem(nullptr),
-      mRasterizeLocally(false) {}
+      mDeferredTransformItem(nullptr) {}
 
 static nsSize ComputeDesiredDisplaySizeForAnimation(nsIFrame* aContainerFrame) {
   // Use the size of the nearest widget as the maximum size.  This
@@ -45,8 +43,9 @@ MatrixScales ChooseScale(nsIFrame* aContainerFrame,
                          nsDisplayItem* aContainerItem,
                          const nsRect& aVisibleRect, float aXScale,
                          float aYScale, const Matrix& aTransform2d,
-                         bool aCanDraw2D) {
+                         bool aCanDraw2D, bool* aOutDegenerate) {
   MatrixScales scale;
+  *aOutDegenerate = false;
   // XXX Should we do something for 3D transforms?
   if (aCanDraw2D && !aContainerFrame->Combines3DTransformWithAncestors() &&
       !aContainerFrame->HasPerspective()) {
@@ -106,9 +105,13 @@ MatrixScales ChooseScale(nsIFrame* aContainerFrame,
       }
     }
     // If the scale factors are too small, just use 1.0. The content is being
-    // scaled out of sight anyway.
+    // scaled out of sight anyway. Report this to the caller: 1.0 is only a
+    // placeholder to keep the rest of the pipeline well-behaved, and anything
+    // that sizes a buffer from untransformed bounds must skip this content
+    // rather than take the placeholder at face value (bug 1906769).
     if (fabs(scale.xScale) < 1e-8 || fabs(scale.yScale) < 1e-8) {
       scale = MatrixScales(1.0, 1.0);
+      *aOutDegenerate = true;
     }
   } else {
     scale = MatrixScales(1.0, 1.0);
@@ -130,9 +133,8 @@ StackingContextHelper::StackingContextHelper(
     const LayoutDeviceRect& aBounds)
     : mBuilder(&aBuilder),
       mScale(1.0f, 1.0f),
-      mDeferredTransformItem(aParams.mDeferredTransformItem),
-      mRasterizeLocally(aParams.mRasterizeLocally ||
-                        aParentSC.mRasterizeLocally) {
+      mRasterScaleIsDegenerate(false),
+      mDeferredTransformItem(aParams.mDeferredTransformItem) {
   MOZ_ASSERT(!aContainerItem || aContainerItem->CreatesStackingContextHelper());
 
   // Compute scale for fallback rendering. We don't try to guess a scale for 3d
@@ -148,11 +150,18 @@ StackingContextHelper::StackingContextHelper(
 
       int32_t apd = aContainerFrame->PresContext()->AppUnitsPerDevPixel();
       nsRect r = LayoutDevicePixel::ToAppUnits(aBounds, apd);
+      bool degenerate = false;
       mScale = ChooseScale(aContainerFrame, aContainerItem, r,
                            aParentSC.mScale.xScale, aParentSC.mScale.yScale,
                            transform2d,
-                           /* aCanDraw2D = */ true);
+                           /* aCanDraw2D = */ true, &degenerate);
+      // ChooseScale composes with the parent's (possibly placeholder) scale,
+      // so a degenerate ancestor stays degenerate here.
+      mRasterScaleIsDegenerate =
+          degenerate || aParentSC.mRasterScaleIsDegenerate;
     } else {
+      // Deliberately discards the inherited scale, so the ancestor's degenerate
+      // state does not carry over either.
       mScale = gfx::MatrixScales(1.0f, 1.0f);
       mInheritedTransform = gfx::Matrix::Scaling(1.f, 1.f);
     }
@@ -175,6 +184,7 @@ StackingContextHelper::StackingContextHelper(
     mInheritedTransform = transform * aParentSC.mInheritedTransform;
     mScale =
         ScaleFactor<UnknownUnits, UnknownUnits>(resolution) * aParentSC.mScale;
+    mRasterScaleIsDegenerate = aParentSC.mRasterScaleIsDegenerate;
 
     MOZ_ASSERT(!aParams.mAnimated);
     mSnappingSurfaceTransform = transform * aParentSC.mSnappingSurfaceTransform;
@@ -196,6 +206,7 @@ StackingContextHelper::StackingContextHelper(
 
     mInheritedTransform = transform * aParentSC.mInheritedTransform;
     mScale = aParentSC.mScale * resolution;
+    mRasterScaleIsDegenerate = aParentSC.mRasterScaleIsDegenerate;
 
     MOZ_ASSERT(!aParams.mAnimated);
     mSnappingSurfaceTransform = transform * aParentSC.mSnappingSurfaceTransform;
@@ -203,12 +214,14 @@ StackingContextHelper::StackingContextHelper(
   } else {
     mInheritedTransform = aParentSC.mInheritedTransform;
     mScale = aParentSC.mScale;
+    mRasterScaleIsDegenerate = aParentSC.mRasterScaleIsDegenerate;
   }
 
-  auto rasterSpace =
-      mRasterizeLocally
-          ? wr::RasterSpace::Local(std::max(mScale.xScale, mScale.yScale))
-          : wr::RasterSpace::Screen();
+  // Content is always rasterized in screen (device) space. We used to rasterize
+  // in local space for animated transforms, but that skipped WebRender's
+  // device-pixel snapping and left text blurry at fractional device offsets
+  // (Bug 2051166); device raster space stays sharp and reuses cached glyphs.
+  auto rasterSpace = wr::RasterSpace::Screen();
 
   MOZ_ASSERT(!aParams.clip.IsNone());
   mReferenceFrameId = mBuilder->PushStackingContext(

@@ -9,7 +9,17 @@
       <vbox id="appMenu-addon-banners"/>
       <toolbarbutton id="appMenu-update-banner" class="panel-banner-item subviewbutton"
                      wrap="true"
-                     hidden="true"/>
+                     hidden="true">
+        <box class="appMenu-update-banner-pulse-ring"/>
+        <box class="appMenu-update-banner-text" orient="vertical">
+          <label id="appMenu-update-banner-title"
+                 class="appMenu-update-banner-title text-box-trim-start"
+                 data-l10n-id="appmenu-nova-update-title"/>
+          <label id="appMenu-update-banner-description"
+                 class="appMenu-update-banner-description"
+                 data-l10n-id="appmenu-nova-update-description"/>
+        </box>
+      </toolbarbutton>
 
       <toolbaritem id="appMenu-menu-message"
                    closemenu="none">
@@ -19,8 +29,7 @@
                    class="subviewbutton toolbaritem-combined-buttons">
         <html:div id="appMenu-fxa-text" data-l10n-id="appmenu-fxa-sync-and-save-data2"/>
         <toolbarbutton id="appMenu-fxa-label2"
-                      class="subviewbutton"
-                      >
+                       class="subviewbutton">
           <vbox flex="1">
             <label id="appMenu-header-title"
                    crop="end"/>
@@ -28,14 +37,30 @@
                    crop="end"/>
           </vbox>
         </toolbarbutton>
+        <html:moz-button id="appMenu-nova-fxa-label"/>
       </toolbaritem>
-      <toolbarbutton id="appMenu-empty-profiles-button"
+      <hbox id="appMenu-fxa-sign-in-promo"
+            align="center">
+        <html:img class="fxa-menu-sign-in-promo-image"
+                  alt=""
+                  src="chrome://browser/content/kit-signed-out.svg"/>
+        <vbox class="fxa-menu-sign-in-promo-text" flex="1">
+          <label class="fxa-menu-sign-in-promo-heading"
+                 data-l10n-id="appmenu-fxa-sign-in-promo-heading"/>
+          <description class="fxa-menu-sign-in-promo-message"
+                       data-l10n-id="appmenu-fxa-sign-in-promo-message"/>
+        </vbox>
+        <html:moz-button type="primary"
+                         id="appMenu-fxa-sign-in-promo-button"
+                         data-l10n-id="appmenu-fxa-sign-in-promo-button"/>
+      </hbox>
+      <toolbarbutton id="appMenu-create-profile-button"
                      class="subviewbutton subviewbutton-nav"
                      closemenu="none"
-                     data-l10n-id="appmenu-profiles-2"
+                     data-l10n-id="appmenu-create-profile2"
                      hidden="true"/>
       <toolbarbutton id="appMenu-profiles-button"
-                     class="subviewbutton subviewbutton-nav subviewbutton-iconic"
+                     class="subviewbutton subviewbutton-iconic subviewbutton-nav profile-item"
                      closemenu="none"
                      hidden="true"/>
       <toolbarseparator id="appMenu-fxa-separator" class="proton-zap"/>
@@ -51,8 +76,13 @@
                      command="cmd_newNavigator"/>
       <toolbarbutton id="appMenu-new-ai-window-button"
                      class="subviewbutton"
-                     data-l10n-id="appmenuitem-new-ai-window"
-                     command="Tools:AIWindow"/>
+                     command="Tools:AIWindow"
+                     aria-describedby="appMenu-new-ai-window-badge">
+        <label class="toolbarbutton-text" crop="end"
+               data-l10n-id="appmenuitem-new-ai-window"/>
+        <html:moz-badge id="appMenu-new-ai-window-badge"
+                        type="beta"/>
+      </toolbarbutton>
       <toolbarbutton id="appMenu-new-classic-window-button"
                      class="subviewbutton"
                      data-l10n-id="appmenuitem-new-classic-window"
@@ -63,15 +93,21 @@
                      key="key_privatebrowsing"
                      command="Tools:PrivateBrowsing"/>
       <toolbarseparator/>
+      <toolbarbutton id="appMenu-history-button"
+                     class="subviewbutton subviewbutton-nav"
+                     data-l10n-id="appmenuitem-history"
+                     closemenu="none"
+                     />
       <toolbarbutton id="appMenu-bookmarks-button"
                      class="subviewbutton subviewbutton-nav"
                      data-l10n-id="library-bookmarks-menu"
                      closemenu="none"
                      />
-      <toolbarbutton id="appMenu-history-button"
+      <toolbarbutton id="appMenu-tab-groups-button"
                      class="subviewbutton subviewbutton-nav"
-                     data-l10n-id="appmenuitem-history"
+                     data-l10n-id="appmenuitem-tab-groups"
                      closemenu="none"
+                     hidden="true"
                      />
       <toolbarbutton id="appMenu-chats-history-button"
                      class="subviewbutton"
@@ -110,15 +146,15 @@
                      data-l10n-id="appmenuitem-save-page"
                      key="key_savePage"
                      command="Browser:SavePage"/>
+      <toolbarbutton id="appMenu-translate-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-translate"
+                     command="cmd_translate"/>
       <toolbarbutton id="appMenu-find-button2"
                      class="subviewbutton"
                      data-l10n-id="appmenuitem-find-in-page"
                      key="key_find"
                      command="cmd_find"/>
-      <toolbarbutton id="appMenu-translate-button"
-                     class="subviewbutton"
-                     data-l10n-id="appmenuitem-translate"
-                     command="cmd_translate"/>
       <toolbaritem id="appMenu-zoom-controls" class="subviewbutton toolbaritem-combined-buttons" closemenu="none">
         <label class="toolbarbutton-text" data-l10n-id="appmenuitem-zoom"/>
         <toolbarbutton id="appMenu-zoomReduce-button2"
@@ -156,17 +192,18 @@
                      data-l10n-id="appmenuitem-more-tools"
                      closemenu="none"
                      />
-      <toolbarbutton id="appMenu-report-broken-site-button"
-                     class="subviewbutton subviewbutton-nav"
-                     data-l10n-id="appmenuitem-report-broken-site"
-                     closemenu="none"
-                     disabled="true"
-                     command="cmd_reportBrokenSite"/>
       <toolbarbutton id="appMenu-help-button2"
                      class="subviewbutton subviewbutton-nav"
-                     data-l10n-id="appmenuitem-help"
+                     data-l10n-id="appmenuitem-help-and-report"
                      closemenu="none"
                      />
+      <toolbarseparator id="appMenu-referrals-separator" hidden="true"/>
+      <toolbarbutton id="appMenu-referrals-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-referrals"
+                     command="cmd_openReferrals"
+                     type="open-to-new"
+                     hidden="true"/>
 #ifndef XP_MACOSX
       <toolbarseparator/>
       <toolbarbutton id="appMenu-quit-button2"
@@ -222,13 +259,17 @@
                    key="showAllHistoryKb"
                    command="Browser:ShowAllHistory"
                    />
+    <html:sync-promo id="PanelUI-history-sync-promo"
+                     promo-type="history"
+                     closemenu="none"
+                     hidden="true"/>
   </panelview>
 
   <panelview id="PanelUI-profiles"
              flex="1"
              has-custom-header="true">
     <box id="PanelUI-profiles-header"
-         class="panel-header panel-header-with-additional-element">
+         class="panel-header">
       <toolbarbutton class="subviewbutton subviewbutton-iconic subviewbutton-back"
                      id="profiles-appmenu-back-button"
                      tabindex="0"
@@ -237,20 +278,12 @@
       <html:h1 id="profiles-header-title">
         <html:span id="profiles-header-content"></html:span>
       </html:h1>
-      <toolbarbutton id="profiles-edit-this-profile-button"
-                     class="subviewbutton subviewbutton-iconic"
-                     data-l10n-id="appmenu-edit-profile"
-                     />
     </box>
     <vbox class="panel-subview-body">
       <vbox id="current-profile">
         <box id="half-height-profile"></box>
         <image id="profile-icon-image"></image>
       </vbox>
-      <html:h2 id="profiles-subtitle"
-               class="subview-subheader"
-               data-l10n-id="appmenu-other-profiles" />
-      <vbox id="profiles-list"></vbox>
     </vbox>
   </panelview>
 
@@ -261,7 +294,7 @@
     <vbox id="PanelUI-containersItems"/>
   </panelview>
 
-  <panelview id="PanelUI-helpView" class="PanelUI-subView" data-l10n-id="appmenu-help-header" data-l10n-attrs="title">
+  <panelview id="PanelUI-helpView" class="PanelUI-subView" data-l10n-id="appmenu-help-and-report-header" data-l10n-attrs="title">
     <vbox id="PanelUI-helpItems" class="panel-subview-body"/>
   </panelview>
 
@@ -300,6 +333,10 @@
                    class="subviewbutton panel-subview-footer-button"
                    command="Browser:ShowAllBookmarks"
                    />
+    <html:sync-promo id="PanelUI-bookmarks-sync-promo"
+                     promo-type="bookmarks"
+                     closemenu="none"
+                     hidden="true"/>
   </panelview>
 
   <panelview id="PanelUI-profiler"
@@ -434,6 +471,14 @@
                      class="subviewbutton"
                      data-l10n-id="appmenu-customizetoolbar"
                      command="cmd_CustomizeToolbars"/>
+      <toolbarbutton id="appmenu-abouttranslations-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenu-abouttranslations"
+                     command="cmd_openAboutTranslations"/>
+      <toolbarbutton id="appmenu-edit-pdf-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenu-edit-pdf"
+                     command="cmd_editPDF"/>
       <toolbarseparator/>
       <html:h2 id="appmenu-developer-tools"
           data-l10n-id="appmenu-developer-tools-subheader"
@@ -501,10 +546,11 @@
               </hbox>
               <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-tabsnotsyncing"></label>
               <hbox pack="center">
-                <toolbarbutton class="PanelUI-remotetabs-button"
-                               id="PanelUI-remotetabs-tabsdisabledpane-button"
-                               data-l10n-id="appmenu-remote-tabs-opensettings"
-                               />
+                <html:moz-button type="primary"
+                                 class="PanelUI-remotetabs-button"
+                                 id="PanelUI-remotetabs-tabsdisabledpane-button"
+                                 data-l10n-id="appmenu-remote-tabs-opensettings"
+                                 />
               </hbox>
             </vbox>
           </hbox>
@@ -515,10 +561,11 @@
                 <image class="fxaSyncIllustrationIssue"/>
               </hbox>
               <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-noclients"></label>
-              <toolbarbutton id="PanelUI-remotetabs-connect-device-button"
-                             class="PanelUI-remotetabs-button"
-                             data-l10n-id="appmenu-remote-tabs-connectdevice"
-                             />
+              <html:moz-button type="primary"
+                               id="PanelUI-remotetabs-connect-device-button"
+                               class="PanelUI-remotetabs-button"
+                               data-l10n-id="appmenu-remote-tabs-connectdevice"
+                               />
             </vbox>
           </hbox>
         </deck>
@@ -533,10 +580,11 @@
               hidden="true">
           <image class="fxaSyncIllustration"/>
           <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-welcome"></label>
-          <toolbarbutton class="PanelUI-remotetabs-button"
-                         id="PanelUI-remotetabs-setupsync-button"
-                         data-l10n-id="appmenu-remote-tabs-sign-into-sync"
-                         />
+          <html:moz-button type="primary"
+                           class="PanelUI-remotetabs-button"
+                           id="PanelUI-remotetabs-setupsync-button"
+                           data-l10n-id="appmenu-remote-tabs-sign-into-sync"
+                           />
         </vbox>
         <!-- When Sync is not enabled -->
         <vbox id="PanelUI-remotetabs-syncdisabled"
@@ -546,10 +594,11 @@
               hidden="true">
           <image class="fxaSyncIllustration"/>
           <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-welcome"></label>
-          <toolbarbutton class="PanelUI-remotetabs-button"
-                         id="PanelUI-remotetabs-syncdisabled-button"
-                         data-l10n-id="appmenu-remote-tabs-turn-on-sync"
-                         />
+          <html:moz-button type="primary"
+                           class="PanelUI-remotetabs-button"
+                           id="PanelUI-remotetabs-syncdisabled-button"
+                           data-l10n-id="appmenu-remote-tabs-turn-on-sync"
+                           />
         </vbox>
         <!-- When Sync needs re-authentication -->
         <vbox id="PanelUI-remotetabs-reauthsync"
@@ -559,10 +608,11 @@
               hidden="true">
           <image class="fxaSyncIllustrationIssue"/>
           <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-welcome"></label>
-          <toolbarbutton class="PanelUI-remotetabs-button"
-                         id="PanelUI-remotetabs-reauthsync-button"
-                         data-l10n-id="appmenu-remote-tabs-sign-into-sync"
-                         />
+          <html:moz-button type="primary"
+                           class="PanelUI-remotetabs-button"
+                           id="PanelUI-remotetabs-reauthsync-button"
+                           data-l10n-id="appmenu-remote-tabs-sign-into-sync"
+                           />
         </vbox>
         <!-- When Sync needs verification -->
         <vbox id="PanelUI-remotetabs-unverified"
@@ -572,10 +622,11 @@
               hidden="true">
           <image class="fxaSyncIllustrationIssue"/>
           <label class="PanelUI-remotetabs-instruction-label" data-l10n-id="appmenu-remote-tabs-unverified"></label>
-          <toolbarbutton class="PanelUI-remotetabs-button"
-                         id="PanelUI-remotetabs-unverified-button"
-                         data-l10n-id="appmenu-remote-tabs-opensettings"
-                         />
+          <html:moz-button type="primary"
+                           class="PanelUI-remotetabs-button"
+                           id="PanelUI-remotetabs-unverified-button"
+                           data-l10n-id="appmenu-remote-tabs-opensettings"
+                           />
         </vbox>
       </hbox>
     </vbox>
@@ -586,36 +637,102 @@
       <toolbaritem id="PanelUI-fxa-menu-message"
                    closemenu="none">
       </toolbaritem>
-      <toolbarbutton id="fxa-manage-account-button"
+      <hbox id="PanelUI-fxa-menu-signed-out-card"
+            align="center"
+            hidden="true">
+        <html:img class="fxa-menu-signed-out-avatar"
+                  alt=""
+                  src="chrome://browser/skin/fxa/avatar-empty.svg"/>
+        <vbox class="fxa-menu-signed-out-text" flex="1">
+          <label id="PanelUI-fxa-menu-signed-out-email"
+                 class="fxa-menu-signed-out-email"
+                 crop="end"/>
+          <description id="PanelUI-fxa-menu-signed-out-message"
+                       class="fxa-menu-signed-out-message"/>
+        </vbox>
+        <html:moz-button id="PanelUI-fxa-menu-signed-out-sign-in-button"
+                         data-l10n-id="fxa-menu-signed-out-sign-in-button"/>
+      </hbox>
+      <toolbarseparator id="PanelUI-fxa-menu-signed-out-separator" hidden="true"/>
+      <toolbarbutton id="PanelUI-fxa-menu-manage-account-button"
                      align="center"
                      class="subviewbutton"
-                     >
+                     hidden="true">
+        <image class="fxa-menu-manage-account-avatar" role="presentation"/>
         <vbox flex="1">
-          <label id="fxa-menu-header-title"
+          <label id="PanelUI-fxa-menu-manage-account-email"
+                 class="fxa-menu-manage-account-email"
+                 crop="end"/>
+          <label class="fxa-menu-manage-account-subtitle"
                  crop="end"
-                 data-l10n-id="appmenuitem-fxa-sign-in"/>
-          <label id="fxa-menu-header-description"
-                 crop="end"
-                 hidden="true"
-                 data-l10n-id="fxa-menu-turn-on-sync"/>
+                 data-l10n-id="fxa-menu-manage-account-subtitle"/>
         </vbox>
       </toolbarbutton>
-      <toolbarbutton id="PanelUI-fxa-menu-syncnow-button"
-                     align="center"
-                     class="subviewbutton"
-                     closemenu="none">
-        <hbox flex="1">
-          <image id="PanelUI-appMenu-fxa-image-last-synced"
-                 class="syncNowBtn"/>
-          <label class="syncnow-label"
-                 data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
-                 sync-now-data-l10n-id="appmenuitem-fxa-toolbar-sync-now2"
-                 syncing-data-l10n-id="fxa-toolbar-sync-syncing2"
-                 flex="1"
-                 crop="end"/>
-        </hbox>
-      </toolbarbutton>
+      <toolbarseparator id="PanelUI-fxa-menu-manage-account-separator" hidden="true"/>
+      <!-- Hidden holder for the account header title/description. These are no
+           longer shown directly (the signed-in, signed-out and promo states
+           each render their own header), but the sign-in CTA copy experiment
+           still populates and reads these labels. -->
+      <vbox id="fxa-menu-header" hidden="true">
+        <label id="fxa-menu-header-title"
+               crop="end"
+               data-l10n-id="appmenuitem-fxa-sign-in"/>
+        <label id="fxa-menu-header-description"
+               crop="end"
+               hidden="true"
+               data-l10n-id="fxa-menu-turn-on-sync"/>
+      </vbox>
+      <hbox id="PanelUI-fxa-menu-sign-in-promo"
+            align="center"
+            hidden="true">
+        <html:img class="fxa-menu-sign-in-promo-image"
+                  alt=""
+                  src="chrome://browser/content/kit-signed-out.svg"/>
+        <vbox class="fxa-menu-sign-in-promo-text" flex="1">
+          <label class="fxa-menu-sign-in-promo-heading"
+                 data-l10n-id="fxa-menu-sign-in-promo-heading"/>
+          <description class="fxa-menu-sign-in-promo-message"
+                       data-l10n-id="fxa-menu-sign-in-promo-message"/>
+        </vbox>
+        <html:moz-button type="primary"
+                         id="PanelUI-fxa-menu-sign-in-promo-button"
+                         data-l10n-id="fxa-menu-sign-in-promo-button"/>
+      </hbox>
       <vbox id="PanelUI-signedin-panel" hidden="true">
+        <toolbarbutton id="PanelUI-fxa-menu-sync-status-button"
+                       class="subviewbutton subviewbutton-nav fxa-menu-sync-status-button"
+                       closemenu="none"
+                       hidden="true">
+          <image class="fxa-menu-sync-status-icon" role="presentation"/>
+          <vbox flex="1">
+            <label id="PanelUI-fxa-menu-sync-status-title"
+                   class="fxa-menu-sync-status-title"
+                   crop="end"/>
+            <label id="PanelUI-fxa-menu-sync-status-description"
+                   class="fxa-menu-sync-status-description"
+                   crop="end"/>
+          </vbox>
+        </toolbarbutton>
+        <toolbarbutton id="PanelUI-fxa-menu-get-firefox-mobile"
+                       class="subviewbutton subviewbutton-iconic"
+                       data-l10n-id="fxa-menu-get-firefox-mobile"
+                       hidden="true"/>
+        <hbox id="PanelUI-fxa-menu-sync-status-off-card"
+              class="fxa-menu-sync-status-off-card"
+              align="center"
+              hidden="true">
+          <image class="fxa-menu-sync-status-icon" role="presentation"/>
+          <vbox flex="1">
+            <label id="PanelUI-fxa-menu-sync-status-off-title"
+                   class="fxa-menu-sync-status-title"
+                   crop="end"/>
+            <label id="PanelUI-fxa-menu-sync-status-off-description"
+                   class="fxa-menu-sync-status-description fxa-menu-sync-status-description-error"
+                   crop="end"/>
+          </vbox>
+          <html:moz-button id="PanelUI-fxa-menu-sync-status-off-button"
+                           data-l10n-id="fxa-menu-sync-status-turn-on-button"/>
+        </hbox>
         <vbox id="PanelUI-fxa-menu-setup-sync-container" hidden="true">
           <vbox class="PanelUI-fxa-menu-setup-sync" flex="1">
             <hbox class="sync-status-container" align="center">
@@ -636,132 +753,209 @@
           </vbox>
           <toolbarseparator id="PanelUI-set-up-sync-separator" />
       </vbox>
-      <!-- The `Connect Another Device` button is disabled by default until the user logs into Sync. -->
-      <toolbarbutton id="PanelUI-fxa-menu-connect-device-button"
-                      class="subviewbutton"
-                      data-l10n-id="fxa-menu-connect-another-device"
-                      disabled="true"
-                      />
-      <toolbarbutton id="PanelUI-fxa-menu-sync-prefs-button"
-                      class="subviewbutton"
-                      data-l10n-id="fxa-menu-sync-settings"
-                      hidden="true"
-                      />
-      <toolbarseparator id="PanelUI-fxa-menu-sendtab-separator" />
-      <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
-                      class="subviewbutton subviewbutton-nav"
-                      data-l10n-id="fxa-menu-send-to-device"
-                      data-l10n-args='{"tabCount":1}'
-                      closemenu="none"
-                      />
+      <vbox id="PanelUI-fxa-menu-devices-list" hidden="true"/>
       <toolbarseparator id="PanelUI-sign-out-separator" />
       <toolbarbutton id="PanelUI-fxa-menu-account-signout-button"
               class="subviewbutton"
               data-l10n-id="fxa-menu-sign-out"
               hidden="true"/>
       </vbox>
-      <toolbarbutton id="PanelUI-fxa-menu-empty-profiles-button"
-                     class="subviewbutton subviewbutton-nav"
-                     closemenu="none"
-                     data-l10n-id="appmenu-profiles-2"
-                     hidden="true"/>
-      <toolbarbutton id="PanelUI-fxa-menu-profiles-button"
-                     class="subviewbutton subviewbutton-nav subviewbutton-iconic"
-                     closemenu="none"
-                     hidden="true"/>
-      <toolbarseparator id="PanelUI-fxa-menu-profiles-separator" class="proton-zap" hidden="true"/>
-      <!-- My Services panel - visible if the user has any of the listed services below set up on their account-->
-      <vbox id="PanelUI-fxa-menu-services" hidden="true">
-        <toolbarseparator />
-          <label id="PanelUI-fxa-menu-services-header" crop="end" class="PanelUI-fxa-menu-section-title" data-l10n-id="appmenu-services-header" />
-        <!-- Relay -->
-          <vbox>
-            <toolbarbutton id="PanelUI-services-menu-relay-button" class="fxa-cta-button subviewbutton subviewbutton-iconic">
-              <vbox flex="1">
-                <hbox align="center">
-                  <image class="PanelUI-fxa-menu-relay-button ctaMenuLogo" role="presentation" />
-                  <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-relay-title" />
-                </hbox>
-                <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-services-relay-description" />
-              </vbox>
-            </toolbarbutton>
-          </vbox>
-      </vbox>
+      <label id="PanelUI-fxa-menu-profiles-header-label" crop="end" class="subview-subheader" data-l10n-id="appmenu-profiles-header" />
+      <vbox id="PanelUI-fxa-menu-profile-buttons" hidden="true"/>
+      <toolbarseparator id="PanelUI-fxa-menu-profiles-separator" hidden="true"/>
+      <label id="PanelUI-fxa-menu-secure-sync-header" crop="end" class="subview-subheader" data-l10n-id="appmenu-secure-sync-header" hidden="true"/>
       <!-- updateCTAPanel will control if we show this panel -->
       <vbox id="PanelUI-fxa-cta-menu" hidden="true">
-        <toolbarseparator id="PanelUI-products-separator" />
-        <label id="fxa-menu-other-protection-tools-header" crop="end" class="PanelUI-fxa-menu-section-title" data-l10n-id="appmenu-other-protection-header2" />
+        <toolbarseparator id="PanelUI-fxa-menu-privacy-tools-separator" hidden="true"/>
+        <label crop="end" class="subview-subheader" data-l10n-id="appmenu-other-protection-header3" />
         <toolbarbutton id="PanelUI-fxa-menu-monitor-button" class="fxa-cta-button subviewbutton subviewbutton-iconic">
-          <vbox flex="1">
-            <hbox align="center">
-              <image class="PanelUI-fxa-menu-monitor-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-monitor-title" />
-            </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-monitor-description" />
-          </vbox>
+          <hbox align="center">
+            <image class="PanelUI-fxa-menu-monitor-button ctaMenuLogo" role="presentation" />
+            <vbox flex="1">
+              <label id="fxa-menu-header-title" class="cta-menu-title" crop="end" data-l10n-id="appmenuitem-monitor-title2" />
+              <label id="cta-menu-header-description" class="cta-menu-description" crop="end" data-l10n-id="appmenuitem-monitor-description2" />
+            </vbox>
+          </hbox>
         </toolbarbutton>
         <toolbarbutton id="PanelUI-fxa-menu-relay-button" class="fxa-cta-button subviewbutton subviewbutton-iconic">
-          <vbox flex="1">
-            <hbox align="center">
-              <image class="PanelUI-fxa-menu-relay-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-relay-title" />
-            </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-relay-description" />
-          </vbox>
+          <hbox align="center">
+            <image class="PanelUI-fxa-menu-relay-button ctaMenuLogo" role="presentation" />
+            <vbox flex="1">
+              <label id="fxa-menu-header-title" class="cta-menu-title" crop="end" data-l10n-id="appmenuitem-relay-title2" />
+              <label id="cta-menu-header-description" class="cta-menu-description" crop="end" data-l10n-id="appmenuitem-relay-description2" />
+            </vbox>
+          </hbox>
         </toolbarbutton>
         <toolbarbutton id="PanelUI-fxa-menu-vpn-button" class="fxa-cta-button subviewbutton subviewbutton-iconic">
-          <vbox flex="1">
-            <hbox align="center">
-              <image class="PanelUI-fxa-menu-vpn-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-vpn-title" />
-            </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-vpn-description-2" />
-          </vbox>
+          <hbox align="center">
+            <image class="PanelUI-fxa-menu-vpn-button ctaMenuLogo" role="presentation" />
+            <vbox flex="1">
+              <label id="fxa-menu-header-title" class="cta-menu-title" crop="end" data-l10n-id="appmenuitem-vpn-title2" />
+              <label id="cta-menu-header-description" class="cta-menu-description" crop="end" data-l10n-id="appmenuitem-vpn-description5" />
+            </vbox>
+          </hbox>
+        </toolbarbutton>
+        <toolbarbutton id="PanelUI-fxa-menu-share-firefox" class="fxa-cta-button subviewbutton subviewbutton-iconic">
+          <hbox align="center">
+            <image class="PanelUI-fxa-menu-share-firefox-button ctaMenuLogo" role="presentation" />
+            <vbox flex="1">
+              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-share-firefox-title" />
+            </vbox>
+          </hbox>
         </toolbarbutton>
       </vbox>
-      <deck id="PanelUI-fxa-remotetabs-deck">
-        <!-- Sync is ready to Sync and the "tabs" engine is enabled -->
-        <vbox id="PanelUI-fxa-remotetabs-tabspane">
-          <toolbarseparator id="PanelUI-remote-tabs-separator" />
-          <vbox id="PanelUI-fxa-remotetabs-tabslist"
-          notabsforclientlabel="appmenu-remote-tabs-notabs"
-          />
-        </vbox>
-        <!-- Sync is ready to Sync but we are still fetching the tabs to show -->
-        <vbox id="PanelUI-fxa-remotetabs-fetching">
-          <!-- Show intentionally blank panel, see bug 1239845 -->
-        </vbox>
-      </deck>
     </vbox>
   </panelview>
 
-  <!-- This panelview is used to contain the dynamically created buttons for send tab to devices -->
-  <panelview id="PanelUI-sendTabToDevice" class="PanelUI-subView">
+  <!-- This panelview shows recent tabs for a specific synced device -->
+  <panelview id="PanelUI-fxa-device-recent-tabs" class="PanelUI-subView"
+             data-l10n-id="fxa-menu-device-recent-tabs-panel">
     <vbox class="panel-subview-body">
-      <toolbarbutton id="PanelUI-sendTabToDevice-syncingDevices" class="subviewbutton subviewbutton-iconic pageAction-sendToDevice-notReady"
-                     data-l10n-id="fxa-menu-send-tab-to-device-syncnotready"
-                     disabled="true"/>
+      <vbox id="PanelUI-fxa-device-recent-tabs-list"/>
+      <label id="PanelUI-fxa-device-no-open-tabs"
+             class="PanelUI-remotetabs-notabsforclient-label"
+             data-l10n-id="appmenu-remote-tabs-notabs"
+             hidden="true"/>
+      <toolbarseparator id="PanelUI-fxa-device-recent-tabs-footer-separator"/>
+      <toolbarbutton id="PanelUI-fxa-device-view-all-tabs"
+                     class="subviewbutton"
+                     closemenu="none"/>
+      <toolbarbutton id="PanelUI-fxa-device-send-current-page"
+                     class="subviewbutton"
+                     data-l10n-id="fxa-menu-device-send-current-page"/>
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-fxa-menu-sendtab-not-configured" class="PanelUI-subView">
-    <vbox id="PanelUI-fxa-sendtab-not-configured" align="center" class="panel-subview-body">
-      <image class="fxaSendToDeviceLogo" role="presentation"/>
-      <label class="PanelUI-fxa-service-description-label" data-l10n-id="fxa-menu-send-tab-to-device-description"></label>
-      <toolbarbutton id="PanelUI-fxa-menu-sendtab-not-configured-button"
-                     class="PanelUI-fxa-signin-button"
-                     data-l10n-id="appmenuitem-fxa-sign-in"
+  <!-- Secure sync sub-panel with sync actions -->
+  <panelview id="PanelUI-fxa-menu-secure-sync-subpanel"
+             class="PanelUI-subView"
+             data-l10n-id="fxa-menu-secure-sync-subpanel">
+    <vbox class="panel-subview-body">
+      <toolbarbutton id="PanelUI-fxa-menu-secure-sync-now"
+                     class="subviewbutton subviewbutton-iconic"
+                     closemenu="none">
+        <hbox class="fxa-menu-secure-sync-now-content" flex="1" align="center">
+          <image class="syncNowBtn" role="presentation"/>
+          <label id="PanelUI-fxa-menu-secure-sync-now-label"
+                 flex="1"
+                 crop="end"/>
+        </hbox>
+      </toolbarbutton>
+      <toolbarbutton id="PanelUI-fxa-menu-secure-sync-settings"
+                     class="subviewbutton"
+                     data-l10n-id="fxa-menu-manage-sync-settings"/>
+      <toolbarseparator/>
+      <toolbarbutton id="PanelUI-fxa-menu-secure-sync-add-device"
+                     class="subviewbutton"
+                     data-l10n-id="fxa-menu-add-device"/>
+      <toolbarbutton id="PanelUI-fxa-menu-secure-sync-manage-devices"
+                     class="subviewbutton"
+                     data-l10n-id="fxa-menu-manage-devices"/>
+      <toolbarbutton id="PanelUI-fxa-menu-secure-sync-device-missing"
+                     class="subviewbutton"
+                     data-l10n-id="fxa-menu-device-missing"/>
+    </vbox>
+  </panelview>
+
+  <!-- Lists every synced device; shown from the "All Devices" button when
+       there are more devices than fit in the secure sync section. -->
+  <panelview id="PanelUI-fxa-menu-all-devices"
+             class="PanelUI-subView"
+             data-l10n-id="fxa-menu-all-devices-panel">
+    <vbox class="panel-subview-body">
+      <vbox id="PanelUI-fxa-menu-all-devices-list"/>
+    </vbox>
+    <toolbarseparator id="PanelUI-fxa-menu-all-devices-footer-separator"/>
+    <toolbarbutton id="PanelUI-fxa-menu-all-devices-add-device"
+                   class="subviewbutton"
+                   data-l10n-id="fxa-menu-add-device"/>
+    <toolbarbutton id="PanelUI-fxa-menu-all-devices-manage-devices"
+                   class="subviewbutton"
+                   data-l10n-id="fxa-menu-manage-devices"/>
+    <toolbarbutton id="PanelUI-fxa-menu-all-devices-device-missing"
+                   class="subviewbutton panel-subview-footer-button"
+                   data-l10n-id="fxa-menu-device-missing"/>
+  </panelview>
+
+  <panelview id="PanelUI-fxa-menu-all-profiles" class="PanelUI-subView">
+    <vbox class="panel-subview-body">
+      <vbox id="PanelUI-fxa-menu-all-profiles-list"/>
+    </vbox>
+    <toolbarseparator id="PanelUI-fxa-menu-all-profiles-footer-separator"/>
+    <toolbarbutton id="PanelUI-fxa-menu-all-profiles-manage-button"
+                   class="subviewbutton"
+                   data-l10n-id="appmenu-manage-profiles"/>
+    <toolbarbutton id="PanelUI-fxa-menu-all-profiles-create-button"
+                   class="subviewbutton panel-subview-footer-button"
+                   data-l10n-id="appmenu-create-profile2"/>
+  </panelview>
+
+  <panelview id="PanelUI-fxa-menu-create-profile"
+             class="PanelUI-subView"
+             data-l10n-id="fxa-menu-create-profile-subpanel">
+    <vbox class="panel-subview-body">
+      <vbox id="PanelUI-fxa-menu-create-profile-content" align="center">
+        <image id="PanelUI-fxa-menu-create-profile-illustration"
+               role="presentation"/>
+        <vbox id="PanelUI-fxa-menu-create-profile-text">
+          <description id="PanelUI-fxa-menu-create-profile-heading"
+                       data-l10n-id="fxa-menu-create-profile-heading"/>
+          <description id="PanelUI-fxa-menu-create-profile-description"
+                       data-l10n-id="fxa-menu-create-profile-description"/>
+        </vbox>
+        <html:moz-button type="primary"
+                         id="PanelUI-fxa-menu-create-profile-confirm-button"
+                         data-l10n-id="fxa-menu-create-profile-confirm"/>
+      </vbox>
+    </vbox>
+    <toolbarseparator id="PanelUI-fxa-menu-create-profile-footer-separator"/>
+    <toolbarbutton id="PanelUI-fxa-menu-create-profile-learn-more-button"
+                   class="subviewbutton"
+                   data-l10n-id="fxa-menu-create-profile-learn-more"/>
+    <toolbarbutton id="PanelUI-fxa-menu-create-profile-copy-button"
+                   class="subviewbutton"
+                   data-l10n-id="appmenu-copy-profile"/>
+    <toolbarbutton id="PanelUI-fxa-menu-create-profile-manage-button"
+                   class="subviewbutton panel-subview-footer-button"
+                   data-l10n-id="appmenu-manage-profiles"/>
+  </panelview>
+
+  <panelview id="PanelUI-fxa-menu-sendtab-sign-in" class="PanelUI-subView">
+    <vbox id="PanelUI-fxa-sendtab-sign-in" class="panel-subview-body">
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-sign-in-button" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxa-menu-send-to-mobile-sign-in"
                      />
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-fxa-menu-sendtab-no-devices" class="PanelUI-subView">
-    <vbox id="PanelUI-fxa-sendtab-no-devices" align="center" class="panel-subview-body">
-      <image class="fxaSendToDeviceLogo" role="presentation"/>
-      <label class="PanelUI-fxa-service-description-label" data-l10n-id="fxa-menu-send-tab-to-device-description"></label>
-      <toolbarbutton id="PanelUI-fxa-menu-sendtab-connect-device-button"
-                     class="PanelUI-fxa-signin-button"
-                     data-l10n-id="appmenu-remote-tabs-connectdevice"
+  <panelview id="PanelUI-fxa-menu-sendtab-enable-sync" class="PanelUI-subView">
+    <vbox id="PanelUI-fxa-sendtab-enable-sync" class="panel-subview-body">
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-enable-sync-button" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxa-menu-send-to-mobile-turn-on-sync"
+                     />
+    </vbox>
+  </panelview>
+
+  <panelview id="PanelUI-fxa-menu-sendtab-verify-account" class="PanelUI-subView">
+    <vbox id="PanelUI-fxa-sendtab-verify-account" class="panel-subview-body">
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-unverified-button" disabled="true" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxviewtabrow-send-to-mobile-not-verified"
+                     />
+      <toolbarseparator id="PanelUI-sendtab-verify-account-separator" />
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-verify-account-button" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxviewtabrow-send-to-mobile-verify-account"
+                     />
+    </vbox>
+  </panelview>
+
+  <panelview id="PanelUI-fxa-menu-sendtab-connect-phone" class="PanelUI-subView">
+    <vbox id="PanelUI-fxa-sendtab-connect-phone" class="panel-subview-body">
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-connect-phone-button" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxa-menu-send-to-mobile-connect-device"
+                     />
+      <toolbarseparator id="PanelUI-set-up-connect-phone-separator" />
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-no-phone-button" class="subviewbutton panel-subview-footer-button"
+                     data-l10n-id="fxa-menu-send-to-mobile-device-missing2"
                      />
     </vbox>
   </panelview>
@@ -796,10 +990,10 @@
   <panelview id="reset-pbm-panel" class="PanelUI-subView" role="document">
     <vbox id="reset-pbm-panel-container" role="alertdialog" aria-labelledby="reset-pbm-panel-header">
       <hbox id="reset-pbm-panel-header">
-        <description data-l10n-id="reset-pbm-panel-heading" role="heading" aria-level="2"/>
+        <description data-l10n-id="reset-pbm-panel-heading2" role="heading" aria-level="2"/>
       </hbox>
 
-      <description id="reset-pbm-panel-description" data-l10n-id="reset-pbm-panel-description"/>
+      <description id="reset-pbm-panel-description" data-l10n-id="reset-pbm-panel-description2"/>
       <checkbox id="reset-pbm-panel-checkbox" data-l10n-id="reset-pbm-panel-always-ask-checkbox"/>
 
       <html:moz-button-group id="reset-pbm-panel-footer" class="panel-footer">
@@ -810,7 +1004,7 @@
         <button slot="primary"
                 id="reset-pbm-panel-confirm-button"
                 class="footer-button"
-                data-l10n-id="reset-pbm-panel-confirm-button"
+                data-l10n-id="reset-pbm-panel-confirm-button2"
                 ></button>
       </html:moz-button-group>
     </vbox>
@@ -844,21 +1038,87 @@
             data-l10n-id="ipprotection-experiment-badge"
           ></html:moz-badge>
         </html:h1>
+        <html:moz-button
+          id="ipprotection-header-button"
+          class="panel-info-button"
+          data-captures-focus="true"
+          type="ghost"
+          iconsrc="chrome://global/skin/icons/info.svg"
+          size="small"
+          data-l10n-id="ipprotection-help-button">
+        </html:moz-button>
     </hbox>
     <toolbarseparator/>
     <vbox id="PanelUI-ipprotection-content" class="panel-subview-body"/>
+  </panelview>
+
+  <panelview id="PanelUI-ipprotection-locations"
+             class="PanelUI-subView"
+             data-l10n-id="ipprotection-locations-subview"
+             data-l10n-attrs="title">
+    <hbox id="PanelUI-ipprotection-locations-header"
+         class="panel-header">
+      <html:h1>
+        <html:span></html:span>
+      </html:h1>
+    </hbox>
+    <toolbarseparator/>
+    <vbox id="PanelUI-ipprotection-locations-content" class="panel-subview-body"/>
   </panelview>
 
   <panelview id="ai-window-toggle-view" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <toolbarbutton id="ai-window-switch-classic"
                     class="subviewbutton"
-                    data-l10n-id="ai-window-toggleview-switch-classic"
-                    hidden="true"/>
+                    type="radio"
+                    hidden="true"
+                    data-l10n-attrs="label">
+        <image class="toolbarbutton-icon"/>
+        <vbox>
+          <label class="toolbarbutton-text"
+                data-l10n-id="ai-window-toggleview-switch-classic" crop="end"/>
+          <label class="ai-window-switch-description toolbarbutton-text"
+                data-l10n-id="ai-window-toggleview-switch-classic-description" crop="end"/>
+        </vbox>
+      </toolbarbutton>
       <toolbarbutton id="ai-window-switch-ai"
                     class="subviewbutton"
-                    data-l10n-id="ai-window-toggleview-switch-ai"
-                    hidden="true"/>
+                    type="radio"
+                    hidden="true"
+                    data-l10n-attrs="label"
+                    aria-describedby="ai-window-switch-ai-badge">
+        <image class="toolbarbutton-icon"/>
+        <vbox>
+          <hbox>
+            <label class="toolbarbutton-text"
+                  data-l10n-id="ai-window-toggleview-switch-ai" crop="end"/>
+            <html:moz-badge id="ai-window-switch-ai-badge"
+                  type="beta"/>
+          </hbox>
+          <label class="ai-window-switch-description toolbarbutton-text"
+                data-l10n-id="ai-window-toggleview-switch-ai-description" crop="end"/>
+        </vbox>
+      </toolbarbutton>
+    </vbox>
+  </panelview>
+
+  <panelview id="appMenu-tabGroupsListView" class="PanelUI-subView">
+    <vbox class="panel-subview-body">
+      <html:tab-groups-list/>
+    </vbox>
+  </panelview>
+
+  <panelview id="toolbar-tabGroupsListView"
+             class="PanelUI-subView"
+             mainview-with-header="true">
+    <box class="panel-header">
+      <html:h1>
+        <html:span data-l10n-id="tab-groups-list-title"></html:span>
+      </html:h1>
+    </box>
+    <toolbarseparator />
+    <vbox class="panel-subview-body">
+      <html:tab-groups-list/>
     </vbox>
   </panelview>
 

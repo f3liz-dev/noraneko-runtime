@@ -27,6 +27,7 @@
   <string name="teaser">Nánuku yɨɨ yu´u.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Daa nnánukunu nnaá.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">Nná da a nnánukunu</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Daa nnánukunu nnaá nuu pestaña.</string>
@@ -128,6 +129,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Xita jee síne %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -138,24 +142,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Nánuku ji Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Nánuku ji Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Nánuku ji Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Nánuku ji Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Nánuku ji Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Nánuku ji Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p>\n<p>Ni´ima kua iin nuu nánuku yu´u:\n<ul>\n<li>Nánuku jee kaka nuu ka̱a̱ ya´a</li>\n<li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li>\n<li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li>\n</ul> </p>\n<p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/>\n<a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s taji kajinu.</p>\n<p>Ni´ima kua iin nuu nánuku yu´u:\n<ul>\n<li>Nánuku jee kaka nuu ka̱a̱ ya´a</li>\n<li>Chiyu´u daa a nita no´o (a xíín kaji kuvi kuntadaja noo´o)</li>\n<li>Xina saa kuvi naá cokies jii daa tu´un nnánukunu</li>\n</ul> </p>\n<p>%1$s kuviji iin nsa´a Mozilla. Nukudani iin internet vii jee va´a.<br/>\n<a href=\"%2$s\">Ka´vi ku´eka</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privacidad jii seguridad</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -248,7 +252,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Tee a xíín chu´un URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Kua: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Kua: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Kua: nakuvi.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -320,15 +324,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Sá´á %1$s navegador xinañu´u ya´a</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Chu´uichí datos a ni´í</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Ka´vi kue´eka</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla nake´e sani daa a íyo tiñu jee jia´a va´a %1$s nuu kuaiyo daa yo.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla nake´e sani daa a íyo tiñu jee jia´a va´a %1$s nuu kuaiyo daa yo.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Ping a ni\'i ntaka kivɨ</string>
-  <string name="preference_daily_usage_ping_description">Ya\'a chinei Mozilla kuni naja ñivɨ ni\'i ya\'a.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ya\'a chinei Mozilla kuni naja ñivɨ ni\'i ya\'a.</string>
   <string name="preference_daily_usage_ping_learn_more">Ka´vi kue´eka</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Tutu xítu</string>
@@ -783,7 +787,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Nakasɨ pestaña</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Chu´un ichi saa tivu ya´a nuu Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Chu´un ichi saa tivu ya´a nuu Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -848,12 +852,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s Ni\'i iin conexión HTTPS ntaka kuvinu koo kue\'e a kumiji noo\'o <a href=\"%2$s\">Kuni kue\'eka jiee</a> <br/><br/> Sama configuración nuu ajustes > Privacidad &amp; Seguridad > Seguridad.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Conexión ntu va´a</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">Conexión ntu va´a</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Sa̱na kuvi iin problema jii configuración ka̱a̱ servidor a xíín íyo neva kuvi sa´a xeen.<br/><br/>\nDee a kivɨ-nu servidor ya´a íchi yata sa̱naan kuvi iin error nkene ntañu\'u, kuvi nakivɨ-nu íchika dee nníní.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[Sa̱na kuvi iin problema jii configuración ka̱a̱ servidor a xíín íyo neva kuvi sa´a xeen.<br/><br/>\nDee a kivɨ-nu servidor ya´a íchi yata sa̱naan kuvi iin error nkene ntañu\'u, kuvi nakivɨ-nu íchika dee nníní.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Sana íyo ñivɨ kuvi kantu\'un noo\'o nuu sitio ya\'a de jia\'nu kuvi koo tixi.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>Sana íyo ñivɨ kuvi kantu\'un noo\'o nuu sitio ya\'a de jia\'nu kuvi koo tixi.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* An implementaion of nsIException. */
 
-#include "xpcprivate.h"
 #include "nsError.h"
+#include "xpcprivate.h"
 
 /***************************************************************************/
 /* Quick and dirty mapping of well known result codes to strings. We only
@@ -24,9 +22,11 @@ static const struct ResultMap {
   const char* format;
 } map[] = {
 #define XPC_MSG_DEF(val, format) {(val), #val, format},
+#include "extra_xpc_msg.h"
+
 #include "xpc.msg"
 #undef XPC_MSG_DEF
-    {NS_OK, 0, 0}  // sentinel to mark end of array
+    {NS_OK, nullptr, nullptr}  // sentinel to mark end of array
 };
 
 #define RESULT_COUNT (std::size(map) - 1)

@@ -17,10 +17,10 @@ function clearLoggingPrefs() {
 
   // Clear devtools.performance.recording preferences that may be set by about:logging
   const devtoolsPrefs = [
-    "devtools.performance.recording.preset",
-    "devtools.performance.recording.entries",
-    "devtools.performance.recording.threads",
-    "devtools.performance.recording.features",
+    "devtools.performance.recording.preset.aboutlogging",
+    "devtools.performance.recording.entries.aboutlogging",
+    "devtools.performance.recording.threads.aboutlogging",
+    "devtools.performance.recording.features.aboutlogging",
     "devtools.performance.popup.intro-displayed",
   ];
 
@@ -29,13 +29,15 @@ function clearLoggingPrefs() {
   }
 }
 
-function clearUploadedProfilesDB(content) {
-  return new Promise(resolve => {
-    const deleteRequest = content.indexedDB.deleteDatabase(
-      "aboutLoggingProfiles"
+async function clearUploadedProfilesDB() {
+  const { deleteUploadedProfile, getAllUploadedProfiles } =
+    ChromeUtils.importESModule(
+      "chrome://global/content/aboutLogging/profileStorage.mjs"
     );
-    deleteRequest.onsuccess = deleteRequest.onerror = resolve;
-  });
+
+  for (let profile of await getAllUploadedProfiles()) {
+    await deleteUploadedProfile(profile.id);
+  }
 }
 
 /**
@@ -468,6 +470,67 @@ add_task(async function testProfilerOpens() {
   clearLoggingPrefs();
 });
 
+// Test that starting and stopping log collection via about:logging doesn't
+// clobber the recording settings used for normal profiling (the profiler
+// popup, about:profiling), since they're stored under different prefs.
+add_task(async function testProfilerPrefsIsolation() {
+  // Simulate a preset already configured for normal, day to day profiling.
+  Services.prefs.setCharPref("devtools.performance.recording.preset", "media");
+  Services.prefs.setIntPref("devtools.performance.recording.entries", 12345);
+
+  await BrowserTestUtils.withNewTab(PAGE, async browser => {
+    let profilerOpenedPromise = BrowserTestUtils.waitForNewTab(
+      gBrowser,
+      "https://example.com/",
+      false
+    );
+    SpecialPowers.spawn(browser, [], async () => {
+      let $ = content.document.querySelector.bind(content.document);
+      // Override the URL the profiler uses to avoid hitting external
+      // resources (and crash).
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["devtools.performance.recording.ui-base-url", "https://example.com"],
+          ["devtools.performance.recording.ui-base-url-path", "/"],
+        ],
+      });
+      $("#logging-preset-dropdown").value = "networking";
+      $("#logging-preset-dropdown").dispatchEvent(new content.Event("change"));
+      $("#set-log-modules-button").click();
+      $("#toggle-logging-button").click();
+      // Wait for the profiler to start. This can be very slow.
+      await content.profilerPromise();
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(resolve => content.setTimeout(resolve, 200));
+      $("#toggle-logging-button").click();
+    });
+    let tab = await profilerOpenedPromise;
+    await BrowserTestUtils.removeTab(tab);
+  });
+
+  Assert.equal(
+    Services.prefs.getCharPref("devtools.performance.recording.preset"),
+    "media",
+    "Using about:logging must not change the profiler popup's preset."
+  );
+  Assert.equal(
+    Services.prefs.getIntPref("devtools.performance.recording.entries"),
+    12345,
+    "Using about:logging must not change the profiler popup's entries pref."
+  );
+  Assert.equal(
+    Services.prefs.getCharPref(
+      "devtools.performance.recording.preset.aboutlogging"
+    ),
+    "networking",
+    "about:logging uses its own, separate preset pref."
+  );
+
+  Services.prefs.clearUserPref("devtools.performance.recording.preset");
+  Services.prefs.clearUserPref("devtools.performance.recording.entries");
+  clearLoggingPrefs();
+});
+
 // Same test, outputing to a file, with network logging, while opening and
 // closing a tab. We only check that the file exists and has a non-zero size.
 add_task(async function testLogFileFound() {
@@ -527,6 +590,8 @@ add_task(async function testLogFileFound() {
 
 // Roughly test the Android-specific UI
 add_task(async function testAndroidUI() {
+  await clearUploadedProfilesDB();
+
   await SpecialPowers.pushPrefEnv({
     set: [
       ["toolkit.aboutLogging.uploadProfileToCloud", true],
@@ -649,7 +714,7 @@ add_task(async function testAndroidUI() {
       "The error is output to the user."
     );
 
-    await clearUploadedProfilesDB(content);
+    await clearUploadedProfilesDB();
   });
 });
 
@@ -703,6 +768,8 @@ add_task(async function testCopyToClipboard() {
 
 // Test the uploaded profiles functionality.
 add_task(async function testUploadedProfilesFeatures() {
+  await clearUploadedProfilesDB();
+
   await SpecialPowers.pushPrefEnv({
     set: [
       ["toolkit.aboutLogging.uploadProfileToCloud", true],
@@ -718,7 +785,6 @@ add_task(async function testUploadedProfilesFeatures() {
   });
 
   await BrowserTestUtils.withNewTab(PAGE, async browser => {
-    await clearUploadedProfilesDB(content);
     const document = browser.contentDocument;
     const window = browser.contentWindow;
 
@@ -730,6 +796,11 @@ add_task(async function testUploadedProfilesFeatures() {
         () => $("#uploaded-profiles-section"),
         "Uploaded profiles section should be present"
       );
+      await ContentTaskUtils.waitForCondition(
+        () => content.gUploadedProfilesManager,
+        "Uploaded profiles manager should be initialized"
+      );
+      await content.gUploadedProfilesManager.refresh();
 
       const section = $("#uploaded-profiles-section");
       Assert.ok(section, "Uploaded profiles section should exist");
@@ -984,6 +1055,6 @@ add_task(async function testUploadedProfilesFeatures() {
       }
     );
 
-    await clearUploadedProfilesDB(content);
+    await clearUploadedProfilesDB();
   });
 });

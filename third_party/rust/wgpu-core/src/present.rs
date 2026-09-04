@@ -9,18 +9,18 @@ When this texture is presented, we remove it from the device tracker as well as
 extract it from the hub.
 !*/
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::mem::ManuallyDrop;
 
 #[cfg(feature = "trace")]
 use crate::device::trace::{Action, IntoTrace};
 use crate::{
     conv,
-    device::{Device, DeviceError, MissingDownlevelFlags, WaitIdleError},
+    device::{queue::Queue, Device, DeviceError, MissingDownlevelFlags, WaitIdleError},
     global::Global,
     hal_label, id,
     instance::Surface,
-    resource,
+    resource::{self, Labeled},
 };
 
 use thiserror::Error;
@@ -49,20 +49,22 @@ pub enum SurfaceError {
     Device(#[from] DeviceError),
     #[error("Surface image is already acquired")]
     AlreadyAcquired,
+    #[error("No surface image is currently acquired to present")]
+    NothingToPresent,
     #[error("Texture has been destroyed")]
     TextureDestroyed,
 }
 
 impl WebGpuError for SurfaceError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
             Self::Invalid
             | Self::NotConfigured
             | Self::AlreadyAcquired
-            | Self::TextureDestroyed => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::NothingToPresent
+            | Self::TextureDestroyed => ErrorType::Validation,
+        }
     }
 }
 
@@ -77,7 +79,7 @@ pub enum ConfigureSurfaceError {
     InvalidViewFormat(wgt::TextureFormat, wgt::TextureFormat),
     #[error(transparent)]
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
-    #[error("`SurfaceOutput` must be dropped before a new `Surface` is made")]
+    #[error("The `SurfaceOutput` returned by `get_current_texture` must be dropped before re-configuring via `configure` or  retrieving a new texture via `get_current_texture`.")]
     PreviousOutputExists,
     #[error("Failed to wait for GPU to come idle before reconfiguring the Surface")]
     GpuWaitTimeout,
@@ -95,6 +97,12 @@ pub enum ConfigureSurfaceError {
     UnsupportedFormat {
         requested: wgt::TextureFormat,
         available: Vec<wgt::TextureFormat>,
+    },
+    #[error("Requested color space {requested:?} is not in the list of color spaces supported for format {format:?}: {available:?}")]
+    UnsupportedColorSpace {
+        requested: wgt::SurfaceColorSpace,
+        format: wgt::TextureFormat,
+        available: wgt::SurfaceColorSpaces,
     },
     #[error("Requested present mode {requested:?} is not in the list of supported present modes: {available:?}")]
     UnsupportedPresentMode {
@@ -125,9 +133,9 @@ impl From<WaitIdleError> for ConfigureSurfaceError {
 
 impl WebGpuError for ConfigureSurfaceError {
     fn webgpu_error_type(&self) -> ErrorType {
-        let e: &dyn WebGpuError = match self {
-            Self::Device(e) => e,
-            Self::MissingDownlevelFlags(e) => e,
+        match self {
+            Self::Device(e) => e.webgpu_error_type(),
+            Self::MissingDownlevelFlags(e) => e.webgpu_error_type(),
             Self::InvalidSurface
             | Self::InvalidViewFormat(..)
             | Self::PreviousOutputExists
@@ -136,11 +144,11 @@ impl WebGpuError for ConfigureSurfaceError {
             | Self::TooLarge { .. }
             | Self::UnsupportedQueueFamily
             | Self::UnsupportedFormat { .. }
+            | Self::UnsupportedColorSpace { .. }
             | Self::UnsupportedPresentMode { .. }
             | Self::UnsupportedAlphaMode { .. }
-            | Self::UnsupportedUsage { .. } => return ErrorType::Validation,
-        };
-        e.webgpu_error_type()
+            | Self::UnsupportedUsage { .. } => ErrorType::Validation,
+        }
     }
 }
 
@@ -154,7 +162,23 @@ pub struct SurfaceOutput<T = id::TextureId> {
 }
 
 impl Surface {
-    pub fn get_current_texture(&self) -> Result<ResolvedSurfaceOutput, SurfaceError> {
+    pub fn get_current_texture(self: &Arc<Self>) -> Result<ResolvedSurfaceOutput, SurfaceError> {
+        let output = self.get_current_texture_inner();
+        #[cfg(feature = "trace")]
+        if let Some(present) = self.presentation.lock().as_ref() {
+            if let Some(ref mut trace) = *present.device.trace.lock() {
+                if let Some(texture) = present.acquired_texture.as_ref() {
+                    trace.add(Action::GetSurfaceTexture {
+                        id: texture.to_trace(),
+                        parent: self.to_trace(),
+                    });
+                }
+            }
+        }
+        output
+    }
+
+    pub(crate) fn get_current_texture_inner(&self) -> Result<ResolvedSurfaceOutput, SurfaceError> {
         profiling::scope!("Surface::get_current_texture");
 
         let (device, config) = if let Some(ref present) = *self.presentation.lock() {
@@ -164,18 +188,14 @@ impl Surface {
             return Err(SurfaceError::NotConfigured);
         };
 
-        let fence = device.fence.read();
-
         let suf = self.raw(device.backend()).unwrap();
         let (texture, status) = match unsafe {
             suf.acquire_texture(
                 Some(core::time::Duration::from_millis(FRAME_TIMEOUT_MS as u64)),
-                fence.as_ref(),
+                device.fence.as_ref(),
             )
         } {
-            Ok(Some(ast)) => {
-                drop(fence);
-
+            Ok(ast) => {
                 let texture_desc = wgt::TextureDescriptor {
                     label: hal_label(
                         Some(alloc::borrow::Cow::Borrowed("<Surface Texture>")),
@@ -254,10 +274,11 @@ impl Surface {
                 };
                 (Some(texture), status)
             }
-            Ok(None) => (None, Status::Timeout),
             Err(err) => (
                 None,
                 match err {
+                    hal::SurfaceError::Timeout => Status::Timeout,
+                    hal::SurfaceError::Occluded => Status::Occluded,
                     hal::SurfaceError::Lost => Status::Lost,
                     hal::SurfaceError::Device(err) => {
                         return Err(device.handle_hal_error(err).into());
@@ -274,34 +295,90 @@ impl Surface {
         Ok(ResolvedSurfaceOutput { status, texture })
     }
 
-    pub fn present(&self) -> Result<Status, SurfaceError> {
+    pub fn present(self: &Arc<Self>) -> Result<Status, SurfaceError> {
+        #[cfg(feature = "trace")]
+        if let Some(present) = self.presentation.lock().as_ref() {
+            if let Some(ref mut trace) = *present.device.trace.lock() {
+                trace.add(Action::Present(self.to_trace()));
+            }
+        }
+        self.present_inner()
+    }
+
+    pub(crate) fn present_inner(&self) -> Result<Status, SurfaceError> {
         profiling::scope!("Surface::present");
 
-        let mut presentation = self.presentation.lock();
-        let present = match presentation.as_mut() {
+        let presentation = self.presentation.lock();
+        let present = match presentation.as_ref() {
             Some(present) => present,
             None => return Err(SurfaceError::NotConfigured),
         };
 
-        let device = &present.device;
+        present.device.check_is_valid()?;
+        let queue = present
+            .device
+            .get_queue()
+            .ok_or(SurfaceError::Device(DeviceError::Lost))?;
+        drop(presentation);
 
-        device.check_is_valid()?;
-        let queue = device.get_queue().unwrap();
+        queue.present(self)
+    }
+}
 
-        let texture = present
-            .acquired_texture
-            .take()
-            .ok_or(SurfaceError::AlreadyAcquired)?;
+impl Queue {
+    pub fn present(&self, surface: &Surface) -> Result<Status, SurfaceError> {
+        profiling::scope!("Queue::present");
+
+        let texture = {
+            let mut presentation = surface.presentation.lock();
+            let present = match presentation.as_mut() {
+                Some(present) => present,
+                None => return Err(SurfaceError::NotConfigured),
+            };
+
+            let device = &self.device;
+
+            // Check the surface is configured for this device.
+            if !Arc::ptr_eq(&present.device, device) {
+                return Err(SurfaceError::Device(DeviceError::DeviceMismatch(Box::new(
+                    crate::device::DeviceMismatch {
+                        res: self.error_ident(),
+                        res_device: device.error_ident(),
+                        target: None,
+                        target_device: present.device.error_ident(),
+                    },
+                ))));
+            }
+
+            present
+                .acquired_texture
+                .take()
+                .ok_or(SurfaceError::NothingToPresent)?
+        };
+
+        // If the texture was never rendered to, clear it and transition to
+        // PRESENT state before presenting.
+        // Fixes <https://github.com/gfx-rs/wgpu/issues/6748>
+        self.prepare_surface_texture_for_present(&texture)?;
+
+        let device = &self.device;
 
         let mut exclusive_snatch_guard = device.snatchable_lock.write();
-        let inner = texture.inner.snatch(&mut exclusive_snatch_guard);
+        let inner = texture
+            .state()
+            .ok()
+            .and_then(|state| state.inner.snatch(&mut exclusive_snatch_guard));
         drop(exclusive_snatch_guard);
 
         let result = match inner {
             None => return Err(SurfaceError::TextureDestroyed),
             Some(resource::TextureInner::Surface { raw }) => {
-                let raw_surface = self.raw(device.backend()).unwrap();
-                let raw_queue = queue.raw();
+                let raw_surface = surface.raw(device.backend()).unwrap();
+                let raw_queue = self.raw();
+                // [`wgpu_hal::Queue::present`] requires the queue to be synchronized with submit calls and
+                // other present calls. Locking command indices prevents submits which must increment the
+                // submission index, and by `write`ing prevents other present calls.
+                let _command_indices = device.command_indices.write();
                 unsafe { raw_queue.present(raw_surface, raw) }
             }
             _ => unreachable!(),
@@ -310,20 +387,34 @@ impl Surface {
         match result {
             Ok(()) => Ok(Status::Good),
             Err(err) => match err {
+                hal::SurfaceError::Timeout => Ok(Status::Timeout),
+                hal::SurfaceError::Occluded => Ok(Status::Occluded),
                 hal::SurfaceError::Lost => Ok(Status::Lost),
                 hal::SurfaceError::Device(err) => {
                     Err(SurfaceError::from(device.handle_hal_error(err)))
                 }
                 hal::SurfaceError::Outdated => Ok(Status::Outdated),
                 hal::SurfaceError::Other(msg) => {
-                    log::error!("acquire error: {msg}");
+                    log::error!("present error: {msg}");
                     Err(SurfaceError::Invalid)
                 }
             },
         }
     }
+}
 
-    pub fn discard(&self) -> Result<(), SurfaceError> {
+impl Surface {
+    pub fn discard(self: &Arc<Self>) -> Result<(), SurfaceError> {
+        #[cfg(feature = "trace")]
+        if let Some(present) = self.presentation.lock().as_ref() {
+            if let Some(ref mut trace) = *present.device.trace.lock() {
+                trace.add(Action::DiscardSurfaceTexture(self.to_trace()));
+            }
+        }
+        self.discard_inner()
+    }
+
+    pub(crate) fn discard_inner(&self) -> Result<(), SurfaceError> {
         profiling::scope!("Surface::discard");
 
         let mut presentation = self.presentation.lock();
@@ -339,10 +430,13 @@ impl Surface {
         let texture = present
             .acquired_texture
             .take()
-            .ok_or(SurfaceError::AlreadyAcquired)?;
+            .ok_or(SurfaceError::NothingToPresent)?;
 
         let mut exclusive_snatch_guard = device.snatchable_lock.write();
-        let inner = texture.inner.snatch(&mut exclusive_snatch_guard);
+        let inner = texture
+            .state()
+            .ok()
+            .and_then(|state| state.inner.snatch(&mut exclusive_snatch_guard));
         drop(exclusive_snatch_guard);
 
         match inner {
@@ -353,6 +447,38 @@ impl Surface {
             }
             _ => unreachable!(),
         }
+
+        Ok(())
+    }
+
+    pub fn release(self: &Arc<Self>) -> Result<(), SurfaceError> {
+        #[cfg(feature = "trace")]
+        if let Some(present) = self.presentation.lock().as_ref() {
+            if let Some(ref mut trace) = *present.device.trace.lock() {
+                trace.add(Action::ReleaseSurfaceTexture(self.to_trace()));
+            }
+        }
+        self.release_inner()
+    }
+
+    /// Like `discard`, drops the inner texture reference, but skips the
+    /// HAL `discard_texture` call. Safe to call during unwinding
+    pub(crate) fn release_inner(&self) -> Result<(), SurfaceError> {
+        profiling::scope!("Surface::release");
+
+        let mut presentation = self.presentation.lock();
+        let Some(present) = presentation.as_mut() else {
+            return Err(SurfaceError::NotConfigured);
+        };
+
+        // `texture` is dropped here, decrementing the refcount of
+        // Arc<SwapchainAcquireSemaphore>. If this was the last Arc, the Texture
+        // is freed, which drops NativeSurfaceTextureMetadata and
+        // its Arc<SwapchainAcquireSemaphore>.
+        _ = present
+            .acquired_texture
+            .take()
+            .ok_or(SurfaceError::NothingToPresent)?;
 
         Ok(())
     }
@@ -370,22 +496,8 @@ impl Global {
 
         let output = surface.get_current_texture()?;
 
-        #[cfg(feature = "trace")]
-        if let Some(present) = surface.presentation.lock().as_ref() {
-            if let Some(ref mut trace) = *present.device.trace.lock() {
-                if let Some(texture) = present.acquired_texture.as_ref() {
-                    trace.add(Action::GetSurfaceTexture {
-                        id: texture.to_trace(),
-                        parent: surface.to_trace(),
-                    });
-                }
-            }
-        }
-
         let status = output.status;
-        let texture_id = output
-            .texture
-            .map(|texture| fid.assign(resource::Fallible::Valid(texture)));
+        let texture_id = output.texture.map(|texture| fid.assign(texture));
 
         Ok(SurfaceOutput {
             status,
@@ -396,26 +508,18 @@ impl Global {
     pub fn surface_present(&self, surface_id: id::SurfaceId) -> Result<Status, SurfaceError> {
         let surface = self.surfaces.get(surface_id);
 
-        #[cfg(feature = "trace")]
-        if let Some(present) = surface.presentation.lock().as_ref() {
-            if let Some(ref mut trace) = *present.device.trace.lock() {
-                trace.add(Action::Present(surface.to_trace()));
-            }
-        }
-
         surface.present()
     }
 
     pub fn surface_texture_discard(&self, surface_id: id::SurfaceId) -> Result<(), SurfaceError> {
         let surface = self.surfaces.get(surface_id);
 
-        #[cfg(feature = "trace")]
-        if let Some(present) = surface.presentation.lock().as_ref() {
-            if let Some(ref mut trace) = *present.device.trace.lock() {
-                trace.add(Action::DiscardSurfaceTexture(surface.to_trace()));
-            }
-        }
-
         surface.discard()
+    }
+
+    pub fn surface_texture_release(&self, surface_id: id::SurfaceId) -> Result<(), SurfaceError> {
+        let surface = self.surfaces.get(surface_id);
+
+        surface.release()
     }
 }

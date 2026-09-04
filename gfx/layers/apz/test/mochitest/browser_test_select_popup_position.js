@@ -10,7 +10,7 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-async function runPopupPositionTest(parentDocumentFileName) {
+async function runPopupPositionTest(parentDocumentFileName, oop) {
   function httpURL(filename) {
     let chromeURL = getRootDirectory(gTestPath) + filename;
     return chromeURL.replace(
@@ -30,10 +30,9 @@ async function runPopupPositionTest(parentDocumentFileName) {
   const pageUrl = httpURL(parentDocumentFileName);
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
 
-  // Load the OOP iframe.
-  const iframeUrl = httpCrossOriginURL(
-    "helper_test_select_popup_position.html"
-  );
+  const iframeUrl = oop
+    ? httpCrossOriginURL("helper_test_select_popup_position.html")
+    : httpURL("helper_test_select_popup_position.html");
   const iframe = await SpecialPowers.spawn(
     tab.linkedBrowser,
     [iframeUrl],
@@ -71,15 +70,7 @@ async function runPopupPositionTest(parentDocumentFileName) {
   const popupRect = selectPopup.getBoundingClientRect();
   const popupMarginTop = parseFloat(getComputedStyle(selectPopup).marginTop);
   const popupMarginLeft = parseFloat(getComputedStyle(selectPopup).marginLeft);
-  let sidebarRevampEnabled = Services.prefs.getBoolPref(
-    "sidebar.revamp",
-    false
-  );
-  let sidebarWidth;
-  if (sidebarRevampEnabled) {
-    const sidebar = document.querySelector("sidebar-main");
-    sidebarWidth = sidebar.getBoundingClientRect().width;
-  }
+  const browserRect = tab.linkedBrowser.getBoundingClientRect();
 
   info(
     `popup rect: (${popupRect.x}, ${popupRect.y}) ${popupRect.width}x${popupRect.height}`
@@ -88,12 +79,12 @@ async function runPopupPositionTest(parentDocumentFileName) {
   info(
     `select rect: (${selectRect.x}, ${selectRect.y}) ${selectRect.width}x${selectRect.height}`
   );
+  info(`browser rect: (${browserRect.x}, ${browserRect.y})`);
 
-  is(
-    !sidebarRevampEnabled
-      ? popupRect.left - popupMarginLeft
-      : popupRect.left - popupMarginLeft - sidebarWidth,
-    selectRect.x * 2.0,
+  isfuzzy(
+    popupRect.left - popupMarginLeft,
+    browserRect.left + selectRect.x * 2.0,
+    1,
     "select popup position x should be scaled by the desktop zoom"
   );
 
@@ -102,8 +93,7 @@ async function runPopupPositionTest(parentDocumentFileName) {
   if (!navigator.platform.includes("Mac")) {
     isfuzzy(
       popupRect.top - popupMarginTop,
-      tab.linkedBrowser.getBoundingClientRect().top +
-        (selectRect.y + selectRect.height) * 2.0,
+      browserRect.top + (selectRect.y + selectRect.height) * 2.0,
       1,
       "select popup position y should be scaled by the desktop zoom"
     );
@@ -114,7 +104,7 @@ async function runPopupPositionTest(parentDocumentFileName) {
         .top - popupRect.top;
     isfuzzy(
       popupRect.top - popupMarginTop + offsetToSelectedItem,
-      tab.linkedBrowser.getBoundingClientRect().top + selectRect.y * 2.0,
+      browserRect.top + selectRect.y * 2.0,
       1,
       "select popup position y should be scaled by the desktop zoom"
     );
@@ -125,19 +115,52 @@ async function runPopupPositionTest(parentDocumentFileName) {
   BrowserTestUtils.removeTab(tab);
 }
 
-add_task(async function () {
-  if (!SpecialPowers.useRemoteSubframes) {
-    ok(
-      true,
-      "popup window position in non OOP iframe will be fixed by bug 1691346"
-    );
-    return;
+add_setup(async () => {
+  if (AppConstants.platform == "macosx") {
+    await SpecialPowers.pushPrefEnv({
+      set: [["widget.macos.allow-native-select", false]],
+    });
   }
+});
+
+add_task(async function test_popup_transformed_in_parent_same_origin() {
   await runPopupPositionTest(
-    "helper_test_select_popup_position_transformed_in_parent.html"
+    "helper_test_select_popup_position_transformed_in_parent.html",
+    false
   );
 });
 
-add_task(async function () {
-  await runPopupPositionTest("helper_test_select_popup_position_zoomed.html");
+add_task(async function test_popup_transformed_in_parent_oop() {
+  await runPopupPositionTest(
+    "helper_test_select_popup_position_transformed_in_parent.html",
+    true
+  );
+});
+
+add_task(async function test_popup_positioned_zoomed_same_origin() {
+  await runPopupPositionTest(
+    "helper_test_select_popup_position_zoomed.html",
+    false
+  );
+});
+
+add_task(async function test_popup_positioned_zoomed_oop() {
+  await runPopupPositionTest(
+    "helper_test_select_popup_position_zoomed.html",
+    true
+  );
+});
+
+add_task(async function test_popup_positioned_iframe_zoom_same_origin() {
+  await runPopupPositionTest(
+    "helper_test_select_popup_position_iframe_zoom.html",
+    false
+  );
+});
+
+add_task(async function test_popup_positioned_iframe_zoom_oop() {
+  await runPopupPositionTest(
+    "helper_test_select_popup_position_iframe_zoom.html",
+    true
+  );
 });

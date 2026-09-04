@@ -53,11 +53,14 @@ const registerHighlighter = (typeName, modulePath) => {
 exports.CustomHighlighterActor = class CustomHighligherActor extends Actor {
   /**
    * Create a highlighter instance given its typeName.
+   *
+   * @param {Actor} parent: An actor that will manage the created customHighlighterActor
+   * @param {string} typeName: The highlighter to create (see devtools/shared/highlighters.mjs)
    */
   constructor(parent, typeName) {
     super(parent.conn, customHighlighterSpec);
 
-    this._parent = parent;
+    this.highlighterTypeName = typeName;
 
     const modulePath = highlighterTypes.get(typeName);
     if (!modulePath) {
@@ -71,7 +74,7 @@ exports.CustomHighlighterActor = class CustomHighligherActor extends Actor {
     // container to append their elements and thus a non-XUL window or they have
     // to define a static XULSupported flag that indicates that the highlighter
     // supports XUL windows. Otherwise, bail out.
-    if (!isXUL(this._parent.targetActor.window) || constructor.XULSupported) {
+    if (!isXUL(parent.targetActor.window) || constructor.XULSupported) {
       this._highlighterEnv = new HighlighterEnvironment();
       this._highlighterEnv.initFromTargetActor(parent.targetActor);
       this._highlighter = new constructor(this._highlighterEnv, parent);
@@ -86,15 +89,24 @@ exports.CustomHighlighterActor = class CustomHighligherActor extends Actor {
         "Custom " + typeName + "highlighter cannot be created in a XUL window"
       );
     }
+
+    parent.manage(this);
   }
 
   destroy() {
     super.destroy();
     this.finalize();
-    this._parent = null;
+    this.#isShown = false;
   }
 
-  release() {}
+  #isShown = false;
+
+  form() {
+    return {
+      actor: this.actorID,
+      isShown: this.#isShown,
+    };
+  }
 
   /**
    * Get current instance of the highlighter object.
@@ -125,6 +137,7 @@ exports.CustomHighlighterActor = class CustomHighligherActor extends Actor {
 
     const rawNode = node?.rawNode;
 
+    this.#isShown = true;
     return this._highlighter.show(rawNode, options);
   }
 
@@ -135,6 +148,7 @@ exports.CustomHighlighterActor = class CustomHighligherActor extends Actor {
     if (this._highlighter) {
       this._highlighter.hide();
     }
+    this.#isShown = false;
   }
 
   /**

@@ -1,4 +1,3 @@
-/* -*- Mode: rust; rust-indent-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -22,6 +21,16 @@ pub const ENCODED_OID_BYTES_SECP256R1: &[u8] =
     &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
 pub const ENCODED_OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
 pub const ENCODED_OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
+
+// Helper function to turn a utf-8 char pointer into a slice, given that null
+// pointers cannot be passed to std::slice::from_raw_parts.
+pub unsafe fn char_ptr_to_slice<'a>(ptr: CK_UTF8CHAR_PTR, len: CK_ULONG) -> &'a [u8] {
+    if ptr.is_null() {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ptr, len as usize)
+    }
+}
 
 // This is a helper function to take a value and lay it out in memory how
 // PKCS#11 is expecting it.

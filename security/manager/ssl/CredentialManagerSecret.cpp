@@ -1,13 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CredentialManagerSecret.h"
 
+// clang-format off
 #include <windows.h>
 #include <wincred.h>
+// clang-format on
 
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
@@ -34,10 +35,6 @@ struct ScopedMaybeDelete {
 };
 typedef std::unique_ptr<CREDENTIALA, ScopedMaybeDelete<CREDENTIALA>>
     ScopedCREDENTIALA;
-
-CredentialManagerSecret::CredentialManagerSecret() {}
-
-CredentialManagerSecret::~CredentialManagerSecret() {}
 
 nsresult CredentialManagerSecret::StoreSecret(const nsACString& aSecret,
                                               const nsACString& aLabel) {

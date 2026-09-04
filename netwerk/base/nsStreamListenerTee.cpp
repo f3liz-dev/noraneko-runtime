@@ -3,8 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsStreamListenerTee.h"
-#include "nsProxyRelease.h"
+
 #include "nsIRequest.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla {
 namespace net {
@@ -22,9 +23,12 @@ nsStreamListenerTee::OnStartRequest(nsIRequest* request) {
     mIsMultiPart = true;
   }
 
-  nsresult rv1 = mListener->OnStartRequest(request);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  nsresult rv1 = listener->OnStartRequest(request);
   nsresult rv2 = NS_OK;
-  if (mObserver) rv2 = mObserver->OnStartRequest(request);
+  if (nsCOMPtr<nsIRequestObserver> observer = mObserver) {
+    rv2 = observer->OnStartRequest(request);
+  }
 
   // Preserve NS_SUCCESS_XXX in rv1 in case mObserver didn't throw
   return (NS_FAILED(rv2) && NS_SUCCEEDED(rv1)) ? rv2 : rv1;
@@ -32,6 +36,7 @@ nsStreamListenerTee::OnStartRequest(nsIRequest* request) {
 
 NS_IMETHODIMP
 nsStreamListenerTee::OnStopRequest(nsIRequest* request, nsresult status) {
+  nsresult rv;
   NS_ENSURE_TRUE(mListener, NS_ERROR_NOT_INITIALIZED);
   // it is critical that we close out the input stream tee
   if (mInputTee) {
@@ -49,12 +54,15 @@ nsStreamListenerTee::OnStopRequest(nsIRequest* request, nsresult status) {
     }
   }
 
-  nsresult rv = mListener->OnStopRequest(request, status);
-  if (!mIsMultiPart) {
-    mListener = nullptr;
+  {
+    nsCOMPtr<nsIStreamListener> listener = mListener;
+    rv = listener->OnStopRequest(request, status);
+    if (!mIsMultiPart) {
+      mListener = nullptr;
+    }
   }
-  if (mObserver) {
-    mObserver->OnStopRequest(request, status);
+  if (nsCOMPtr<nsIRequestObserver> observer = mObserver) {
+    observer->OnStopRequest(request, status);
     if (!mIsMultiPart) {
       mObserver = nullptr;
     }
@@ -90,7 +98,8 @@ nsStreamListenerTee::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
     tee = mInputTee;
   }
 
-  return mListener->OnDataAvailable(request, tee, offset, count);
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  return listener->OnDataAvailable(request, tee, offset, count);
 }
 
 NS_IMETHODIMP
